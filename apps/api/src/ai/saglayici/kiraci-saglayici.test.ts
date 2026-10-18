@@ -7,13 +7,15 @@ import { MockAiProvider } from "./mock-ai.provider";
 import { AiProviderFactory } from "./ai-provider.factory";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "../ayarlar/ai-aktarim-politikasi";
 import { AiBosYanitHatasi } from './ai-bos-yanit';
+import { AiSinirHatasi } from "./ai-butce";
 
 const TENANT = "t";
 
-function kur(ayar: Record<string, unknown> | null, bugunToplam = 0) {
+function kur(ayar: Record<string, unknown> | null, bugunToplam = 0, buAyUsd = 0, tavanUsd: number | null = null) {
   const tx = {
     $executeRaw: vi.fn(),
-    aiCagriIz: { create: vi.fn().mockResolvedValue({ id: "iz-1" }) },
+    aiCagriIz: { create: vi.fn().mockResolvedValue({ id: "iz-1" }), aggregate: vi.fn().mockResolvedValue({ _sum: { maliyetUsd: new Prisma.Decimal(buAyUsd) } }) },
+    platformAiTavani: { findUnique: vi.fn().mockResolvedValue(tavanUsd === null ? null : { aylikTavanUsd: new Prisma.Decimal(tavanUsd) }) },
     tenantAiAyari: { findUnique: vi.fn().mockResolvedValue(ayar), update: vi.fn() },
     aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: bugunToplam } }), upsert: vi.fn() },
   };
@@ -154,5 +156,109 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
     await expect(saglayici.metinUret({ prompt: "x" })).rejects.toThrow(/firma için.*kapatıldı/i);
     expect(tx.aiKullanim.upsert).not.toHaveBeenCalled();
     expect(tx.aiCagriIz.create).not.toHaveBeenCalled();
+  });
+
+  describe("aylık bütçe ve platform tavanı (AI-28…31)", () => {
+    const fiyatli = { girisTokenMilyonUsd: new Prisma.Decimal(2), cikisTokenMilyonUsd: new Prisma.Decimal(8) };
+
+    it("bu ayın maliyeti bütçeye ulaşınca 429 ile reddeder, sağlayıcıyı çağırmaz", async () => {
+      vi.stubEnv("AI_PROVIDER", "mock");
+      const { prisma, tx } = kur({ saglayici: "mock", ...fiyatli, aylikMaliyetButcesiUsd: new Prisma.Decimal(10) }, 0, 10);
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      const metinUret = vi.spyOn(MockAiProvider.prototype, "metinUret");
+      const hata = await olarak(() => saglayici.metinUret({ prompt: "x" })).catch((e) => e);
+      expect(hata).toBeInstanceOf(AiSinirHatasi);
+      expect(hata.getStatus()).toBe(429);
+      expect(hata.message).toMatch(/bütçesi doldu.*Ayarlar → Yapay Zeka/);
+      expect(metinUret).not.toHaveBeenCalled();
+      expect(tx.aiKullanim.upsert).not.toHaveBeenCalled();
+    });
+
+    it("bütçe altındaysa çalışır", async () => {
+      vi.stubEnv("AI_PROVIDER", "mock");
+      const { prisma, tx } = kur({ saglayici: "mock", ...fiyatli, aylikMaliyetButcesiUsd: new Prisma.Decimal(10) }, 0, 9.99);
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      await olarak(() => saglayici.metinUret({ prompt: "x" }));
+      expect(tx.aiKullanim.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it("bütçe yoksa ayın maliyeti hiç sorgulanmaz", async () => {
+      vi.stubEnv("AI_PROVIDER", "mock");
+      const { prisma, tx } = kur({ saglayici: "mock", ...fiyatli }, 0, 1_000_000);
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      await olarak(() => saglayici.metinUret({ prompt: "x" }));
+      expect(tx.aiCagriIz.aggregate).not.toHaveBeenCalled();
+    });
+
+    it("bütçe varken fiyat bilinmiyorsa çağrı yapılmaz (503)", async () => {
+      vi.stubEnv("AI_PROVIDER", "mock");
+      const { prisma } = kur({ saglayici: "mock", aylikMaliyetButcesiUsd: new Prisma.Decimal(10) });
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      const metinUret = vi.spyOn(MockAiProvider.prototype, "metinUret");
+      const hata = await olarak(() => saglayici.metinUret({ prompt: "x" })).catch((e) => e);
+      expect(hata).toBeInstanceOf(AiSinirHatasi);
+      expect(hata.getStatus()).toBe(503);
+      expect(metinUret).not.toHaveBeenCalled();
+    });
+
+    it("token sayısı dönmeyen çağrının maliyeti tahmin edilir ve işaretlenir", async () => {
+      vi.stubEnv("AI_PROVIDER", "mock");
+      const { prisma, tx } = kur({ saglayici: "mock", ...fiyatli });
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "ozet" }));
+      await olarak(() => saglayici.metinUret({ prompt: "x".repeat(4000) }));
+      const veri = tx.aiCagriIz.create.mock.calls[0][0].data;
+      expect(veri.maliyetTahmini).toBe(true);
+      expect(veri.girisToken).toBeNull();
+      expect(veri.maliyetUsd).toBeGreaterThan(0.002);
+    });
+
+    function platformAnahtari(tavan: string | undefined, fiyat = true) {
+      vi.stubEnv("AI_PROVIDER", "gemini");
+      vi.stubEnv("GEMINI_API_KEY", "platform");
+      if (fiyat) { vi.stubEnv("AI_GIRIS_TOKEN_MILYON_USD", "0.3"); vi.stubEnv("AI_CIKIS_TOKEN_MILYON_USD", "2.5"); }
+      if (tavan !== undefined) vi.stubEnv("AI_PLATFORM_AYLIK_TAVAN_USD", tavan);
+      const dis = new MockAiProvider();
+      Object.defineProperty(dis, "saglayiciAdi", { value: "gemini" });
+      Object.defineProperty(dis, "modelAdi", { value: "gemini-test" });
+      vi.spyOn(AiProviderFactory, "uret").mockReturnValue(dis);
+      return { saglayici: "varsayilan", yurtDisiOnayAt: new Date(), yurtDisiOnaySaglayici: "gemini", yurtDisiOnayModel: "gemini-test", yurtDisiOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU };
+    }
+
+    it("platform anahtarında ortam tavanı uygulanır ve mesaj destek ekibine yönlendirir", async () => {
+      const ayar = platformAnahtari("20");
+      const { prisma } = kur(ayar, 0, 20);
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      await expect(olarak(() => saglayici.metinUret({ prompt: "x" }))).rejects.toThrow(/platform tavanıdır/);
+    });
+
+    it("kiracıya özel tavan ortam varsayılanından önce gelir; kiracı bütçesi daha düşükse o uygulanır", async () => {
+      const ayar = platformAnahtari("20");
+      const ozel = kur(ayar, 0, 25, 30);
+      const acik = await olarak(() => kiraciSaglayicisi(ozel.prisma as never, TENANT, { ozellik: "asistan" }));
+      await olarak(() => acik.saglayici.metinUret({ prompt: "x" }));
+      const dusuk = kur({ ...ayar, aylikMaliyetButcesiUsd: new Prisma.Decimal(5) }, 0, 6, 30);
+      const kapali = await olarak(() => kiraciSaglayicisi(dusuk.prisma as never, TENANT, { ozellik: "asistan" }));
+      await expect(olarak(() => kapali.saglayici.metinUret({ prompt: "x" }))).rejects.toThrow(/Ayarlar → Yapay Zeka/);
+    });
+
+    it("platform tavanı varken platform fiyatı yoksa çağrı yapılmaz; kiracının girdiği fiyat kullanılmaz", async () => {
+      const ayar = platformAnahtari("20", false);
+      const { prisma } = kur({ ...ayar, ...fiyatli });
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      await expect(olarak(() => saglayici.metinUret({ prompt: "x" }))).rejects.toThrow(/Platform yapay zekâ fiyatları/);
+    });
+
+    it("kiracı kendi anahtarını kullanıyorsa platform tavanı uygulanmaz", async () => {
+      vi.stubEnv("AI_PLATFORM_AYLIK_TAVAN_USD", "1");
+      vi.stubEnv("BAGLANTI_SIFRELEME_ANAHTARI", "a".repeat(64));
+      const dis = new MockAiProvider();
+      Object.defineProperty(dis, "saglayiciAdi", { value: "openai" });
+      Object.defineProperty(dis, "modelAdi", { value: "gpt-test" });
+      vi.spyOn(AiProviderFactory, "uret").mockReturnValue(dis);
+      const { prisma, tx } = kur({ saglayici: "openai", apiKey: "sk-kiraci", modelAdi: "gpt-test", yurtDisiOnayAt: new Date(), yurtDisiOnaySaglayici: "openai", yurtDisiOnayModel: "gpt-test", yurtDisiOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU }, 0, 500);
+      const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan" }));
+      await olarak(() => saglayici.metinUret({ prompt: "x" }));
+      expect(tx.platformAiTavani.findUnique).not.toHaveBeenCalled();
+    });
   });
 });

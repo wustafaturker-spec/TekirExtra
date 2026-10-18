@@ -10,7 +10,11 @@ interface Kullanim {
   gunler: Array<{ gun: string; ozellik: string; cagri: number }>;
   telemetri: Array<{ kullanici: string; ozellik: string; saglayici: string; model: string | null; basarili: boolean; cagri: number; ortalamaSureMs: number; girisToken: number; cikisToken: number; maliyetUsd: number | null }>;
   telemetriAyarlari: { saklamaGun: number; sohbetSaklamaGun: number | null; hataEsigiYuzde: number; gecikmeEsigiMs: number };
-  maliyetButcesi: { paraBirimi: "USD"; ayBaslangici: string; buAyUsd: number | null; aylikUsd: number | null; girisMilyonTokenUsd: number | null; cikisMilyonTokenUsd: number | null; tahminUyarisi: string };
+  maliyetButcesi: {
+    paraBirimi: "USD"; ayBaslangici: string; buAyUsd: number | null; aylikUsd: number | null; girisMilyonTokenUsd: number | null; cikisMilyonTokenUsd: number | null; tahminUyarisi: string;
+    /** AI-28…31 */
+    platformAnahtari: boolean; platformTavaniUsd: number | null; uygulananSinirUsd: number | null; olculebilir: boolean; tahminiCagri: number;
+  };
 }
 
 const OZELLIK_ADI: Record<string, string> = { asistan: "Asistan", tarama: "Tarama", ozet: "Özet yorumu", gorev: "Görev", ekstre: "Ekstre önerisi", hatirlatma: "Hatırlatma metni" };
@@ -46,8 +50,11 @@ export function YzKullanimKart() {
         gunlukCagriSiniri: Number(sinir), telemetriSaklamaGun: Number(saklamaGun),
         sohbetSaklamaGun: sohbetSaklamaGun === "" ? null : Number(sohbetSaklamaGun),
         telemetriHataEsigiYuzde: Number(hataEsigi), telemetriGecikmeEsigiMs: Number(gecikmeEsigi),
-        girisTokenMilyonUsd: girisFiyati === "" ? null : Number(girisFiyati),
-        cikisTokenMilyonUsd: cikisFiyati === "" ? null : Number(cikisFiyati),
+        // Platform anahtarında fiyat platformdan gelir; kiracı fiyatı gönderilmez.
+        ...(veri?.maliyetButcesi.platformAnahtari ? {} : {
+          girisTokenMilyonUsd: girisFiyati === "" ? null : Number(girisFiyati),
+          cikisTokenMilyonUsd: cikisFiyati === "" ? null : Number(cikisFiyati),
+        }),
         aylikMaliyetButcesiUsd: aylikButce === "" ? null : Number(aylikButce),
       }) });
       setBasari("Kullanım ve telemetri politikası kaydedildi.");
@@ -67,7 +74,10 @@ export function YzKullanimKart() {
   const para = (tutar: number | null) => tutar === null ? "Fiyat tanımlı değil" : tutar.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 6 });
   const maliyet = veri?.maliyetButcesi;
   const buAyMaliyet = maliyet?.buAyUsd ?? null;
-  const butceAsildi = maliyet?.aylikUsd !== null && maliyet?.aylikUsd !== undefined && buAyMaliyet !== null && buAyMaliyet >= maliyet.aylikUsd;
+  const sinirUsd = maliyet?.uygulananSinirUsd ?? null;
+  const butceAsildi = sinirUsd !== null && (buAyMaliyet ?? 0) >= sinirUsd;
+  const platformSiniri = sinirUsd !== null && maliyet?.platformTavaniUsd === sinirUsd && (maliyet.aylikUsd === null || maliyet.platformTavaniUsd < maliyet.aylikUsd);
+  const sinirAciklamasi = sinirUsd === null ? "Aylık sınır yok" : `${platformSiniri ? "Platform tavanı" : "Aylık bütçe"} ${para(sinirUsd)}`;
   return (
     <Card title="Kullanım ve günlük sınır">
       {hata && <Alert tone="error">{hata}</Alert>}
@@ -78,22 +88,28 @@ export function YzKullanimKart() {
         <Stat label="Başarı oranı" value={izToplam ? `%${Math.round(((izToplam - hataToplam) / izToplam) * 100)}` : "—"} hint={`${hataToplam} başarısız / ${izToplam} izlenen`} tone={hataToplam > 0 ? "danger" : "default"} />
         <Stat label="Ortalama yanıt" value={izToplam ? `${agirlikliSure} ms` : "—"} hint="son 30 gün" />
         <Stat label="Token" value={tokenToplam.toLocaleString("tr-TR")} hint="giriş + çıkış" />
-        <Stat label="Bu ay tahmini maliyet" value={buAyMaliyet === null && maliyet && maliyet.girisMilyonTokenUsd !== null && maliyet.cikisMilyonTokenUsd !== null ? "Henüz ölçüm yok" : para(buAyMaliyet)} hint={maliyet?.aylikUsd != null ? `Aylık bütçe ${para(maliyet.aylikUsd)}` : "USD fiyatları girilince hesaplanır"} tone={butceAsildi ? "danger" : "default"} />
+        <Stat label="Bu ay tahmini maliyet" value={buAyMaliyet === null ? (maliyet?.platformAnahtari || (maliyet && maliyet.girisMilyonTokenUsd !== null && maliyet.cikisMilyonTokenUsd !== null) ? "Henüz ölçüm yok" : para(null)) : para(buAyMaliyet)} hint={`${sinirAciklamasi}${maliyet?.tahminiCagri ? ` · ${maliyet.tahminiCagri} çağrı tahmini` : ""}`} tone={butceAsildi ? "danger" : "default"} />
         {ozellikToplam.map(([ozellik, cagri]) => <Stat key={ozellik} label={OZELLIK_ADI[ozellik] ?? ozellik} value={cagri} hint="son 30 gün" />)}
       </StatGrid>
+      {maliyet && !maliyet.olculebilir && <Alert tone="error">{maliyet.platformAnahtari ? "Platform fiyatları tanımlı olmadığından aylık sınır ölçülemiyor; yapay zekâ çağrıları durduruldu. Destek ekibine bildirin." : "Aylık bütçe tanımlı ama token fiyatları girilmemiş; yapay zekâ çağrıları durduruldu. Fiyatları girin ya da bütçeyi boşaltın."}</Alert>}
+      {butceAsildi && maliyet?.olculebilir && <Alert tone="error">Bu ayın yapay zekâ {platformSiniri ? "platform tavanı" : "bütçesi"} doldu; yapay zekâ özellikleri {maliyet.ayBaslangici.slice(0, 7)} sonuna kadar kapalı.{platformSiniri ? " Tavanı artırmak için destek ekibine başvurun." : ""}</Alert>}
       <form className="row-tight yz-kullanim__form" onSubmit={(e) => { e.preventDefault(); void kaydet(); }}>
         <Field label="Günlük çağrı sınırı (kiracı)"><Input max={100000} min={1} onChange={(e) => setSinir(e.target.value)} type="number" value={sinir} /></Field>
         <Field label="Telemetri saklama (gün)"><Input max={365} min={7} onChange={(e) => setSaklamaGun(e.target.value)} type="number" value={saklamaGun} /></Field>
         <Field label="Sohbet saklama (gün; boş = kapalı)"><Input max={365} min={7} onChange={(e) => setSohbetSaklamaGun(e.target.value)} type="number" value={sohbetSaklamaGun} /></Field>
         <Field label="Hata oranı uyarısı (%)"><Input max={100} min={1} onChange={(e) => setHataEsigi(e.target.value)} type="number" value={hataEsigi} /></Field>
         <Field label="Gecikme uyarısı (ms)"><Input max={120000} min={500} step={100} onChange={(e) => setGecikmeEsigi(e.target.value)} type="number" value={gecikmeEsigi} /></Field>
-        <Field label="Giriş fiyatı (USD / 1M token)"><Input min={0} step="any" onChange={(e) => setGirisFiyati(e.target.value)} type="number" value={girisFiyati} /></Field>
-        <Field label="Çıkış fiyatı (USD / 1M token)"><Input min={0} step="any" onChange={(e) => setCikisFiyati(e.target.value)} type="number" value={cikisFiyati} /></Field>
-        <Field label="Aylık bütçe izleme eşiği (USD)"><Input min={0} step="0.01" onChange={(e) => setAylikButce(e.target.value)} type="number" value={aylikButce} /></Field>
+        {!maliyet?.platformAnahtari && <>
+          <Field label="Giriş fiyatı (USD / 1M token)"><Input min={0} step="any" onChange={(e) => setGirisFiyati(e.target.value)} type="number" value={girisFiyati} /></Field>
+          <Field label="Çıkış fiyatı (USD / 1M token)"><Input min={0} step="any" onChange={(e) => setCikisFiyati(e.target.value)} type="number" value={cikisFiyati} /></Field>
+        </>}
+        <Field label={maliyet?.platformTavaniUsd != null ? `Aylık bütçe (USD; en çok ${maliyet.platformTavaniUsd})` : "Aylık bütçe (USD; dolunca durur)"}><Input max={maliyet?.platformTavaniUsd ?? undefined} min={0} step="0.01" onChange={(e) => setAylikButce(e.target.value)} type="number" value={aylikButce} /></Field>
         <Button type="submit">Kaydet</Button>
       </form>
       <p className="muted">Sohbet temizliği etkinse süresi geçen mesajlar ve kullanılmayan oturumlar saatlik bakımda kalıcı silinir; sonuçlanmış işlem onayları karar tarihinden 90 gün sonra temizlenir. İşlemdeki mesajlar ve açık onaylar korunur. Tamamlanmış istek yanıtları 7 gün saklanır. Aktarım onayı denetim kayıtları bu temizliğe dahil değildir. Aylık bütçe açıksa mevcut ayın maliyet izleri korunur.</p>
-      <p className="muted">Fiyatlar bu tenant’ın seçili sağlayıcı/modeli için yönetici tarafından girilir. Tahmin sağlayıcı faturasıyla birebir mutabakat değildir. Bütçe eşiği izleme amaçlıdır; çağrıları otomatik durdurmaz.</p>
+      <p className="muted">{maliyet?.platformAnahtari
+        ? "Firma kendi API anahtarını girmediği için çağrılar platform anahtarıyla yapılır; maliyet platform fiyatlarıyla ölçülür ve paketinizin platform tavanı uygulanır."
+        : "Fiyatlar bu firmanın seçili sağlayıcı/modeli için yönetici tarafından girilir."} Tahmin sağlayıcı faturasıyla birebir mutabakat değildir. Aylık sınır dolunca bütün yapay zekâ özellikleri (asistan, tarama, özet, görevler) ay sonuna kadar durur; %80'de ve dolduğunda yöneticilere bildirim gider. Token sayısı dönmeyen çağrının maliyeti metin uzunluğundan tahmin edilir.</p>
       {telemetri.some((x) => x.maliyetUsd !== null) && <div className="yz-kullanim__maliyetler" aria-label="Kullanıcı ve özellik maliyetleri">
         {telemetri.filter((x) => x.maliyetUsd !== null).map((x, i) => <p key={`${x.kullanici}-${x.ozellik}-${x.saglayici}-${x.model}-${i}`}>
           {x.kullanici} · {OZELLIK_ADI[x.ozellik] ?? x.ozellik} · {x.saglayici}{x.model ? ` / ${x.model}` : ""}: <strong>{para(x.maliyetUsd)}</strong>

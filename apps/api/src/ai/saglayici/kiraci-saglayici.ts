@@ -9,6 +9,7 @@ import { TanimsizAiProvider } from "./tanimsiz-ai.provider";
 import { AiProviderFactory, type TenantAiYapilandirma } from "./ai-provider.factory";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "../ayarlar/ai-aktarim-politikasi";
 import { AiBosYanitHatasi } from './ai-bos-yanit';
+import { AiSinirHatasi, buAyMaliyeti, butceDenetle, kiraciButceKurali, maliyetHesapla, type ButceKurali } from "./ai-butce";
 
 /** AI-11: kiracının API anahtarı şifreli saklanır; ekranda yalnız son 4 karakter. */
 export const apiAnahtariSifrele = (anahtar: string | null | undefined) => hassasSifrele(anahtar?.trim() || null);
@@ -37,27 +38,30 @@ export const ONAY_YOK_MESAJI =
 /** Türkiye gününe göre bugünün tarihi (DATE kolonu için). */
 const bugunGunu = () => new Date(`${new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" })}T00:00:00Z`);
 
+type Izleyici = (islem: string, baslangic: number, kullanim?: { girisToken?: number; cikisToken?: number }, hata?: unknown, tahmin?: { girdi: unknown; cikti: unknown }) => Promise<void>;
+
 /**
  * AI-15: her model çağrısından önce kiracının günlük toplamı sınırla
- * karşılaştırılır, sonra kullanıcı + özellik sayacı artırılır.
+ * karşılaştırılır, sonra kullanıcı + özellik sayacı artırılır. AI-28: aylık
+ * bütçe (ve platform anahtarında platform tavanı) da aynı anda denetlenir.
  */
 class SayacliSaglayici implements IAiProvider {
   constructor(
     private readonly temel: IAiProvider,
     private readonly say: () => Promise<void>,
-    private readonly izle: (islem: string, baslangic: number, kullanim?: { girisToken?: number; cikisToken?: number }, hata?: unknown) => Promise<void>,
+    private readonly izle: Izleyici,
   ) {}
   get saglayiciAdi() { return this.temel.saglayiciAdi; }
   get modelAdi() { return this.temel.modelAdi; }
   get sonKullanim() { return this.temel.sonKullanim; }
-  private async olc<T>(islem: string, calistir: () => Promise<T>): Promise<T> {
+  private async olc<T>(islem: string, girdi: unknown, calistir: () => Promise<T>): Promise<T> {
     await this.say();
     const baslangic = Date.now();
     const oncekiKullanim = this.temel.sonKullanim;
     const yeniKullanim = () => this.temel.sonKullanim !== oncekiKullanim ? this.temel.sonKullanim : undefined;
     try {
       const sonuc = await calistir();
-      await this.izle(islem, baslangic, yeniKullanim());
+      await this.izle(islem, baslangic, yeniKullanim(), undefined, { girdi, cikti: sonuc });
       return sonuc;
     } catch (hata) {
       await this.izle(islem, baslangic, yeniKullanim(), hata);
@@ -65,17 +69,17 @@ class SayacliSaglayici implements IAiProvider {
     }
   }
   async yapilandirilmisUretim<T>(girdi: AiMultimodalGirdi, sema: z.ZodType<T>): Promise<T> {
-    return this.olc("yapilandirilmis_uretim", () => this.temel.yapilandirilmisUretim(girdi, sema));
+    return this.olc("yapilandirilmis_uretim", girdi, () => this.temel.yapilandirilmisUretim(girdi, sema));
   }
   async metinUret(girdi: AiMultimodalGirdi): Promise<string> {
-    return this.olc("metin", () => this.temel.metinUret(girdi));
+    return this.olc("metin", girdi, () => this.temel.metinUret(girdi));
   }
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
-    return this.olc("aracli_sohbet", () => this.temel.aracliSohbet(girdi));
+    return this.olc("aracli_sohbet", girdi, () => this.temel.aracliSohbet(girdi));
   }
 }
 
-async function cagriSay(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, sinir: number): Promise<void> {
+async function cagriSay(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, sinir: number, butce: ButceKurali): Promise<void> {
   const userId = baglamAl()?.userId;
   if (!userId) throw new Error("Yapay zekâ çağrısı kullanıcı bağlamı olmadan sayılamaz");
   const gun = bugunGunu();
@@ -83,8 +87,9 @@ async function cagriSay(prisma: PrismaService, tenantId: string, ozellik: AiOzel
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${tenantId}:${gun.toISOString().slice(0, 10)}`}, 0))`;
     const toplam = await tx.aiKullanim.aggregate({ where: { tenantId, gun }, _sum: { cagri: true } });
     if ((toplam._sum.cagri ?? 0) >= sinir) {
-      throw new HttpException(`Günlük yapay zekâ çağrı sınırına (${sinir}) ulaşıldı. Yönetici Ayarlar → Yapay Zeka ekranından sınırı değiştirebilir.`, 429);
+      throw new AiSinirHatasi(`Günlük yapay zekâ çağrı sınırına (${sinir}) ulaşıldı. Yönetici Ayarlar → Yapay Zeka ekranından sınırı değiştirebilir.`);
     }
+    if (butce.sinirUsd !== null) butceDenetle(butce, await buAyMaliyeti(tx, tenantId));
     await tx.aiKullanim.upsert({
       where: { tenantId_gun_userId_ozellik: { tenantId, gun, userId, ozellik } },
       create: { tenantId, gun, userId, ozellik, cagri: 1 },
@@ -131,22 +136,22 @@ export async function kiraciSaglayicisi(
   }
   if (temel.saglayiciAdi === "tanimsiz") return { saglayici: temel, ozelTalimatlar };
   const sinir = ayar?.gunlukCagriSiniri ?? VARSAYILAN_GUNLUK_SINIR;
-  const izle = async (islem: string, baslangic: number, kullanim?: { girisToken?: number; cikisToken?: number }, hata?: unknown) => {
+  // AI-31: kiracı kendi anahtarını girmemişse dış sağlayıcı çağrısını platform öder.
+  const platformAnahtari = !ayar?.apiKey?.trim() && DIS_SAGLAYICILAR.includes(temel.saglayiciAdi);
+  const butce = await prisma.tenantIslem(tenantId, (tx) => kiraciButceKurali(tx, tenantId, ayar, platformAnahtari));
+  const izle: Izleyici = async (islem, baslangic, kullanim, hata, tahmin) => {
     const userId = baglamAl()?.userId;
     if (!userId) return;
     const hataSinifi = hata instanceof AiBosYanitHatasi ? hata.telemetriSinifi : hata instanceof HttpException ? `HTTP_${hata.getStatus()}` : hata instanceof Error ? hata.name.slice(0, 100) : hata ? "BilinmeyenHata" : null;
-    const girisFiyati = ayar?.girisTokenMilyonUsd?.toNumber() ?? null;
-    const cikisFiyati = ayar?.cikisTokenMilyonUsd?.toNumber() ?? null;
-    const maliyetUsd = kullanim?.girisToken !== undefined && kullanim?.cikisToken !== undefined && girisFiyati !== null && cikisFiyati !== null
-      ? (kullanim.girisToken * girisFiyati + kullanim.cikisToken * cikisFiyati) / 1_000_000
-      : null;
+    // Başarısız çağrıda yalnız sağlayıcının bildirdiği token ücretlenir; tahmin yapılmaz.
+    const maliyet = maliyetHesapla(butce.fiyat, kullanim, tahmin ?? null);
     await prisma.tenantIslem(tenantId, (tx) => tx.aiCagriIz.create({ data: {
       tenantId, userId, ozellik: secenek.ozellik, saglayici: temel.saglayiciAdi,
       model: temel.modelAdi ?? null, islem, sureMs: Math.max(0, Date.now() - baslangic), basarili: !hata, hataSinifi,
-      girisToken: kullanim?.girisToken ?? null, cikisToken: kullanim?.cikisToken ?? null, maliyetUsd,
+      girisToken: maliyet.girisToken, cikisToken: maliyet.cikisToken, maliyetUsd: maliyet.maliyetUsd, maliyetTahmini: maliyet.tahmini,
     } })).catch(() => undefined);
   };
-  return { saglayici: new SayacliSaglayici(temel, () => cagriSay(prisma, tenantId, secenek.ozellik, sinir), izle), ozelTalimatlar };
+  return { saglayici: new SayacliSaglayici(temel, () => cagriSay(prisma, tenantId, secenek.ozellik, sinir, butce), izle), ozelTalimatlar };
 }
 
 export const VARSAYILAN_GUNLUK_SINIR = 1000;

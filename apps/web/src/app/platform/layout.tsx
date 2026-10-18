@@ -11,6 +11,7 @@ const MENU = [
   { href: "/platform/tablolar", baslik: "Yürürlükteki değerler" },
   { href: "/platform/talepler", baslik: "Talepler" },
   { href: "/platform/denetim", baslik: "Denetim izi" },
+  { href: "/platform/yapay-zeka", baslik: "Yapay zekâ tavanı" },
 ];
 
 /**

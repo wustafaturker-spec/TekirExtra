@@ -8,6 +8,7 @@ import { aktifBaglam } from "../../core/istek-baglami";
 import { hassasCoz } from "../../personel/personel-hassas";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "./ai-aktarim-politikasi";
 import { istanbulAyBaslangici } from "../ai-zaman";
+import { kiraciButceKurali, platformAnahtariMi } from "../saglayici/ai-butce";
 
 export interface TenantAiAyariGirdi {
   saglayici?: string;
@@ -139,12 +140,19 @@ export class TenantAiService {
       const girisFiyati = girdi.girisTokenMilyonUsd !== undefined ? girdi.girisTokenMilyonUsd : mevcut?.girisTokenMilyonUsd?.toNumber() ?? null;
       const cikisFiyati = girdi.cikisTokenMilyonUsd !== undefined ? girdi.cikisTokenMilyonUsd : mevcut?.cikisTokenMilyonUsd?.toNumber() ?? null;
       const butce = girdi.aylikMaliyetButcesiUsd !== undefined ? girdi.aylikMaliyetButcesiUsd : mevcut?.aylikMaliyetButcesiUsd?.toNumber() ?? null;
-      if (butce !== null && (girisFiyati === null || cikisFiyati === null)) throw new BadRequestException("Aylık bütçe takibi için giriş ve çıkış token fiyatlarını da tanımlayın.");
 
       // Maske geri geldiyse anahtar değişmemiştir; yeni anahtar şifrelenerek saklanır (AI-11).
       let yeniApiKey: string | null | undefined = girdi.apiKey === undefined ? undefined : apiAnahtariSifrele(girdi.apiKey);
       if (girdi.apiKey && maskeliMi(girdi.apiKey)) {
         yeniApiKey = mevcut?.apiKey ? apiAnahtariSifrele(hassasCoz(mevcut.apiKey)) : null;
+      }
+
+      // AI-31: platform anahtarında fiyat platformdan gelir ve bütçe platform tavanını aşamaz.
+      const platformAnahtari = platformAnahtariMi({ saglayici: yeniSaglayici, apiKey: yeniApiKey !== undefined ? yeniApiKey : mevcut?.apiKey ?? null });
+      if (butce !== null && !platformAnahtari && (girisFiyati === null || cikisFiyati === null)) throw new BadRequestException("Aylık bütçe takibi için giriş ve çıkış token fiyatlarını da tanımlayın.");
+      if (butce !== null && platformAnahtari) {
+        const { platformTavaniUsd } = await kiraciButceKurali(tx, tenantId, null, true);
+        if (platformTavaniUsd !== null && butce > platformTavaniUsd) throw new BadRequestException(`Aylık bütçe, paketinizin platform tavanını (${platformTavaniUsd} USD) aşamaz.`);
       }
 
       return tx.tenantAiAyari.upsert({
@@ -360,10 +368,10 @@ export class TenantAiService {
   async kullanim(tenantId: string) {
     const baslangic = new Date(Date.now() - 30 * 86_400_000);
     const ayBaslangici = istanbulAyBaslangici();
-    const [satirlar, ayar, izler, ayMaliyeti] = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const [satirlar, ayar, izler, ayMaliyeti, tahminiCagri] = await this.prisma.tenantIslem(tenantId, (tx) =>
       Promise.all([
         tx.aiKullanim.groupBy({ by: ["gun", "ozellik"], where: { tenantId, gun: { gte: baslangic } }, _sum: { cagri: true }, orderBy: { gun: "desc" } }),
-        tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { gunlukCagriSiniri: true, telemetriSaklamaGun: true, sohbetSaklamaGun: true, telemetriHataEsigiYuzde: true, telemetriGecikmeEsigiMs: true, girisTokenMilyonUsd: true, cikisTokenMilyonUsd: true, aylikMaliyetButcesiUsd: true } }),
+        tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { gunlukCagriSiniri: true, telemetriSaklamaGun: true, sohbetSaklamaGun: true, telemetriHataEsigiYuzde: true, telemetriGecikmeEsigiMs: true, girisTokenMilyonUsd: true, cikisTokenMilyonUsd: true, aylikMaliyetButcesiUsd: true, saglayici: true, apiKey: true } }),
         tx.aiCagriIz.groupBy({
           by: ["userId", "ozellik", "saglayici", "model", "basarili"],
           where: { tenantId, createdAt: { gte: baslangic } },
@@ -373,8 +381,10 @@ export class TenantAiService {
           orderBy: [{ userId: "asc" }, { saglayici: "asc" }, { ozellik: "asc" }],
         }),
         tx.aiCagriIz.aggregate({ where: { tenantId, createdAt: { gte: ayBaslangici } }, _sum: { maliyetUsd: true } }),
+        tx.aiCagriIz.count({ where: { tenantId, createdAt: { gte: ayBaslangici }, maliyetTahmini: true } }),
       ]),
     );
+    const butce = await this.prisma.tenantIslem(tenantId, (tx) => kiraciButceKurali(tx, tenantId, ayar, platformAnahtariMi(ayar)));
     const kullaniciIdleri = [...new Set(izler.map((x) => x.userId))];
     const kullanicilar = kullaniciIdleri.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findMany({ where: { tenantId, id: { in: kullaniciIdleri } }, select: { id: true, adSoyad: true } })) : [];
     const kullaniciAdlari = new Map(kullanicilar.map((x) => [x.id, x.adSoyad]));
@@ -389,7 +399,15 @@ export class TenantAiService {
         aylikUsd: ayar?.aylikMaliyetButcesiUsd?.toNumber() ?? null,
         girisMilyonTokenUsd: ayar?.girisTokenMilyonUsd?.toNumber() ?? null,
         cikisMilyonTokenUsd: ayar?.cikisTokenMilyonUsd?.toNumber() ?? null,
-        tahminUyarisi: "Kayıtlı sağlayıcı/model için yöneticinin girdiği fiyatlarla hesaplanır; sağlayıcı faturasıyla birebir mutabakat garantisi vermez.",
+        // AI-28…31: uygulanan sınır ve maliyetin hangi fiyatla ölçüldüğü.
+        platformAnahtari: butce.platformAnahtari,
+        platformTavaniUsd: butce.platformTavaniUsd,
+        uygulananSinirUsd: butce.sinirUsd,
+        olculebilir: butce.sinirUsd === null || butce.fiyat !== null,
+        tahminiCagri,
+        tahminUyarisi: butce.platformAnahtari
+          ? "Platform anahtarıyla yapılan çağrılar platformun fiyatlarıyla hesaplanır; girdiğiniz token fiyatları kullanılmaz."
+          : "Kayıtlı sağlayıcı/model için yöneticinin girdiği fiyatlarla hesaplanır; sağlayıcı faturasıyla birebir mutabakat garantisi vermez.",
       },
       telemetriAyarlari: {
         saklamaGun: ayar?.telemetriSaklamaGun ?? 90,

@@ -3,7 +3,8 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
 import { baglamlaCalistir } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
-import { istanbulAyBaslangici } from "../ai-zaman";
+import { istanbulAyBaslangici, trSimdi } from "../ai-zaman";
+import { buAyMaliyeti, kiraciButceKurali, platformAnahtariMi } from "../saglayici/ai-butce";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
 const IDEMPOTENCY_SAKLAMA_GUN = 7;
@@ -40,13 +41,15 @@ export class AiTelemetriBakimService implements OnModuleInit, OnModuleDestroy {
 
   async tenantBakim(tenantId: string, simdi = new Date()): Promise<{ silinen: number; silinenIdempotency: number; silinenSohbetMesaji: number; silinenOturum: number; silinenOnay: number; silinenKullanim: number; toplam: number; hataOrani: number; ortalamaSureMs: number }> {
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const ayar = await tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { telemetriSaklamaGun: true, sohbetSaklamaGun: true, aylikMaliyetButcesiUsd: true, telemetriHataEsigiYuzde: true, telemetriGecikmeEsigiMs: true } });
+      const ayar = await tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { telemetriSaklamaGun: true, sohbetSaklamaGun: true, aylikMaliyetButcesiUsd: true, telemetriHataEsigiYuzde: true, telemetriGecikmeEsigiMs: true, saglayici: true, apiKey: true, girisTokenMilyonUsd: true, cikisTokenMilyonUsd: true } });
       const saklamaGun = ayar?.telemetriSaklamaGun ?? 90;
       const saklamaSonu = new Date(simdi.getTime() - saklamaGun * 86_400_000);
       const onaySaklamaSonu = new Date(simdi.getTime() - ONAY_KAYDI_SAKLAMA_GUN * 86_400_000);
       const idempotencySonu = new Date(simdi.getTime() - IDEMPOTENCY_SAKLAMA_GUN * 86_400_000);
       const ayBaslangici = istanbulAyBaslangici(simdi);
-      const cagriSaklamaSonu = ayar?.aylikMaliyetButcesiUsd != null && ayBaslangici < saklamaSonu ? ayBaslangici : saklamaSonu;
+      // Bütçe ya da platform tavanı varsa bu ayın izleri harcama hesabı için saklanır.
+      const butce = await kiraciButceKurali(tx, tenantId, ayar, platformAnahtariMi(ayar));
+      const cagriSaklamaSonu = butce.sinirUsd !== null && ayBaslangici < saklamaSonu ? ayBaslangici : saklamaSonu;
       const sohbetSonu = ayar?.sohbetSaklamaGun != null ? new Date(simdi.getTime() - ayar.sohbetSaklamaGun * 86_400_000) : null;
       await tx.aiOnayTalebi.updateMany({ where: { tenantId, durum: "bekliyor", gecerlilikSonu: { lte: simdi } }, data: { durum: "suresi_doldu", kararAt: simdi } });
       await tx.aiIcgoru.deleteMany({ where: { tenantId, hesaplandiAt: { lt: new Date(simdi.getTime() - ICGORU_SAKLAMA_GUN * 86_400_000) } } });
@@ -63,7 +66,8 @@ export class AiTelemetriBakimService implements OnModuleInit, OnModuleDestroy {
       const toplam = gruplar.reduce((t, x) => t + x._count._all, 0);
       const hata = gruplar.filter((x) => !x.basarili).reduce((t, x) => t + x._count._all, 0);
       const ortalamaSureMs = toplam ? Math.round(gruplar.reduce((t, x) => t + (x._avg.sureMs ?? 0) * x._count._all, 0) / toplam) : 0;
-      return { silinen: silinen.count, silinenIdempotency: silinenIdempotency.count, silinenSohbetMesaji: silinenSohbetMesaji.count, silinenOturum: silinenOturum.count, silinenOnay: silinenOnay.count, silinenKullanim: silinenKullanim.count, toplam, hataOrani: toplam ? Math.round((hata / toplam) * 100) : 0, ortalamaSureMs, hataEsigi: ayar?.telemetriHataEsigiYuzde ?? 20, gecikmeEsigi: ayar?.telemetriGecikmeEsigiMs ?? 10_000 };
+      const buAyUsd = butce.sinirUsd !== null ? await buAyMaliyeti(tx, tenantId, simdi) : 0;
+      return { butce, buAyUsd, silinen: silinen.count, silinenIdempotency: silinenIdempotency.count, silinenSohbetMesaji: silinenSohbetMesaji.count, silinenOturum: silinenOturum.count, silinenOnay: silinenOnay.count, silinenKullanim: silinenKullanim.count, toplam, hataOrani: toplam ? Math.round((hata / toplam) * 100) : 0, ortalamaSureMs, hataEsigi: ayar?.telemetriHataEsigiYuzde ?? 20, gecikmeEsigi: ayar?.telemetriGecikmeEsigiMs ?? 10_000 };
     });
 
     const acik: string[] = [];
@@ -75,7 +79,27 @@ export class AiTelemetriBakimService implements OnModuleInit, OnModuleDestroy {
       acik.push("yapay_zeka:telemetri:gecikme");
       await this.bildirimler.uret({ tur: "yapay_zeka", onem: "uyari", baslik: "AI yanıt süresi eşiği aşıldı", aciklama: `Son 1 saatin ortalama AI yanıt süresi ${sonuc.ortalamaSureMs} ms (eşik: ${sonuc.gecikmeEsigi} ms).`, birlesimAnahtari: acik.at(-1)!, kaynakTur: "ai_telemetri", hedefYol: "/panel/ayarlar/yapay-zeka", roller: ["yonetici"] });
     }
-    await this.bildirimler.kapatEksikleri("yapay_zeka", acik, ["yapay_zeka:telemetri:"]);
+    // AI-29: bütçenin %80'i ve tamamı; anahtar ayı taşır, yeni ayda eskiler kapanır.
+    const { butce, buAyUsd } = sonuc;
+    if (butce.sinirUsd !== null) {
+      const ay = trSimdi(simdi).gun.slice(0, 7);
+      const tutar = (x: number) => `${x.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+      const kaynak = butce.platformTavaniUsd === butce.sinirUsd ? "platform tavanı" : "aylık bütçe";
+      if (!butce.fiyat) {
+        acik.push("yapay_zeka:butce:fiyat");
+        await this.bildirimler.uret({ tur: "yapay_zeka", onem: "kritik", baslik: "AI bütçesi ölçülemiyor", aciklama: butce.platformAnahtari ? "Platform yapay zekâ fiyatları tanımlı olmadığından tavan uygulanamıyor; yapay zekâ çağrıları durduruldu. Destek ekibine bildirin." : "Aylık bütçe tanımlı ama token fiyatları girilmemiş; yapay zekâ çağrıları durduruldu. Fiyatları Ayarlar → Yapay Zeka ekranından girin.", birlesimAnahtari: acik.at(-1)!, kaynakTur: "ai_telemetri", hedefYol: "/panel/ayarlar/yapay-zeka", roller: ["yonetici"] });
+      } else {
+        if (buAyUsd >= butce.sinirUsd * 0.8 && buAyUsd < butce.sinirUsd) {
+          acik.push(`yapay_zeka:butce:80:${ay}`);
+          await this.bildirimler.uret({ tur: "yapay_zeka", onem: "uyari", baslik: "AI bütçesinin %80'i kullanıldı", aciklama: `Bu ay ${tutar(buAyUsd)} harcandı (${kaynak}: ${tutar(butce.sinirUsd)}). Sınıra ulaşılınca yapay zekâ özellikleri ay sonuna kadar durur.`, birlesimAnahtari: acik.at(-1)!, kaynakTur: "ai_telemetri", hedefYol: "/panel/ayarlar/yapay-zeka", roller: ["yonetici"] });
+        }
+        if (buAyUsd >= butce.sinirUsd) {
+          acik.push(`yapay_zeka:butce:100:${ay}`);
+          await this.bildirimler.uret({ tur: "yapay_zeka", onem: "kritik", baslik: "AI bütçesi doldu", aciklama: `Bu ay ${tutar(buAyUsd)} harcandı (${kaynak}: ${tutar(butce.sinirUsd)}). Yapay zekâ özellikleri yeni ayda kendiliğinden açılır.`, birlesimAnahtari: acik.at(-1)!, kaynakTur: "ai_telemetri", hedefYol: "/panel/ayarlar/yapay-zeka", roller: ["yonetici"] });
+        }
+      }
+    }
+    await this.bildirimler.kapatEksikleri("yapay_zeka", acik, ["yapay_zeka:telemetri:", "yapay_zeka:butce:"]);
     return { silinen: sonuc.silinen, silinenIdempotency: sonuc.silinenIdempotency, silinenSohbetMesaji: sonuc.silinenSohbetMesaji, silinenOturum: sonuc.silinenOturum, silinenOnay: sonuc.silinenOnay, silinenKullanim: sonuc.silinenKullanim, toplam: sonuc.toplam, hataOrani: sonuc.hataOrani, ortalamaSureMs: sonuc.ortalamaSureMs };
   }
 

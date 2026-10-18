@@ -12,6 +12,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
   const mockTx = {
     aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: 0 } }), upsert: vi.fn() },
     aiCagriIz: { groupBy: vi.fn().mockResolvedValue([]) },
+    platformAiTavani: { findUnique: vi.fn().mockResolvedValue(null) },
     tenantAiAyari: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -114,6 +115,19 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
       girisTokenMilyonUsd: 0.15, cikisTokenMilyonUsd: 0.6, aylikMaliyetButcesiUsd: 50,
     });
     await expect(service.ayarKaydet(mockTenantId, { girisTokenMilyonUsd: -1 })).rejects.toThrow(/0 ile 1.000.000/);
+  });
+
+  it("10. Platform anahtarında bütçe fiyatsız tanımlanır ama platform tavanını aşamaz (AI-31)", async () => {
+    vi.stubEnv("AI_PROVIDER", "gemini");
+    vi.stubEnv("AI_PLATFORM_AYLIK_TAVAN_USD", "20");
+    mockTx.tenantAiAyari.findUnique.mockResolvedValue({ saglayici: "varsayilan", apiKey: null });
+    await expect(service.ayarKaydet(mockTenantId, { aylikMaliyetButcesiUsd: 25 })).rejects.toThrow(/platform tavanını \(20 USD\) aşamaz/);
+    await service.ayarKaydet(mockTenantId, { aylikMaliyetButcesiUsd: 15 });
+    expect(mockTx.tenantAiAyari.upsert.mock.calls.at(-1)?.[0].update).toMatchObject({ aylikMaliyetButcesiUsd: 15 });
+    mockTx.platformAiTavani.findUnique.mockResolvedValueOnce({ aylikTavanUsd: 30 });
+    await service.ayarKaydet(mockTenantId, { aylikMaliyetButcesiUsd: 25 });
+    // Kendi anahtarına geçen kiracıda tavan yok, fiyat zorunlu.
+    await expect(service.ayarKaydet(mockTenantId, { apiKey: "AIza-kiraci", aylikMaliyetButcesiUsd: 500 })).rejects.toThrow(/token fiyatlarını da tanımlayın/);
   });
 
   it("sohbet saklama ayarı açıkça etkinleşir, null ile kapanır ve kısmi güncellemede korunur", async () => {

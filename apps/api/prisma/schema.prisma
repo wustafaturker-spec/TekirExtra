@@ -249,6 +249,7 @@ model Tenant {
   aiVeriAktarimOnaylari AiVeriAktarimOnayi[]
   belgeOcrKayitlari     BelgeOcrKaydi[]
   aiAyari               TenantAiAyari?
+  aiTavani              PlatformAiTavani?
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
   aiIcgoruleri          AiIcgoru[]
@@ -5678,9 +5679,25 @@ model PlatformKullanici {
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
   hazirlanan MevzuatDegisiklik[] @relation("Hazirlayan")
+  aiTavanlari PlatformAiTavani[]
   yayinlanan MevzuatDegisiklik[] @relation("Yayinlayan")
 
   @@map("platform_kullanicilari")
+}
+
+/// AI-31: platform anahtarıyla çalışan kiracının aylık yapay zekâ tavanı (USD).
+/// Satır yoksa ortam varsayılanı (AI_PLATFORM_AYLIK_TAVAN_USD) geçerlidir.
+/// Yalnız platform ekibi yazar; kiracı kendi satırını okur.
+model PlatformAiTavani {
+  tenantId      String   @id @map("tenant_id") @db.Uuid
+  aylikTavanUsd Decimal  @map("aylik_tavan_usd") @db.Decimal(12, 2)
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  guncellendiAt DateTime @default(now()) @map("guncellendi_at")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  guncelleyen PlatformKullanici? @relation(fields: [guncelleyenId], references: [id])
+
+  @@map("platform_ai_tavanlari")
 }
 
 enum MevzuatDegisiklikDurum {
@@ -6028,6 +6045,8 @@ model AiCagriIz {
   girisToken Int?     @map("giris_token")
   cikisToken Int?     @map("cikis_token")
   maliyetUsd Decimal? @map("maliyet_usd") @db.Decimal(12, 8)
+  /// AI-30: sağlayıcı token sayısı döndürmediğinde maliyet metin uzunluğundan tahmin edildi.
+  maliyetTahmini Boolean @default(false) @map("maliyet_tahmini")
   createdAt  DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

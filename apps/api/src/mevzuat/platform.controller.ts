@@ -6,6 +6,7 @@ import { PlatformUcu, Public } from "../auth/public.decorator";
 import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
+import { PlatformAiTavanService } from "./platform-ai-tavan.service";
 
 const tarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalıdır");
 const degisiklikSemasi = z.object({
@@ -159,5 +160,24 @@ export class PlatformMevzuatController {
     const { durum, cozumNotu } = ayristir(talepSemasi, govde);
     await this.mevzuat.talepGuncelle(id, durum, cozumNotu);
     return { durum: "ok" };
+  }
+}
+
+const tavanSemasi = z.object({ aylikTavanUsd: z.number().min(0, "Tavan negatif olamaz").max(1_000_000, "Tavan en çok 1.000.000 USD").nullable() });
+
+/** AI-31: platform anahtarıyla çalışan kiracıların aylık yapay zekâ tavanı. */
+@PlatformUcu()
+@Controller("platform/ai")
+export class PlatformAiController {
+  constructor(private readonly tavan: PlatformAiTavanService) {}
+
+  @Get("kiracilar")
+  listele() {
+    return this.tavan.listele();
+  }
+
+  @Put("kiracilar/:tenantId/tavan")
+  tavanYaz(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
+    return this.tavan.tavanYaz(tenantId, ayristir(tavanSemasi, govde).aylikTavanUsd);
   }
 }

@@ -11,12 +11,16 @@ import { UcCagirici } from "../ajan/uc-cagirici";
 import { trSimdi, type TrSimdi } from "../ai-zaman";
 import { AiIcgoruService } from "../icgoru/ai-icgoru.service";
 import { AnalizYapilamadi, icgoruMetni } from "../icgoru/nakit-tahsilat-analizi";
+import { AiSinirHatasi } from "../saglayici/ai-butce";
 
 export { trSimdi, type TrSimdi };
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const AZAMI_DENEME = 3;
 const SAHIPLIK_ZAMAN_ASIMI_MS = 15 * 60 * 1000;
+
+/** AI-30: bütçe ya da günlük sınır; aynı gün yeniden denemek sonucu değiştirmez. */
+class GorevSinirHatasi extends Error {}
 
 /** AI-16: saat geçmiş, gün listedeyse (boş = her gün) ve bugün henüz tetiklenmediyse. */
 export function gorevZamaniGeldiMi(g: Pick<TenantAiGorev, "aktif" | "zamanlamaCron" | "gunler" | "sonTetikGunu">, simdi: TrSimdi): boolean {
@@ -56,12 +60,13 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Sahibin bağlamında çalıştırır; sonucu kaydeder. `bildir` zamanlanmış çalışmada sonucu bildirime çevirir. */
-  async yurut(tenantId: string, gorev: TenantAiGorev, secenek: { bildir?: boolean } = {}): Promise<{ metin: string; basarili: boolean }> {
+  async yurut(tenantId: string, gorev: TenantAiGorev, secenek: { bildir?: boolean } = {}): Promise<{ metin: string; basarili: boolean; sinir?: boolean }> {
     const sahip = gorev.userId
       ? await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findFirst({ where: { id: gorev.userId!, aktif: true }, select: { id: true, rol: true } }))
       : null;
     let metin: string;
     let basarili = true;
+    let sinir = false;
     let onem: "bilgi" | "uyari" | "kritik" = "bilgi";
     const nakitTahsilat = gorev.tur === "NAKIT_TAHSILAT";
     if (!sahip) {
@@ -84,6 +89,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
       } catch (hata) {
         metin = `Çalışmadı: ${hata instanceof Error ? hata.message : String(hata)}`;
         basarili = false;
+        sinir = hata instanceof AiSinirHatasi;
       }
     }
     await this.prisma.tenantIslem(tenantId, (tx) => tx.tenantAiGorev.update({ where: { id: gorev.id }, data: { sonCalisma: new Date(), sonSonuc: metin } }));
@@ -96,10 +102,10 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         }),
       ).catch((h: unknown) => this.logger.warn(`Görev bildirimi üretilemedi: ${String(h)}`));
     }
-    return { metin, basarili };
+    return { metin, basarili, ...(sinir ? { sinir } : {}) };
   }
 
-  private async sonHatayiBildir(gorev: TenantAiGorev, mesaj: string): Promise<void> {
+  private async sonHatayiBildir(gorev: TenantAiGorev, mesaj: string, sinirda = false): Promise<void> {
     const kullanicilar = await this.prisma.tenantIslem(gorev.tenantId, (tx) =>
       tx.user.findMany({ where: { aktif: true, OR: [...(gorev.userId ? [{ id: gorev.userId }] : []), { rol: "yonetici" }] }, select: { id: true, rol: true } }),
     );
@@ -110,7 +116,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         tur: "yapay_zeka",
         onem: "kritik",
         baslik: `AI görevi çalıştırılamadı: ${gorev.ad}`,
-        aciklama: `Üç deneme başarısız oldu. ${mesaj}`.slice(0, 1500),
+        aciklama: `${sinirda ? "Yapay zekâ sınırına ulaşıldığı için yeniden denenmedi." : "Üç deneme başarısız oldu."} ${mesaj}`.slice(0, 1500),
         birlesimAnahtari: `yapay_zeka:gorev:hata:${gorev.id}:${trSimdi().gun}`,
         kaynakTur: "ai_gorev",
         kaynakRef: gorev.id,
@@ -189,18 +195,20 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
               continue;
             }
             const sonuc = await this.yurut(g.tenantId, g, { bildir: true });
-            if (!sonuc.basarili) throw new Error(sonuc.metin);
+            if (!sonuc.basarili) throw sonuc.sinir ? new GorevSinirHatasi(sonuc.metin) : new Error(sonuc.metin);
             await yonetim.tenantAiGorevCalisma.update({ where: { id: calisma.id }, data: { durum: "basarili", bittiAt: new Date(), sonuc: sonuc.metin, sonrakiDenemeAt: null } });
             await yonetim.tenantAiGorev.update({ where: { id: g.id }, data: { sonTetikGunu: new Date(`${simdi.gun}T00:00:00Z`) } });
           } catch (hata) {
             const mesaj = hata instanceof Error ? hata.message : String(hata);
-            const sonDeneme = calisma.deneme >= AZAMI_DENEME;
+            const sinirda = hata instanceof GorevSinirHatasi;
+            const sonDeneme = sinirda || calisma.deneme >= AZAMI_DENEME;
             await yonetim.tenantAiGorevCalisma.update({
               where: { id: calisma.id },
-              data: { durum: "hata", bittiAt: new Date(), hata: mesaj.slice(0, 2000), sonrakiDenemeAt: sonDeneme ? null : new Date(Date.now() + BES_DAKIKA_MS * calisma.deneme) },
+              // Sınır hatasında deneme hakkı bitmiş sayılır; çalışma bugün yeniden sahiplenilmez.
+              data: { durum: "hata", bittiAt: new Date(), hata: mesaj.slice(0, 2000), sonrakiDenemeAt: sonDeneme ? null : new Date(Date.now() + BES_DAKIKA_MS * calisma.deneme), ...(sinirda ? { deneme: AZAMI_DENEME } : {}) },
             });
             if (sonDeneme) await yonetim.tenantAiGorev.update({ where: { id: g.id }, data: { sonTetikGunu: new Date(`${simdi.gun}T00:00:00Z`) } });
-            if (sonDeneme) await this.sonHatayiBildir(g, mesaj);
+            if (sonDeneme) await this.sonHatayiBildir(g, mesaj, sinirda);
             this.logger.error(`AI görevi çalıştırılamadı (${g.id}, deneme ${calisma.deneme}/${AZAMI_DENEME}): ${mesaj}`);
           }
         }

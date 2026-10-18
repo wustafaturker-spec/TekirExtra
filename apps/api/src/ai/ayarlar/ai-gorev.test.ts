@@ -5,6 +5,7 @@ import { TenantAiService } from "./tenant-ai.service";
 import { AiAjanService } from "../ajan/ai-ajan.service";
 import { AracYurutucu } from "../ajan/arac-yurutucu";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
+import { AiSinirHatasi } from "../saglayici/ai-butce";
 
 const g = (ek: Record<string, unknown> = {}) => ({
   id: "g1", tenantId: "t", ad: "Sabah özeti", tur: "ASISTAN", tetikleyici: "ZAMANLANMIS", zamanlamaCron: "09:00", gunler: [] as number[],
@@ -66,6 +67,16 @@ describe("görev yürütme (AI-16)", () => {
     const r = await k.y.yurut("t", g({ tur: "NAKIT_TAHSILAT" }) as never, { bildir: true });
     expect(r).toEqual({ basarili: false, metin: "Çalışmadı: hiçbir bölüm görülemiyor." });
     expect(k.bildirimler.uret).not.toHaveBeenCalled();
+  });
+
+  it("bütçe/günlük sınır hatası 'sınır' olarak işaretlenir; diğer hatalar değil (AI-30)", async () => {
+    const k = kur();
+    k.ajan.gorevYurut.mockRejectedValueOnce(new AiSinirHatasi("Bu ayın yapay zekâ bütçesi doldu"));
+    const sinirda = await k.y.yurut("t", g() as never, { bildir: true });
+    expect(sinirda).toEqual({ basarili: false, sinir: true, metin: "Çalışmadı: Bu ayın yapay zekâ bütçesi doldu" });
+    expect(k.bildirimler.uret).not.toHaveBeenCalled();
+    k.ajan.gorevYurut.mockRejectedValueOnce(new Error("bağlantı koptu"));
+    expect(await k.y.yurut("t", g() as never)).toEqual({ basarili: false, metin: "Çalışmadı: bağlantı koptu" });
   });
 
   it("sahibi etkin değilse çalışmaz", async () => {
