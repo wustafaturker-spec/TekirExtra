@@ -41,7 +41,8 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   personel: ["yonetici", "muhasebe", "ik"],
   mevzuat: ["yonetici", "muhasebe"],
   // AI-04: onay talebi yalnız isteyen kullanıcıya düşer (kullaniciIdler).
-  yapay_zeka: [],
+  yapay_zeka: [],  // AI-40/41: teklif takibi bildirimi teklifi gönderen kullanıcıya düşer (kullaniciIdler).
+  teklif: [],
 };
 
 /**
@@ -81,6 +82,8 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   mevzuat: ["mevzuat-eksik:"],
   // AI-04: talep bildirimleri taramada değil, talep karara bağlanınca kapanır.
   yapay_zeka: [],
+  // AI-40/41: takip bildirimleri taramada değil, teklif takip servisinde üretilir.
+  teklif: [],
 };
 
 function gunAnahtari(tarih = new Date()): string {

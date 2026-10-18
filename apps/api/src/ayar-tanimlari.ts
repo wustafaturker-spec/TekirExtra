@@ -9,11 +9,13 @@ import { MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi } from "./core/ayarla
 import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./cari/tahsilat-erisim";
 import { TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi } from "./cari/tahsilat-otomasyon-ayari";
 import { TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi } from "./ai/teklif-talebi/teklif-talebi-ayari";
+import { TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi } from "./belgeler/teklif-takibi/teklif-takip.kurallari";
 
 registerModulAyar(MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi, { surum: 1, mod: "kapali" });
 registerModulAyar(TAHSILAT_MODULU, tahsilatAyariSemasi, { surum: 1, mod: "kapali" });
 registerModulAyar(TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi, { acik: false, sorumluUserId: null, uygulamaIciBildirim: false });
 registerModulAyar(TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi, { acik: false, sorumluUserId: null, acildiAt: null });
+registerModulAyar(TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi, { acik: false, isGunu: 3, gecerlilikUyariGun: 2 });
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi

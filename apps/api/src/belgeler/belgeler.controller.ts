@@ -53,8 +53,10 @@ export class BelgelerController {
     @Query("bitis") bitis?: string,
     @Query("imlec") imlec?: string,
     @Query("faturaBekleyen") faturaBekleyen?: string,
+    /** AI-43: teklif takip durumu (yanit_bekliyor, hatirlatildi, yanit_geldi, kapandi, yok). */
+    @Query("takip") takip?: string,
   ) {
-    return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec, undefined, faturaBekleyen === "1");
+    return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec, undefined, faturaBekleyen === "1", takip);
   }
 
   @Get("sevkiyat-bekleyen-faturalar")

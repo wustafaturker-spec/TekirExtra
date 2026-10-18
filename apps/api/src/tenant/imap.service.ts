@@ -10,6 +10,8 @@ import { EpostaService } from "./eposta.service";
 import { AiService } from "../ai/ai.service";
 import { coz } from "../core/kripto";
 import { otomatikBasliklarMi } from "../ai/teklif-talebi/teklif-talebi.kurallari";
+import { yanitlananKimlikler } from "../belgeler/teklif-takibi/teklif-takip.kurallari";
+import { teklifYanitiniEslestir } from "../belgeler/teklif-takibi/teklif-yaniti";
 
 @Injectable()
 export class ImapService {
@@ -141,9 +143,14 @@ export class ImapService {
                   durum: "yeni",
                   okundu: false,
                   otomatik: otomatikBasliklarMi(parsed.headers),
+                  yanitlananMesajIdleri: yanitlananKimlikler(parsed.inReplyTo, parsed.references),
                 },
               }),
             );
+
+            // AI-39: gönderilmiş teklifin yanıtıysa takip "yanıt geldi" olur (model kullanılmaz).
+            await this.prisma.tenantIslem(tenantId, (tx) => teklifYanitiniEslestir(tx, tenantId, yeniEposta))
+              .catch((hata: unknown) => this.logger.warn(`Teklif yanıtı eşleştirilemedi (${yeniEposta.id}): ${String(hata)}`));
 
             // Ekleri MinIO nesne deposuna yükle ve kaydet
             if (parsed.attachments && parsed.attachments.length > 0) {
@@ -234,6 +241,8 @@ export class ImapService {
             ekler: { select: { id: true, dosyaAdi: true, mimeTuru: true, boyut: true, cikarilanVeri: true } },
             // AI-37: teklif talebi işlem durumu rozeti.
             teklifIslemi: { select: { durum: true, belgeId: true, onayTalebiId: true } },
+            // AI-39: yanıt olduğu teklif.
+            teklifBelge: { select: { id: true, no: true, revizyonNo: true } },
           },
           orderBy: { tarih: "desc" },
           skip: atla,
@@ -262,6 +271,7 @@ export class ImapService {
           cari: { select: { id: true, kod: true, unvan: true, eposta: true, telefon: true } },
           ekler: true,
           teklifIslemi: true,
+          teklifBelge: { select: { id: true, no: true, revizyonNo: true } },
         },
       }),
     );

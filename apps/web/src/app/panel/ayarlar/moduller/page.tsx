@@ -56,6 +56,13 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "acildiAt", etiket: "Açılış zamanı", tip: "gizli" },
     ],
   },
+  teklif_takibi: {
+    baslik: "Teklif Takibi", ikon: "⏰", alanlar: [
+      { ad: "acik", etiket: "Yanıt gelmeyen teklifleri hatırlat", tip: "onay", ipucu: "E-postayla gönderilen (ya da gönderildi olarak işaretlenen) teklife belirlenen sürede yanıt gelmezse teklifi gönderen kullanıcıya bildirim düşer ve carinin CRM görevlerine takip görevi açılır. Kapalıyken de gönderim kaydı tutulur ve gelen yanıt teklifle eşleştirilir. Sistem müşteriye kendiliğinden e-posta göndermez." },
+      { ad: "isGunu", etiket: "Hatırlatma süresi (iş günü)", tip: "sayi", min: 1, max: 30, ipucu: "Hafta sonu ve çalışma takvimindeki tatiller sayılmaz." },
+      { ad: "gecerlilikUyariGun", etiket: "Geçerlilik bitimine kaç iş günü kala uyarılsın", tip: "sayi", min: 0, max: 30 },
+    ],
+  },
   maliyet_kontrolu: {
     baslik: "Satış Maliyet Kontrolü",
     ikon: "🔎",
@@ -134,7 +141,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;

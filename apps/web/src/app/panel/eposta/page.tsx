@@ -73,6 +73,8 @@ interface GelenEposta {
   ekler?: GelenEpostaEk[];
   /** AI-37: teklif talebi işlem durumu. */
   teklifIslemi?: { durum: string } | null;
+  /** AI-39: yanıtı olduğu gönderilmiş teklif. */
+  teklifBelge?: { id: string; no: string | null; revizyonNo: number } | null;
 }
 
 interface ListeYaniti {
@@ -1001,7 +1003,11 @@ export default function GelenEpostalarSayfasi() {
                 </div>
               </div>
 
-              <TeklifTalebiPaneli epostaId={seciliEposta.id} onDegisti={() => void yukle()} />
+              {seciliEposta.teklifBelge ? (
+                <Alert tone="success">Bu e-posta <Link href={`/panel/belgeler?odak=${seciliEposta.teklifBelge.id}`}>{seciliEposta.teklifBelge.no}{seciliEposta.teklifBelge.revizyonNo ? `-R${seciliEposta.teklifBelge.revizyonNo}` : ""}</Link> teklifinin yanıtı; teklif takibi kapandı.</Alert>
+              ) : (
+                <TeklifTalebiPaneli epostaId={seciliEposta.id} onDegisti={() => void yukle()} />
+              )}
 
               {/* İLETİ GÖVDE VE İÇERİĞİ (SCROLL) */}
               <div className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-10 py-5 md:py-8 space-y-6 bg-[#fcfcfd]">

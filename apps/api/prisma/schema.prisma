@@ -251,6 +251,7 @@ model Tenant {
   aiAyari               TenantAiAyari?
   aiTavani              PlatformAiTavani?
   epostaTeklifIslemleri EpostaTeklifIslemi[]
+  teklifTakipleri       TeklifTakibi[]
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
   aiIcgoruleri          AiIcgoru[]
@@ -522,18 +523,55 @@ model GelenEposta {
   masrafId       String?  @map("masraf_id") @db.Uuid
   /// AI-33: otomatik yanıt / bülten / teslim raporu (başlıklardan); teklif talebi olarak işlenmez.
   otomatik       Boolean  @default(false)
+  /// AI-39: yanıtladığı iletilerin kimlikleri (In-Reply-To + References).
+  yanitlananMesajIdleri String[] @default([]) @map("yanitlanan_mesaj_idleri")
+  /// AI-39: yanıt olarak eşleştiği teklif.
+  teklifBelgeId  String?  @map("teklif_belge_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at")
 
   tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cari         CariHesap?          @relation(fields: [cariId], references: [id], onDelete: SetNull)
   ekler        GelenEpostaEk[]
   teklifIslemi EpostaTeklifIslemi?
+  teklifBelge  Belge?              @relation("TeklifYanitlari", fields: [teklifBelgeId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, mesajId])
   @@index([tenantId, tarih])
   @@index([tenantId, gonderenEposta])
   @@index([tenantId, durum])
   @@map("gelen_epostalar")
+}
+
+/// AI-38…43: gönderilen teklifin takibi; teklif başına tek kayıt. Yeniden gönderim
+/// kaydı tazeler (mesaj kimliği eklenir, hatırlatma yeniden kurulur).
+model TeklifTakibi {
+  id                  String    @id @default(uuid()) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  belgeId             String    @unique @map("belge_id") @db.Uuid
+  /// eposta | elle
+  kaynak              String
+  /// yanit_bekliyor | hatirlatildi | yanit_geldi | kapandi
+  durum               String
+  alici               String?
+  mesajIdleri         String[]  @default([]) @map("mesaj_idleri")
+  sorumluUserId       String?   @map("sorumlu_user_id") @db.Uuid
+  gonderildiAt        DateTime  @map("gonderildi_at")
+  gonderimSayisi      Int       @default(1) @map("gonderim_sayisi")
+  hatirlatmaGunu      DateTime  @map("hatirlatma_gunu") @db.Date
+  hatirlatildiAt      DateTime? @map("hatirlatildi_at")
+  gecerlilikUyarisiAt DateTime? @map("gecerlilik_uyarisi_at")
+  yanitEpostaId       String?   @map("yanit_eposta_id") @db.Uuid
+  yanitAt             DateTime? @map("yanit_at")
+  crmGorevId          String?   @map("crm_gorev_id") @db.Uuid
+  kapanisNedeni       String?   @map("kapanis_nedeni")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belge  Belge  @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, durum, hatirlatmaGunu])
+  @@map("teklif_takipleri")
 }
 
 /// AI-32…37: gelen e-postadaki teklif talebinin işlenişi; e-posta başına tek kayıt.
@@ -4385,6 +4423,8 @@ model Belge {
   @@index([tenantId, tur, durum])
   @@index([tenantId, cariId])
   @@map("belgeler")
+  teklifTakibi TeklifTakibi?
+  teklifYanitlari GelenEposta[] @relation("TeklifYanitlari")
 }
 
 enum EirsaliyeDurum {
@@ -5413,6 +5453,8 @@ enum BildirimTuru {
   mevzuat
   /// AI-04: kullanıcının onayını bekleyen yapay zekâ işlemi.
   yapay_zeka
+  /// AI-40/41: gönderilen teklife yanıt yok, geçerlilik bitiyor.
+  teklif
 }
 
 enum BildirimOnemi {

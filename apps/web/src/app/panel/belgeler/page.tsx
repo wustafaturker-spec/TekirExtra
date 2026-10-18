@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
+import { TeklifTakipPaneli, TeklifTakipRozeti } from "@/components/teklif-takip-paneli";
 import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
@@ -156,6 +157,8 @@ interface Belge {
   eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null; aliciKayitsiz?: boolean; geciciHata?: boolean; yenidenDenemeSayisi?: number } | null;
   /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
   faturalamaSuresi?: FaturalamaSuresi | null;
+  /** AI-43: satış teklifinin takip özeti (listede). */
+  teklifTakibi?: { durum: string; gonderildiAt: string; hatirlatmaGunu: string; yanitAt: string | null; gonderimSayisi: number } | null;
 }
 
 /** ISO zaman damgasını `datetime-local` alanının beklediği yerel metne çevirir. */
@@ -240,6 +243,8 @@ function kismiTeslimVar(belge: { tur: string }, hedef: string) {
 
 /** Belge durumu süzgecinde durum değil, "faturalanmayı bekleyen irsaliye" seçimi (EBLG-82). */
 const FATURA_BEKLEYEN = "fatura_bekleyen";
+/** AI-43: "takip:<durum>" süzgeci teklif takip durumuna göre listeler. */
+const TAKIP_ONEKI = "takip:";
 
 const gunTRBicim = (gun: string) => gun.split("-").reverse().join(".");
 
@@ -492,6 +497,7 @@ export default function BelgelerSayfasi() {
       if (turFiltre !== "tumu") parametreler.set("tur", turFiltre);
       if (yonBaglami) parametreler.set("yon", yonBaglami);
       if (durumFiltresi === FATURA_BEKLEYEN) parametreler.set("faturaBekleyen", "1");
+      else if (durumFiltresi?.startsWith(TAKIP_ONEKI)) parametreler.set("takip", durumFiltresi.slice(TAKIP_ONEKI.length));
       else if (durumFiltresi) parametreler.set("durum", durumFiltresi);
       if (imlec) parametreler.set("imlec", imlec);
       if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
@@ -1077,7 +1083,8 @@ export default function BelgelerSayfasi() {
         method: "POST",
         body: JSON.stringify(epostaAdresi.trim() === "" ? {} : { eposta: epostaAdresi.trim() }),
       });
-      setBasari(`${belgeNoGoster(epostaBelgesi)} ${yanit.belge === "ebelge" ? "e-İrsaliye görünümü" : "PDF'i"} ${yanit.alici} adresine gönderildi.`);
+      setBasari(`${belgeNoGoster(epostaBelgesi)} ${yanit.belge === "ebelge" ? "e-İrsaliye görünümü" : "PDF'i"} ${yanit.alici} adresine gönderildi.${epostaBelgesi.tur === "teklif" ? " Teklif yanıt takibine alındı." : ""}`);
+      if (epostaBelgesi.tur === "teklif") void yukle();
       setEpostaBelgesi(null); setEpostaAdresi("");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "E-posta gönderilemedi");
@@ -1097,6 +1104,7 @@ export default function BelgelerSayfasi() {
   const gorunen = belgeler.filter((b) => {
     if (yonBaglami && b.yon !== yonBaglami) return false;
     if (durumFiltresi === FATURA_BEKLEYEN) { if (!b.faturalamaSuresi) return false; }
+    else if (durumFiltresi?.startsWith(TAKIP_ONEKI)) { if (b.teklifTakibi?.durum !== durumFiltresi.slice(TAKIP_ONEKI.length)) return false; }
     else if (durumFiltresi && !durumFiltresi.split(",").includes(b.durum)) return false;
     if (tarihBaslangic && b.tarih < tarihBaslangic) return false;
     if (tarihBitis && b.tarih > tarihBitis) return false;
@@ -1956,6 +1964,9 @@ export default function BelgelerSayfasi() {
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(detay.genelToplam, detay.dovizCinsi)}</span></div>
               <small className="muted">{detay.satirlar.length} kalem</small>
             </div>
+            {detay.tur === "teklif" && detay.yon === "satis" && detay.durum !== "taslak" && (
+              <TeklifTakipPaneli belgeId={detay.id} belgeDurumu={detay.durum} onDegisti={() => void yukle()} />
+            )}
             {detay.faturalamaSuresi && (
               <div className={`invoice-summary${detay.faturalamaSuresi.gecti || detay.faturalamaSuresi.yaklasiyor ? " is-warning" : ""}`}>
                 <h4>Faturalama süresi</h4>
@@ -2152,7 +2163,7 @@ export default function BelgelerSayfasi() {
       <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
         <div className="saved-view-filters">
           <Field label="Yön" htmlFor="belge-yon-filtresi"><Select id="belge-yon-filtresi" value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
-          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="revize_edildi">Revize edildi</option><option value="iptal">İptal</option><option value={FATURA_BEKLEYEN}>Faturalanmayı bekleyen irsaliye</option></Select></Field>
+          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="revize_edildi">Revize edildi</option><option value="iptal">İptal</option><option value={FATURA_BEKLEYEN}>Faturalanmayı bekleyen irsaliye</option><optgroup label="Teklif takibi"><option value={`${TAKIP_ONEKI}yanit_bekliyor`}>Yanıt bekleyen teklif</option><option value={`${TAKIP_ONEKI}hatirlatildi`}>Yanıt yok — takip edilecek</option><option value={`${TAKIP_ONEKI}yanit_geldi`}>Yanıt gelen teklif</option></optgroup></Select></Field>
           <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
           <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
@@ -2222,7 +2233,7 @@ export default function BelgelerSayfasi() {
                   <td>{b.cari.unvan}</td>
                   <td>{b.tarih}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(b.genelToplam, b.dovizCinsi)}</td>
-                  <td><span style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap" }}>{durumRozet(b.durum)}{sureRozeti(b.faturalamaSuresi)}</span></td>
+                  <td><span style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap" }}>{durumRozet(b.durum)}{sureRozeti(b.faturalamaSuresi)}<TeklifTakipRozeti takip={b.teklifTakibi} /></span></td>
                 </tr>
               ))
             )}

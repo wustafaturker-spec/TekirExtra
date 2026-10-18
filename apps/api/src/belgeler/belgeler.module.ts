@@ -4,12 +4,14 @@ import { StokModule } from "../stok/stok.module";
 import { TenantModule } from "../tenant/tenant.module";
 import { BelgelerController } from "./belgeler.controller";
 import { BelgelerService } from "./belgeler.service";
+import { TeklifTakipController } from "./teklif-takibi/teklif-takip.controller";
+import { TeklifTakipService } from "./teklif-takibi/teklif-takip.service";
 
 /** Belge zinciri modülü (FTR-12/13): teklif → sipariş → irsaliye → fatura. */
 @Module({
   imports: [StokModule, TenantModule],
-  controllers: [BelgelerController],
-  providers: [BelgelerService],
+  controllers: [BelgelerController, TeklifTakipController],
+  providers: [BelgelerService, TeklifTakipService],
   exports: [BelgelerService],
 })
 export class BelgelerModule implements OnModuleInit {

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional
 } from "@nestjs/common";
@@ -13,6 +14,8 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
+import { teklifGonderiminiKaydet } from "./teklif-takibi/teklif-takip.kayit";
+import { mesajKimligi } from "./teklif-takibi/teklif-takip.kurallari";
 import { belgeDiliNormalize, ciftDilGecerli, belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
@@ -189,7 +192,11 @@ export class BelgelerService {
     adet = 50,
     /** EBLG-82: yalnız faturalanmayı bekleyen irsaliyeler. */
     faturaBekleyen = false,
+    /** AI-43: teklif takip durumu; `yok` = takipte olmayan. */
+    takip?: string,
   ) {
+    const TAKIP_DURUMLARI = ["yanit_bekliyor", "hatirlatildi", "yanit_geldi", "kapandi"];
+    if (takip && takip !== "yok" && !TAKIP_DURUMLARI.includes(takip)) throw new BadRequestException("Takip durumu geçersiz");
     const ctx = aktifBaglam();
     const baslangicTarihi = baslangic ? new Date(baslangic) : null;
     const bitisTarihi = bitis ? new Date(bitis) : null;
@@ -218,6 +225,7 @@ export class BelgelerService {
             ],
           }
         : {}),
+      ...(takip ? { teklifTakibi: takip === "yok" ? { is: null } : { is: { durum: takip } } } : {}),
       ...(arama
         ? {
             OR: [
@@ -240,7 +248,10 @@ export class BelgelerService {
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
-        include: { cari: { select: { id: true, kod: true, unvan: true, vknTckn: true } }, fatura: { select: { durum: true } } },
+        include: {
+          cari: { select: { id: true, kod: true, unvan: true, vknTckn: true } }, fatura: { select: { durum: true } },
+          teklifTakibi: { select: { durum: true, gonderildiAt: true, hatirlatmaGunu: true, yanitAt: true, gonderimSayisi: true } },
+        },
       }),
     );
     const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
@@ -251,6 +262,9 @@ export class BelgelerService {
         ...this.gorunum(k),
         cari: k.cari,
         faturalamaSuresi: this.faturalamaSuresi(k, gunSayisi, bugun),
+        teklifTakibi: k.teklifTakibi
+          ? { durum: k.teklifTakibi.durum, gonderildiAt: k.teklifTakibi.gonderildiAt.toISOString(), hatirlatmaGunu: k.teklifTakibi.hatirlatmaGunu.toISOString().slice(0, 10), yanitAt: k.teklifTakibi.yanitAt?.toISOString() ?? null, gonderimSayisi: k.teklifTakibi.gonderimSayisi }
+          : null,
         izinliEylemler: this.eylemler(k),
       })),
       sonrakiImlec,
@@ -1532,12 +1546,18 @@ export class BelgelerService {
     const gecerlilik = belge.tur === "teklif" && belge.gecerlilikTarihi
       ? ` Teklifimiz ${belge.gecerlilikTarihi.toISOString().slice(0, 10).split("-").reverse().join(".")} tarihine kadar geçerlidir.`
       : "";
-    await this.eposta.ekliIletiGonder({
+    const ileti = await this.eposta.ekliIletiGonder({
       alici,
       konu: `${ad} ${no}`,
       metin: `Sayın ${belge.cari.unvan},\n\n${no} numaralı ${ad.toLocaleLowerCase("tr-TR")} ekte yer almaktadır.${gecerlilik}\n\nİyi çalışmalar dileriz.`,
       ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
     });
+    // AI-38: teklifin takibi; ileti gitti, kayıt hatası gönderimi başarısız saydırmaz.
+    if (belge.tur === "teklif") {
+      const { userId } = aktifBaglam();
+      await this.prisma.tenantIslem(tenantId, (tx) => teklifGonderiminiKaydet(tx, tenantId, { belgeId: id, kaynak: "eposta", alici, mesajId: mesajKimligi(ileti?.messageId), sorumluUserId: userId }))
+        .catch((hata: unknown) => new Logger(BelgelerService.name).warn(`Teklif takibi kaydedilemedi (${id}): ${String(hata)}`));
+    }
     return { gonderildi: true, alici, belge: resmi ? "ebelge" as const : "sistem" as const };
   }
 
