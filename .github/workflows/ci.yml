@@ -47,6 +47,10 @@ jobs:
           DATABASE_URL_MIGRATE: postgresql://tekir:tekir@localhost:5433/tekirextra
         run: pnpm --filter @tekirextra/api exec prisma migrate deploy
 
+      # PdfService ve web e2e Playwright'ın kendi Chromium'unu kullanır (api ve web aynı sürüm); koşucuda hazır gelmez.
+      - name: Playwright Chromium kur
+        run: pnpm --filter @tekirextra/api exec playwright install --with-deps chromium
+
       - name: Gerçek servislerle kabul testleri
         env:
           DATABASE_URL: postgresql://tekir_app:tekir_app_dev@localhost:5433/tekirextra
