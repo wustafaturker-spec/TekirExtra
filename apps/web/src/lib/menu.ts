@@ -75,6 +75,8 @@ export interface MenuOge {
   eslesme?: "tam" | "onek";
   /** Komut paletindeki eşanlamlılar — kullanıcının aklındaki sözcük. */
   esanlamlilar?: string[];
+  /** AI-51: bağlantının yanında açık iş sayısı rozeti. */
+  sayac?: "is-kutusu";
 }
 
 export interface MenuAlani {
@@ -101,6 +103,7 @@ export const MENU: MenuAlani[] = [
     baslik: "Satış",
     ikon: TrendingUp,
     ogeler: [
+      { href: "/panel/is-kutusu", ikon: Inbox, baslik: "Teklif İş Kutusu", eslesme: "tam", esanlamlilar: ["iş kutusu", "yapılacaklar", "teklif talebi", "takip", "bekleyen işler"], sayac: "is-kutusu" },
       { href: "/panel/satis", ikon: ShoppingCart, baslik: "Satış İşlemleri", eslesme: "onek", esanlamlilar: ["çalışma alanı", "satış özeti"] },
       { href: "/panel/belgeler?tur=teklif&yon=satis", ikon: ScrollText, baslik: "Satış Teklifleri", eslesme: "tam", esanlamlilar: ["teklif", "fiyat teklifi", "proforma"] },
       { href: "/panel/belgeler?tur=siparis&yon=satis", ikon: ClipboardCheck, baslik: "Satış Siparişleri", eslesme: "tam", esanlamlilar: ["sipariş", "müşteri siparişi", "sevkiyat"] },

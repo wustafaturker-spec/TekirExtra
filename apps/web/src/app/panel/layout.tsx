@@ -48,7 +48,7 @@ interface BildirimOzeti { okunmamis: number; acik: number; kritik: number; }
  * rotanın farklı sorgu parametreleridir; Next.js istemci gezinmesi sayfayı
  * yeniden kurmadığı için tam gezinme yapılır.
  */
-function MenuBaglantisi({ oge, aktif, onGit }: { oge: MenuOge; aktif: boolean; onGit: () => void }) {
+function MenuBaglantisi({ oge, aktif, onGit, sayi }: { oge: MenuOge; aktif: boolean; onGit: () => void; sayi?: number }) {
   const Ikon = oge.ikon;
   return (
     <Link
@@ -65,6 +65,7 @@ function MenuBaglantisi({ oge, aktif, onGit }: { oge: MenuOge; aktif: boolean; o
     >
       <Ikon aria-hidden="true" className="nav__link-icon" size={16} strokeWidth={1.9} />
       <span>{oge.baslik}</span>
+      {sayi ? <span className="nav__link-sayac" aria-label={`${sayi} açık iş`}>{sayi > 99 ? "99+" : sayi}</span> : null}
     </Link>
   );
 }
@@ -168,6 +169,16 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   }, [router]);
 
   useEffect(() => { setBildirimlerAcik(false); setGeriBildirimAcik(false); }, [pathname]);
+
+  // AI-51: Teklif İş Kutusu rozeti — yalnız kendi açık işleri; açılışta, sayfa değişince ve 2 dakikada bir.
+  const [isKutusuSayisi, setIsKutusuSayisi] = useState(0);
+  useEffect(() => {
+    if (!rol || !["yonetici", "muhasebe", "satis"].includes(rol)) return;
+    const yenile = () => void api<{ toplam: number }>("/is-kutusu/sayac").then((s) => setIsKutusuSayisi(s.toplam)).catch(() => undefined);
+    yenile();
+    const zamanlayici = window.setInterval(yenile, 2 * 60 * 1000);
+    return () => window.clearInterval(zamanlayici);
+  }, [rol, pathname]);
   useEffect(() => {
     if (!menuAcik) return;
     const menu = mobilMenuRef.current;
@@ -394,7 +405,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                 </button>
                 {acik && (
                   <div className="nav__ogeler">
-                    {alan.ogeler.map((oge) => <MenuBaglantisi key={oge.href} aktif={aktifMi(oge)} oge={oge} onGit={() => setMenuAcik(false)} />)}
+                    {alan.ogeler.map((oge) => <MenuBaglantisi key={oge.href} aktif={aktifMi(oge)} oge={oge} onGit={() => setMenuAcik(false)} sayi={oge.sayac === "is-kutusu" ? isKutusuSayisi : undefined} />)}
                   </div>
                 )}
               </div>

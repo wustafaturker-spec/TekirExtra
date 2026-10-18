@@ -24,6 +24,7 @@ import { MasraflarModule } from "./masraflar/masraflar.module";
 import { DovizModule } from "./doviz/doviz.module";
 import { UretimModule } from "./uretim/uretim.module";
 import { CalismaTakvimiModule } from "./calisma-takvimi/calisma-takvimi.module";
+import { IsKutusuModule } from "./is-kutusu/is-kutusu.module";
 import { ObservabilityModule } from "./core/observability/observability.module";
 import { PersonelModule } from "./personel/personel.module";
 import { MaliMusavirModule } from "./mali-musavir/mali-musavir.module";
@@ -72,6 +73,7 @@ import { MevzuatModule } from "./mevzuat/mevzuat.module";
     DovizModule,
     UretimModule,
     CalismaTakvimiModule,
+    IsKutusuModule,
     ObservabilityModule,
     PersonelModule,
     MaliMusavirModule,

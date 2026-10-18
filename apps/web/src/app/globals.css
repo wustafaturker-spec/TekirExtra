@@ -4888,3 +4888,14 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .teklif-talebi__adaylar { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .teklif-talebi__adaylar li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .cari-sec__oneriler { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); gap: 0.5rem; }
+
+/* AI-48…51: Teklif İş Kutusu */
+.nav__link-sayac { margin-left: auto; min-width: 1.4rem; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 700; line-height: 1.4rem; text-align: center; }
+.is-kutusu__aciklama { margin: 0 0 8px; }
+.is-kutusu__liste { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.is-kutusu__liste > li { display: grid; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.is-kutusu__liste > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.is-kutusu__baslik { display: grid; gap: 2px; }
+.is-kutusu__adaylar { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.is-kutusu__adaylar li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.is-kutusu__uyarilar { margin: 0; padding-left: 1.1rem; color: var(--warning); font-size: 0.85rem; }
