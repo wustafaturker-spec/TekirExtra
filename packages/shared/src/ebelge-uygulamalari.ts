@@ -73,7 +73,7 @@ export function mukellefiyetCelismeleri(girdi: {
 
 /** Uygulama kesin olarak açık mı? "Bilinmiyor" açık sayılmaz. */
 export function uygulamaAcik(uygulamalar: EbelgeUygulamalari, kod: EbelgeUygulamaKodu): boolean {
-  return uygulamalar[kod].acik === true;
+  return uygulamalar?.[kod]?.acik === true;
 }
 
 /** Firma hiçbir e-belge uygulamasına kayıtlı değil: fatura kağıda basılır. */
