@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Alert } from "@/components/ui";
-import { CariSecModali } from "@/components/cari-sec-modali";
+import { CariSecModali, type OnerilenCari } from "@/components/cari-sec-modali";
 import { TeklifTalebiPaneli, TeklifTalebiRozeti } from "@/components/teklif-talebi-paneli";
 import {
   Archive,
@@ -151,6 +151,7 @@ export default function GelenEpostalarSayfasi() {
   const [islemde, setIslemde] = useState(false);
   // E-posta bir cariyle eşleşmediyse fırsatın carisi kullanıcıya seçtirilir.
   const [cariSecimAcik, setCariSecimAcik] = useState(false);
+  const [cariOnerileri, setCariOnerileri] = useState<OnerilenCari[]>([]);
   const [ocrYukleniyor, setOcrYukleniyor] = useState<Record<string, boolean>>({});
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
@@ -264,7 +265,12 @@ export default function GelenEpostalarSayfasi() {
 
   async function crmGorevOlustur(cariId?: string) {
     if (!seciliEposta) return;
-    if (!seciliEposta.cariId && !cariId) { setCariSecimAcik(true); return; }
+    if (!seciliEposta.cariId && !cariId) {
+      setCariOnerileri([]);
+      setCariSecimAcik(true);
+      void api<OnerilenCari[]>(`/eposta/gelen/${seciliEposta.id}/cari-adaylari`).then(setCariOnerileri).catch(() => setCariOnerileri([]));
+      return;
+    }
     setCariSecimAcik(false);
     setIslemde(true);
     setHata("");
@@ -1233,6 +1239,7 @@ export default function GelenEpostalarSayfasi() {
           aciklama={<>Gönderen <strong>{seciliEposta.gonderenEposta}</strong> kayıtlı bir cariyle eşleşmedi. Fırsatı açmak için cariyi seçin; gerekiyorsa önce cariyi oluşturun.</>}
           onSec={(c) => void crmGorevOlustur(c.id)}
           onKapat={() => setCariSecimAcik(false)}
+          onerilenler={cariOnerileri}
         />
       )}
       {yeniIletiAcik && (

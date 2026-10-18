@@ -4885,3 +4885,6 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 /* AI-43: teklif takibi paneli */
 .teklif-takip { display: grid; gap: 8px; }
 .teklif-takip__eylemler { flex-wrap: wrap; }
+.teklif-talebi__adaylar { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.teklif-talebi__adaylar li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.cari-sec__oneriler { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); gap: 0.5rem; }

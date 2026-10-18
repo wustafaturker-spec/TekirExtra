@@ -16,11 +16,11 @@ export const AZAMI_ICERIK = 8000;
 export const AZAMI_DENEME = 3;
 
 export type TeklifIslemDurumu =
-  | "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_onayi_bekliyor"
+  | "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_secimi" | "cari_onayi_bekliyor"
   | "cari_yok" | "taslak_hazir" | "sinirda" | "hata";
 
 /** Elle yeniden çalıştırılabilen durumlar; taslağı ya da bekleyen onayı olan kayıt yeniden işlenmez. */
-export const YENIDEN_CALISTIRILABILIR: TeklifIslemDurumu[] = ["atlandi", "teklif_degil", "incelenmeli", "cari_yok", "sinirda", "hata"];
+export const YENIDEN_CALISTIRILABILIR: TeklifIslemDurumu[] = ["atlandi", "teklif_degil", "incelenmeli", "cari_secimi", "cari_yok", "sinirda", "hata"];
 
 const OTOMATIK_GONDEREN = /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounce[s]?|notifications?|bildirim)([+.\-_].*)?@/i;
 const OTOMATIK_KONU = /^(otomatik yan[ıi]t|automatic reply|auto(matic)?[- ]?reply|out of office|i[sş]yeri d[ıi][sş]ında|delivery status notification|undeliver(able|ed)|mail delivery (failed|subsystem)|returned mail)\b/i;

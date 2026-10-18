@@ -12,6 +12,7 @@ import { coz } from "../core/kripto";
 import { otomatikBasliklarMi } from "../ai/teklif-talebi/teklif-talebi.kurallari";
 import { yanitlananKimlikler } from "../belgeler/teklif-takibi/teklif-takip.kurallari";
 import { teklifYanitiniEslestir } from "../belgeler/teklif-takibi/teklif-yaniti";
+import { cariAdaylari } from "../cari/cari-aday";
 
 @Injectable()
 export class ImapService {
@@ -277,6 +278,27 @@ export class ImapService {
     );
     if (!eposta) throw new NotFoundException("E-posta bulunamadı");
     return eposta;
+  }
+
+  /**
+   * AI-47: e-postanın göndereni için cari adayları (kesin adres eşleşmeleri ve
+   * yaklaşık ipuçları). Teklif talebi işlendiyse e-postadan çıkarılan firma
+   * bilgisi (VKN, telefon, unvan) de kullanılır. Model çağrılmaz.
+   */
+  async cariAdaylariGetir(tenantId: string, id: string) {
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const e = await tx.gelenEposta.findFirst({ where: { id, tenantId }, select: { gonderenAdi: true, gonderenEposta: true, teklifIslemi: { select: { cikarim: true } } } });
+      if (!e) throw new NotFoundException("E-posta bulunamadı");
+      const adres = e.gonderenEposta.trim();
+      const [kartlar, kisiler] = adres ? await Promise.all([
+        tx.cariHesap.findMany({ where: { tenantId, aktif: true, eposta: { equals: adres, mode: "insensitive" } }, select: { id: true, kod: true, unvan: true, vknTckn: true }, take: 5 }),
+        tx.cariKisi.findMany({ where: { tenantId, eposta: { equals: adres, mode: "insensitive" }, cari: { aktif: true } }, select: { cari: { select: { id: true, kod: true, unvan: true, vknTckn: true } } }, take: 5 }),
+      ]) : [[], []];
+      const kesin = new Map([...kartlar, ...kisiler.map((k) => k.cari)].map((c) => [c.id, { cariId: c.id, kod: c.kod, unvan: c.unvan, vknTckn: c.vknTckn, gerekceler: ["gönderen adresi bu caride kayıtlı"], guclu: false, puan: 200 }]));
+      const firma = (e.teklifIslemi?.cikarim as { firma?: { vknTckn?: string | null; telefon?: string | null; unvan?: string | null } | null } | null)?.firma ?? null;
+      const yaklasik = await cariAdaylari(tx, tenantId, { eposta: adres, vknTckn: firma?.vknTckn, telefon: firma?.telefon, unvan: firma?.unvan ?? e.gonderenAdi });
+      return [...kesin.values(), ...yaklasik.filter((a) => !kesin.has(a.cariId))].slice(0, 5);
+    });
   }
 
   /**

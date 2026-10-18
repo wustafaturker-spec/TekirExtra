@@ -9,12 +9,19 @@ const TENANT = "t1";
 const EPOSTA = { id: "e1", konu: "Fiyat teklifi", tarih: new Date("2026-10-18T08:00:00Z"), gonderenAdi: "Ali", gonderenEposta: "ali@musteri.com", icerikMetin: "10 paket A4 kağıt ve 5 kutu zımba teli fiyatı?", otomatik: false, crmFirsatId: null, ekler: [] };
 const TEKLIF = { teklifTalebi: true, guven: 0.92, gerekce: "fiyat istiyor", firma: { unvan: "Müşteri Ltd", vknTckn: "1234567890", telefon: null, yetkili: null }, kalemler: [{ ifade: "A4 kağıt", miktar: 10, birim: "paket" }, { ifade: "zımba teli", miktar: 5, birim: null }], notlar: null };
 
-function kur(o: { talep?: Record<string, unknown>; fiyatsiz?: string[]; eposta?: Partial<typeof EPOSTA>; kartlar?: string[]; kisiler?: string[]; cikarim?: unknown; secimler?: unknown; stok?: Record<string, unknown[]>; mevcut?: Record<string, unknown> | null; rol?: string } = {}) {
+function kur(o: { kisiYetkisiz?: boolean; vknKartlari?: string[]; telefonKartlari?: string[]; zatenKayitli?: boolean; talep?: Record<string, unknown>; fiyatsiz?: string[]; eposta?: Partial<typeof EPOSTA>; kartlar?: string[]; kisiler?: string[]; cikarim?: unknown; secimler?: unknown; stok?: Record<string, unknown[]>; mevcut?: Record<string, unknown> | null; rol?: string } = {}) {
   const kayitlar = new Map<string, Record<string, any>>();
   const tx = {
     gelenEposta: { findFirst: vi.fn().mockResolvedValue({ ...EPOSTA, ...o.eposta }) },
     cariHesap: {
-      findMany: vi.fn(async (q: { where: { kod?: unknown } }) => (q.where.kod ? [{ kod: "CARI-004" }] : (o.kartlar ?? []).map((id) => ({ id })))),
+      findMany: vi.fn(async (q: { where: Record<string, any> }) => {
+        if (q.where.kod) return [{ kod: "CARI-004" }];
+        if (q.where.vknTckn) return (o.vknKartlari ?? []).map((id) => ({ id }));
+        if (q.where.id?.in) return q.where.id.in.map((id: string) => ({ id, kod: id.toUpperCase(), unvan: `Unvan ${id}`, vknTckn: o.vknKartlari?.includes(id) ? "1234567890" : null }));
+        if (q.where.eposta?.endsWith || q.where.aramaNormal) return [];
+        return (o.kartlar ?? []).map((id) => ({ id }));
+      }),
+      count: vi.fn().mockResolvedValue(o.zatenKayitli ? 1 : 0),
       findFirst: vi.fn().mockResolvedValue({ id: "c-secilen" }),
     },
     cariKisi: { findMany: vi.fn().mockResolvedValue((o.kisiler ?? []).map((cariId) => ({ cariId }))) },
@@ -29,6 +36,7 @@ function kur(o: { talep?: Record<string, unknown>; fiyatsiz?: string[]; eposta?:
       update: vi.fn(async ({ data }) => { const k = { ...(kayitlar.get("k1") ?? { id: "k1", gelenEpostaId: "e1" }), ...data, updatedAt: new Date() }; kayitlar.set("k1", k); return k; }),
     },
   };
+  (tx as Record<string, unknown>).$queryRaw = vi.fn().mockResolvedValue((o.telefonKartlari ?? []).map((id) => ({ id })));
   const prisma = { tenantIslem: vi.fn((_t: string, fn: (x: typeof tx) => unknown) => fn(tx)) };
   const stok = o.stok ?? { "A4 kağıt": [{ id: "s1", kod: "KAG-A4", ad: "Fotokopi Kağıdı A4", anaBirim: "paket", aktif: true }], "zımba teli": [{ id: "s2", kod: "ZMB", ad: "Zımba Teli 24/6", anaBirim: "kutu", aktif: true, varyantlar: [] }] };
   const uc = {
@@ -37,6 +45,7 @@ function kur(o: { talep?: Record<string, unknown>; fiyatsiz?: string[]; eposta?:
       if (u === UC.gelenEpostaCrmGorev) return { id: "f1", updatedAt: new Date("2026-10-18T09:00:00Z") };
       if (u === UC.belgeGetir) return { id: "b1", updatedAt: new Date("2026-10-18T09:01:00Z") };
       if (u === UC.crmTeklifBagla) return { id: "bag1" };
+      if (u === UC.cariKisiEkle) { if (o.kisiYetkisiz) throw new ForbiddenException("yetki"); return { id: "kisi1" }; }
       if (u === UC.stokTavsiyeFiyat) return { birimFiyat: (o.fiyatsiz ?? []).includes(args[0] as string) ? null : "100.0000", cevrilebilir: true };
       throw new Error("beklenmeyen uç");
     }),
@@ -139,13 +148,59 @@ describe("e-posta teklif talebi hattı (AI-33…37)", () => {
     expect(k.taslak.calistir).not.toHaveBeenCalled();
   });
 
-  it("adres birden çok caride kayıtlıysa cari seçmez ve yeni cari önermez", async () => {
+  it("adres birden çok caride kayıtlıysa cari seçimi ister, yeni cari önermez", async () => {
     const k = kur({ kartlar: ["c1"], kisiler: ["c2"] });
     const g = await k.calistir(() => k.service.isle(kayit));
-    expect(g.durum).toBe("cari_yok");
+    expect(g.durum).toBe("cari_secimi");
     expect(g.uyarilar[0]).toContain("2 caride kayıtlı");
+    expect(g.cariAdaylari.map((a) => a.gerekceler[0])).toEqual(["gönderen adresi bu caride kayıtlı", "gönderen adresi bu caride kayıtlı"]);
     expect(k.yurutucu.yurut).not.toHaveBeenCalled();
     expect(k.taslak.calistir).not.toHaveBeenCalled();
+  });
+
+  it("adres eşleşmezse tek VKN eşleşmesi kendiliğinden kullanılır, durum incelenmeli ve uyarılı (AI-44/45)", async () => {
+    const k = kur({ vknKartlari: ["c7"] });
+    const g = await k.calistir(() => k.service.isle(kayit));
+    expect(g.durum).toBe("incelenmeli");
+    expect(k.taslak.calistir.mock.calls[0][1].cariId).toBe("c7");
+    expect(g.uyarilar[0]).toContain("VKN/TCKN (1234567890) ile \"Unvan c7\" carisine eşlendi");
+    expect(k.yurutucu.yurut).not.toHaveBeenCalled();
+  });
+
+  it("telefon gibi zayıf ipucunda cari seçimi ister; taslak da cari talebi de açılmaz", async () => {
+    const k = kur({ telefonKartlari: ["c8"], cikarim: { ...TEKLIF, firma: { unvan: null, vknTckn: null, telefon: "0212 555 00 00", yetkili: null } } });
+    const g = await k.calistir(() => k.service.isle(kayit));
+    expect(g.durum).toBe("cari_secimi");
+    expect(g.cariAdaylari).toEqual([expect.objectContaining({ cariId: "c8", gerekceler: ["telefon eşleşti"], guclu: false })]);
+    expect(k.taslak.calistir).not.toHaveBeenCalled();
+    expect(k.yurutucu.yurut).not.toHaveBeenCalled();
+    expect(k.bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ baslik: "E-posta teklif talebi: cari seçimi bekliyor" }));
+  });
+
+  it("cari seçilince taslak hazırlanır ve gönderen ilgili kişi olarak öğretilir; 'yeni cari' seçilirse adaylar atlanıp cari talebi açılır (AI-46)", async () => {
+    const mevcut = { id: "k1", durum: "cari_secimi", gelenEpostaId: "e1", cikarim: TEKLIF, cariId: null, deneme: 1, belgeId: null };
+    const k = kur({ telefonKartlari: ["c8"], mevcut, rol: "muhasebe" });
+    k.saglayici.yapilandirilmisUretim.mockReset().mockResolvedValue({ secimler: [{ kalem: 1, aday: 1 }, { kalem: 2, aday: 1 }] });
+    const g = await k.calistir(() => k.service.elleHazirla("e1", { cariId: "c8" }));
+    expect(k.taslak.calistir.mock.calls[0][1].cariId).toBe("c8");
+    expect(k.uc.cagir).toHaveBeenCalledWith(UC.cariKisiEkle, ["c8", { adSoyad: "Ali", eposta: "ali@musteri.com" }], expect.anything());
+    expect(g.uyarilar.at(-1)).toContain("ilgili kişilerine eklendi");
+    const yeni = kur({ telefonKartlari: ["c8"], mevcut, rol: "muhasebe" });
+    const y = await yeni.calistir(() => yeni.service.elleHazirla("e1", { yeniCari: true }));
+    expect(y.durum).toBe("cari_onayi_bekliyor");
+    expect(yeni.saglayici.yapilandirilmisUretim).not.toHaveBeenCalled();
+  });
+
+  it("öğrenme: adres zaten caride kayıtlıysa eklenmez; rol yazamıyorsa not düşülür", async () => {
+    const mevcut = { id: "k1", durum: "cari_secimi", gelenEpostaId: "e1", cikarim: TEKLIF, cariId: null, deneme: 1, belgeId: null };
+    const kayitli = kur({ mevcut, zatenKayitli: true });
+    kayitli.saglayici.yapilandirilmisUretim.mockReset().mockResolvedValue({ secimler: [{ kalem: 1, aday: 1 }, { kalem: 2, aday: 1 }] });
+    await kayitli.calistir(() => kayitli.service.elleHazirla("e1", { cariId: "c8" }));
+    expect(kayitli.uc.cagir).not.toHaveBeenCalledWith(UC.cariKisiEkle, expect.anything(), expect.anything());
+    const satis = kur({ mevcut, kisiYetkisiz: true });
+    satis.saglayici.yapilandirilmisUretim.mockReset().mockResolvedValue({ secimler: [{ kalem: 1, aday: 1 }, { kalem: 2, aday: 1 }] });
+    const g = await satis.calistir(() => satis.service.elleHazirla("e1", { cariId: "c8" }));
+    expect(g.uyarilar.at(-1)).toContain("ilgili kişi olarak eklenemedi (rolünüz");
   });
 
   it("bütçe sınırında 'sinirda' olur, yeniden deneme planlanmaz", async () => {
@@ -211,7 +266,7 @@ describe("e-posta teklif talebi hattı (AI-33…37)", () => {
   it("elle çalıştırma cari seçilerek: eşleşme atlanır, önceki çıkarım kullanılır", async () => {
     const k = kur({ kartlar: ["c1"], kisiler: ["c2"], mevcut: { id: "k1", durum: "cari_yok", gelenEpostaId: "e1", cikarim: TEKLIF, cariId: null, deneme: 1 } });
     k.saglayici.yapilandirilmisUretim.mockReset().mockResolvedValue({ secimler: [{ kalem: 1, aday: 1 }, { kalem: 2, aday: 1 }] });
-    const g = await k.calistir(() => k.service.elleHazirla("e1", "c2"));
+    const g = await k.calistir(() => k.service.elleHazirla("e1", { cariId: "c2" }));
     expect(g.durum).toBe("taslak_hazir");
     expect(k.taslak.calistir.mock.calls[0][1].cariId).toBe("c2");
     expect(k.tx.cariKisi.findMany).not.toHaveBeenCalled();

@@ -581,12 +581,14 @@ model EpostaTeklifIslemi {
   tenantId         String    @map("tenant_id") @db.Uuid
   gelenEpostaId    String    @unique @map("gelen_eposta_id") @db.Uuid
   calistiranUserId String?   @map("calistiran_user_id") @db.Uuid
-  /// isleniyor | atlandi | teklif_degil | incelenmeli | cari_onayi_bekliyor | cari_yok | taslak_hazir | sinirda | hata
+  /// isleniyor | atlandi | teklif_degil | incelenmeli | cari_secimi | cari_onayi_bekliyor | cari_yok | taslak_hazir | sinirda | hata
   durum            String
   guven            Decimal?  @db.Decimal(4, 3)
   cikarim          Json?
   kalemler         Json      @default("[]")
   uyarilar         Json      @default("[]")
+  /// AI-45: kullanıcıya seçtirilen yaklaşık cari adayları (gerekçeleriyle).
+  cariAdaylari     Json      @default("[]") @map("cari_adaylari")
   cariId           String?   @map("cari_id") @db.Uuid
   belgeId          String?   @map("belge_id") @db.Uuid
   firsatId         String?   @map("firsat_id") @db.Uuid

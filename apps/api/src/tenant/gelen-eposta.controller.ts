@@ -55,6 +55,13 @@ export class GelenEpostaController {
   /**
    * E-posta detayını getirir.
    */
+  /** AI-47: göndericinin olası carileri (gerekçeleriyle); cari bağlanmaz, kullanıcı seçer. */
+  @Get(":id/cari-adaylari")
+  async cariAdaylari(@Param("id") id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.imapService.cariAdaylariGetir(tenantId, id);
+  }
+
   @Get(":id")
   async getir(@Param("id") id: string) {
     const { tenantId } = aktifBaglam();

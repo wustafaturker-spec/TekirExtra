@@ -3,7 +3,8 @@ import { z } from "zod";
 import { Roller } from "../../auth/roller.decorator";
 import { TeklifTalebiService } from "./teklif-talebi.service";
 
-const hazirlaSemasi = z.object({ cariId: z.uuid().optional() }).strict();
+const hazirlaSemasi = z.object({ cariId: z.uuid().optional(), yeniCari: z.literal(true).optional() }).strict()
+  .refine((g) => !(g.cariId && g.yeniCari), "Cari seçimi ile yeni cari birlikte verilemez");
 
 /** AI-32…37: gelen e-postadaki teklif talebinin işlem durumu ve elle çalıştırma. */
 @Controller("ai/teklif-talepleri")
@@ -21,6 +22,6 @@ export class TeklifTalebiController {
   hazirla(@Param("epostaId", ParseUUIDPipe) epostaId: string, @Body() govde: unknown) {
     const sonuc = hazirlaSemasi.safeParse(govde ?? {});
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
-    return this.service.elleHazirla(epostaId, sonuc.data.cariId);
+    return this.service.elleHazirla(epostaId, sonuc.data);
   }
 }

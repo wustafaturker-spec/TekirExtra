@@ -11,6 +11,7 @@ import { adres } from "../ajan/araclar/arac";
 import { UC } from "../ajan/araclar/uclar";
 import { UcCagirici } from "../ajan/uc-cagirici";
 import { AiSinirHatasi } from "../saglayici/ai-butce";
+import { cariAdaylari, type CariAdayi } from "../../cari/cari-aday";
 import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
 import type { IAiProvider } from "../saglayici/ai-provider.interface";
 import { TEKLIF_TALEBI_MODULU, TEKLIF_TALEBI_ROLLERI, teklifTalebiAyariSemasi, type TeklifTalebiAyari } from "./teklif-talebi-ayari";
@@ -30,12 +31,13 @@ const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 type Eposta = { id: string; konu: string; tarih: Date; gonderenAdi: string | null; gonderenEposta: string; icerikMetin: string | null; otomatik: boolean; crmFirsatId: string | null; ekler: Array<{ dosyaAdi: string }> };
 type KalemSonucu = { ifade: string; miktar: number | null; birim: string | null; stokId: string | null; varyantId: string | null; kod: string | null; ad: string | null; kartBirimi: string | null };
-type Sonuc = { durum: TeklifIslemDurumu; uyarilar: string[]; belgeId?: string | null; firsatId?: string | null; onayTalebiId?: string | null; cariId?: string | null; kalemler?: KalemSonucu[] };
+type Sonuc = { durum: TeklifIslemDurumu; uyarilar: string[]; belgeId?: string | null; firsatId?: string | null; onayTalebiId?: string | null; cariId?: string | null; kalemler?: KalemSonucu[]; cariAdaylari?: CariAdayi[] };
 
 export interface TeklifIslemGorunumu {
   id: string; gelenEpostaId: string; durum: string; guven: number | null; uyarilar: string[]; kalemler: KalemSonucu[];
   cariId: string | null; belgeId: string | null; firsatId: string | null; onayTalebiId: string | null; hata: string | null;
   belgeAdresi: string | null; onayAdresi: string | null; guncellendiAt: string;
+  cariAdaylari: CariAdayi[];
 }
 
 export function gorunum(k: EpostaTeklifIslemi): TeklifIslemGorunumu {
@@ -46,6 +48,7 @@ export function gorunum(k: EpostaTeklifIslemi): TeklifIslemGorunumu {
     belgeAdresi: k.belgeId ? adres.belge(k.belgeId) : null,
     onayAdresi: k.onayTalebiId ? `/panel/ai?talep=${k.onayTalebiId}` : null,
     guncellendiAt: k.updatedAt.toISOString(),
+    cariAdaylari: (k.cariAdaylari as unknown as CariAdayi[]) ?? [],
   };
 }
 
@@ -93,7 +96,8 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
    * özellik kapalıyken de. `cariId` verilirse cari eşleşmesi atlanır ve önceki
    * çıkarım yeniden kullanılır (gönderen birden çok caride kayıtlıysa).
    */
-  async elleHazirla(epostaId: string, cariId?: string): Promise<TeklifIslemGorunumu> {
+  async elleHazirla(epostaId: string, secim: { cariId?: string; yeniCari?: boolean } = {}): Promise<TeklifIslemGorunumu> {
+    const { cariId, yeniCari } = secim;
     const { tenantId, userId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const eposta = await tx.gelenEposta.findFirst({ where: { id: epostaId, tenantId }, select: { id: true } });
@@ -118,11 +122,16 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       if (!(await this.cariOnayiniIzle(kayit))) throw new ConflictException("Cari açma onayı bekliyor; onaylandıktan sonra taslak hazırlanır.");
       return (await this.getir(epostaId))!;
     }
-    return this.isle(kayit, { cikarimiYenile: !cariId });
+    const sonuc = await this.isle(kayit, { cikarimiYenile: !cariId && !yeniCari, yeniCari });
+    if (!cariId || ["hata", "sinirda"].includes(sonuc.durum)) return sonuc;
+    // AI-46: kullanıcının seçtiği cariye gönderen adresi ilgili kişi olarak öğretilir.
+    const not = await this.gondereniOgret(epostaId, cariId);
+    if (!not) return sonuc;
+    return gorunum(await this.kaydet(sonuc.id, { uyarilar: [...sonuc.uyarilar, not] }));
   }
 
   /** Talep alınmış (durum `isleniyor`) kaydı baştan ya da kaldığı yerden işler. */
-  async isle(kayit: Pick<EpostaTeklifIslemi, "id" | "gelenEpostaId" | "cikarim" | "cariId" | "deneme">, secenek: { cikarimiYenile?: boolean } = {}): Promise<TeklifIslemGorunumu> {
+  async isle(kayit: Pick<EpostaTeklifIslemi, "id" | "gelenEpostaId" | "cikarim" | "cariId" | "deneme">, secenek: { cikarimiYenile?: boolean; yeniCari?: boolean } = {}): Promise<TeklifIslemGorunumu> {
     const { tenantId } = aktifBaglam();
     let sonuc: Sonuc;
     let guven: number | null = null;
@@ -142,7 +151,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
           await this.kaydet(kayit.id, { cikarim: cikarim as unknown as Prisma.InputJsonValue, guven: cikarim.guven });
         }
         guven = cikarim.guven;
-        sonuc = await this.devamEt(eposta, cikarim, kayit.cariId, saglayici);
+        sonuc = await this.devamEt(eposta, cikarim, kayit.cariId, saglayici, { yeniCari: secenek.yeniCari });
       }
     } catch (hata) {
       const mesaj = (hata instanceof z.ZodError || hata instanceof SyntaxError ? "Yapay zekâ yanıtı beklenen biçimde değildi; yeniden denenecek." : hataMetni(hata)).slice(0, 2000);
@@ -163,24 +172,34 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       ...(sonuc.belgeId !== undefined ? { belgeId: sonuc.belgeId } : {}),
       ...(sonuc.firsatId !== undefined ? { firsatId: sonuc.firsatId } : {}),
       ...(sonuc.onayTalebiId !== undefined ? { onayTalebiId: sonuc.onayTalebiId } : {}),
+      ...(sonuc.cariAdaylari ? { cariAdaylari: sonuc.cariAdaylari as unknown as Prisma.InputJsonValue } : {}),
     });
     await this.sonucuBildir(guncel);
     return gorunum(guncel);
   }
 
   /** Sınıflandırmadan sonrası: güven, cari, kalem eşleşmesi, taslak ve fırsat. */
-  private async devamEt(eposta: Eposta, cikarim: Cikarim, bilinenCariId: string | null, saglayici: IAiProvider): Promise<Sonuc> {
+  private async devamEt(eposta: Eposta, cikarim: Cikarim, bilinenCariId: string | null, saglayici: IAiProvider, secenek: { yeniCari?: boolean } = {}): Promise<Sonuc> {
     if (!cikarim.teklifTalebi) return { durum: "teklif_degil", uyarilar: [] };
     if (cikarim.guven < ASGARI_GUVEN) return { durum: "incelenmeli", uyarilar: [`Teklif talebi olabilir ama model emin değil (%${Math.round(cikarim.guven * 100)}): ${cikarim.gerekce}`] };
     if (!cikarim.kalemler.length) return { durum: "incelenmeli", uyarilar: ["Teklif talebi ama istenen ürün ya da hizmet çıkarılamadı."] };
 
-    const cari = bilinenCariId ? { tek: bilinenCariId, adaylar: [bilinenCariId] } : await this.cariBul(eposta.gonderenEposta);
-    if (!cari.tek) return this.cariTalebi(eposta, cikarim, cari.adaylar.length);
+    const adres = bilinenCariId ? { tek: bilinenCariId, adaylar: [bilinenCariId] } : await this.cariBul(eposta.gonderenEposta);
+    const onUyarilar: string[] = [];
+    let cariId = adres.tek;
+    if (!cariId) {
+      const cozum = secenek.yeniCari ? null : await this.cariCoz(eposta, cikarim, adres.adaylar);
+      if (!cozum) return this.cariTalebi(eposta, cikarim);
+      if ("sonuc" in cozum) return cozum.sonuc;
+      cariId = cozum.cariId;
+      onUyarilar.push(cozum.uyari);
+    }
+    const cari = { tek: cariId };
 
     const kalemler = await this.kalemleriEslestir(cikarim, saglayici);
     const eslesen = kalemler.filter((k) => k.stokId);
     const eslesmeyenler = kalemler.filter((k) => !k.stokId).map((k) => `${k.ifade}${k.miktar !== null ? ` (${k.miktar}${k.birim ? ` ${k.birim}` : ""})` : ""}`);
-    const uyarilar: string[] = [];
+    const uyarilar: string[] = [...onUyarilar];
     if (eslesmeyenler.length) uyarilar.push(`Stokta eşleşmeyen kalem: ${eslesmeyenler.join("; ")}`);
     if (!eslesen.length) return { durum: "incelenmeli", uyarilar, cariId: cari.tek, kalemler };
     const miktarsiz = eslesen.filter((k) => k.miktar === null);
@@ -202,7 +221,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       if (!(hata instanceof ForbiddenException)) uyarilar.push(`Fırsat bağı kurulamadı: ${hataMetni(hata)}`);
       return null;
     });
-    return { durum: eslesmeyenler.length || miktarsiz.length || fiyatsiz.length ? "incelenmeli" : "taslak_hazir", uyarilar, cariId: cari.tek, belgeId: belge.id, firsatId: firsat, kalemler };
+    return { durum: eslesmeyenler.length || miktarsiz.length || fiyatsiz.length || onUyarilar.length ? "incelenmeli" : "taslak_hazir", uyarilar, cariId: cari.tek, belgeId: belge.id, firsatId: firsat, kalemler };
   }
 
   /** Fiyat önerisi ucu (fiyat listesi → kart) TL'de fiyat bulamıyorsa; başka dövizdeki fiyatı taslak aracı çevirir. */
@@ -212,6 +231,30 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     );
     if (f?.cevrilebilir === false && f.kaynakDoviz && f.kaynakDoviz !== "TRY") return false;
     return f?.birimFiyat === null || f?.birimFiyat === undefined || Number(f.birimFiyat) <= 0;
+  }
+
+  /**
+   * AI-46: seçilen carinin kartında ya da ilgili kişilerinde gönderen adresi
+   * yoksa ilgili kişi olarak eklenir (ekranın ucu, rolü yazamayan için not).
+   */
+  private async gondereniOgret(epostaId: string, cariId: string): Promise<string | null> {
+    const { tenantId } = aktifBaglam();
+    const { eposta, kayitli } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const e = await tx.gelenEposta.findFirst({ where: { id: epostaId, tenantId }, select: { gonderenAdi: true, gonderenEposta: true } });
+      const adres = e?.gonderenEposta.trim() ?? "";
+      const var_ = adres ? await tx.cariHesap.count({ where: { id: cariId, tenantId, OR: [{ eposta: { equals: adres, mode: "insensitive" } }, { kisiler: { some: { eposta: { equals: adres, mode: "insensitive" } } } }] } }) : 1;
+      return { eposta: e, kayitli: var_ > 0 };
+    });
+    if (!eposta || kayitli || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(eposta.gonderenEposta)) return null;
+    const adSoyad = (eposta.gonderenAdi?.trim() || eposta.gonderenEposta.split("@")[0]).slice(0, 120).padEnd(2, ".");
+    try {
+      await this.uc.cagir(UC.cariKisiEkle, [cariId, { adSoyad, eposta: eposta.gonderenEposta.trim() }], { kaynak: "otomasyon", arac: "teklif_talebi" });
+      return `${eposta.gonderenEposta} carinin ilgili kişilerine eklendi; bu adresten gelen e-postalar artık bu cariyle eşleşir.`;
+    } catch (hata) {
+      return hata instanceof ForbiddenException
+        ? `${eposta.gonderenEposta} ilgili kişi olarak eklenemedi (rolünüz cari kartını düzenleyemiyor); muhasebe ya da yönetici ekleyebilir.`
+        : `${eposta.gonderenEposta} ilgili kişi olarak eklenemedi: ${hataMetni(hata)}`;
+    }
   }
 
   /** AI-34: gönderen adresi tek bir aktif cariye ait olmalı (kart ya da ilgili kişi). */
@@ -227,9 +270,38 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     return { tek: adaylar.length === 1 ? adaylar[0] : null, adaylar };
   }
 
+  /**
+   * AI-44/45: kesin eşleşme yoksa. Adres birden çok caride kayıtlıysa ya da
+   * yaklaşık ipucu (telefon, alan adı, unvan) varsa kullanıcıya seçtirilir;
+   * yalnız tek VKN/TCKN eşleşmesi kendiliğinden kullanılır (uyarıyla).
+   * `null`: aday yok, cari açma talebine geçilir.
+   */
+  private async cariCoz(eposta: Eposta, cikarim: Cikarim, adresAdaylari: string[]): Promise<{ cariId: string; uyari: string } | { sonuc: Sonuc } | null> {
+    const { tenantId } = aktifBaglam();
+    const firma = cikarim.firma;
+    const adaylar = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (adresAdaylari.length > 1) {
+        const kartlar = await tx.cariHesap.findMany({ where: { tenantId, id: { in: adresAdaylari } }, select: { id: true, kod: true, unvan: true, vknTckn: true } });
+        return kartlar.map((k): CariAdayi => ({ cariId: k.id, kod: k.kod, unvan: k.unvan, vknTckn: k.vknTckn, gerekceler: ["gönderen adresi bu caride kayıtlı"], guclu: false, puan: 50 }));
+      }
+      return cariAdaylari(tx, tenantId, { eposta: eposta.gonderenEposta, vknTckn: firma?.vknTckn, telefon: firma?.telefon, unvan: firma?.unvan ?? eposta.gonderenAdi });
+    });
+    const guclu = adaylar.filter((a) => a.guclu);
+    if (guclu.length === 1) {
+      const a = guclu[0];
+      return { cariId: a.cariId, uyari: `Gönderen adresi kayıtlı değil; e-postadaki VKN/TCKN (${a.vknTckn}) ile "${a.unvan}" carisine eşlendi. Doğru cari olduğunu kontrol edin.` };
+    }
+    if (!adaylar.length) return null;
+    return { sonuc: {
+      durum: "cari_secimi", cariAdaylari: adaylar,
+      uyarilar: [adresAdaylari.length > 1
+        ? `Gönderen adresi ${adresAdaylari.length} caride kayıtlı; doğru cariyi seçin.`
+        : `Gönderen hiçbir cariyle kesin eşleşmedi; ${adaylar.length} olası cari bulundu. Doğru cariyi seçin ya da yeni cari açın.`],
+    } };
+  }
+
   /** Cari yoksa: onaya tabi cari açma talebi (sorumlu onaylarsa taslak sonra hazırlanır). */
-  private async cariTalebi(eposta: Eposta, cikarim: Cikarim, adaySayisi: number): Promise<Sonuc> {
-    if (adaySayisi > 1) return { durum: "cari_yok", uyarilar: [`Gönderen adresi ${adaySayisi} caride kayıtlı; doğru cariyi seçip "Taslak hazırla" ile yeniden çalıştırın ya da adresi tek cariye bırakın.`] };
+  private async cariTalebi(eposta: Eposta, cikarim: Cikarim): Promise<Sonuc> {
     const { tenantId, rol } = aktifBaglam();
     const kodlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { tenantId, kod: { startsWith: "CARI-" } }, select: { kod: true } }));
     const firma = cikarim.firma;
@@ -317,6 +389,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     const ozet = uyarilar.join(" ").slice(0, 1500);
     if (k.durum === "taslak_hazir") await this.bildir(k.gelenEpostaId, k.durum, "E-postadan teklif taslağı hazır", "Teklif talebinden taslak teklif açıldı. Kontrol edip onaylayın; gönderim ayrıca onay ister.", adres.belge(k.belgeId!), "bilgi");
     else if (k.durum === "incelenmeli") await this.bildir(k.gelenEpostaId, k.durum, k.belgeId ? "E-postadan teklif taslağı: kontrol gerekli" : "E-posta teklif talebi incelenmeli", ozet || "Teklif talebi inceleme bekliyor.", k.belgeId ? adres.belge(k.belgeId) : "/panel/eposta", "uyari");
+    else if (k.durum === "cari_secimi") await this.bildir(k.gelenEpostaId, k.durum, "E-posta teklif talebi: cari seçimi bekliyor", `${ozet} Adaylar: ${((k.cariAdaylari as unknown as CariAdayi[]) ?? []).map((a) => `${a.unvan} (${a.gerekceler.join(", ")})`).join("; ")}`.slice(0, 1500), "/panel/eposta", "uyari");
     else if (k.durum === "cari_yok") await this.bildir(k.gelenEpostaId, k.durum, "E-posta teklif talebi: cari bulunamadı", ozet, "/panel/eposta", "uyari");
     else if (k.durum === "sinirda") await this.bildir(k.gelenEpostaId, k.durum, "E-posta teklif talebi işlenmedi: yapay zekâ sınırı", ozet, "/panel/ayarlar/yapay-zeka", "uyari");
     // cari_onayi_bekliyor: onay talebi kendi bildirimini üretir.

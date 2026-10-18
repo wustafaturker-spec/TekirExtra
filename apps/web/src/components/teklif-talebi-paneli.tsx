@@ -6,12 +6,13 @@ import { api } from "@/lib/api";
 import { Alert, Badge, Button } from "@/components/ui";
 import { CariSecModali } from "@/components/cari-sec-modali";
 
-type Durum = "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_onayi_bekliyor" | "cari_yok" | "taslak_hazir" | "sinirda" | "hata";
+type Durum = "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_secimi" | "cari_onayi_bekliyor" | "cari_yok" | "taslak_hazir" | "sinirda" | "hata";
 
 interface Kalem { ifade: string; miktar: number | null; birim: string | null; stokId: string | null; kod: string | null; ad: string | null }
 interface Islem {
   durum: Durum; guven: number | null; uyarilar: string[]; kalemler: Kalem[]; hata: string | null;
   belgeAdresi: string | null; onayAdresi: string | null;
+  cariAdaylari: Array<{ cariId: string; kod: string | null; unvan: string; vknTckn: string | null; gerekceler: string[] }>;
 }
 
 type Varyant = "neutral" | "accent" | "success" | "info" | "danger" | "warning";
@@ -20,6 +21,7 @@ export const TEKLIF_DURUMU: Record<Durum, { ad: string; varyant: Varyant }> = {
   atlandi: { ad: "Otomatik ileti", varyant: "neutral" },
   teklif_degil: { ad: "Teklif talebi değil", varyant: "neutral" },
   incelenmeli: { ad: "Teklif: incelenmeli", varyant: "warning" },
+  cari_secimi: { ad: "Teklif: cari seçimi bekliyor", varyant: "warning" },
   cari_onayi_bekliyor: { ad: "Teklif: cari onayı bekliyor", varyant: "warning" },
   cari_yok: { ad: "Teklif: cari yok", varyant: "warning" },
   taslak_hazir: { ad: "Teklif taslağı hazır", varyant: "success" },
@@ -53,10 +55,10 @@ export function TeklifTalebiPaneli({ epostaId, onDegisti }: { epostaId: string; 
   }, [epostaId]);
   useEffect(() => { setIslem(null); void yukle(); }, [yukle]);
 
-  async function hazirla(cariId?: string) {
+  async function hazirla(secim: { cariId?: string; yeniCari?: true } = {}) {
     setCariSec(false); setYukleniyor(true); setHata("");
     try {
-      setIslem(await api<Islem>(`/ai/teklif-talepleri/${epostaId}/hazirla`, { method: "POST", body: JSON.stringify(cariId ? { cariId } : {}) }));
+      setIslem(await api<Islem>(`/ai/teklif-talepleri/${epostaId}/hazirla`, { method: "POST", body: JSON.stringify(secim) }));
       onDegisti?.();
     } catch (e) { setHata(e instanceof Error ? e.message : "Taslak hazırlanamadı"); }
     finally { setYukleniyor(false); }
@@ -72,8 +74,19 @@ export function TeklifTalebiPaneli({ epostaId, onDegisti }: { epostaId: string; 
         {islem?.belgeAdresi && <Link href={islem.belgeAdresi}>Taslağı aç</Link>}
         {islem?.onayAdresi && islem.durum === "cari_onayi_bekliyor" && <Link href={islem.onayAdresi}>Cari açma onayı</Link>}
         {yenidenCalisir && <Button size="sm" disabled={yukleniyor} onClick={() => void hazirla()}>{yukleniyor ? "Hazırlanıyor…" : islem ? "Yeniden dene" : "Taslak hazırla"}</Button>}
-        {islem?.durum === "cari_yok" && <Button size="sm" disabled={yukleniyor} onClick={() => setCariSec(true)}>Cari seçerek hazırla</Button>}
+        {(islem?.durum === "cari_yok" || islem?.durum === "cari_secimi") && <Button size="sm" disabled={yukleniyor} onClick={() => setCariSec(true)}>{islem.durum === "cari_secimi" ? "Başka cari seç" : "Cari seçerek hazırla"}</Button>}
+        {islem?.durum === "cari_secimi" && <Button size="sm" disabled={yukleniyor} onClick={() => void hazirla({ yeniCari: true })}>Hiçbiri, yeni cari aç</Button>}
       </div>
+      {islem?.durum === "cari_secimi" && !!islem.cariAdaylari.length && (
+        <ul className="teklif-talebi__adaylar" aria-label="Olası cariler">
+          {islem.cariAdaylari.map((a) => (
+            <li key={a.cariId}>
+              <span><strong>{a.unvan}</strong>{a.kod ? <span className="muted"> · {a.kod}</span> : null} <span className="muted">— {a.gerekceler.join(" · ")}</span></span>
+              <Button size="sm" variant="primary" disabled={yukleniyor} onClick={() => void hazirla({ cariId: a.cariId })}>Bu cari</Button>
+            </li>
+          ))}
+        </ul>
+      )}
       {hata && <Alert tone="error">{hata}</Alert>}
       {islem?.hata && <Alert tone="error">{islem.hata}</Alert>}
       {!!islem?.uyarilar.length && <ul className="teklif-talebi__uyarilar">{islem.uyarilar.map((u, i) => <li key={i}>{u}</li>)}</ul>}
@@ -91,7 +104,7 @@ export function TeklifTalebiPaneli({ epostaId, onDegisti }: { epostaId: string; 
         <CariSecModali
           baslik="Teklif hangi cariye hazırlansın?"
           aciklama="Gönderen adresi bir cariyle tek başına eşleşmedi. Seçtiğiniz cari için önceki çıkarımla taslak hazırlanır."
-          onSec={(c) => void hazirla(c.id)}
+          onSec={(c) => void hazirla({ cariId: c.id })}
           onKapat={() => setCariSec(false)}
         />
       )}
