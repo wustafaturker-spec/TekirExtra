@@ -35,7 +35,9 @@ services:
       - "8025:8025"
 
   minio:
-    image: minio/minio:latest
+    # minio/minio Eylül 2026'da Docker Hub'dan kaldırıldı; aynı sunucunun topluluk sürümü, sabit sürüm.
+    # Önbellekte eski imajı olan makine .env'de MINIO_IMAGE=minio/minio:latest ile onu kullanmaya devam edebilir.
+    image: ${MINIO_IMAGE:-docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z}
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: tekir
