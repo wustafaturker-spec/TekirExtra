@@ -21,6 +21,9 @@ jobs:
       - name: Bağımlılıkları kur
         run: pnpm install --frozen-lockfile
 
+      - name: Lint (dar kapsam, eslint.config.mjs)
+        run: pnpm lint
+
       - name: Derle
         run: pnpm turbo build
 

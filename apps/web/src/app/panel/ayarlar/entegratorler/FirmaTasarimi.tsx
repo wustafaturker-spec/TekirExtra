@@ -137,7 +137,6 @@ export function FirmaTasarimi({ baglantiId, tur, onYuklendi }: { baglantiId: str
           <div className="row-tight" style={{ alignItems: "center", gap: "0.5rem", marginTop: "0.35rem", flexWrap: "wrap" }}>
             {rozetler.map((r, i) => (
               <span key={i} className="row-tight" style={{ alignItems: "center", gap: "0.25rem" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={r} alt={`Rozet ${i + 1}`} style={{ height: "2.5rem", border: "1px solid var(--border)", borderRadius: "0.3rem" }} />
                 <Button type="button" size="sm" onClick={() => setRozetler((x) => x.filter((_, j) => j !== i))}>Kaldır</Button>
               </span>

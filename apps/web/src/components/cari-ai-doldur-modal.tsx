@@ -160,7 +160,6 @@ export function CariAiDoldurModal({ acik, onKapat, onVeriDoldur }: CariAiDoldurM
             <input type="file" accept="image/*" onChange={handleDosyaYukle} className="w-full text-sm" />
             {gorselBase64 && (
               <div className="mt-2 border rounded p-1 max-w-xs">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={gorselBase64} alt="Önizleme" className="max-h-36 rounded object-contain" />
               </div>
             )}

@@ -107,6 +107,8 @@ async function race(f: F, first: (tx: Tx) => Promise<unknown>, second: (tx: Tx) 
   } finally {
     resumed.resolve();
     const results = await Promise.all([writer, ...(reader ? [reader] : [])]);
+    // Bilinçli: yazanın hatası, try içindeki bekleme hatasının asıl nedenidir ve onun yerine raporlanır.
+    // eslint-disable-next-line no-unsafe-finally
     if (!results[0].ok) throw results[0].error;
   }
   return reader!;

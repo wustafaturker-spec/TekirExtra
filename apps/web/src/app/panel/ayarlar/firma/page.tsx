@@ -268,7 +268,6 @@ export default function FirmaAyarlariSayfasi() {
               }}
             >
               {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoUrl} alt="Firma Logosu" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               ) : (
                 <div className="subtle" style={{ textAlign: "center", fontSize: "0.8rem", padding: 10 }}>Logo Yok</div>
