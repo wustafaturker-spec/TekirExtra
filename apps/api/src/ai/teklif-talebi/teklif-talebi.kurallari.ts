@@ -99,13 +99,19 @@ export const ESLESME_TALIMATI = [
   'Yanıt biçimi: {"secimler": [{"kalem": kalem numarası, "aday": aday numarası|null}]} — her kalem için bir satır.',
 ].join("\n");
 
+/**
+ * AI-53: dış metindeki veri etiketleri etkisizleştirilir; e-posta kendi
+ * içinde "</eposta>" yazıp istemin veri sınırından çıkamaz.
+ */
+export const veriEtiketiTemizle = (metin: string) => metin.replace(/<\s*\/?\s*eposta\b[^>]*>/gi, "[eposta etiketi]");
+
 export function cikarimIstemi(e: { gonderenAdi: string | null; gonderenEposta: string; konu: string; icerikMetin: string | null; ekAdlari: string[] }): string {
-  const icerik = (e.icerikMetin ?? "").slice(0, AZAMI_ICERIK);
+  const icerik = veriEtiketiTemizle((e.icerikMetin ?? "").slice(0, AZAMI_ICERIK));
   return [
     "<eposta>",
-    `Gönderen: ${e.gonderenAdi ?? ""} <${e.gonderenEposta}>`,
-    `Konu: ${e.konu}`,
-    e.ekAdlari.length ? `Ekler: ${e.ekAdlari.join(", ")}` : "",
+    veriEtiketiTemizle(`Gönderen: ${e.gonderenAdi ?? ""} <${e.gonderenEposta}>`),
+    veriEtiketiTemizle(`Konu: ${e.konu}`),
+    e.ekAdlari.length ? veriEtiketiTemizle(`Ekler: ${e.ekAdlari.join(", ")}`) : "",
     "",
     icerik,
     "</eposta>",
@@ -116,7 +122,7 @@ export interface StokAdayi { stokId: string; varyantId: string | null; kod: stri
 
 export function eslesmeIstemi(kalemler: Array<{ ifade: string; miktar: number | null; birim: string | null }>, adaylar: StokAdayi[][]): string {
   return kalemler.map((k, i) => [
-    `Kalem ${i + 1}: ${k.ifade}${k.miktar !== null ? ` — ${k.miktar}${k.birim ? ` ${k.birim}` : ""}` : ""}`,
+    `Kalem ${i + 1}: ${veriEtiketiTemizle(k.ifade)}${k.miktar !== null ? ` — ${k.miktar}${k.birim ? ` ${k.birim}` : ""}` : ""}`,
     ...(adaylar[i].length ? adaylar[i].map((a, j) => `  ${j + 1}) [${a.kod}] ${a.ad}${a.birim ? ` (${a.birim})` : ""}`) : ["  (aday yok)"]),
   ].join("\n")).join("\n");
 }
