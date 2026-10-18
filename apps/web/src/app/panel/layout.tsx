@@ -399,6 +399,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                 >
                   <AlanIkonu aria-hidden="true" className="nav__alan-ikon" size={17} strokeWidth={1.9} />
                   <span>{alan.baslik}</span>
+                  {/* AI-51: bölüm kapalıyken de iş kutusu sayısı görünsün. */}
+                  {!acik && isKutusuSayisi > 0 && alan.ogeler.some((o) => o.sayac === "is-kutusu") && <span className="nav__link-sayac" aria-label={`${isKutusuSayisi} açık iş`}>{isKutusuSayisi > 99 ? "99+" : isKutusuSayisi}</span>}
                   {alanAktif && !acik
                     ? <span aria-hidden="true" className="nav__alan-nokta" />
                     : <ChevronRight aria-hidden="true" className="nav__alan-ok" size={14} strokeWidth={2.2} />}

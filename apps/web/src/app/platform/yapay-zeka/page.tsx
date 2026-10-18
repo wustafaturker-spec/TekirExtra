@@ -46,7 +46,11 @@ export default function PlatformYapayZeka() {
   const platformdakiler = ozet?.kiracilar.filter((k) => k.platformAnahtari) ?? [];
   const toplam = platformdakiler.reduce((t, k) => t + k.buAyUsd, 0);
   const aranan = arama.trim().toLocaleLowerCase("tr-TR");
-  const gorunen = (ozet?.kiracilar ?? []).filter((k) => !aranan || k.unvan.toLocaleLowerCase("tr-TR").includes(aranan));
+  // Önce platform anahtarıyla çalışanlar (tavanın asıl konusu), sonra kendi anahtarıyla, sonra yapay zekâsız; her grupta bu ayki maliyete göre.
+  const grup = (k: Kiraci) => (k.platformAnahtari ? 0 : k.saglayici !== "varsayilan" ? 1 : 2);
+  const gorunen = (ozet?.kiracilar ?? [])
+    .filter((k) => !aranan || k.unvan.toLocaleLowerCase("tr-TR").includes(aranan))
+    .sort((a, b) => grup(a) - grup(b) || b.buAyUsd - a.buAyUsd || a.unvan.localeCompare(b.unvan, "tr"));
   return <>
     <PageHeader title="Yapay zekâ tavanı" subtitle="Kendi API anahtarını girmeyen firmaların yapay zekâ çağrılarını platform öder. Her firmaya aylık USD tavanı konur; tavan dolunca firmanın yapay zekâ özellikleri ay sonuna kadar durur." />
     <Alert tone="error">{hata}</Alert>

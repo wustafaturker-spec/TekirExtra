@@ -1009,14 +1009,14 @@ export default function GelenEpostalarSayfasi() {
                 </div>
               </div>
 
-              {seciliEposta.teklifBelge ? (
-                <Alert tone="success">Bu e-posta <Link href={`/panel/belgeler?odak=${seciliEposta.teklifBelge.id}`}>{seciliEposta.teklifBelge.no}{seciliEposta.teklifBelge.revizyonNo ? `-R${seciliEposta.teklifBelge.revizyonNo}` : ""}</Link> teklifinin yanıtı; teklif takibi kapandı.</Alert>
-              ) : (
-                <TeklifTalebiPaneli epostaId={seciliEposta.id} onDegisti={() => void yukle()} />
-              )}
-
               {/* İLETİ GÖVDE VE İÇERİĞİ (SCROLL) */}
               <div className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-10 py-5 md:py-8 space-y-6 bg-[#fcfcfd]">
+                {/* AI-37/39: teklif talebi işlemi ya da yanıtı olduğu teklif (gövdeyle birlikte kayar). */}
+                {seciliEposta.teklifBelge ? (
+                  <Alert tone="success">Bu e-posta <Link href={`/panel/belgeler?odak=${seciliEposta.teklifBelge.id}`}>{seciliEposta.teklifBelge.no}{seciliEposta.teklifBelge.revizyonNo ? `-R${seciliEposta.teklifBelge.revizyonNo}` : ""}</Link> teklifinin yanıtı; teklif takibi kapandı.</Alert>
+                ) : (
+                  <TeklifTalebiPaneli epostaId={seciliEposta.id} onDegisti={() => void yukle()} />
+                )}
                 {/* KONU BAŞLIĞI */}
                 <div>
                   <h1 className="text-xl md:text-[26px] font-bold text-[#172033] leading-snug tracking-tight">
