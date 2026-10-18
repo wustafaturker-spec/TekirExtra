@@ -8,6 +8,9 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      # API tsc derlemesi Node'un varsayılan ~2 GB yığınını aşıyor (exit 134); koşucuda 16 GB var.
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4
 

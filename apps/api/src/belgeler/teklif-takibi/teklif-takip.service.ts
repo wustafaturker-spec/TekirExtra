@@ -57,8 +57,8 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.zamanlayici = setInterval(() => void this.tara(), OTUZ_DAKIKA_MS);
-    setImmediate(() => void this.tara());
+    this.zamanlayici = setInterval(() => void this.taraGuvenli(), OTUZ_DAKIKA_MS);
+    setImmediate(() => void this.taraGuvenli());
   }
 
   onModuleDestroy(): void {
@@ -185,6 +185,12 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Worker: açık takiplerin kapanışı (her zaman) ve hatırlatma/geçerlilik uyarısı (ayar açıkken). */
+  // Zamanlayıcıdan çağrılır: veritabanı anlık erişilemezse hata yakalanmadan süreci düşürmesin, sonraki turda yeniden dener.
+  private async taraGuvenli(): Promise<void> {
+    try { await this.tara(); }
+    catch (hata) { this.logger.error(`Teklif takibi taraması başarısız: ${hata instanceof Error ? hata.message.split("\n").filter(Boolean).pop() : String(hata)}`); }
+  }
+
   async tara(): Promise<void> {
     if (this.calisiyor) return;
     this.calisiyor = true;

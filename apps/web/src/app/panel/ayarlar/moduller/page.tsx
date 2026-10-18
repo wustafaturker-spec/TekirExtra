@@ -154,22 +154,35 @@ export default function ModulAyarlariSayfasi() {
   const [degerler, setDegerler] = useState<Record<string, Record<string, unknown>>>({});
   const [kasalar, setKasalar] = useState<Ref[]>([]);
   const [bankalar, setBankalar] = useState<Ref[]>([]);
-  const [sorumlular, setSorumlular] = useState<{ id: string; adSoyad: string; rol: string }[]>([]);
+  const [sorumlular, setSorumlular] = useState<{ id: string; adSoyad: string; rol: string }[] | null>(null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [kaydedilen, setKaydedilen] = useState<string>("");
+  // Değerler gelmeden kart gösterilmez: boş/varsayılan görünüp yanlışlıkla kaydedilmesin.
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [yuklenemeyen, setYuklenemeyen] = useState<Record<string, string>>({});
+  const [kaydediliyor, setKaydediliyor] = useState<string>("");
 
   const yukle = useCallback(async () => {
     setHata("");
+    setYukleniyor(true);
     try {
       const { moduller: liste } = await api<{ moduller: string[] }>("/ayarlar");
+      // Modüller tek tek: biri okunamazsa diğerleri yine gösterilir, okunamayanın kaydı kapalıdır.
+      const sonuclar = await Promise.allSettled(liste.map((m) => api<Record<string, unknown>>(`/ayarlar/${m}`)));
+      const okunan: Record<string, Record<string, unknown>> = {};
+      const hatali: Record<string, string> = {};
+      sonuclar.forEach((r, i) => {
+        if (r.status === "fulfilled") okunan[liste[i]] = r.value;
+        else hatali[liste[i]] = r.reason instanceof Error ? r.reason.message : "okunamadı";
+      });
+      setDegerler(okunan);
+      setYuklenemeyen(hatali);
       setModuller(liste);
-      const cift = await Promise.all(
-        liste.map(async (m) => [m, await api<Record<string, unknown>>(`/ayarlar/${m}`)] as const),
-      );
-      setDegerler(Object.fromEntries(cift));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Ayarlar yüklenemedi");
+    } finally {
+      setYukleniyor(false);
     }
   }, []);
 
@@ -180,7 +193,7 @@ export default function ModulAyarlariSayfasi() {
     api<Ref[]>("/kasa-banka/bankalar").then(setBankalar).catch(() => undefined);
     api<{ id: string; adSoyad: string; aktif: boolean; rol: string }[]>("/kullanicilar")
       .then((liste) => setSorumlular(liste.filter((u) => u.aktif)))
-      .catch(() => undefined);
+      .catch(() => setSorumlular([]));
   }, [yukle]);
 
   function alanGuncelle(modul: string, ad: string, deger: unknown) {
@@ -188,8 +201,10 @@ export default function ModulAyarlariSayfasi() {
   }
 
   async function kaydet(modul: string) {
+    if (kaydediliyor || !degerler[modul]) return;
     setHata("");
     setBasari("");
+    setKaydediliyor(modul);
     const tanim = MODUL_TANIM[modul];
     const ham = degerler[modul] ?? {};
     // Şemaya uygun tiplere dönüştür
@@ -212,6 +227,8 @@ export default function ModulAyarlariSayfasi() {
       setTimeout(() => setKaydedilen(""), 2000);
     } catch (h) {
       setHata(h instanceof Error ? h.message : `${tanim.baslik} ayarları kaydedilemedi`);
+    } finally {
+      setKaydediliyor("");
     }
   }
 
@@ -244,6 +261,7 @@ export default function ModulAyarlariSayfasi() {
       );
     }
     if (a.tip === "kullaniciRef") {
+      if (sorumlular === null) return <Select aria-label={a.etiket} disabled value=""><option value="">Kullanıcılar yükleniyor…</option></Select>;
       const uygun = sorumlular.filter((u) => (a.roller ?? ["yonetici", "muhasebe"]).includes(u.rol));
       return <Select aria-label={a.etiket} value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)}>
         <option value="">— Sorumlu seçin —</option>
@@ -278,17 +296,21 @@ export default function ModulAyarlariSayfasi() {
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
+      {yukleniyor && <Card><p className="muted" role="status">Ayarlar yükleniyor…</p></Card>}
+
       <div className="stack">
-        {gorunenModuller.map((m) => {
+        {!yukleniyor && gorunenModuller.map((m) => {
           const tanim = MODUL_TANIM[m];
+          const okunamadi = yuklenemeyen[m];
           return (
             <Card key={m}>
               <div className="between" style={{ marginBottom: "1rem" }}>
                 <h3 style={{ fontSize: "1.05rem", margin: 0 }}>{tanim.ikon} {tanim.baslik}</h3>
-                <Button variant="primary" size="sm" onClick={() => kaydet(m)}>
-                  {kaydedilen === m ? "✓ Kaydedildi" : "Kaydet"}
+                <Button variant="primary" size="sm" disabled={Boolean(okunamadi) || Boolean(kaydediliyor)} onClick={() => kaydet(m)}>
+                  {kaydediliyor === m ? "Kaydediliyor…" : kaydedilen === m ? "✓ Kaydedildi" : "Kaydet"}
                 </Button>
               </div>
+              {okunamadi ? <Alert tone="error">Bu modülün ayarları okunamadı ({okunamadi}); kaydetme kapalı. Sayfayı yenileyin.</Alert> : (
               <div className="row">
                 {tanim.alanlar.filter((a) => a.tip !== "gizli").map((a) => (
                   <div key={a.ad} style={a.tip === "sablon" || a.tip === "uzunMetin" ? { flexBasis: "100%" } : { flex: 1, minWidth: 200 }}>
@@ -297,6 +319,7 @@ export default function ModulAyarlariSayfasi() {
                   </div>
                 ))}
               </div>
+              )}
             </Card>
           );
         })}
