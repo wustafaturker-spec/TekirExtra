@@ -93,6 +93,18 @@ services:
         condition: service_started
     profiles: ["observability"]
 
+  clamav:
+    # Yükleme taraması (dosya-denetimi + clamav.ts): API/worker'da CLAMAV_HOST tanımlıysa
+    # her yükleme taranır, tarama yapılamazsa yükleme reddedilir. İmza veritabanı ilk
+    # açılışta indirilir (birkaç dakika, ~1 GB bellek). Açmak için:
+    #   docker compose --profile tarama up -d clamav   ve .env'de CLAMAV_HOST=localhost
+    image: clamav/clamav:1.4
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    profiles: ["tarama"]
+
   api:
     build:
       context: .
@@ -134,6 +146,8 @@ services:
       - "3100:3000"
     environment:
       API_URL: http://api:3001
+      # Rota koruması; .env.docker'daki değerle aynı olmalı (yoksa panel kapalı kalır).
+      OTURUM_ISARETI_SECRET: dev-oturum-isareti-degistir-0123456789abcdef
     depends_on:
       api:
         condition: service_healthy
@@ -145,6 +159,7 @@ services:
     profiles: ["app"]
 
 volumes:
+  clamav-data:
   postgres-data:
   redis-data:
   minio-data:

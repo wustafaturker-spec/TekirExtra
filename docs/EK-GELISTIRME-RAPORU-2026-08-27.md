@@ -25,7 +25,7 @@ Son eklenen gelir ve proje özellikleri üretime alınmadan önce migration/RLS,
 
 ## Kalan P1 — Yüksek öncelikli işler
 
-1. İstemci layout'u rol yüklenene kadar alt içeriği kapatmaktadır. Savunmayı güçlendirmek için yetkisiz rotalar ayrıca sunucu/middleware katmanında kesilmelidir.
+1. ✅ (2026-10-18) İstemci layout'u rol yüklenene kadar alt içeriği kapatmaktadır. Savunmayı güçlendirmek için yetkisiz rotalar ayrıca sunucu/middleware katmanında kesilmelidir. — Next middleware `/panel/*` sayfalarını API'nin giriş/yenilemede koyduğu HMAC imzalı `tekir_oturum` çerezi (HttpOnly, 30 gün, `OTURUM_ISARETI_SECRET`) olmadan sunmaz, `/giris?donus=` ile yönlendirir; giriş sayfası geçerli yenileme çereziyle sessizce tazeler. Sır tanımsızsa üretimde panel kapalı. Rol bazlı rota kesme hâlâ istemcide (veri koruması API'de).
 2. E2E kapsamı tahsilat/ödeme ve gelir için eklendi; silme/iptal ve API hata geri kazanım senaryolarıyla genişletilmelidir.
 
 ## P2 — Teknik sürdürülebilirlik
@@ -33,8 +33,8 @@ Son eklenen gelir ve proje özellikleri üretime alınmadan önce migration/RLS,
 1. Büyük istemci sayfaları veri hook'ları, form ve sunum bileşenlerine ayrılmalıdır.
 2. Access token artık sekme ömürlü depodadır; JavaScript erişimini tamamen kaldırmak için HttpOnly cookie/BFF oturum modeli tasarlanmalıdır.
 3. Access token bellek veya HttpOnly cookie modeline taşınırken mevcut doğrudan indirme/yükleme akışları uyarlanmalıdır.
-4. Dosya yüklemelerinde zararlı yazılım taraması ve arşiv içi içerik denetimi üretim depolama akışına eklenmelidir.
-5. Backend geliştirme komutu watch/hot-reload desteklemelidir.
+4. ✅ (2026-10-18) Dosya yüklemelerinde zararlı yazılım taraması ve arşiv içi içerik denetimi üretim depolama akışına eklenmelidir. — `core/guvenlik/dosya-denetimi.ts`: tür imzadan, uç profilleri (belge, çek görüntüsü, mutabakat, Excel, ekstre), çalıştırılabilir/HTML reddi, ZIP bombası/yol/makro/ActiveX, PDF JavaScript/Launch/gömülü dosya (sıkıştırılmış akışlar dahil), eski Office makrosu; `clamav.ts` `CLAMAV_HOST` tanımlıysa her yüklemeyi tarar, tarama yapılamazsa reddeder (compose `tarama` profili). Saklanan MIME içerikten gelir. SVG/GIF/PPTX belge ekine bilerek açılmadı.
+5. ✅ (2026-10-17, d29f0d3) Backend geliştirme komutu watch/hot-reload desteklemelidir.
 6. CI sırasına migration deploy/drift, lint, typecheck, test, production build, Playwright ve container health kontrolleri eklenmelidir.
 
 ## Ürün geliştirme adayları

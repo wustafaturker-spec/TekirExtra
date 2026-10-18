@@ -66,7 +66,8 @@ export class EklerService {
     if (dosya.size > MAKS_BOYUT) {
       throw new BadRequestException("Dosya 10 MB sınırını aşıyor");
     }
-    dosyaIceriginiDogrula(dosya);
+    // Çek/senet görüntüsü yalnız görüntü ya da PDF olabilir; saklanan MIME içerikten gelir.
+    const mime = await dosyaIceriginiDogrula(dosya, sahipTur === "cek_senet" ? "goruntu" : "belge");
     const { tenantId, userId } = aktifBaglam();
     const guvenliAd = dosya.originalname.replace(/[^\w.\-çğıöşüÇĞİÖŞÜ ]/g, "_");
     const depoAnahtari = `${tenantId}/${sahipTur}/${sahipId}/${randomUUID()}-${guvenliAd}`;
@@ -75,14 +76,14 @@ export class EklerService {
       await this.sahipDogrula(tx, sahipTur, sahipId);
       // Önce depoya yaz: DB kaydı başarısızsa artık nesne sahipsiz kalır ama
       // veri kaybolmaz; ters sırada meta veri gövdesiz kalırdı.
-      await this.depo.yukle(depoAnahtari, dosya.buffer, dosya.mimetype);
+      await this.depo.yukle(depoAnahtari, dosya.buffer, mime);
       return tx.ek.create({
         data: {
           tenantId,
           sahipTur,
           sahipId,
           dosyaAdi: dosya.originalname,
-          mimeTip: dosya.mimetype,
+          mimeTip: mime,
           boyut: dosya.size,
           depoAnahtari,
           yukleyenUserId: userId,

@@ -449,7 +449,7 @@ export class KasaBankaController {
     @Body("bankaHesapId") bankaHesapId?: string,
   ) {
     if (!dosya) throw new BadRequestException("Lütfen bir ekstre dosyası yükleyin");
-    ekstreDosyasiniDogrula(dosya);
+    await ekstreDosyasiniDogrula(dosya);
     if (!bankaHesapId) throw new BadRequestException("Banka hesabı seçilmelidir");
     return this.ekstre.onizle(bankaHesapId, dosya.buffer);
   }
@@ -466,7 +466,7 @@ export class KasaBankaController {
     @Body("veri") veri?: string,
   ) {
     if (!dosya) throw new BadRequestException("Lütfen bir ekstre dosyası yükleyin");
-    ekstreDosyasiniDogrula(dosya);
+    await ekstreDosyasiniDogrula(dosya);
 
     let govde: unknown;
     try {

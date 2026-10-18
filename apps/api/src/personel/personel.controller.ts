@@ -176,7 +176,7 @@ export class PersonelController {
     const f = bordroListeFiltreSemasi.parse({ yil, ay });
     if (!f.yil || !f.ay) throw new BadRequestException("Dönem için yıl ve ay zorunludur");
     if (!dosya) throw new BadRequestException("Excel dosyası seçin");
-    excelDosyasiniDogrula(dosya);
+    await excelDosyasiniDogrula(dosya);
     return this.personelService.puantajIceAktar(aktifBaglam().tenantId, f.yil, f.ay, dosya.buffer);
   }
 

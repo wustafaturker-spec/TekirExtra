@@ -87,7 +87,7 @@ export class MutabakatPortalService {
     if (ek) {
       if (ek.size > EK_EN_BUYUK) throw new BadRequestException("Dosya en çok 5 MB olabilir");
       if (!EK_MIMELERI.has(ek.mimetype)) throw new BadRequestException("Yalnız PDF, Excel ya da CSV dosyası eklenebilir");
-      dosyaIceriginiDogrula(ek);
+      ek = { ...ek, mimetype: await dosyaIceriginiDogrula(ek, "mutabakat") };
     }
     const ekAnahtari = ek ? `${tenantId}/mutabakat/${k.id}/itiraz-${randomUUID()}` : null;
     if (ek && ekAnahtari) await this.depo.yukle(ekAnahtari, ek.buffer, ek.mimetype);

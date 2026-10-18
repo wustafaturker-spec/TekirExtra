@@ -1,5 +1,6 @@
 "use client";
 
+import { guvenliDonus } from "@/lib/oturum-isareti";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -15,6 +16,18 @@ export default function GirisSayfasi() {
   const [parolaGoster, setParolaGoster] = useState(false);
   const [eposta, setEposta] = useState("");
   const [parola, setParola] = useState("");
+
+  useEffect(() => {
+    // Rota koruması panelden buraya yönlendirdiyse ve yenileme çerezi geçerliyse oturum
+    // sessizce tazelenir (işaret çerezi yeniden konur) ve kullanıcı istediği sayfaya döner.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oturum") !== "gerekli") return;
+    let iptal = false;
+    void api<{ accessToken: string }>("/auth/yenile", { method: "POST" })
+      .then((s) => { if (!iptal) { tokenYaz(s.accessToken); yonlendir.replace(guvenliDonus(params.get("donus"))); } })
+      .catch(() => undefined);
+    return () => { iptal = true; };
+  }, [yonlendir]);
 
   useEffect(() => {
     // Güvenlik: URL querystring içerisinde hassas veri (parola vb.) sızmasını engeller
@@ -39,7 +52,8 @@ export default function GirisSayfasi() {
         }),
       });
       tokenYaz(sonuc.accessToken);
-      yonlendir.push("/panel");
+      // Rota koruması giriş sayfasına yönlendirdiyse kullanıcı istediği panel sayfasına döner.
+      yonlendir.push(guvenliDonus(new URLSearchParams(window.location.search).get("donus")));
     } catch (h) {
       const mesaj = h instanceof ApiHata ? h.message : "Giriş başarısız. Lütfen bilgilerinizi kontrol edin.";
       if (mesaj.includes("TOTP")) setTotpGerekli(true);

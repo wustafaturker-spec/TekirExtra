@@ -369,7 +369,7 @@ export class CariController {
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelOnizleme(@UploadedFile() file: YuklemeDosyasi | undefined) {
-    return this.iceAktarma.onizleme(this.excelDosyasi(file));
+    return this.iceAktarma.onizleme(await this.excelDosyasi(file));
   }
 
   /** CARI-31: onay — dosya yeniden doğrulanır, hatasız satırlar yazılır. */
@@ -377,22 +377,22 @@ export class CariController {
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelIceAktar(@UploadedFile() file: YuklemeDosyasi | undefined) {
-    return this.iceAktarma.iceAktar(this.excelDosyasi(file));
+    return this.iceAktarma.iceAktar(await this.excelDosyasi(file));
   }
 
   @Post("excel/hatali-satirlar")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelHataliSatirlar(@UploadedFile() file: YuklemeDosyasi | undefined, @Res() res: Response) {
-    const buffer = await this.iceAktarma.hataliSatirlar(this.excelDosyasi(file));
+    const buffer = await this.iceAktarma.hataliSatirlar(await this.excelDosyasi(file));
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=cari-hatali-satirlar.xlsx");
     res.send(buffer);
   }
 
-  private excelDosyasi(file: YuklemeDosyasi | undefined): Buffer {
+  private async excelDosyasi(file: YuklemeDosyasi | undefined): Promise<Buffer> {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
-    excelDosyasiniDogrula(file);
+    await excelDosyasiniDogrula(file);
     return file.buffer;
   }
 

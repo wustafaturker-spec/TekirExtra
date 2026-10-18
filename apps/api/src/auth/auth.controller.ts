@@ -13,6 +13,7 @@ import { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { AuthService } from "./auth.service";
 import { Public } from "./public.decorator";
+import { OTURUM_ISARETI_COOKIE, OTURUM_ISARETI_SURESI_SN, oturumIsaretiSirri, oturumIsaretiUret } from "./oturum-isareti";
 
 const girisSemasi = z.object({
   eposta: z.email(),
@@ -30,6 +31,17 @@ function refreshCookieYaz(res: Response, token: string): void {
     path: "/api/v1/auth",
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
+  // Rota koruması: web middleware'i panel sayfalarını bu işaret olmadan sunmaz.
+  const sir = oturumIsaretiSirri();
+  if (sir) {
+    res.cookie(OTURUM_ISARETI_COOKIE, oturumIsaretiUret(sir), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: OTURUM_ISARETI_SURESI_SN * 1000,
+    });
+  }
 }
 
 @Controller("auth")
@@ -67,6 +79,7 @@ export class AuthController {
     const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
     await this.auth.cikis(token);
     res.clearCookie(REFRESH_COOKIE, { path: "/api/v1/auth" });
+    res.clearCookie(OTURUM_ISARETI_COOKIE, { path: "/" });
     return { durum: "ok" };
   }
 

@@ -169,7 +169,7 @@ export class StokController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelOnizle(@UploadedFile() file: YuklemeDosyasi | undefined) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
-    excelDosyasiniDogrula(file);
+    await excelDosyasiniDogrula(file);
     return this.stokService.excelOnizle(file.buffer);
   }
 
@@ -443,7 +443,7 @@ export class StokController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelAktar(@UploadedFile() file: YuklemeDosyasi | undefined) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
-    excelDosyasiniDogrula(file);
+    await excelDosyasiniDogrula(file);
     return this.stokService.excelImport(file.buffer);
   }
 }
