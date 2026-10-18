@@ -18,7 +18,7 @@ import { TEKLIF_TALEBI_MODULU, TEKLIF_TALEBI_ROLLERI, teklifTalebiAyariSemasi, t
 import {
   ADAY_SAYISI, ASGARI_GUVEN, AZAMI_DENEME, CIKARIM_TALIMATI, ESLESME_TALIMATI, YENIDEN_CALISTIRILABILIR,
   cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeIstemi, eslesmeSemasi, miktarMetni, otomatikIletiMi,
-  secimleriUygula, taslakAciklamasi, varsayilanUnvan, yedekArama,
+  secimleriUygula, taslakAciklamasi, varsayilanUnvan, yedekAramalar,
   type Cikarim, type StokAdayi, type TeklifIslemDurumu,
 } from "./teklif-talebi.kurallari";
 
@@ -324,8 +324,10 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     const adaylar: StokAdayi[][] = [];
     for (const k of cikarim.kalemler) {
       let liste = await this.stokAdaylari(k.ifade);
-      const yedek = liste.length ? null : yedekArama(k.ifade);
-      if (yedek) liste = await this.stokAdaylari(yedek);
+      for (const yedek of liste.length ? [] : yedekAramalar(k.ifade)) {
+        liste = await this.stokAdaylari(yedek);
+        if (liste.length) break;
+      }
       adaylar.push(liste);
     }
     const secilen = adaylar.some((a) => a.length)

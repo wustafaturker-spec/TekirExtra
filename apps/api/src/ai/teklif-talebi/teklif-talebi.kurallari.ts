@@ -137,10 +137,12 @@ export function secimleriUygula(adaylar: StokAdayi[][], secimler: Array<{ kalem:
 }
 
 /** Stok aramasında ifade bulunamazsa en uzun anlamlı kelimeyle yeniden denenir. */
-export function yedekArama(ifade: string): string | null {
+export function yedekAramalar(ifade: string, enFazla = 3): string[] {
   const kelimeler = ifade.split(/[\s,;/()]+/).filter((k) => k.length >= 3 && !/^\d+([.,]\d+)?$/.test(k));
-  const enUzun = kelimeler.sort((a, b) => b.length - a.length)[0];
-  return enUzun && enUzun !== ifade ? enUzun : null;
+  // Önce ürün kodu gibi görünenler (harf + rakam: "SF0101"); müşteri adı farklı yazsa da kod birebir tutar.
+  const kodMu = (k: string) => /\p{L}/u.test(k) && /\d/.test(k);
+  const sirali = [...new Set(kelimeler)].sort((a, b) => Number(kodMu(b)) - Number(kodMu(a)) || b.length - a.length);
+  return sirali.filter((k) => k !== ifade).slice(0, enFazla);
 }
 
 /** Sıradaki "CARI-NNN" kodu (içe aktarmadaki düzen). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { veriEtiketiTemizle, cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeSemasi, otomatikBasliklarMi, otomatikIletiMi, secimleriUygula, taslakAciklamasi, varsayilanUnvan, yedekArama } from "./teklif-talebi.kurallari";
+import { veriEtiketiTemizle, cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeSemasi, otomatikBasliklarMi, otomatikIletiMi, secimleriUygula, taslakAciklamasi, varsayilanUnvan, yedekAramalar } from "./teklif-talebi.kurallari";
 
 const basliklar = (b: Record<string, unknown>) => new Map(Object.entries(b));
 
@@ -57,8 +57,10 @@ describe("teklif talebi kuralları (AI-33…35)", () => {
   });
 
   it("yedek arama en uzun anlamlı kelimeyi alır", () => {
-    expect(yedekArama("50 adet A4 fotokopi kağıdı")).toBe("fotokopi");
-    expect(yedekArama("kağıt")).toBeNull();
+    expect(yedekAramalar("50 adet A4 fotokopi kağıdı")[0]).toBe("fotokopi");
+    expect(yedekAramalar("kağıt")).toEqual([]);
+    // Pilot (2026-10-18): "SİLFIX" kartta "SİL FIX" yazılı; kod önce denenir.
+    expect(yedekAramalar("SF0101 SİLFIX MUMLU BEZ")).toEqual(["SF0101", "SİLFIX", "MUMLU"]);
   });
 
   it("cari kodu sıradaki CARI-NNN; unvan yoksa gönderen adı ya da alan adı", () => {
