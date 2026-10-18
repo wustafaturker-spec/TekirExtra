@@ -55,7 +55,7 @@ jobs:
           S3_ERISIM_ANAHTARI: tekir
           S3_GIZLI_ANAHTAR: tekir-minio-dev
           S3_KOVA: tekirextra-ekler
-          BAGLANTI_SIFRELEME_ANAHTARI: 0000000000000000000000000000000000000000000000000000000000000000
+          BAGLANTI_SIFRELEME_ANAHTARI: "0000000000000000000000000000000000000000000000000000000000000000"  # tırnaksız YAML bunu 0 sayısı yapar
           JWT_SECRET: ci-test-secret
           ALLOW_MOCK_ENTEGRATIONS: "true"
         run: pnpm --filter @tekirextra/api test:kabul
