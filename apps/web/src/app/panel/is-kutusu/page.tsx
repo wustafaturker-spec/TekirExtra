@@ -86,7 +86,7 @@ export default function IsKutusuSayfasi() {
                 </li>
               ))}
             </ul>
-            <div className="row-tight"><Link href="/panel/eposta">E-postada başka cari seç / yeni cari aç</Link></div>
+            <div className="row-tight"><Link href={`/panel/eposta?id=${i.epostaId}`}>E-postada başka cari seç / yeni cari aç</Link></div>
           </li>
         ))}
       </Grup>
@@ -108,7 +108,7 @@ export default function IsKutusuSayfasi() {
             <div className="row-tight"><Badge variant={i.durum === "hata" || i.durum === "sinirda" ? "danger" : "warning"}>{DURUM_ADI[i.durum] ?? i.durum}</Badge></div>
             {!!i.uyarilar.length && <ul className="is-kutusu__uyarilar">{i.uyarilar.map((u, n) => <li key={n}>{u}</li>)}</ul>}
             <div className="row-tight">
-              <Link href="/panel/eposta">E-postayı aç</Link>
+              <Link href={`/panel/eposta?id=${i.epostaId}`}>E-postayı aç</Link>
               {i.durum !== "cari_yok" && <Button size="sm" disabled={islem !== null} onClick={() => void eylem(i.id, `/ai/teklif-talepleri/${i.epostaId}/hazirla`, {}, "Yeniden denendi.")}>Yeniden dene</Button>}
             </div>
           </li>
@@ -142,7 +142,7 @@ export default function IsKutusuSayfasi() {
         {kutu.yanitGelen.map((t) => (
           <li key={t.id}>
             <div className="is-kutusu__baslik"><strong>{t.no ?? "Teklif"} · {t.cari.unvan}</strong><span className="muted">{tutar(t.tutar, t.doviz)} · yanıt {tarih(t.yanitAt)}{t.not ? ` · ${t.not}` : ""}{!benimMi && t.kim ? ` · ${t.kim}` : ""}</span></div>
-            <div className="row-tight"><Link href={t.adres}>Teklifi aç (siparişe dönüştür)</Link>{t.yanitEpostaId && <Link href="/panel/eposta">Yanıt e-postası</Link>}</div>
+            <div className="row-tight"><Link href={t.adres}>Teklifi aç (siparişe dönüştür)</Link>{t.yanitEpostaId && <Link href={`/panel/eposta?id=${t.yanitEpostaId}`}>Yanıt e-postası</Link>}</div>
           </li>
         ))}
       </Grup>

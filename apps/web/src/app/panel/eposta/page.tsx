@@ -137,6 +137,8 @@ function formatTarihKisa(tarihStr: string): string {
 export default function GelenEpostalarSayfasi() {
   const [epostalar, setEpostalar] = useState<GelenEposta[]>([]);
   const [seciliEposta, setSeciliEposta] = useState<GelenEposta | null>(null);
+  // İş kutusundan gelen bağlantı (?id=): o e-posta listede görünmese de açık kalır.
+  const [odakId] = useState(() => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("id")));
   const [toplam, setToplam] = useState(0);
   const [arama, setArama] = useState("");
   const [klasor, setKlasor] = useState<KlasorTuru>("gelen");
@@ -181,21 +183,27 @@ export default function GelenEpostalarSayfasi() {
         setSeciliEposta((prev) => {
           if (!prev) return res.satirlar[0];
           const guncel = res.satirlar.find((x) => x.id === prev.id);
-          return guncel || res.satirlar[0];
+          return guncel || (prev.id === odakId ? prev : res.satirlar[0]);
         });
       } else {
-        setSeciliEposta(null);
+        setSeciliEposta((prev) => (prev && prev.id === odakId ? prev : null));
       }
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Gelen e-postalar yüklenemedi");
     } finally {
       setYukleniyor(false);
     }
-  }, [arama, klasor]);
+  }, [arama, klasor, odakId]);
 
   useEffect(() => {
     void yukle();
   }, [yukle]);
+
+  useEffect(() => {
+    if (!odakId) return;
+    setMobilDetayAcik(true);
+    api<GelenEposta>(`/eposta/gelen/${odakId}`).then(setSeciliEposta).catch(() => setHata("Bağlantıdaki e-posta bulunamadı."));
+  }, [odakId]);
 
   async function secVeDetayGetir(e: GelenEposta) {
     setMobilDetayAcik(true);

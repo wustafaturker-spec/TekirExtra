@@ -18,7 +18,7 @@ import { TEKLIF_TALEBI_MODULU, TEKLIF_TALEBI_ROLLERI, teklifTalebiAyariSemasi, t
 import {
   ADAY_SAYISI, ASGARI_GUVEN, AZAMI_DENEME, CIKARIM_TALIMATI, ESLESME_TALIMATI, YENIDEN_CALISTIRILABILIR,
   cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeIstemi, eslesmeSemasi, miktarMetni, otomatikIletiMi,
-  secimleriUygula, taslakAciklamasi, varsayilanUnvan, yedekAramalar,
+  secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yedekAramalar,
   type Cikarim, type StokAdayi, type TeklifIslemDurumu,
 } from "./teklif-talebi.kurallari";
 
@@ -30,20 +30,30 @@ const GERIYE_TOLERANS_MS = 24 * 60 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 type Eposta = { id: string; konu: string; tarih: Date; gonderenAdi: string | null; gonderenEposta: string; icerikMetin: string | null; otomatik: boolean; crmFirsatId: string | null; ekler: Array<{ dosyaAdi: string }> };
-type KalemSonucu = { ifade: string; miktar: number | null; birim: string | null; stokId: string | null; varyantId: string | null; kod: string | null; ad: string | null; kartBirimi: string | null };
+type KalemSonucu = {
+  ifade: string; miktar: number | null; birim: string | null; stokId: string | null; varyantId: string | null; kod: string | null; ad: string | null; kartBirimi: string | null;
+  /** Kart bulundu ama müşteri varyantı belirtmedi (seçilmedi). */
+  belirsizKart?: { kartKodu: string; kartAdi: string; secenekler: string[] };
+};
 type Sonuc = { durum: TeklifIslemDurumu; uyarilar: string[]; belgeId?: string | null; firsatId?: string | null; onayTalebiId?: string | null; cariId?: string | null; kalemler?: KalemSonucu[]; cariAdaylari?: CariAdayi[] };
 
 export interface TeklifIslemGorunumu {
   id: string; gelenEpostaId: string; durum: string; guven: number | null; uyarilar: string[]; kalemler: KalemSonucu[];
+  /** Varyantı belirsiz kalemler için müşteriye sorulacak metin önerisi (şablon). */
+  yanitOnerisi: string | null;
   cariId: string | null; belgeId: string | null; firsatId: string | null; onayTalebiId: string | null; hata: string | null;
   belgeAdresi: string | null; onayAdresi: string | null; guncellendiAt: string;
   cariAdaylari: CariAdayi[];
 }
 
 export function gorunum(k: EpostaTeklifIslemi): TeklifIslemGorunumu {
+  const kalemler = (k.kalemler as KalemSonucu[]) ?? [];
+  const yetkili = cikarimSemasi.safeParse(k.cikarim);
+  const belirsizler = k.belgeId ? [] : kalemler.filter((x) => !x.stokId && x.belirsizKart).map((x) => ({ ...x.belirsizKart!, miktar: x.miktar, birim: x.birim }));
   return {
     id: k.id, gelenEpostaId: k.gelenEpostaId, durum: k.durum, guven: k.guven === null ? null : Number(k.guven),
-    uyarilar: (k.uyarilar as string[]) ?? [], kalemler: (k.kalemler as KalemSonucu[]) ?? [],
+    uyarilar: (k.uyarilar as string[]) ?? [], kalemler,
+    yanitOnerisi: varyantSorusuMetni(yetkili.success ? yetkili.data.firma?.yetkili ?? null : null, belirsizler),
     cariId: k.cariId, belgeId: k.belgeId, firsatId: k.firsatId, onayTalebiId: k.onayTalebiId, hata: k.hata,
     belgeAdresi: k.belgeId ? adres.belge(k.belgeId) : null,
     onayAdresi: k.onayTalebiId ? `/panel/ai?talep=${k.onayTalebiId}` : null,
@@ -198,8 +208,13 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
 
     const kalemler = await this.kalemleriEslestir(cikarim, saglayici);
     const eslesen = kalemler.filter((k) => k.stokId);
-    const eslesmeyenler = kalemler.filter((k) => !k.stokId).map((k) => `${k.ifade}${k.miktar !== null ? ` (${k.miktar}${k.birim ? ` ${k.birim}` : ""})` : ""}`);
+    const miktarli = (k: KalemSonucu) => `${k.ifade}${k.miktar !== null ? ` (${k.miktar}${k.birim ? ` ${k.birim}` : ""})` : ""}`;
+    const eslesmeyenler = kalemler.filter((k) => !k.stokId && !k.belirsizKart).map(miktarli);
     const uyarilar: string[] = [...onUyarilar];
+    for (const k of kalemler.filter((x) => !x.stokId && x.belirsizKart)) {
+      const b = k.belirsizKart!;
+      uyarilar.push(`${b.kartKodu} – ${b.kartAdi} bulundu; müşteri hangisini istediğini belirtmemiş (${b.secenekler.join(" / ")}). Ölçüyü müşteriye sorun ya da taslağı doğru varyantla elle açın.`);
+    }
     if (eslesmeyenler.length) uyarilar.push(`Stokta eşleşmeyen kalem: ${eslesmeyenler.join("; ")}`);
     if (!eslesen.length) return { durum: "incelenmeli", uyarilar, cariId: cari.tek, kalemler };
     const miktarsiz = eslesen.filter((k) => k.miktar === null);
@@ -333,7 +348,10 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     const secilen = adaylar.some((a) => a.length)
       ? secimleriUygula(adaylar, (await saglayici.yapilandirilmisUretim({ sistemRol: ESLESME_TALIMATI, prompt: eslesmeIstemi(cikarim.kalemler, adaylar) }, eslesmeSemasi)).secimler)
       : adaylar.map(() => null);
-    return cikarim.kalemler.map((k, i) => ({ ...k, stokId: secilen[i]?.stokId ?? null, varyantId: secilen[i]?.varyantId ?? null, kod: secilen[i]?.kod ?? null, ad: secilen[i]?.ad ?? null, kartBirimi: secilen[i]?.birim ?? null }));
+    return cikarim.kalemler.map((k, i) => {
+      const belirsiz = secilen[i] ? null : varyantBelirsizligi(adaylar[i]);
+      return { ...k, stokId: secilen[i]?.stokId ?? null, varyantId: secilen[i]?.varyantId ?? null, kod: secilen[i]?.kod ?? null, ad: secilen[i]?.ad ?? null, kartBirimi: secilen[i]?.birim ?? null, ...(belirsiz ? { belirsizKart: belirsiz } : {}) };
+    });
   }
 
   private async stokAdaylari(arama: string): Promise<StokAdayi[]> {
@@ -341,7 +359,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     const sonuc: StokAdayi[] = [];
     for (const s of (yanit.kayitlar ?? []).filter((x) => x.aktif !== false)) {
       const varyantlar = (s.varyantlar ?? []).filter((v: Record<string, any>) => v.aktif !== false);
-      if (varyantlar.length) for (const v of varyantlar) sonuc.push({ stokId: s.id, varyantId: v.id, kod: v.kod ?? s.kod, ad: `${s.ad} — ${v.ad ?? v.kod}`, birim: s.anaBirim ?? null });
+      if (varyantlar.length) for (const v of varyantlar) sonuc.push({ stokId: s.id, varyantId: v.id, kod: v.kod ?? s.kod, ad: `${s.ad} — ${v.ad ?? v.kod}`, birim: s.anaBirim ?? null, kartKodu: s.kod, kartAdi: s.ad, varyantAdi: v.ad ?? v.kod });
       else sonuc.push({ stokId: s.id, varyantId: null, kod: s.kod, ad: s.ad, birim: s.anaBirim ?? null });
     }
     return sonuc.slice(0, ADAY_SAYISI);

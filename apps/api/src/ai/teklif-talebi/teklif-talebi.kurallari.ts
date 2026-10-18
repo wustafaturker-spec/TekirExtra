@@ -118,7 +118,29 @@ export function cikarimIstemi(e: { gonderenAdi: string | null; gonderenEposta: s
   ].filter((x) => x !== "").join("\n");
 }
 
-export interface StokAdayi { stokId: string; varyantId: string | null; kod: string; ad: string; birim: string | null }
+export interface StokAdayi { stokId: string; varyantId: string | null; kod: string; ad: string; birim: string | null; kartKodu?: string; kartAdi?: string; varyantAdi?: string }
+
+/** Model seçmediyse ve adayların hepsi aynı kartın varyantlarıysa ürün bulunmuştur; müşteri hangi varyantı istediğini belirtmemiştir. */
+export function varyantBelirsizligi(adaylar: StokAdayi[]): { kartKodu: string; kartAdi: string; secenekler: string[] } | null {
+  if (adaylar.length < 2 || adaylar.some((a) => !a.varyantId || a.stokId !== adaylar[0].stokId)) return null;
+  const ilk = adaylar[0];
+  return { kartKodu: ilk.kartKodu ?? ilk.kod, kartAdi: ilk.kartAdi ?? ilk.ad, secenekler: adaylar.map((a) => a.varyantAdi ?? a.kod) };
+}
+
+/** Varyantı belirsiz kalemler için müşteriye gidecek soru metni; şablondur, model yazmaz. */
+export function varyantSorusuMetni(yetkili: string | null, kalemler: Array<{ kartAdi: string; secenekler: string[]; miktar: number | null; birim: string | null }>): string | null {
+  if (!kalemler.length) return null;
+  const satirlar = kalemler.map((k) => `- ${k.kartAdi}${k.miktar !== null ? `, ${miktarMetni(k.miktar)}${k.birim ? ` ${k.birim}` : ""}` : ""}: ${k.secenekler.join(" / ")}`);
+  return [
+    `Merhaba${yetkili?.trim() ? ` ${yetkili.trim()}` : ""},`,
+    "",
+    "Teklif talebiniz için teşekkür ederiz. Fiyatlandırabilmemiz için aşağıdaki ürünlerde hangi seçeneği istediğinizi belirtir misiniz?",
+    "",
+    ...satirlar,
+    "",
+    "Saygılarımızla,",
+  ].join("\n");
+}
 
 export function eslesmeIstemi(kalemler: Array<{ ifade: string; miktar: number | null; birim: string | null }>, adaylar: StokAdayi[][]): string {
   return kalemler.map((k, i) => [

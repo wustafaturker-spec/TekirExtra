@@ -8,10 +8,10 @@ import { CariSecModali } from "@/components/cari-sec-modali";
 
 type Durum = "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_secimi" | "cari_onayi_bekliyor" | "cari_yok" | "taslak_hazir" | "sinirda" | "hata";
 
-interface Kalem { ifade: string; miktar: number | null; birim: string | null; stokId: string | null; kod: string | null; ad: string | null }
+interface Kalem { ifade: string; miktar: number | null; birim: string | null; stokId: string | null; kod: string | null; ad: string | null; belirsizKart?: { kartKodu: string; kartAdi: string; secenekler: string[] } }
 interface Islem {
   durum: Durum; guven: number | null; uyarilar: string[]; kalemler: Kalem[]; hata: string | null;
-  belgeAdresi: string | null; onayAdresi: string | null;
+  belgeAdresi: string | null; onayAdresi: string | null; yanitOnerisi: string | null;
   cariAdaylari: Array<{ cariId: string; kod: string | null; unvan: string; vknTckn: string | null; gerekceler: string[] }>;
 }
 
@@ -95,11 +95,14 @@ export function TeklifTalebiPaneli({ epostaId, onDegisti }: { epostaId: string; 
           {islem.kalemler.map((k, i) => (
             <li key={i}>
               <span>{k.ifade}{k.miktar !== null ? ` — ${k.miktar}${k.birim ? ` ${k.birim}` : ""}` : ""}</span>
-              {k.stokId ? <span className="muted"> → [{k.kod}] {k.ad}</span> : <Badge variant="warning">Stokta yok</Badge>}
+              {k.stokId ? <span className="muted"> → [{k.kod}] {k.ad}</span>
+                : k.belirsizKart ? <><span className="muted"> → [{k.belirsizKart.kartKodu}] {k.belirsizKart.kartAdi}</span> <Badge variant="warning">Varyant belirtilmemiş</Badge></>
+                : <Badge variant="warning">Stokta yok</Badge>}
             </li>
           ))}
         </ul>
       )}
+      {islem?.yanitOnerisi && <YanitOnerisi metin={islem.yanitOnerisi} />}
       {cariSec && (
         <CariSecModali
           baslik="Teklif hangi cariye hazırlansın?"
@@ -108,6 +111,29 @@ export function TeklifTalebiPaneli({ epostaId, onDegisti }: { epostaId: string; 
           onKapat={() => setCariSec(false)}
         />
       )}
+    </div>
+  );
+}
+
+/** Varyantı belirsiz kalemler için müşteriye sorulacak metin; gönderim kullanıcının posta programından. */
+function YanitOnerisi({ metin }: { metin: string }) {
+  const [kopyalandi, setKopyalandi] = useState(false);
+  async function kopyala() {
+    try {
+      await navigator.clipboard.writeText(metin);
+      setKopyalandi(true);
+      setTimeout(() => setKopyalandi(false), 2000);
+    } catch {
+      setKopyalandi(false);
+    }
+  }
+  return (
+    <div className="teklif-talebi__yanit">
+      <div className="between">
+        <strong>Müşteriye sorulacak yanıt önerisi</strong>
+        <Button size="sm" onClick={() => void kopyala()}>{kopyalandi ? "✓ Kopyalandı" : "Kopyala"}</Button>
+      </div>
+      <pre>{metin}</pre>
     </div>
   );
 }

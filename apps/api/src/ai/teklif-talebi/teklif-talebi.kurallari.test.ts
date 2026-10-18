@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { veriEtiketiTemizle, cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeSemasi, otomatikBasliklarMi, otomatikIletiMi, secimleriUygula, taslakAciklamasi, varsayilanUnvan, yedekAramalar } from "./teklif-talebi.kurallari";
+import { veriEtiketiTemizle, cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeSemasi, otomatikBasliklarMi, otomatikIletiMi, secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yedekAramalar } from "./teklif-talebi.kurallari";
 
 const basliklar = (b: Record<string, unknown>) => new Map(Object.entries(b));
 
@@ -77,5 +77,26 @@ describe("teklif talebi kuralları (AI-33…35)", () => {
     expect(metin).toContain("Stokta eşleşmeyen: vida (100)");
     expect(metin).toContain("Müşteri notu: Teslim İstanbul");
     expect(taslakAciklamasi(e, Array.from({ length: 50 }, (_, i) => `uzun kalem adı ${i}`), null).length).toBe(500);
+  });
+});
+
+describe("varyant belirsizliği (pilot 2026-10-18)", () => {
+  const v = (varyantId: string, varyantAdi: string, stokId = "s1") => ({ stokId, varyantId, kod: `SF0101-${varyantAdi}`, ad: `SİL FIX — ${varyantAdi}`, birim: "adet", kartKodu: "SF0101", kartAdi: "SİL FIX MUMLU BEZ", varyantAdi });
+  it("aynı kartın birden çok varyantı: kart bulunmuş, seçenekler listelenir", () => {
+    expect(varyantBelirsizligi([v("a", "150x35 mm"), v("b", "150x45mm")])).toEqual({ kartKodu: "SF0101", kartAdi: "SİL FIX MUMLU BEZ", secenekler: ["150x35 mm", "150x45mm"] });
+  });
+  it("farklı kartlar, tek aday ya da varyantsız kart belirsizlik sayılmaz", () => {
+    expect(varyantBelirsizligi([v("a", "x"), v("b", "y", "s2")])).toBeNull();
+    expect(varyantBelirsizligi([v("a", "x")])).toBeNull();
+    expect(varyantBelirsizligi([{ stokId: "s1", varyantId: null, kod: "K", ad: "K", birim: null }, { stokId: "s1", varyantId: null, kod: "K", ad: "K", birim: null }])).toBeNull();
+    expect(varyantBelirsizligi([])).toBeNull();
+  });
+  it("soru metni şablondur: yetkili adı, miktar ve seçenekler; yer tutucu yok", () => {
+    const m = varyantSorusuMetni("Mustafa TÜRKER", [{ kartAdi: "SİL FIX MUMLU BEZ", secenekler: ["150x35 mm", "150x45mm"], miktar: 5000, birim: "adet" }])!;
+    expect(m.startsWith("Merhaba Mustafa TÜRKER,")).toBe(true);
+    expect(m).toContain("- SİL FIX MUMLU BEZ, 5000 adet: 150x35 mm / 150x45mm");
+    expect(m).not.toMatch(/\[|\{/);
+    expect(varyantSorusuMetni(null, [{ kartAdi: "X", secenekler: ["a", "b"], miktar: null, birim: null }])!.startsWith("Merhaba,")).toBe(true);
+    expect(varyantSorusuMetni("A", [])).toBeNull();
   });
 });
