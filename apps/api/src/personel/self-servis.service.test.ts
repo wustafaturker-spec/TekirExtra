@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { SelfServisService } from "./self-servis.service";
 import { hassasCoz } from "./personel-hassas";
 
 const PID = "11111111-1111-4111-8111-111111111111";
+
+// IBAN şifrelemesi anahtar ister; CI ortamında .env yok.
+beforeAll(() => { process.env.BAGLANTI_SIFRELEME_ANAHTARI ??= "0".repeat(64); });
 
 function kur(ek: { kullanici?: unknown; kimlik?: unknown; userBagi?: unknown; bordro?: unknown } = {}) {
   const tx = {
