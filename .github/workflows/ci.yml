@@ -41,6 +41,8 @@ jobs:
 
       - name: Veritabanı migrasyonlarını uygula
         env:
+          # Şema doğrulaması datasource url'ini de ister; göç directUrl (sahip rolü) ile çalışır.
+          DATABASE_URL: postgresql://tekir_app:tekir_app_dev@localhost:5433/tekirextra
           DATABASE_URL_MIGRATE: postgresql://tekir:tekir@localhost:5433/tekirextra
         run: pnpm --filter @tekirextra/api exec prisma migrate deploy
 
