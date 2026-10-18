@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { Alert } from "@/components/ui";
 import { CariSecModali } from "@/components/cari-sec-modali";
+import { TeklifTalebiPaneli, TeklifTalebiRozeti } from "@/components/teklif-talebi-paneli";
 import {
   Archive,
   ArrowRight,
@@ -70,6 +71,8 @@ interface GelenEposta {
   faturaId: string | null;
   cari?: { id: string; kod: string; unvan: string; eposta?: string; telefon?: string } | null;
   ekler?: GelenEpostaEk[];
+  /** AI-37: teklif talebi işlem durumu. */
+  teklifIslemi?: { durum: string } | null;
 }
 
 interface ListeYaniti {
@@ -854,6 +857,7 @@ export default function GelenEpostalarSayfasi() {
 
                       {/* ROZETLER */}
                       <div className="flex items-center gap-1.5 flex-wrap">
+                        <TeklifTalebiRozeti durum={e.teklifIslemi?.durum} />
                         {e.cari ? (
                           <span className="inline-flex items-center gap-1 bg-[#eaf7ee] text-[#15803d] border border-[#bbf7d0] text-[10px] px-1.5 py-0.2 rounded font-medium truncate max-w-[140px]">
                             <Building2 className="w-3 h-3 shrink-0" />
@@ -996,6 +1000,8 @@ export default function GelenEpostalarSayfasi() {
                   </button>
                 </div>
               </div>
+
+              <TeklifTalebiPaneli epostaId={seciliEposta.id} onDegisti={() => void yukle()} />
 
               {/* İLETİ GÖVDE VE İÇERİĞİ (SCROLL) */}
               <div className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-10 py-5 md:py-8 space-y-6 bg-[#fcfcfd]">

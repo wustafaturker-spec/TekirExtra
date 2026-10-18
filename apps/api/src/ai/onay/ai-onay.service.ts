@@ -91,7 +91,7 @@ export class AiOnayService {
       .uret({
         tur: "yapay_zeka",
         onem: "uyari",
-        baslik: girdi.kaynak === "mcp" ? "MCP işlemi onayınızı bekliyor" : "Asistan işlemi onayınızı bekliyor",
+        baslik: girdi.kaynak === "mcp" ? "MCP işlemi onayınızı bekliyor" : girdi.kaynak === "otomasyon" ? "E-posta teklif talebi onayınızı bekliyor" : "Asistan işlemi onayınızı bekliyor",
         aciklama: girdi.ozet.slice(0, 500),
         birlesimAnahtari: bildirimAnahtari(talep.id),
         kaynakTur: "ai_onay_talebi",

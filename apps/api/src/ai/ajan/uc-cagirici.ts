@@ -18,7 +18,7 @@ export interface UcTanimi {
 }
 
 export interface CagriIzi {
-  kaynak: "asistan" | "mcp";
+  kaynak: "asistan" | "mcp" | "otomasyon";
   arac: string;
   talepId?: string;
   varlikId?: string | null;

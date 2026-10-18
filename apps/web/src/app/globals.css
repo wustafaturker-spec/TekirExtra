@@ -4874,3 +4874,10 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 @media (max-width: 640px) {
   .cari-durum__bulgu { flex-direction: column; align-items: flex-start; }
 }
+
+/* AI-37: gelen e-postada teklif talebi paneli */
+.teklif-talebi { margin: 0 16px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); display: grid; gap: 8px; font-size: 0.85rem; }
+.teklif-talebi__ust { flex-wrap: wrap; align-items: center; }
+.teklif-talebi__uyarilar, .teklif-talebi__kalemler { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+.teklif-talebi__uyarilar { color: var(--warning); }
+.teklif-talebi__kalemler li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

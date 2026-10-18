@@ -27,7 +27,7 @@ export function ayardanYapilandirma(ayar: Pick<TenantAiAyari, "saglayici" | "api
 }
 
 /** AI-15: sayaçta görünen özellik. */
-export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma";
+export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif";
 
 /** AI-14: verinin yurt dışına çıktığı sağlayıcılar (platform anahtarıyla da). */
 const DIS_SAGLAYICILAR: AiProviderTuru[] = ["gemini", "openai", "anthropic"];

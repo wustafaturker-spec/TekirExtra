@@ -21,14 +21,16 @@ import { McpController } from "./mcp/mcp.controller";
 import { McpAnahtarController } from "./mcp/mcp-anahtar.controller";
 import { McpAnahtarService } from "./mcp/mcp-anahtar.service";
 import { AiTelemetriBakimService } from "./ayarlar/ai-telemetri-bakim.service";
+import { TeklifTalebiController } from "./teklif-talebi/teklif-talebi.controller";
+import { TeklifTalebiService } from "./teklif-talebi/teklif-talebi.service";
 
 // Asistan araçları denetleyicilere ModuleRef ile çalışma anında ulaşır
 // (UcCagirici); modül importu gerekmez, döngü de oluşmaz.
 // MCP (AI-09) kullanıcı başına erişim anahtarıyla çalışır; araçlar asistanla ortak.
 @Module({
   imports: [forwardRef(() => BildirimlerModule)],
-  controllers: [AiController, AiAjanController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController],
-  providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService],
+  controllers: [AiController, AiAjanController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController],
+  providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService],
   exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService],
 })
 export class AiModule {}

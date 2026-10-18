@@ -11,6 +11,7 @@ import { RaporlarController } from "../../../core/raporlar/raporlar.controller";
 import { StokController } from "../../../stok/stok.controller";
 import { VadeHatirlatmaController } from "../../../cari/vade-hatirlatma.controller";
 import { GelenEpostaController } from "../../../tenant/gelen-eposta.controller";
+import { CrmBelgeController } from "../../../crm/crm-belge.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -73,4 +74,7 @@ export const UC = {
   gelenEpostaEkOcr: uc(GelenEpostaController, "ekOcrCikar", "POST /eposta/gelen/:id/ekler/:ekId/ocr"),
   gelenEpostaDurum: uc(GelenEpostaController, "durumGuncelle", "PATCH /eposta/gelen/:id/durum"),
   gelenEpostaOkundu: uc(GelenEpostaController, "okunduGuncelle", "PATCH /eposta/gelen/:id/okundu"),
+
+  // AI-36: e-posta teklif talebinden açılan taslak fırsata bağlanır.
+  crmTeklifBagla: uc(CrmBelgeController, "bagla", "POST /crm/firsatlar/:firsatId/belgeler"),
 };

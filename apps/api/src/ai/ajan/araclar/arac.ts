@@ -13,7 +13,7 @@ export type AracSinifi = "okuma" | "taslak" | "onay";
 
 export interface AracBaglami {
   uc: UcCagirici;
-  kaynak: "asistan" | "mcp";
+  kaynak: "asistan" | "mcp" | "otomasyon";
   arac: string;
   /** Onaylanan talebin kimliği; denetim kaydına yazılır. */
   talepId?: string;

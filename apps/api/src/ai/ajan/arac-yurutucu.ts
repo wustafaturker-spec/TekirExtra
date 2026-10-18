@@ -184,7 +184,7 @@ export class AracYurutucu {
   async yurut(
     cagri: { ad: string; girdi: unknown },
     izinli: Map<string, AjanAraci>,
-    secenek: { kaynak: "asistan" | "mcp"; oturumId?: string | null },
+    secenek: { kaynak: "asistan" | "mcp" | "otomasyon"; oturumId?: string | null },
   ): Promise<AracSonucu> {
     const arac = izinli.get(cagri.ad);
     if (!arac) {

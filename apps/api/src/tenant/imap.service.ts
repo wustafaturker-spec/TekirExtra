@@ -9,6 +9,7 @@ import { DepoService } from "../ekler/depo.service";
 import { EpostaService } from "./eposta.service";
 import { AiService } from "../ai/ai.service";
 import { coz } from "../core/kripto";
+import { otomatikBasliklarMi } from "../ai/teklif-talebi/teklif-talebi.kurallari";
 
 @Injectable()
 export class ImapService {
@@ -139,6 +140,7 @@ export class ImapService {
                   cariId,
                   durum: "yeni",
                   okundu: false,
+                  otomatik: otomatikBasliklarMi(parsed.headers),
                 },
               }),
             );
@@ -230,6 +232,8 @@ export class ImapService {
           include: {
             cari: { select: { id: true, kod: true, unvan: true } },
             ekler: { select: { id: true, dosyaAdi: true, mimeTuru: true, boyut: true, cikarilanVeri: true } },
+            // AI-37: teklif talebi işlem durumu rozeti.
+            teklifIslemi: { select: { durum: true, belgeId: true, onayTalebiId: true } },
           },
           orderBy: { tarih: "desc" },
           skip: atla,
@@ -257,6 +261,7 @@ export class ImapService {
         include: {
           cari: { select: { id: true, kod: true, unvan: true, eposta: true, telefon: true } },
           ekler: true,
+          teklifIslemi: true,
         },
       }),
     );

@@ -250,6 +250,7 @@ model Tenant {
   belgeOcrKayitlari     BelgeOcrKaydi[]
   aiAyari               TenantAiAyari?
   aiTavani              PlatformAiTavani?
+  epostaTeklifIslemleri EpostaTeklifIslemi[]
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
   aiIcgoruleri          AiIcgoru[]
@@ -519,17 +520,50 @@ model GelenEposta {
   crmFirsatId    String?  @map("crm_firsat_id") @db.Uuid
   faturaId       String?  @map("fatura_id") @db.Uuid
   masrafId       String?  @map("masraf_id") @db.Uuid
+  /// AI-33: otomatik yanıt / bülten / teslim raporu (başlıklardan); teklif talebi olarak işlenmez.
+  otomatik       Boolean  @default(false)
   createdAt      DateTime @default(now()) @map("created_at")
 
-  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  cari   CariHesap?      @relation(fields: [cariId], references: [id], onDelete: SetNull)
-  ekler  GelenEpostaEk[]
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cari         CariHesap?          @relation(fields: [cariId], references: [id], onDelete: SetNull)
+  ekler        GelenEpostaEk[]
+  teklifIslemi EpostaTeklifIslemi?
 
   @@unique([tenantId, mesajId])
   @@index([tenantId, tarih])
   @@index([tenantId, gonderenEposta])
   @@index([tenantId, durum])
   @@map("gelen_epostalar")
+}
+
+/// AI-32…37: gelen e-postadaki teklif talebinin işlenişi; e-posta başına tek kayıt.
+/// Cari, belge, fırsat ve onay talebi kimlikleri veritabanında FK ile korunur.
+model EpostaTeklifIslemi {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  gelenEpostaId    String    @unique @map("gelen_eposta_id") @db.Uuid
+  calistiranUserId String?   @map("calistiran_user_id") @db.Uuid
+  /// isleniyor | atlandi | teklif_degil | incelenmeli | cari_onayi_bekliyor | cari_yok | taslak_hazir | sinirda | hata
+  durum            String
+  guven            Decimal?  @db.Decimal(4, 3)
+  cikarim          Json?
+  kalemler         Json      @default("[]")
+  uyarilar         Json      @default("[]")
+  cariId           String?   @map("cari_id") @db.Uuid
+  belgeId          String?   @map("belge_id") @db.Uuid
+  firsatId         String?   @map("firsat_id") @db.Uuid
+  onayTalebiId     String?   @map("onay_talebi_id") @db.Uuid
+  hata             String?   @db.Text
+  deneme           Int       @default(1)
+  sonrakiDenemeAt  DateTime? @map("sonraki_deneme_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  gelenEposta GelenEposta @relation(fields: [gelenEpostaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, durum])
+  @@map("eposta_teklif_islemleri")
 }
 
 model GelenEpostaEk {
@@ -6126,6 +6160,7 @@ model AiAracIstegi {
 enum AiIslemKaynagi {
   asistan
   mcp
+  otomasyon
 }
 
 enum AiOnayTalepDurumu {

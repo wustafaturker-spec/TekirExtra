@@ -11,6 +11,7 @@ import { ayarTanimiAl } from "./ayar-kayit";
 import { MALIYET_KONTROL_MODULU } from "./maliyet-kontrol-ayari";
 import { TAHSILAT_MODULU } from "../../cari/tahsilat-erisim";
 import { TAHSILAT_OTOMASYONU } from "../../cari/tahsilat-otomasyon-ayari";
+import { TEKLIF_TALEBI_MODULU, TEKLIF_TALEBI_ROLLERI } from "../../ai/teklif-talebi/teklif-talebi-ayari";
 
 @Injectable()
 export class AyarlarService {
@@ -56,14 +57,24 @@ export class AyarlarService {
         const sorumluId = String(dogrulanmis.sorumluUserId);
         if (!(await tx.$queryRaw<{ id: string }[]>`SELECT id FROM users WHERE tenant_id=${tenantId}::uuid AND id=${sorumluId}::uuid AND aktif AND rol IN ('yonetici','muhasebe') FOR SHARE`).length) throw new BadRequestException("Otomatik takip sorumlusu şirketin aktif yönetici veya muhasebe kullanıcısı olmalı");
       }
+      if (modul === TEKLIF_TALEBI_MODULU) {
+        if (dogrulanmis.sorumluUserId) {
+          const sorumluId = String(dogrulanmis.sorumluUserId);
+          const roller = [...TEKLIF_TALEBI_ROLLERI];
+          if (!(await tx.$queryRaw<{ id: string }[]>`SELECT id FROM users WHERE tenant_id=${tenantId}::uuid AND id=${sorumluId}::uuid AND aktif AND rol::text = ANY(${roller}) FOR SHARE`).length) throw new BadRequestException("Teklif talebi sorumlusu şirketin aktif yönetici, muhasebe veya satış kullanıcısı olmalı");
+        }
+        // AI-32: açılış anı sunucuda tutulur; istemcinin gönderdiği değer yok sayılır.
+        const onceki = (await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul } }, select: { ayarlar: true } }))?.ayarlar as { acik?: boolean; acildiAt?: string | null } | undefined;
+        dogrulanmis.acildiAt = dogrulanmis.acik ? (onceki?.acik && onceki.acildiAt ? onceki.acildiAt : new Date().toISOString()) : (onceki?.acildiAt ?? null);
+      }
       const kayit = await tx.modulAyar.upsert({
         where: { tenantId_modul: { tenantId, modul } },
         create: { tenantId, modul, ayarlar: dogrulanmis as Prisma.InputJsonValue },
         update: { ayarlar: dogrulanmis as Prisma.InputJsonValue },
       });
-      if (modul === CRM_BELGE_MODULU || modul === MALIYET_KONTROL_MODULU || modul === TAHSILAT_MODULU || modul === TAHSILAT_OTOMASYONU) {
+      if (modul === CRM_BELGE_MODULU || modul === MALIYET_KONTROL_MODULU || modul === TAHSILAT_MODULU || modul === TAHSILAT_OTOMASYONU || modul === TEKLIF_TALEBI_MODULU) {
         await tx.auditLog.create({ data: {
-          tenantId, userId, islem: modul === CRM_BELGE_MODULU ? "crm_belge_modu_guncellendi" : modul === MALIYET_KONTROL_MODULU ? "maliyet_kontrol_modu_guncellendi" : modul === TAHSILAT_OTOMASYONU ? "tahsilat_otomasyonu_guncellendi" : "tahsilat_modu_guncellendi", varlik: "modul_ayar", varlikId: kayit.id,
+          tenantId, userId, islem: modul === CRM_BELGE_MODULU ? "crm_belge_modu_guncellendi" : modul === MALIYET_KONTROL_MODULU ? "maliyet_kontrol_modu_guncellendi" : modul === TAHSILAT_OTOMASYONU ? "tahsilat_otomasyonu_guncellendi" : modul === TEKLIF_TALEBI_MODULU ? "teklif_talebi_taslagi_guncellendi" : "tahsilat_modu_guncellendi", varlik: "modul_ayar", varlikId: kayit.id,
           detay: dogrulanmis as Prisma.InputJsonValue,
         } });
       }

@@ -8,10 +8,12 @@ import { VARSAYILAN_SABLONLAR } from "./cari/vade-hatirlatma";
 import { MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi } from "./core/ayarlar/maliyet-kontrol-ayari";
 import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./cari/tahsilat-erisim";
 import { TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi } from "./cari/tahsilat-otomasyon-ayari";
+import { TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi } from "./ai/teklif-talebi/teklif-talebi-ayari";
 
 registerModulAyar(MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi, { surum: 1, mod: "kapali" });
 registerModulAyar(TAHSILAT_MODULU, tahsilatAyariSemasi, { surum: 1, mod: "kapali" });
 registerModulAyar(TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi, { acik: false, sorumluUserId: null, uygulamaIciBildirim: false });
+registerModulAyar(TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi, { acik: false, sorumluUserId: null, acildiAt: null });
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi

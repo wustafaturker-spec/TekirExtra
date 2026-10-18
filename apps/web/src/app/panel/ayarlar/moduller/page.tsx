@@ -20,6 +20,8 @@ interface Alan {
   min?: number;
   max?: number;
   ipucu?: string;
+  /** kullaniciRef: seçilebilecek roller (varsayılan yönetici + muhasebe). */
+  roller?: string[];
 }
 interface ModulTanim {
   baslik: string;
@@ -45,6 +47,13 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "acik", etiket: "Geciken sözlerden otomatik takip oluştur", tip: "onay", ipucu: "Tahsilat operasyonu pilot/açık modundayken 15 dakikada bir taranır. Açık takip varsa söz o takibe bağlanır; sorumlusu ve işlem planı korunur. Tamamlanan takip yeniden açılmaz. E-posta veya SMS gönderilmez." },
       { ad: "sorumluUserId", etiket: "Otomatik takip sorumlusu", tip: "kullaniciRef", ipucu: "Yeni takipler bu aktif yönetici/muhasebe kullanıcısına atanır. Sorumlu pasifleşirse veya yetkisi kalkarsa otomatik üretim durur." },
       { ad: "uygulamaIciBildirim", etiket: "Sorumluya uygulama içi bildirim oluştur", tip: "onay", ipucu: "Yeni gecikmiş söz bağlandığında mevcut takibin sorumlusuna bildirim oluşturur. E-posta göndermez; kullanıcının vade bildirimi tercihini korur. Önceden bağlanmış sözler için geriye dönük bildirim üretmez." },
+    ],
+  },
+  eposta_teklif_taslagi: {
+    baslik: "E-postadan Teklif Taslağı", ikon: "✉️", alanlar: [
+      { ad: "acik", etiket: "Gelen e-postadaki teklif taleplerinden taslak hazırla", tip: "onay", ipucu: "Açıldıktan sonra gelen e-postalar 5 dakikada bir yapay zekâyla sınıflandırılır (eski e-postalar için e-posta ekranındaki “Taslak hazırla” düğmesi). Teklif talebinde istenen ürünler stokla eşleştirilir, fiyat fiyat listesinden/karttan gelir ve numarasız taslak teklif açılır. Hiçbir şey onaylanmaz ya da gönderilmez. Gönderen cari değilse onaya tabi cari açma talebi bırakılır. Her e-posta bir-iki model çağrısıdır; aylık AI bütçesine tabidir." },
+      { ad: "sorumluUserId", etiket: "Taslakların sorumlusu", tip: "kullaniciRef", roller: ["yonetici", "muhasebe", "satis"], ipucu: "Taslaklar bu kullanıcının kimliği ve yetkisiyle açılır; bildirimler ve cari açma onayı ona gelir. Satış rolü cari açamaz: cari açma talebi yalnız yönetici/muhasebe sorumluda bırakılır." },
+      { ad: "acildiAt", etiket: "Açılış zamanı", tip: "gizli" },
     ],
   },
   maliyet_kontrolu: {
@@ -125,7 +134,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;
@@ -138,7 +147,7 @@ export default function ModulAyarlariSayfasi() {
   const [degerler, setDegerler] = useState<Record<string, Record<string, unknown>>>({});
   const [kasalar, setKasalar] = useState<Ref[]>([]);
   const [bankalar, setBankalar] = useState<Ref[]>([]);
-  const [sorumlular, setSorumlular] = useState<{ id: string; adSoyad: string }[]>([]);
+  const [sorumlular, setSorumlular] = useState<{ id: string; adSoyad: string; rol: string }[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [kaydedilen, setKaydedilen] = useState<string>("");
@@ -163,7 +172,7 @@ export default function ModulAyarlariSayfasi() {
     api<Ref[]>("/kasa-banka/kasalar").then(setKasalar).catch(() => undefined);
     api<Ref[]>("/kasa-banka/bankalar").then(setBankalar).catch(() => undefined);
     api<{ id: string; adSoyad: string; aktif: boolean; rol: string }[]>("/kullanicilar")
-      .then((liste) => setSorumlular(liste.filter((u) => u.aktif && ["yonetici", "muhasebe"].includes(u.rol))))
+      .then((liste) => setSorumlular(liste.filter((u) => u.aktif)))
       .catch(() => undefined);
   }, [yukle]);
 
@@ -228,10 +237,11 @@ export default function ModulAyarlariSayfasi() {
       );
     }
     if (a.tip === "kullaniciRef") {
+      const uygun = sorumlular.filter((u) => (a.roller ?? ["yonetici", "muhasebe"]).includes(u.rol));
       return <Select aria-label={a.etiket} value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)}>
         <option value="">— Sorumlu seçin —</option>
-        {v && !sorumlular.some((u) => u.id === v) ? <option value={String(v)} disabled>Önceki sorumlu uygun değil; yeniden seçin</option> : null}
-        {sorumlular.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}
+        {v && !uygun.some((u) => u.id === v) ? <option value={String(v)} disabled>Önceki sorumlu uygun değil; yeniden seçin</option> : null}
+        {uygun.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}
       </Select>;
     }
     if (a.tip === "kasaRef" || a.tip === "bankaRef") {
