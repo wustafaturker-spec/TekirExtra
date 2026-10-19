@@ -146,8 +146,8 @@ test.describe("Komut paleti", () => {
   test("eşanlamlı sözcükle sayfaya götürür", async ({ page }) => {
     await page.keyboard.press("Control+k");
     const palet = page.getByRole("dialog", { name: "Komut paleti" });
-    // Kullanıcı "tahsilat" der, sayfanın adı "Kasa & Banka"dır.
-    await palet.getByRole("combobox").fill("tahsilat");
+    // Kullanıcı "virman" der, sayfanın adı "Kasa & Banka"dır.
+    await palet.getByRole("combobox").fill("virman");
     await expect(palet.getByRole("option", { name: /Kasa & Banka/ })).toBeVisible();
     await page.keyboard.press("Enter");
     // Dev sunucusu hedef rotayı ilk gezinmede derler; URL o ana dek değişmez.

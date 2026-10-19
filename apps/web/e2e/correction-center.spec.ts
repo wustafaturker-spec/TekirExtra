@@ -26,11 +26,8 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
     return route.fulfill({ json: {} });
   });
 
+  // Zil artık kalıcı bildirim kayıtlarından beslenir; o akışı bildirim-merkezi.spec.ts doğrular.
   await page.goto("/panel/islemler");
-  await page.locator(".notification-nav").click();
-  await expect(page.getByText("Kritik düzeltme gerekli")).toBeVisible();
-  await expect(page.getByText("1 kayıt SLA süresini aştı.")).toBeVisible();
-  await page.getByRole("button", { name: "Bildirimleri kapat" }).click();
   await page.getByRole("checkbox", { name: "Banka ekstresi kaydını seç" }).check();
   await page.getByLabel("Toplu atanacak kullanıcı").selectOption("11111111-1111-4111-8111-111111111111");
   await page.getByRole("button", { name: "Toplu ata" }).click();

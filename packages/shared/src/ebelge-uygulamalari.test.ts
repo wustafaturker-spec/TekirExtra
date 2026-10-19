@@ -39,6 +39,13 @@ describe("ebelgeUygulamalariCoz (EBLG-77)", () => {
     expect(uygulamaAcik(u, "efatura")).toBe(false);
   });
 
+  it("eksik ayar e-belgesiz sayılmaz ve hata vermez", () => {
+    for (const eksik of [undefined, {}, { efatura: { acik: false } }]) {
+      expect(ebelgeKullanilmiyor(eksik as never)).toBe(false);
+    }
+    expect(ebelgeKullanilmiyor(coz({ efatura: false, earsiv: false }, { efatura: false, guncel: true }))).toBe(true);
+  });
+
   it("e-Arşiv otomatikte e-Fatura mükellefiyetini izler", () => {
     // GİB e-Arşiv mükellef listesi yayınlamaz; e-Fatura mükellefi zorunlu
     // e-Arşiv mükellefidir.

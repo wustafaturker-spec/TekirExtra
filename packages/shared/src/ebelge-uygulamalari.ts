@@ -76,9 +76,12 @@ export function uygulamaAcik(uygulamalar: EbelgeUygulamalari, kod: EbelgeUygulam
   return uygulamalar?.[kod]?.acik === true;
 }
 
-/** Firma hiçbir e-belge uygulamasına kayıtlı değil: fatura kağıda basılır. */
+/**
+ * Firma hiçbir e-belge uygulamasına kayıtlı değil: fatura kağıda basılır.
+ * Eksik ayar "kayıtlı değil" sayılmaz; yalnız iki uygulama da kesin kapalıysa.
+ */
 export function ebelgeKullanilmiyor(uygulamalar: EbelgeUygulamalari): boolean {
-  return uygulamalar.efatura.acik === false && uygulamalar.earsiv.acik === false;
+  return uygulamalar?.efatura?.acik === false && uygulamalar?.earsiv?.acik === false;
 }
 
 /**

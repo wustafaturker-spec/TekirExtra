@@ -18,10 +18,19 @@ const oturumCerezi = sir && sir.length >= 32
   ? [{ name: "tekir_oturum", value: `v1.${bitis}.${createHmac("sha256", sir).update(`v1.${bitis}`).digest("base64url")}`, domain: "localhost", path: "/", expires: bitis, httpOnly: true, secure: false, sameSite: "Lax" as const }]
   : [];
 
+/**
+ * Kendi kökenine (127.0.0.1:310x) bağlı testler yalnız kendi yapılandırmalarıyla koşar; burada
+ * localhost:3100'de her ortamda düşerler. testIgnore değil testMatch: bu dosyayı genişleten
+ * yapılandırmalar testMatch'i kendi dosyalarıyla ezer, testIgnore ise onlara da miras kalırdı.
+ */
+const AYRI_KOKENLI = ["ekstre-yukleme", "maliyet-eksikleri", "odeme-sozu", "tahsilat-takibi"];
+const varsayilanTestler = new RegExp(`^(?!.*[\\\\/](${AYRI_KOKENLI.join("|")})\\.spec\\.ts$).*\\.spec\\.ts$`);
+
 export default defineConfig({
   testDir: "./e2e",
+  testMatch: varsayilanTestler,
   expect: {
-    toHaveScreenshot: { maxDiffPixels: 100 },
+    toHaveScreenshot: { maxDiffPixels: 100, stylePath: "./e2e/ekran-goruntusu.css" },
   },
   fullyParallel: false,
   workers: 1,
@@ -34,8 +43,10 @@ export default defineConfig({
     trace: "retain-on-failure",
     storageState: { cookies: oturumCerezi, origins: [] },
   },
+  // CI web'i önceden derler; derlenmiş uygulamada ilk gezinme derlemesi ve dev sunucusunun
+  // bellek eşiğinde kendini yeniden başlatması olmaz (uzun koşuda 30-50 sn'lik duraklamalar).
   webServer: {
-    command: "pnpm dev",
+    command: process.env.CI ? "pnpm start" : "pnpm dev",
     url: "http://localhost:3100/giris",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

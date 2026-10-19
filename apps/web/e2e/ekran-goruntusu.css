@@ -1,0 +1,3 @@
+/* Ekran görüntüsünde yalnız dev sunucusunda çıkan Next.js geliştirici düğmesi gizlenir;
+   böylece aynı taban görüntü hem `next dev` hem derlenmiş uygulamada tutar. */
+nextjs-portal { display: none !important; }

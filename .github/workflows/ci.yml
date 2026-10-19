@@ -70,4 +70,7 @@ jobs:
       - name: Kritik web akışları
         continue-on-error: true
         timeout-minutes: 30
+        env:
+          # Derlenmiş uygulamada rota koruması sır ister; testler aynı sırla oturum çerezi üretir.
+          OTURUM_ISARETI_SECRET: e2e-oturum-isareti-sirri-yalniz-ci-testi
         run: pnpm --fail-if-no-match --filter @tekirextra/web test:e2e

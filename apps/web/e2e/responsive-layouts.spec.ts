@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ortakYanit } from "./ortak-yanit";
 
 const sayfalar = [
   { yol: "/panel/fatura", baslik: "Fatura Yönetimi" },
@@ -18,6 +19,11 @@ async function apiMockla(page: Page) {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
+      return;
+    }
+    const ortak = ortakYanit(pathname);
+    if (ortak) {
+      await route.fulfill(ortak);
       return;
     }
     if (pathname.endsWith("/cari/etiketler") || pathname.endsWith("/fiyat-listeleri") || pathname.includes("/kasa-banka/") || pathname.endsWith("/depo") || pathname.endsWith("/projeler")) {
@@ -59,6 +65,11 @@ const ornekFatura = {
 async function veriDoluFaturaMockla(page: Page) {
   await page.route("**/api/v1/fatura**", async (route) => {
     const { pathname } = new URL(route.request().url());
+    const ortak = ortakYanit(pathname);
+    if (ortak) {
+      await route.fulfill(ortak);
+      return;
+    }
     await route.fulfill({
       json: pathname.endsWith("/fatura/fatura-1")
         ? ornekFatura
@@ -72,6 +83,22 @@ async function veriDoluEkstreMockla(page: Page) {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/kasa-banka/bankalar")) {
       await route.fulfill({ json: [{ id: "banka-1", ad: "İş Bankası TL", bankaAdi: "İş Bankası", dovizCinsi: "TRY" }] });
+      return;
+    }
+    // Öneriler satır seçilince ayrı uçtan gelir.
+    if (pathname.endsWith("/ekstre/satirlar/ekstre-1/oneriler")) {
+      await route.fulfill({ json: {
+        kural: null,
+        onerilenCari: { id: "cari-1", kod: "CR-00124", unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." },
+        cariEslesmeKaynagi: "iban",
+        faturalar: [{ id: "fatura-1", no: "SF2026000123", tarih: "2026-08-09", vadeTarihi: null, dovizCinsi: "TRY", genelToplam: "12000.00", kalan: "12000.00", tamEslesme: true }],
+        mevcutFisler: [], cekler: [], kartlar: [], virmanHesaplari: [], dovizHesaplari: [], masrafKategorileri: [],
+        gelirKategorileri: [], odemeTalimatlari: [], krediler: [],
+      } });
+      return;
+    }
+    if (!pathname.endsWith("/ekstre/satirlar")) {
+      await route.fulfill(ortakYanit(pathname) ?? { json: [] });
       return;
     }
     await route.fulfill({
@@ -169,10 +196,15 @@ async function veriDoluKasaBankaMockla(page: Page) {
       ] });
       return;
     }
-    await route.fulfill({ json: [
+    if (!pathname.endsWith("/kasa-banka/hareketler")) {
+      await route.fulfill(ortakYanit(pathname) ?? { json: [] });
+      return;
+    }
+    // Hareket listesi sayfalıdır; toplamlar ilk sayfada gelir (KSB-13).
+    await route.fulfill({ json: { sonrakiImlec: null, toplamlar: { adet: 2, dovizler: [] }, kayitlar: [
       { id: "hareket-1", tarih: "2026-08-09", tip: "tahsilat", tutar: "12000.00", dovizCinsi: "TRY", kur: "1", tutarTry: "12000.00", aciklama: "SF2026000123 numaralı satış faturası tahsilatı", kaynakTur: "fatura_kapama", karsiHareketId: null, kasa: null, bankaHesap: { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası" }, cari: { unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." } },
       { id: "hareket-2", tarih: "2026-08-08", tip: "tediye", tutar: "31850.50", dovizCinsi: "TRY", kur: "1", tutarTry: "31850.50", aciklama: "Temmuz dönemi toplu tedarikçi ödemesi ve masraf kapaması", kaynakTur: "manuel", karsiHareketId: null, kasa: null, bankaHesap: { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası" }, cari: { unvan: "Kuzey Tedarik A.Ş." } },
-    ] });
+    ] } });
   });
   await page.route("**/api/v1/cari**", (route) => route.fulfill({ json: { kayitlar: [
     { id: "cari-1", unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." },
@@ -213,7 +245,7 @@ async function veriDoluAnaPanelMockla(page: Page) {
     } else if (pathname.endsWith("/rapor/ozet")) {
       await route.fulfill({ json: { nakitVarliklar: "208700.00", envanterDegeri: "486250.75", toplamAlacaklar: "342800.50", toplamBorclar: "198450.25", netVarlikDegeri: "839300.00" } });
     } else {
-      await route.fulfill({ json: {} });
+      await route.fulfill(ortakYanit(pathname) ?? { json: {} });
     }
   });
 }
@@ -226,10 +258,12 @@ for (const gorunum of [
     test.use({ viewport: { width: gorunum.width, height: gorunum.height } });
 
     test("temel operasyon sayfaları görünür ve yatay taşma üretmez", async ({ page }) => {
+      // Beş sayfa sırayla açılır; dev sunucusu her birini ilk ziyarette derler.
+      test.setTimeout(180_000);
       await apiMockla(page);
       for (const sayfa of sayfalar) {
         await page.goto(sayfa.yol);
-        await expect(page.getByRole("heading", { level: 1, name: sayfa.baslik })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: sayfa.baslik })).toBeVisible({ timeout: 30_000 });
         const boyut = await page.evaluate(() => ({
           istemci: document.documentElement.clientWidth,
           icerik: document.documentElement.scrollWidth,
@@ -270,17 +304,16 @@ for (const gorunum of [
       await apiMockla(page);
       await veriDoluEkstreMockla(page);
       await page.goto("/panel/kasa-banka/ekstre");
-      await expect(page.getByText("ABC MAKİNA FATURA ÖDEMESİ SF2026000123")).toBeVisible();
-      await expect(page.getByText("oto: IBAN")).toBeVisible();
+      await expect(page.getByLabel("Ekstre satırları").getByText("ABC MAKİNA FATURA ÖDEMESİ SF2026000123")).toBeVisible();
+      await expect(page.getByText("IBAN eşleşti")).toBeVisible();
       await expect(page).toHaveScreenshot(`banka-ekstresi-oneri-${gorunum.ad}.png`, {
         animations: "disabled",
         caret: "hide",
         fullPage: true,
       });
 
-      await page.getByRole("button", { name: "Değiştir" }).click();
-      await expect(page.getByPlaceholder("Cari adı, kodu veya VKN...")).toBeVisible();
-      await expect(page.getByText("ABC Endüstriyel Ürünler A.Ş.")).toBeVisible();
+      await page.getByRole("combobox", { name: "Cari hesap" }).click();
+      await expect(page.getByRole("option", { name: /ABC Endüstriyel Ürünler A\.Ş\./ })).toBeVisible();
       await expect(page).toHaveScreenshot(`banka-ekstresi-cari-secimi-${gorunum.ad}.png`, {
         animations: "disabled",
         caret: "hide",
@@ -353,12 +386,12 @@ for (const gorunum of [
 
       await page.getByRole("button", { name: /Fiş Girişi/ }).click();
       // Fiş alanları etiketleriyle bulunur; cari aranabilir seçicidir.
-      const fisFormu = page.locator("form").filter({ has: page.getByLabel("Kasa / Banka Seçimi") });
-      await fisFormu.getByLabel("Kasa / Banka Seçimi").selectOption("banka:banka-1");
-      await fisFormu.getByLabel("İşlem Tipi").selectOption("tahsilat");
-      await fisFormu.getByLabel("Tutar").fill("12000");
+      const fisFormu = page.locator("form").filter({ has: page.getByLabel("Kasa / banka hesabı") });
+      await fisFormu.getByRole("group", { name: "İşlem tipi" }).getByRole("button", { name: "Tahsilat (para girişi)" }).click();
+      await fisFormu.getByLabel("Kasa / banka hesabı").selectOption("banka:banka-1");
+      await fisFormu.getByLabel(/^Tutar/).fill("12000");
       await fisFormu.getByLabel("Tarih").fill("2026-08-09");
-      await fisFormu.getByRole("combobox", { name: "Cari bağlantısı" }).click();
+      await fisFormu.getByRole("combobox", { name: "Cari hesap" }).click();
       await page.getByRole("option", { name: /ABC Makina/ }).click();
       await fisFormu.getByLabel("Açıklama").fill("SF2026000123 faturası banka tahsilatı");
       await expect(page).toHaveScreenshot(`kasa-banka-tahsilat-formu-${gorunum.ad}.png`, {
@@ -440,11 +473,13 @@ for (const gorunum of [
   { ad: "dar-mobil", width: 360, height: 800 },
 ] as const) {
   test(`${gorunum.ad} temel operasyon sayfaları görünür ve yatay taşma üretmez`, async ({ page }) => {
+    // Beş sayfa sırayla açılır; dev sunucusu her birini ilk ziyarette derler.
+    test.setTimeout(180_000);
     await page.setViewportSize({ width: gorunum.width, height: gorunum.height });
     await apiMockla(page);
     for (const sayfa of sayfalar) {
       await page.goto(sayfa.yol);
-      await expect(page.getByRole("heading", { level: 1, name: sayfa.baslik })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: sayfa.baslik })).toBeVisible({ timeout: 30_000 });
       const boyut = await page.evaluate(() => ({
         istemci: document.documentElement.clientWidth,
         icerik: document.documentElement.scrollWidth,

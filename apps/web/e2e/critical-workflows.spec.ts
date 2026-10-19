@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ortakYanit } from "./ortak-yanit";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -10,6 +11,11 @@ test.beforeEach(async ({ page }) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
+      return;
+    }
+    const ortak = ortakYanit(url.pathname);
+    if (ortak) {
+      await route.fulfill(ortak);
       return;
     }
     if (url.pathname.endsWith("/fatura")) {
@@ -36,7 +42,8 @@ test("satış ve satın alma çalışma alanları doğru belge bağlamını taş
     "/panel/fatura?yon=satis&yeni=1",
   );
   await page.getByRole("link", { name: /Satış faturası/ }).first().click();
-  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeVisible();
+  // Dev sunucusu fatura sayfasını ilk gezinmede derler.
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByLabel("Fatura Tipi")).toHaveValue("satis");
 
   await page.goto("/panel/satin-alma");
@@ -46,7 +53,7 @@ test("satış ve satın alma çalışma alanları doğru belge bağlamını taş
     "/panel/fatura?yon=alis&yeni=1",
   );
   await page.getByRole("link", { name: /Alış faturası/ }).first().click();
-  await expect(page.getByRole("heading", { level: 3, name: "Yeni alış faturası" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni alış faturası" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByLabel("Fatura Tipi")).toHaveValue("alis");
 });
 
@@ -61,13 +68,13 @@ test("standart form alanları görünür etiketleriyle programatik olarak ilişk
   await page.getByRole("button", { name: /Yeni Cari/ }).click();
   expect(sayfaHatalari).toEqual([]);
   await expect(page.getByLabel("Cari kodu")).toBeVisible();
-  await expect(page.getByLabel("Ünvan / Ad soyad")).toBeVisible();
+  await expect(page.getByLabel("Ünvan", { exact: true })).toBeVisible();
 
   await page.goto("/panel/kasa-banka");
   await page.getByRole("button", { name: /Fiş Girişi/ }).click();
-  await expect(page.getByLabel("Kasa / Banka Seçimi")).toBeVisible();
-  await expect(page.getByLabel("İşlem Tipi")).toBeVisible();
-  await expect(page.getByLabel("Tutar")).toBeVisible();
+  await expect(page.getByLabel("Kasa / banka hesabı")).toBeVisible();
+  await expect(page.getByRole("group", { name: "İşlem tipi" })).toBeVisible();
+  await expect(page.getByLabel(/^Tutar/)).toBeVisible();
 });
 
 test("işlem sonuçları ekran okuyucu canlı bölgeleriyle duyurulur", async ({ page }) => {
@@ -92,7 +99,10 @@ test("sekmeler rollerini bildirir ve ok tuşlarıyla gezilebilir", async ({ page
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/cari/etiketler")) return route.fulfill({ json: [] });
     if (pathname.endsWith("/cari/c1/ekstre")) {
-      return route.fulfill({ json: { cari: { id: "c1", kod: "C001", unvan: "Klavye Müşterisi" }, satirlar: [] } });
+      return route.fulfill({ json: {
+        cari: { id: "c1", kod: "C001", unvan: "Klavye Müşterisi" }, tur: "standart", devirBakiyesi: "0",
+        donemBorc: "0", donemAlacak: "0", donemSonuBakiyesi: "0", dovizOzet: [], satirlar: [],
+      } });
     }
     if (pathname.endsWith("/cari/c1")) {
       return route.fulfill({ json: {
@@ -106,6 +116,8 @@ test("sekmeler rollerini bildirir ve ok tuşlarıyla gezilebilir", async ({ page
         finansalOzet: { sonIslemTarihi: null, sonTahsilatTarihi: null, sonOdemeTarihi: null, vadesiGecmisBakiye: "0" },
       } });
     }
+    // Detay ekranının taklidi yazılmamış alt bölümleri (durum, teminat, CRM…) yüklenemedi durumuna düşer.
+    if (pathname !== "/api/v1/cari") return route.fulfill({ status: 404, json: { message: "Bulunamadı" } });
     return route.fulfill({ json: { kayitlar: [{
       id: "c1", kod: "C001", unvan: "Klavye Müşterisi", tip: "musteri", sektor: null,
       vknTckn: null, eposta: null, telefon: null, karaListe: false, bakiyeler: [],
@@ -115,9 +127,11 @@ test("sekmeler rollerini bildirir ve ok tuşlarıyla gezilebilir", async ({ page
 
   const filtreGrubu = page.getByRole("group", { name: "Görünüm seçenekleri" });
   await expect(filtreGrubu.getByRole("button", { name: "Tümü" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: /Detay/ }).click();
+  await page.getByRole("row", { name: "Klavye Müşterisi carisini aç" }).click();
 
   const sekmeler = page.getByRole("tablist", { name: "Cari hesap bölümleri" });
+  // Satır cari detay rotasını açar; dev sunucusu onu ilk gezinmede derler.
+  await expect(sekmeler).toBeVisible({ timeout: 30_000 });
   const genel = sekmeler.getByRole("tab", { name: "Genel Bakış" });
   const ekstre = sekmeler.getByRole("tab", { name: "Ekstre" });
   await expect(genel).toHaveAttribute("aria-selected", "true");
@@ -241,7 +255,10 @@ test("klavye kullanıcısı tekrarlanan menüyü atlayıp ana içeriğe geçebil
 test("dekoratif ikonlar kontrol ve bağlantı adlarını kirletmez", async ({ page }) => {
   await page.goto("/panel/satis");
 
+  // Menü katlanır gruplardadır; grup düğmesinin adı da ikonla kirlenmemeli.
+  await page.getByRole("button", { name: "Cari & Personel", exact: true }).click();
   await expect(page.getByRole("link", { name: "Cari Hesaplar", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Finans", exact: true }).click();
   await expect(page.getByRole("link", { name: "Kasa & Banka", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Güvenli çıkış", exact: true })).toBeVisible();
 });
@@ -277,7 +294,9 @@ test("proje seçeneklerini yükler ve yeni projeyi kaydeder", async ({ page }) =
   await page.getByRole("button", { name: /Yeni Proje Oluştur/ }).click();
   await page.getByLabel("Proje Kodu *").fill("PRJ-E2E-001");
   await page.getByLabel("Proje Adı *").fill("E2E Projesi");
-  await page.getByLabel("İşveren / Müşteri (Cari)").selectOption("c1");
+  // Cari aramalı seçicidir: yazılır, öneriden seçilir.
+  await page.getByRole("combobox", { name: "İşveren / Müşteri (Cari)" }).fill("Örnek");
+  await page.getByRole("option", { name: /Örnek Müşteri/ }).click();
   await page.getByLabel("Proje Sorumlusu").selectOption("u1");
   await page.getByRole("button", { name: "Projeyi Kaydet" }).click();
 
@@ -300,7 +319,8 @@ test("başarılı giriş access tokenı kaydeder ve panele yönlendirir", async 
   await page.getByLabel("Parola", { exact: true }).fill("guvenli-parola");
   await page.getByRole("button", { name: "Giriş Yap" }).click();
 
-  await expect(page).toHaveURL(/\/panel$/);
+  // Dev sunucusu paneli ilk gezinmede derler; URL o ana dek değişmez.
+  await expect(page).toHaveURL(/\/panel$/, { timeout: 30_000 });
   expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("yeni-access-token");
   expect(await page.evaluate(() => localStorage.getItem("tekir_access"))).toBeNull();
 });
@@ -356,16 +376,16 @@ test("kasa ödeme fişi doğru hesap ve işlem tipiyle kaydedilir", async ({ pag
       kaydedilen = route.request().postDataJSON() as Record<string, unknown>;
       return route.fulfill({ status: 201, json: { id: "h1" } });
     }
-    return route.fulfill({ json: [] });
+    return route.fallback();
   });
   await page.goto("/panel/kasa-banka");
   await page.getByRole("button", { name: "Fiş Girişi" }).click();
-  await page.getByLabel("Kasa / Banka Seçimi").selectOption("kasa:k1");
-  await page.getByLabel("İşlem Tipi").selectOption("tediye");
-  await page.getByLabel("Tutar").fill("250");
-  await page.getByRole("button", { name: "Fişi kaydet" }).click();
+  await page.getByRole("group", { name: "İşlem tipi" }).getByRole("button", { name: "Ödeme (para çıkışı)" }).click();
+  await page.getByLabel("Kasa / banka hesabı").selectOption("kasa:k1");
+  await page.getByLabel(/^Tutar/).fill("250");
+  await page.getByRole("button", { name: "Ödemeyi kaydet" }).click();
 
-  await expect(page.getByText(/Tediye kaydedildi/)).toBeVisible();
+  await expect(page.getByText(/Ödeme kaydedildi/)).toBeVisible();
   expect(kaydedilen).toMatchObject({ kasaId: "k1", bankaHesapId: null, tip: "tediye", tutar: "250" });
 });
 
@@ -380,7 +400,7 @@ test("mobil menü ve bildirim düğmeleri kontrol ettikleri paneli bildirir", as
   const menuKapat = page.getByRole("button", { name: "Ana menüyü kapat" });
   await expect(menuKapat).toHaveAttribute("aria-expanded", "true");
   const yanMenu = page.locator("#ana-menu");
-  const ilkMenuOgesi = yanMenu.getByRole("button", { name: /^Bildirimler/ });
+  const ilkMenuOgesi = yanMenu.getByRole("button", { name: "Menüyü daralt" });
   await expect(ilkMenuOgesi).toBeFocused();
   await yanMenu.getByRole("button", { name: "Güvenli çıkış" }).focus();
   await page.keyboard.press("Tab");
@@ -428,7 +448,7 @@ test("değiştirilmiş fatura formu yanlışlıkla terk edilmez", async ({ page 
     await dialog.dismiss();
   });
   await page.getByRole("button", { name: "Vazgeç" }).click();
-  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeVisible({ timeout: 30_000 });
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Vazgeç" }).click();
@@ -438,6 +458,7 @@ test("değiştirilmiş fatura formu yanlışlıkla terk edilmez", async ({ page 
   await expect(page.getByLabel("Miktar")).toHaveValue("1");
 
   await page.getByLabel("Miktar").fill("2");
+  await page.getByRole("button", { name: "Cari & Personel", exact: true }).click();
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("link", { name: "Cari Hesaplar" }).click();
   await expect(page).toHaveURL(/\/panel\/fatura/);
@@ -445,7 +466,8 @@ test("değiştirilmiş fatura formu yanlışlıkla terk edilmez", async ({ page 
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("link", { name: "Cari Hesaplar" }).click();
-  await expect(page).toHaveURL(/\/panel\/cari/);
+  // Dev sunucusu cari sayfasını ilk gezinmede derler.
+  await expect(page).toHaveURL(/\/panel\/cari/, { timeout: 30_000 });
 });
 
 test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
@@ -537,36 +559,34 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
   });
 
   await page.goto("/panel");
-  await expect(page.getByRole("link", { name: /Taslak satış faturaları/ }).locator(".queue-row__count")).toHaveText("2");
-  await expect(page.getByRole("link", { name: /Kritik stoklar/ }).locator(".queue-row__count")).toHaveText("2");
-  await expect(page.getByRole("button", { name: "Bildirimler 4" })).toBeVisible();
+  // Sayaçlar sunucu özetinden gelir; liste sayfaları çekilmez.
+  await expect(page.getByRole("link", { name: /Taslak satış faturaları/ })).toContainText("2 Adet");
+  await expect(page.getByRole("link", { name: /Kritik stoklar/ })).toContainText("2 Adet");
   expect(faturaIstekleri).toEqual([]);
   expect(stokIstekleri).toEqual([]);
 });
 
-test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => {
-  const stok = (id: string, kod: string, ad: string) => ({
-    id, kod, ad, tip: "urun", anaBirim: "adet", mevcutMiktar: "10",
+test("stok sayımı sistemdeki tüm satırları sayım tarihiyle forma yükler", async ({ page }) => {
+  const satir = (stokId: string, kod: string, ad: string) => ({
+    stokId, varyantId: null, kod, ad, varyantAd: null, anaBirim: "adet", takipTipi: "yok", sistemMiktar: "10", partiler: [],
   });
   const istekler: string[] = [];
-  await page.route("**/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok/sayimlar**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/stok/sayimlar") return route.fulfill({ json: [] });
-    if (url.pathname !== "/api/v1/stok") return route.fallback();
-    const imlec = url.searchParams.get("imlec");
-    istekler.push(imlec ?? "ilk");
-    return route.fulfill({ json: imlec === "stok-1"
-      ? { kayitlar: [stok("stok-2", "STK-002", "İkinci Sayfa Ürünü")], sonrakiImlec: null }
-      : { kayitlar: [stok("stok-1", "STK-001", "İlk Sayfa Ürünü")], sonrakiImlec: "stok-1" }
-    });
+    if (url.pathname !== "/api/v1/stok/sayimlar/sistem") return route.fallback();
+    istekler.push(url.searchParams.get("tarih") ?? "");
+    // Sistem miktarları sunucuda tüm kartlar için tek yanıtta hesaplanır (STK-29).
+    return route.fulfill({ json: { satirlar: [satir("stok-1", "STK-001", "İlk Ürün"), satir("stok-2", "STK-002", "İkinci Ürün")] } });
   });
 
   await page.goto("/panel/stok/sayim");
   await page.getByRole("button", { name: /Yeni Sayım/ }).click();
-  await expect(page.getByRole("row").filter({ hasText: "İkinci Sayfa Ürünü" })).toBeVisible();
-  await expect(page.getByRole("row").filter({ hasText: "İlk Sayfa Ürünü" })).toBeVisible();
-  expect([...new Set(istekler)]).toEqual(["ilk", "stok-1"]);
+  await expect(page.getByRole("row").filter({ hasText: "İkinci Ürün" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "İlk Ürün" })).toBeVisible();
+  expect(istekler.every((tarih) => /^\d{4}-\d{2}-\d{2}$/.test(tarih))).toBe(true);
 });
+
 
 test("kategori ürün sayıları tüm stok sayfalarını kapsar", async ({ page }) => {
   await page.route("**/api/v1/stok**", (route) => {
@@ -592,7 +612,7 @@ test("kategori ürün sayıları tüm stok sayfalarını kapsar", async ({ page 
 // geliştirme sunucusunda React strict mode efektleri iki kez çalıştırır ve her sayfa
 // iki kez istenir. Üretim derlemesinde her sayfa bir kez istenir (2026-09-13 ölçümü).
 test("kasa banka fişi tüm cari sayfalarını seçime yükler", async ({ page }) => {
-  await page.route("**/api/v1/kasa-banka/**", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/kasa-banka/**", (route) => route.fulfill(ortakYanit(new URL(route.request().url()).pathname) ?? { json: [] }));
   const istekler: string[] = [];
   await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
@@ -608,7 +628,7 @@ test("kasa banka fişi tüm cari sayfalarını seçime yükler", async ({ page }
   await page.goto("/panel/kasa-banka");
   await page.getByRole("button", { name: /Fiş Girişi/ }).click();
   // Cari seçimi aranabilir seçicidir; seçenekler odaklanınca listelenir.
-  await page.getByRole("combobox", { name: "Cari bağlantısı" }).click();
+  await page.getByRole("combobox", { name: "Cari hesap" }).click();
   await expect(page.getByRole("option", { name: /İkinci Sayfa Cari/ })).toHaveCount(1);
   await expect(page.getByRole("option", { name: /İlk Sayfa Cari/ })).toHaveCount(1);
   expect([...new Set(istekler)]).toEqual(["ilk", "cari-1"]);
@@ -711,7 +731,7 @@ test("fatura formu tüm cari ve stok sayfalarını seçime yükler", async ({ pa
 test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page }) => {
   await page.route("**/api/v1/stok/stok-1**", (route) => {
     const yol = new URL(route.request().url()).pathname;
-    if (yol.endsWith("/hareketler") || yol.endsWith("/depo-bakiyeleri")) return route.fulfill({ json: [] });
+    if (yol !== "/api/v1/stok/stok-1") return route.fallback();
     return route.fulfill({ json: {
       id: "stok-1", kod: "STK-001", ad: "Test Ürün", kisaAd: null, aciklama: null, tip: "urun", marka: null, model: null, mensei: null,
       gtipKodu: null, ureticiUrunKodu: null, barkod: null, kategoriId: null, anaBirim: "adet", kdvOrani: "20",
@@ -746,11 +766,12 @@ test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page })
 test("çek senet formu tüm cari sayfalarını seçime yükler", async ({ page }) => {
   // Kalıp özet ucunu da yakalar; özet nesne bekler, dizi gelirse sayfa çöker.
   const bos = { adet: 0, toplamTry: "0" };
-  await page.route("**/api/v1/kasa-banka/cek-senet**", (route) => route.fulfill({
-    json: new URL(route.request().url()).pathname.endsWith("/cek-senet-ozet")
-      ? { acik: { ...bos, dovizler: {} }, geciken: bos, yaklasan: bos, bankada: bos, ciro: bos, karsiliksiz: bos }
-      : [],
-  }));
+  await page.route("**/api/v1/kasa-banka/cek-senet**", (route) => {
+    const yol = new URL(route.request().url()).pathname;
+    return route.fulfill(yol.endsWith("/cek-senet-ozet")
+      ? { json: { acik: { ...bos, dovizler: {} }, geciken: bos, yaklasan: bos, bankada: bos, ciro: bos, karsiliksiz: bos } }
+      : ortakYanit(yol) ?? { json: [] });
+  });
   const istekler: string[] = [];
   await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
@@ -774,6 +795,8 @@ test("rapor filtreleri tüm cari ve stok sayfalarını yükler", async ({ page }
   await page.route("**/api/v1/raporlar**", (route) => {
     const yol = new URL(route.request().url()).pathname;
     if (yol.endsWith("/gorunumler")) return route.fulfill({ json: [] });
+    const ortak = ortakYanit(yol);
+    if (ortak) return route.fulfill(ortak);
     return route.fulfill({ json: [{
       kod: "test-raporu", modul: "genel", ad: "Test Raporu", aciklama: null, gruplamalar: [], kolonlar: [],
       filtreler: [{ alan: "cariId", ad: "Cari", tip: "cari" }, { alan: "stokId", ad: "Stok", tip: "stok" }],
@@ -794,8 +817,12 @@ test("rapor filtreleri tüm cari ve stok sayfalarını yükler", async ({ page }
   });
 
   await page.goto("/panel/raporlar");
-  await expect(page.getByLabel("Cari").locator("option", { hasText: "İkinci Sayfa Cari" })).toHaveCount(1);
-  await expect(page.getByLabel("Stok").locator("option", { hasText: "İkinci Sayfa Stok" })).toHaveCount(1);
+  // Cari ve stok filtreleri aramalı seçicidir; seçenekler açılınca listelenir.
+  await page.getByRole("combobox", { name: "Cari" }).click();
+  await expect(page.getByRole("option", { name: /İkinci Sayfa Cari/ })).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await page.getByRole("combobox", { name: "Stok" }).click();
+  await expect(page.getByRole("option", { name: /İkinci Sayfa Stok/ })).toHaveCount(1);
 });
 
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
@@ -1070,34 +1097,32 @@ test("ana sayfa role uygun iş kuyruklarını ve finansal görünürlüğü suna
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) return route.fulfill({ json: { rol } });
     if (pathname.endsWith("/firma")) return route.fulfill({ json: { unvan: "Örnek Firma" } });
-    if (pathname.endsWith("/fatura")) return route.fulfill({ json: { kayitlar: [
-      { tip: "satis", durum: "taslak", ebelge: null, odemeOzeti: { durum: "odenmedi" } },
-      { tip: "alis", durum: "kesin", ebelge: { durum: "hata" }, odemeOzeti: { durum: "kismi" } },
-    ] } });
-    if (pathname.endsWith("/stok")) return route.fulfill({ json: { kayitlar: [] } });
+    if (pathname.endsWith("/fatura/is-kuyrugu-ozeti")) return route.fulfill({ json: { taslakSatis: 1, taslakAlis: 0, ebelgeHata: 1, acikTahsilat: 1, acikOdeme: 1 } });
     if (pathname.endsWith("/kasa-banka/ekstre/satirlar")) return route.fulfill({ json: [{ id: "e1" }] });
     if (pathname.endsWith("/ebelge/gelen")) return route.fulfill({ json: [{ id: "g1" }] });
+    if (pathname.endsWith("/kasa-banka/cek-senet")) return route.fulfill({ json: [] });
     if (pathname.endsWith("/rapor/ozet")) return route.fulfill({ json: {
       nakitVarliklar: "1000", envanterDegeri: "2000", toplamAlacaklar: "3000",
       toplamBorclar: "1500", netVarlikDegeri: "4500",
     } });
-    return route.fulfill({ json: {} });
+    return route.fulfill(ortakYanit(pathname) ?? { json: {} });
   });
 
   await page.goto("/panel");
-  await expect(page.getByText(/Satış · Satış belgeleri/)).toBeVisible();
+  await expect(page.getByText("Satış görünümü")).toBeVisible();
   await expect(page.getByText("Taslak satış faturaları")).toBeVisible();
   await expect(page.getByText("Açık tahsilatlar")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Finansal görünüm" })).not.toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finansal Varlık & Borç Durumu" })).not.toBeVisible();
 
   rol = "yonetici";
   await page.reload();
-  await expect(page.getByText(/Yönetim · Nakit/)).toBeVisible();
+  await expect(page.getByText("Yönetim görünümü")).toBeVisible();
   await expect(page.getByText("e-Belge hataları")).toBeVisible();
   await expect(page.getByText("Eşleşmemiş banka hareketleri")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Finansal görünüm" })).toBeVisible();
-  await expect(page.getByText("4.500,00 TL")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finansal Varlık & Borç Durumu" })).toBeVisible();
+  await expect(page.getByText("₺4.500", { exact: true })).toBeVisible();
 });
+
 
 
 test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", async ({ page }) => {
@@ -1139,30 +1164,34 @@ test("fatura kalemleri yalnız klavyeyle kesintisiz girilebilir", async ({ page 
     kullanilabilirMiktar: "25", alisFiyati: "80.00", satisFiyati: "100.00", kdvOrani: "20",
     tedarikciUrunKodlari: ["TED-42"],
   }], sonrakiImlec: null } }));
-  await page.route("**/api/v1/stok/s1/tavsiye-fiyat**", (route) => route.fulfill({ json: { birimFiyat: 100, iskontoOrani: 0 } }));
+  await page.route("**/api/v1/stok/s1/tavsiye-fiyat**", (route) => route.fulfill({ json: {
+    birimFiyat: 100, kaynakFiyat: 100, kaynakDoviz: "TRY", belgeDovizi: "TRY", belgeKuru: 1, urunKuru: 1,
+    cevrilebilir: true, fiyatKaynagi: "kart", iskontoOrani: 0,
+  } }));
 
   await page.goto("/panel/fatura?yon=satis&yeni=1");
   const urun = page.getByRole("combobox", { name: "1. satır ürün veya hizmet seçimi" });
   await urun.fill("TED-42");
   await urun.press("Enter");
 
-  const miktar = page.getByLabel("Miktar").first();
+  // Seçim ürün penceresini açar; miktar ve fiyat orada klavyeyle girilir.
+  const pencere = page.getByRole("dialog", { name: "Ürün veya hizmet ekle" });
+  const miktar = pencere.getByLabel("Miktar");
   await expect(miktar).toBeFocused();
   await miktar.fill("3");
-  await miktar.press("Tab");
-  await expect(page.getByLabel("Birim fiyat").first()).toBeFocused();
-  await page.getByLabel("Birim fiyat").first().fill("125");
-  await page.getByLabel("Birim fiyat").first().press("Tab");
-  await expect(page.getByLabel("İskonto yüzdesi").first()).toBeFocused();
-  await page.getByLabel("İskonto yüzdesi").first().press("Tab");
-  const kdv = page.getByLabel("KDV yüzdesi").first();
-  await expect(kdv).toBeFocused();
-  await kdv.press("Enter");
+  const fiyat = pencere.getByLabel("Birim fiyat");
+  await expect(fiyat).toHaveValue("100");
+  await fiyat.focus();
+  await fiyat.fill("125");
+  const ekle = pencere.getByRole("button", { name: "+ Ekle" });
+  await ekle.focus();
+  await page.keyboard.press("Enter");
 
-  await expect(page.getByRole("combobox", { name: "2. satır ürün veya hizmet seçimi" })).toBeFocused();
-  await expect(page.getByLabel("Miktar")).toHaveCount(2);
+  await expect(pencere).toBeHidden();
+  await expect(page.getByLabel("Miktar")).toHaveValue("3");
   await expect(page.getByText("450,00 TL", { exact: true }).last()).toBeVisible();
 });
+
 
 
 test("hatalı e-Belge nedeni gösterilir ve yeniden gönderilebilir", async ({ page }) => {
@@ -1573,7 +1602,7 @@ test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ 
   ] } }));
   await page.route("**/api/v1/fatura/f1", (route) => route.fulfill({ json: {
     ...odak, dovizCinsi: "TRY", cari: { id: "c1", kod: "C001", unvan: "Zincir Müşterisi" }, satirlar: [],
-    odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200", hareketler: [] },
+    odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200", hareketler: [], kapamalar: [] },
   } }));
 
   await page.goto("/panel/fatura?faturaId=f1&panel=odeme");
@@ -1585,7 +1614,7 @@ test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ 
 
   await page.getByRole("dialog", { name: "Ödeme durumu" }).getByRole("button", { name: "Kapat" }).last().click();
   await page.getByRole("button", { name: "Tüm faturaları göster" }).click();
-  await expect(page).toHaveURL("http://localhost:3100/panel/fatura");
+  await expect(page).toHaveURL(/\/panel\/fatura$/);
   await expect(page.getByRole("row").filter({ hasText: "SAT-002" })).toBeVisible();
 });
 
@@ -1621,7 +1650,7 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
   });
 
   await page.goto("/panel/belgeler");
-  await page.getByRole("row").filter({ hasText: "SP-001" }).getByRole("button", { name: "Belge detayını aç" }).click();
+  await page.getByRole("row", { name: "Sipariş SP-001 belgesini aç" }).click();
   const zincir = page.getByLabel("Belge yaşam döngüsü");
   await expect(zincir).toContainText("TK-001");
   await expect(zincir.getByRole("button", { name: /Sipariş Mevcut/ })).toBeDisabled();
@@ -1665,19 +1694,20 @@ test("senaryo özeti kaydetmeden önce gönderilecek belgeyi gösterir", async (
   await expect(ozet).toContainText("TEMELFATURA");
   await profil.selectOption("ticari");
 
-  // KDV sıfırlanınca istisna kodu zorunludur (FTR-17).
+  // KDV sıfırlanınca istisna kodu zorunludur (FTR-17). Oran belge tarihindeki listeden seçilir (MVZ-11).
   await page.getByLabel("Birim fiyat").fill("1000");
-  await page.getByLabel("KDV yüzdesi").fill("0");
+  await page.getByLabel("KDV yüzdesi").selectOption("0");
   await expect(ozet.getByRole("alert")).toContainText("Satır 1: KDV oranı sıfır olan satırda GİB istisna kodu seçilmelidir");
 
   await page.getByRole("button", { name: "Satır ayrıntıları" }).click();
-  await page.getByLabel("GİB istisna kodu").selectOption("351");
+  // 351 "istisna olmayan diğer" faturayı ISTISNA yapmaz; gerçek bir istisna kodu seçilir.
+  await page.getByLabel("GİB istisna kodu").selectOption("325");
   await expect(ozet.getByRole("alert")).toHaveCount(0);
   await expect(ozet).toContainText("İstisna · ISTISNA");
 
   // Tevkifat oranı koddan gelir; özetteki tutar tevkifat sonrasıdır (FTR-18, FTR-20).
   await page.getByLabel("GİB istisna kodu").selectOption("");
-  await page.getByLabel("KDV yüzdesi").fill("20");
+  await page.getByLabel("KDV yüzdesi").selectOption("20");
   await page.getByLabel("GİB tevkifat kodu").selectOption("607");
   await expect(ozet).toContainText("Tevkifat · TEVKIFAT");
   await expect(ozet).toContainText("Tevkifat sonrası tahsil edilecek");

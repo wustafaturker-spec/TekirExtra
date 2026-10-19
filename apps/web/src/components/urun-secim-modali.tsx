@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
@@ -64,6 +64,9 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
   const [listeler, setListeler] = useState<FiyatListesi[]>([]);
   const [fiyatListesiId, setFiyatListesiId] = useState("");
   const [miktar, setMiktar] = useState("1");
+  // Miktar ve fiyat kutuları birim/döviz ile sarılı; Field etiketi kendiliğinden bağlayamaz.
+  const miktarId = useId();
+  const fiyatId = useId();
   const [birim, setBirim] = useState("");
   const [urunKuru, setUrunKuru] = useState("1");
   const [fiyat, setFiyat] = useState<Tavsiye | null>(null);
@@ -200,13 +203,13 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
         {kurDurumu === "hata" && <p className="product-picker__notice is-warning" role="alert">TCMB kurları alınamadı: {kurHatasi}. <button type="button" onClick={() => void kurlariYukle()}>Tekrar dene</button></p>}
         {kurDurumu === "hazir" && <div className="product-picker__rates">{gosterilecekKurlar.map((d) => <span key={d}>{d} alış <strong>{tcmbKurlari[d]?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span>)}<small>{kurTarihi}</small></div>}
         <div className="product-picker__grid">
-          <Field label="Miktar"><div className="document-line-qty"><Input autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /><SatirBirimi stok={seciliStok} value={birim} onChange={birimDegistir} /></div></Field>
+          <Field label="Miktar" htmlFor={miktarId}><div className="document-line-qty"><Input id={miktarId} autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /><SatirBirimi stok={seciliStok} value={birim} onChange={birimDegistir} /></div></Field>
           {varyantlar.length > 0 && <Field label="Varyant"><Select required value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(urunKuru, e.target.value, fiyatListesiId); }}><option value="">Varyant seçin</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
           <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => { setFiyatListesiId(e.target.value); void fiyatGetir(urunKuru, varyantId, e.target.value); }}><option value="">Cari / ürün varsayılanı</option>{listeler.map((l) => <option value={l.id} key={l.id}>{l.ad} ({l.dovizCinsi})</option>)}</Select></Field>
           <Field label="Fiyat para birimi"><Select value={fiyatDovizi} onChange={(e) => fiyatDoviziDegistir(e.target.value)}><DovizSecenekleri /></Select></Field>
           <Field label={`Ürün kuru (${fiyatDovizi} → TRY)`}><Input type="number" min="0.000001" step="0.000001" disabled={fiyatDovizi === "TRY"} value={fiyatDovizi === "TRY" ? "1" : String(tcmbKurlari[fiyatDovizi] ?? urunKuru)} onChange={(e) => { setUrunKuru(e.target.value); setTcmbKurlari((k) => ({ ...k, [fiyatDovizi]: Number(e.target.value) })); }} /></Field>
           <Field label={`Belge kuru (${belgeDovizi} → TRY)`}><Input readOnly value={belgeDovizi === "TRY" ? "1" : belgeKuru} /></Field>
-          <Field label="Birim fiyat"><div className="row"><Input type="number" min="0" step="any" value={birimFiyat} onChange={(e) => setBirimFiyat(e.target.value)} /><strong>{fiyatDovizi}</strong></div></Field>
+          <Field label="Birim fiyat" htmlFor={fiyatId}><div className="row"><Input id={fiyatId} type="number" min="0" step="any" value={birimFiyat} onChange={(e) => setBirimFiyat(e.target.value)} /><strong>{fiyatDovizi}</strong></div></Field>
           <Field label="KDV (%)"><Input type="number" min="0" max="100" value={kdv} onChange={(e) => setKdv(e.target.value)} /></Field>
           {ekVergiler.map((v, i) => <Field key={v.kod} label={`${vergiTuru(v.kod)?.ad ?? v.kod} ${v.hesap === "oran" ? "(%)" : `(${belgeDovizi} / ${birimKisaAdi(seciliStok?.anaBirim || "adet")})`}`}>
             <Input type="number" min="0" max={v.hesap === "oran" ? 100 : undefined} step="any" value={v.deger} onChange={(e) => setEkVergiler((l) => l.map((x, j) => (j === i ? { ...x, deger: e.target.value } : x)))} />

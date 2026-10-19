@@ -10,7 +10,7 @@
  * bir kur uyguladıysa kullanıcı kuru düzeltir.
  */
 import { hareketKurTipi } from "@tekirextra/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { CariBakiye } from "@/components/cari-bakiye";
@@ -146,6 +146,8 @@ export function OdemeFisi({
   onKaydedildi: (mesaj: string) => void;
 }) {
   const [tip, setTip] = useState<FisTipi>(baslangic.tip ?? "tahsilat");
+  // Tutar kutusu "Kalanı yaz" düğmesiyle sarılı; Field etiketi kendiliğinden bağlayamaz.
+  const tutarId = useId();
   const [hesapAnahtari, setHesapAnahtari] = useState(baslangic.hesapAnahtari ?? "");
   const [tarih, setTarih] = useState(baslangic.tarih ?? bugun());
   const [duzeltmeNedeni, setDuzeltmeNedeni] = useState("");
@@ -367,9 +369,9 @@ export function OdemeFisi({
           <Field label="Tarih">
             <Input required type="date" value={tarih} onChange={(e) => { setTarih(e.target.value); setKurElle(false); }} />
           </Field>
-          <Field label={`Tutar${hesap ? ` (${hesap.dovizCinsi})` : ""}`}>
+          <Field label={`Tutar${hesap ? ` (${hesap.dovizCinsi})` : ""}`} htmlFor={tutarId}>
             <div className="payment-slip__amount">
-              <Input required inputMode="decimal" type="number" min="0.01" step="0.01" value={tutar} onChange={(e) => setTutar(e.target.value)} placeholder="0,00" />
+              <Input id={tutarId} required inputMode="decimal" type="number" min="0.01" step="0.01" value={tutar} onChange={(e) => setTutar(e.target.value)} placeholder="0,00" />
               {fatura && hesap && (
                 <Button type="button" onClick={kalaniDoldur} disabled={caprazDoviz && !(sayi(kurMetni) > 0)}>
                   Kalanı yaz
