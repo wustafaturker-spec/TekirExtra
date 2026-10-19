@@ -1,5 +1,9 @@
 # F02 — TEKİR EKTRA ÖN MUHASEBE pilot başlangıç kaydı
 
+## 19 Ekim 2026 — yerel manuel pilot teknik yayını
+
+Kullanıcı pilot/yayına dönmeyi ve `localhost:3100` hedefini seçti. [Yeni adayın yerel geçiş kaydı](LOCALHOST-PILOT-YAYIN-2026-10-19.md) güncel durumu içerir. API/web yeni sabit paketten sağlıklı çalışıyor. Gerçek yedeğin 208 tablo özet eşitliği ve yeni migration provası başarılı; iki iade migration'ı yerel hedefe uygulandı. Güncel ayarlar eski kayıttan farklı: pilot modu yanında otomasyon ve uygulama içi bildirim açık. Bu ayarlar değiştirilmedi; worker çalıştırılmadı. Şirkette 565 cari, 189 fatura, 2 söz ve 2 takip var; geçiş öncesi/sonrası sayılar aynı. Gerçek kullanıcı oturumu, doğal örnek ve alan kabulü henüz yapılmadı. Aşağıdaki tarihsel kayıtlar 16–17 Ekim gözlemleridir.
+
 16 Ekim 2026. Şirket, sorumlu hesap ve localhost ortamı kullanıcı tarafından seçildi. Salt okunur ekran kullanıcı tarafından teyit edildi ve F02 yerel şirkette manuel pilot moduna alındı. Doğal iş örnekleriyle pilot kabulü henüz yapılmadı.
 
 | Alan | Doğrulanan değer |

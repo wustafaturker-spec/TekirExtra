@@ -11,16 +11,16 @@ F01-03,F01,A,P0,Kontrollu cozum,Duzeltme kaydi ve mevcut maliyet etki onizlemesi
 F01-04,F01,A,P0,Maliyet kabul ve pilot,Finans RLS donem yaris ve UI kabul kaniti,QA|Muhasebe,M,F01-03|P00-06,F01-K1|F01-K2,devam_ediyor
 F02-01,F02,A,P1,Tahsilat is akisi,Soz revizyon itiraz odeme atama ve nakit tek sayim karari,Urun sahibi|Muhasebe|Backend,M,P00-01|P00-03,F02-K1|F02-K2,devam_ediyor
 F02-02,F02,A,P1,Tahsilat alan modeli,Soz gorusme takip ve kapama referansli servisler,Backend,L,F02-01|P00-05,F02-K1|F02-K2,devam_ediyor
-F02-03,F02,A,P1,Takip ve gerceklesme,Gunluk UI olay tuketimi geri alma uzlastirmasi ve kontrollu bildirim,Backend|Frontend|Platform,L,F02-02|P00-04,F02-K1|F02-K2,devam_ediyor
-F02-04,F02,A,P1,Tahsilat kabul ve pilot,Kismi kapama duplicate eski odeme itiraz ve nakit testleri,QA|Muhasebe,L,F02-03|P00-06,F02-K1|F02-K2,devam_ediyor
+F02-03,F02,A,P1,Takip ve gerceklesme,Gunluk UI olay tuketimi geri alma uzlastirmasi ve kontrollu bildirim,Backend|Frontend|Platform,L,F02-02|P00-04,F02-K1|F02-K2,yerel_is_listesi_tasarim_ve_soz_gunu_eposta_etkin_tarihsel_metrik_ve_alan_pilotu_acik
+F02-04,F02,A,P1,Tahsilat kabul ve pilot,Kismi kapama duplicate eski odeme itiraz ve nakit testleri,QA|Muhasebe,L,F02-03|P00-06,F02-K1|F02-K2,103_db_13_birim_35_web_senaryosu_gecti_yerel_pilot_etkin_alan_kabulu_acik
 F03-01,F03,A,P1,Firsat belge kurallari,Kardinalite sahiplik surum ve gerceklesen sonuc karari,Urun sahibi|Satis|Backend,S,P00-01|P00-03,F03-K1|F03-K2,ilk_dilim_kurallari_uygulandi
 F03-02,F03,A,P1,Firsat belge servisleri,Tipli bag kurma bag cozme ve denetim,Backend,M,F03-01|P00-05,F03-K1|F03-K2,mevcut_teklif_bagi_gelistirildi
-F03-03,F03,A,P1,Satis dosyasi,Firsatta teklif olustur bagla zaman cizelgesi ve sonuc,Frontend|Backend,M,F03-02,F03-K1|F03-K2,kaynak_satir_fatura_payi_ve_tam_fatura_kapama_gelistirildi_karma_iade_odeme_bekliyor
-F03-04,F03,A,P1,Satis kabul ve pilot,Coklu teklif karma fatura iade ve yetki dogrulamasi,QA|Satis,M,F03-03|P00-06,F03-K1|F03-K2,iki_firsat_ortak_fatura_kaynak_testleri_gecti_birlesik_kabul_pilot_bekliyor
-F04-01,F04,B,P2,Ihtiyac kapsami,Tek depo birim rezerv tarih ve tedarik verisi karari,Backend|Depo|Uretim planlama,M,P00-02|P00-03,F04-K1|F04-K2,planlandi
-F04-02,F04,B,P2,Tarihli ihtiyac motoru,Kaynak bazli net ihtiyac ve karsilama baglari,Backend,L,F04-01|P00-05,F04-K1|F04-K2,planlandi
-F04-03,F04,B,P2,Ihtiyac UI ve talep,Ihtiyac gorunumu teslim onerisi ve onayli satin alma talebi,Frontend|Backend,L,F04-02,F04-K1|F04-K2,planlandi
-F04-04,F04,B,P2,Ihtiyac kabul ve pilot,Rezerv kismi teslim birim termin ve yaris testleri,QA|Depo|Uretim planlama,L,F04-03|P00-06,F04-K1|F04-K2,planlandi
+F03-03,F03,A,P1,Satis dosyasi,Firsatta teklif olustur bagla zaman cizelgesi ve sonuc,Frontend|Backend,M,F03-02,F03-K1|F03-K2,cok_kaynakli_net_ve_iade_revizyon_kapasitesi_yerelde_duzeltildi
+F03-04,F03,A,P1,Satis kabul ve pilot,Coklu teklif karma fatura iade ve yetki dogrulamasi,QA|Satis,M,F03-03|P00-06,F03-K1|F03-K2,59_db_17_uretim_web_fixture_3_kapama_hacim_birim_gecti_gercek_alan_pilotu_acik
+F04-01,F04,B,P2,Ihtiyac kapsami,Tek depo birim rezerv tarih ve tedarik verisi karari,Backend|Depo|Uretim planlama,M,P00-02|P00-03,F04-K1|F04-K2,ilk_dilim_sozlesmesi_yazildi
+F04-02,F04,B,P2,Tarihli ihtiyac motoru,Kaynak bazli net ihtiyac ve karsilama baglari,Backend,L,F04-01|P00-05,F04-K1|F04-K2,anlik_stok_api_yerel_yayinda_tarihli_motor_acik
+F04-03,F04,B,P2,Ihtiyac UI ve talep,Ihtiyac gorunumu teslim onerisi ve onayli satin alma talebi,Frontend|Backend,L,F04-02,F04-K1|F04-K2,ilk_dilim_ui_taslak_aktarimi_yerel_yayinda_tarihli_plan_acik
+F04-04,F04,B,P2,Ihtiyac kabul ve pilot,Rezerv kismi teslim birim termin ve yaris testleri,QA|Depo|Uretim planlama,L,F04-03|P00-06,F04-K1|F04-K2,stok_ve_talep_ilk_dilim_kabul_gecti_tarihli_pilot_acik
 F05-01,F05,B,P2,Odeme politikasi,Tolerans fark istisna ve uyari engel karar kaydi,Urun sahibi|Muhasebe|Satin alma,M,P00-03|P00-05,F05-K1|F05-K2,planlandi
 F05-02,F05,B,P2,Odeme uygunluk servisi,Normalize kaynak karsilastirmasi ve surumlu karar modeli,Backend,L,F05-01,F05-K1|F05-K2,planlandi
 F05-03,F05,B,P2,Odeme akisina baglama,Fark UI ve kritik mutasyonlarda guncel kontrol,Backend|Frontend,L,F05-02,F05-K1|F05-K2,planlandi
@@ -53,7 +53,7 @@ F12-01,F12,C,P3,Sube ve merkez tasarimi,Boyut sahiplik dagitim yetki ve eski ver
 F12-02,F12,C,P3,Sube veri gecisi,Sozluk nullable bag ve kaynakla dengeli dagitim paylari,Backend,L,F12-01,F12-K1|F12-K2,planlandi
 F12-03,F12,C,P3,Merkez bazli akislar,Belge masraf butce rapor ve yetki entegrasyonu,Backend|Frontend,L,F12-02,F12-K1|F12-K2,planlandi
 F12-04,F12,C,P3,Sube kabul ve pilot,Toplam yuvarlama erisim eski veri ve kademeli goc kabul kaniti,QA|Muhasebe|Platform,L,F12-03|P00-06,F12-K1|F12-K2,planlandi
-REL-01,REL,A,P0,Birlesik regresyon,Cekirdek finans yetki ve migration uyum raporu,QA|Backend|Frontend,L,F01-04|F02-04|F03-04,G1,planlandi
+REL-01,REL,A,P0,Birlesik regresyon,Cekirdek finans yetki ve migration uyum raporu,QA|Backend|Frontend,L,F01-04|F02-04|F03-04,G1,190_sabit_kaynak_cekirdek_testi_gecti_hedef_uretim_kapsami_bekliyor
 REL-02,REL,A,P0,Birlesik kullanici pilotu,Hazir adayda baz sonuc olcumu ve alan kabul kaydi,Urun sahibi|Alan uzmani|QA,M,REL-03,G2|Bolum 23,planlandi
-REL-03,REL,A,P0,Yayin adayi hazirligi,Build kimlikleri migration provasi ve geri donus runbooku,Backend|Frontend|Platform,M,REL-01,G3,planlandi
+REL-03,REL,A,P0,Yayin adayi hazirligi,Build kimlikleri migration provasi ve geri donus runbooku,Backend|Frontend|Platform,M,REL-01,G3,api_web_190_test_22_tablo_restore_node22_12_runtime_1_pdf_14_akis_17_isletim_7_dogrulayici_17_compose_gecti_hedef_kapasite_reboot_geri_donus_bekliyor
 REL-04,REL,A,P0,Yayin ve sonuc,Yetkili kontrollu gecis saglik surum ve kabul kaydi,Platform|Urun sahibi|QA,M,REL-02|REL-03,G4|G5,planlandi

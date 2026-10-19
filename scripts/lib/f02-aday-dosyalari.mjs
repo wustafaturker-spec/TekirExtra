@@ -21,8 +21,8 @@ export async function fingerprints(paths, base) {
 }
 export async function source() {
   const paths = [];
-  for (const p of ["apps/api/src", "apps/api/prisma", "apps/web/src", "apps/web/public", "apps/web/e2e", "apps/api/test", "packages/shared/src", "packages/baglanti/src", "scripts"]) paths.push(...await files(join(root, p)));
+  for (const p of ["apps/api/src", "apps/api/prisma", "apps/api/scripts", "apps/web/src", "apps/web/public", "apps/web/e2e", "apps/api/test", "packages/shared/src", "packages/baglanti/src", "scripts"]) paths.push(...await files(join(root, p)));
   for (const p of ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "tsconfig.base.json", "turbo.json", "apps/api/package.json", "apps/api/tsconfig.json", "apps/api/scripts/f01-yaris-kabul.mjs", "apps/web/package.json", "apps/web/tsconfig.json", "apps/web/next-env.d.ts", "apps/web/next.config.ts", "packages/shared/package.json", "packages/shared/tsconfig.json", "packages/baglanti/package.json", "packages/baglanti/tsconfig.json"]) paths.push(join(root, p));
-  for (const [dir, pattern] of [["apps/web", /^playwright.*\.ts$/], ["apps/api", /^vitest.*\.ts$/]]) paths.push(...(await readdir(join(root, dir))).filter((p) => pattern.test(p)).map((p) => join(root, dir, p)));
+  for (const [dir, pattern] of [["apps/web", /^playwright.*\.ts$/], ["apps/api", /^(vitest.*\.ts|tsconfig.*\.json)$/]]) paths.push(...(await readdir(join(root, dir))).filter((p) => pattern.test(p)).map((p) => join(root, dir, p)));
   return fingerprints(paths, root);
 }

@@ -16,7 +16,7 @@ await mkdir(snapshot, { recursive: true });
 const report = { surum: 1, baslangic: new Date().toISOString(), durum: "basladi", kaynakDizini: relative(root, snapshot), adayDizini: relative(root, target), gercekSistemDegisikligi: false };
 async function run(command, args, cwd, log, extra = {}) {
   await new Promise((ok, fail) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, CI: "true", NODE_OPTIONS: "--max-old-space-size=2048", PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", PRISMA_GENERATE_SKIP_AUTOINSTALL: "1", DATABASE_URL: "postgresql://127.0.0.1:9/f02_build_only", DATABASE_URL_MIGRATE: "postgresql://127.0.0.1:9/f02_build_only", ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, env: { ...process.env, CI: "true", NODE_OPTIONS: "--max-old-space-size=4096", PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", PRISMA_GENERATE_SKIP_AUTOINSTALL: "1", DATABASE_URL: "postgresql://127.0.0.1:9/f02_build_only", DATABASE_URL_MIGRATE: "postgresql://127.0.0.1:9/f02_build_only", ...extra }, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
     child.stdout.on("data", v => { text += v; }); child.stderr.on("data", v => { text += v; });
     child.on("error", fail);
