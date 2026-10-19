@@ -310,6 +310,9 @@ for (const gorunum of [
         animations: "disabled",
         caret: "hide",
         fullPage: true,
+        // Seçili cari yazılı arama kutusunun metni koşucuda koşudan koşuya alt piksel kayıyor
+        // (300-550 px, tek satır); görünür bir fark değil.
+        maxDiffPixels: 1000,
       });
 
       await page.getByRole("combobox", { name: "Cari hesap" }).click();
@@ -344,6 +347,9 @@ for (const gorunum of [
         animations: "disabled",
         caret: "hide",
         fullPage: true,
+        // Seçili cari yazılı arama kutusunun metni koşucuda koşudan koşuya alt piksel kayıyor
+        // (300-550 px, tek satır); görünür bir fark değil.
+        maxDiffPixels: 1000,
       });
 
       await page.getByRole("button", { name: "Satır ayrıntıları" }).click();
