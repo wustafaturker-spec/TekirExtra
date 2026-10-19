@@ -1,0 +1,9 @@
+import {expect,it} from 'vitest';
+import {ihtiyacGirdisiOku,ihtiyacKaniti,ihtiyacTalepYolu,ihtiyactanTalep,type IhtiyacSonucu} from './ihtiyac-talep';
+const g={stokId:'s',depoId:'d',miktar:'8',birim:'kutu',ihtiyacTarihi:'2099-01-01'};
+const sonuc:IhtiyacSonucu={alindigiZaman:'2026-10-19T00:00:00Z',ihtiyacTarihi:g.ihtiyacTarihi,stok:{id:'s',kod:'S1',ad:'Ürün',anaBirim:'adet'},depo:{id:'d',kod:'D1',ad:'Merkez'},girilen:{miktar:'8',birim:'kutu',katsayi:'2'},hesap:{talep:'16.000',eksik:'2.000',kullanilabilir:'14.000'}};
+it('URL eksik miktar ve fiyat taşımaz; girdiler sunucuda yeniden hesaplanır',()=>{const u=new URL(ihtiyacTalepYolu(g),'http://test');expect(ihtiyacGirdisiOku(u.searchParams)).toEqual(g);expect(u.searchParams.has('eksik')).toBe(false);expect(u.searchParams.has('fiyat')).toBe(false);});
+it('aktarımı olmayan sayfayı ve bozuk bağlantıyı ayırır',()=>{expect(ihtiyacGirdisiOku(new URLSearchParams())).toBeNull();expect(()=>ihtiyacGirdisiOku(new URLSearchParams('kaynak=stok-ihtiyac'))).toThrow();expect(()=>ihtiyacGirdisiOku(new URLSearchParams('kaynak=stok-ihtiyac&stokId=s&stokId=s'))).toThrow();});
+it('açığı ana birimde aktarır; bütçe ve fiyat seçimini kullanıcıya bırakır',()=>expect(ihtiyactanTalep(sonuc)).toMatchObject({butceAnahtari:'',ihtiyacTarihi:g.ihtiyacTarihi,kalemler:[{stokId:'s',miktar:'2.000',tahminiBirimFiyat:''}]}));
+it.each(['0.000','-1.000','NaN','1.0001','1000000000000.000'])('geçersiz veya sıfır açık aktarılmaz: %s',eksik=>expect(()=>ihtiyactanTalep({...sonuc,hesap:{...sonuc.hesap,eksik}})).toThrow());
+it('yeniden okumada yalnız saat değişmesi kanıtı bozmaz; miktar ve birim değişimi bozar',()=>{expect(ihtiyacKaniti({...sonuc,alindigiZaman:'yeni'})).toBe(ihtiyacKaniti(sonuc));expect(ihtiyacKaniti({...sonuc,hesap:{...sonuc.hesap,eksik:'3.000'}})).not.toBe(ihtiyacKaniti(sonuc));expect(ihtiyacKaniti({...sonuc,stok:{...sonuc.stok,anaBirim:'kg'}})).not.toBe(ihtiyacKaniti(sonuc));});

@@ -185,6 +185,7 @@ export default function StokSayfasi() {
         subtitle="Ürünlerinizi, hizmetlerinizi, envanter miktarlarını ve maliyetlerini takip edin."
         actions={
           <>
+            {rol && ["yonetici", "muhasebe", "depo"].includes(rol) && <ButtonLabel as="a" href="/panel/stok/ihtiyac">İhtiyaç önizlemesi</ButtonLabel>}
             {rolMenuYoluGorebilir(rol, "/panel/stok/smm") && <ButtonLabel as="a" href="/panel/stok/smm">₺ SMM & Karlılık</ButtonLabel>}
             <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
             {yonetici && <ButtonLabel as="a" href="/panel/stok/tutarlilik">Tutarlılık denetimi</ButtonLabel>}

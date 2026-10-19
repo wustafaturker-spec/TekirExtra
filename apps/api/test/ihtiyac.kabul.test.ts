@@ -1,0 +1,27 @@
+import 'reflect-metadata';
+import {randomUUID} from 'node:crypto';
+import {beforeAll,afterAll,expect,it} from 'vitest';
+import {PrismaService} from '../src/core/prisma.service';
+import {baglamlaCalistir} from '../src/core/istek-baglami';
+import {IhtiyacService} from '../src/stok/ihtiyac.service';
+const url=process.env.F01_YARIS_DB_URL;
+if(!url||!process.env.F01_YARIS_NONCE)throw Error('Geçici DB runner gerekli');
+const u=new URL(url);if(u.hostname!=='127.0.0.1'||!/^\/f01_yaris_[a-f0-9]{16}$/.test(u.pathname)||u.username!=='tekir_app'||['5432','5433'].includes(u.port))throw Error('Geçici DB kapsamı geçersiz');
+const p=new PrismaService({datasourceUrl:url}),s=new IhtiyacService(p);
+beforeAll(async()=>{const [r]=await p.$queryRaw<any[]>`SELECT current_setting('tekir.f01_yaris_nonce',true) AS nonce,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user`;expect(r).toEqual({nonce:process.env.F01_YARIS_NONCE,rolsuper:false,rolbypassrls:false});});
+afterAll(()=>p.$disconnect());
+async function fixture(){const tenantId=randomUUID();return p.$transaction(async t=>{await t.$executeRaw`SELECT set_config('app.tenant_id',${tenantId},true)`;await t.tenant.create({data:{id:tenantId,vkn:tenantId,unvan:'F04 izole test'}});const user=await t.user.create({data:{tenantId,eposta:tenantId+'@test.invalid',parolaHash:'test',adSoyad:'Depo',rol:'depo'}});const k=await t.stokKart.create({data:{tenantId,kod:'S1',ad:'Ürün',tip:'urun',anaBirim:'adet'}});const d=await t.depo.create({data:{tenantId,kod:'D1',ad:'Depo'}});await t.stokDepoBakiye.create({data:{tenantId,stokId:k.id,depoId:d.id,mevcutMiktar:'10',rezerveMiktar:'4',yoldakiMiktar:'100'}});return {tenantId,userId:user.id,stokId:k.id,depoId:d.id};});}
+type F=Awaited<ReturnType<typeof fixture>>;
+const ctx=<T>(f:F,fn:()=>Promise<T>,rol:any='depo')=>baglamlaCalistir({...f,rol},fn);
+const tx=<T>(f:F,fn:(t:any)=>Promise<T>)=>ctx(f,()=>p.tenantIslem(f.tenantId,fn));
+const body=(f:F)=>({stokId:f.stokId,depoId:f.depoId,miktar:'8',birim:'adet',ihtiyacTarihi:'2099-01-01'});
+const run=(f:F,extra={})=>ctx(f,()=>s.onizle({...body(f),...extra}));
+it('stok 10 rezerv 4 ihtiyaç 8: eksik 2; stok ve satın alma değişmez',async()=>{const f=await fixture();const snapshot=()=>tx(f,async t=>JSON.stringify([await t.stokDepoBakiye.findMany(),await t.stokHareket.findMany(),await t.belge.findMany(),await t.auditLog.findMany()]));const before=await snapshot();expect((await run(f)).hesap).toMatchObject({kullanilabilir:'6.000',eksik:'2.000',yoldaki:'100.000'});expect(await snapshot()).toBe(before);});
+it('birim katsayısını kesin uygular ve fazla hassasiyeti yuvarlamaz',async()=>{const f=await fixture();await tx(f,t=>t.stokBirim.create({data:{tenantId:f.tenantId,stokId:f.stokId,ad:'kutu',katsayi:'2.5'}}));expect((await run(f,{miktar:'4',birim:'kutu'})).hesap.talep).toBe('10.000');await expect(run(f,{miktar:'0.001',birim:'kutu'})).rejects.toMatchObject({status:400});});
+it('başka tenant ürün ve deposu görünmez',async()=>{const f=await fixture(),g=await fixture();await expect(run(f,{stokId:g.stokId})).rejects.toMatchObject({status:404});await expect(run(f,{depoId:g.depoId})).rejects.toMatchObject({status:404});expect(await tx(f,t=>t.stokKart.findMany({where:{id:g.stokId}}))).toEqual([]);});
+it('bakiyesiz depoda stok sıfırdır; başka depodan stok eklenmez',async()=>{const f=await fixture();const d:any=await tx(f,t=>t.depo.create({data:{tenantId:f.tenantId,kod:'D2',ad:'Boş depo'}}));expect((await run(f,{depoId:d.id})).hesap).toMatchObject({mevcut:'0.000',eksik:'8.000'});});
+it('varyant stoklarını birleştirmez',async()=>{const f=await fixture();await tx(f,t=>t.stokVaryant.create({data:{tenantId:f.tenantId,stokId:f.stokId,kod:'V1',ad:'Mavi',nitelikler:{renk:'mavi'}}}));await expect(run(f)).rejects.toMatchObject({status:400});});
+it('pasif depo ve hizmet kartını reddeder',async()=>{const f=await fixture();await tx(f,t=>t.depo.update({where:{id:f.depoId},data:{aktif:false}}));await expect(run(f)).rejects.toMatchObject({status:404});await tx(f,t=>t.depo.update({where:{id:f.depoId},data:{aktif:true}}));await tx(f,t=>t.stokKart.update({where:{id:f.stokId},data:{tip:'hizmet'}}));await expect(run(f)).rejects.toMatchObject({status:404});});
+it('geçmiş gün, geçersiz takvim, sıfır miktar ve bilinmeyen birimi reddeder',async()=>{const f=await fixture();for(const x of [{ihtiyacTarihi:'2020-01-01'},{ihtiyacTarihi:'2099-02-30'},{miktar:'0'},{birim:'bilinmeyen'}])await expect(run(f,x)).rejects.toMatchObject({status:400});});
+it('yetkisiz rol servise doğrudan erişemez',async()=>{const f=await fixture();for(const rol of ['satis','salt_okunur','uretim_operatoru'])await expect(ctx(f,()=>s.onizle(body(f)),rol)).rejects.toMatchObject({status:403});});
+it('stok değişince aynı sorgu yeni bakiyeyi döndürür',async()=>{const f=await fixture();await run(f);await tx(f,t=>t.stokDepoBakiye.updateMany({data:{mevcutMiktar:'20'}}));expect((await run(f)).hesap.eksik).toBe('0.000');});

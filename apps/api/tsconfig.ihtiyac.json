@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","compilerOptions":{"outDir":"../../.release-candidates/f04-ihtiyac-20261019/api","sourceMap":false},"include":["src/stok/stok.module.ts"]}

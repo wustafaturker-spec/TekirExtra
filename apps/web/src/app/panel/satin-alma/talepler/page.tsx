@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ihtiyacGirdisiOku, ihtiyacKaniti, ihtiyacSorgusu, ihtiyactanTalep, type IhtiyacGirdisi, type IhtiyacSonucu } from "@/lib/ihtiyac-talep";
 import { AramaSecici } from "@/components/arama-secici";
 import { BelgeDosyalari, belgeDosyalariniYukle, KayitliEkSatiri, type KayitliEk } from "@/components/belge-dosyalari";
 import { DepoSecici } from "@/components/depo-secici";
@@ -109,6 +110,8 @@ export default function SatinAlmaTalepleriSayfasi() {
   const [kapsam, setKapsam] = useState<Kapsam>("benim");
   const [liste, setListe] = useState<TalepSatiri[]>([]);
   const [detay, setDetay] = useState<TalepDetay | null>(null);
+  const aktarimSirasi = useRef(0);
+  const [aktarim, setAktarim] = useState<{ girdi: IhtiyacGirdisi; sonuc: IhtiyacSonucu } | null>(null);
   const [form, setForm] = useState<TalepFormu | null>(null);
   const [gerekce, setGerekce] = useState("");
   const [teklif, setTeklif] = useState<TeklifFormu>(bosTeklif());
@@ -144,6 +147,7 @@ export default function SatinAlmaTalepleriSayfasi() {
   }, []);
 
   useEffect(() => {
+    const sira = ++aktarimSirasi.current;
     void (async () => {
       try {
         const s = await api<Secenekler>("/satin-alma/secenekler");
@@ -153,10 +157,20 @@ export default function SatinAlmaTalepleriSayfasi() {
         await listeyiYukle(ilk);
         const talep = new URLSearchParams(window.location.search).get("talep");
         if (talep) await detayAc(talep);
+        else {
+          const girdi = ihtiyacGirdisiOku(new URLSearchParams(window.location.search));
+          if (girdi) {
+            if (!s.yetkiler.talepAcabilir) throw Error("Bu rol satın alma talebi açamaz.");
+            const sonuc = await api<IhtiyacSonucu>(ihtiyacSorgusu(girdi), { cache: "no-store" });
+            if (!s.stoklar.some(k => k.id === sonuc.stok.id)) throw Error("Ürün satın alma listesinde yok. Stok kartını kontrol edin.");
+            if (sira === aktarimSirasi.current) { setForm(ihtiyactanTalep(sonuc)); setAktarim({ girdi, sonuc }); }
+          }
+        }
       } catch (h) {
         setHata(h instanceof Error ? h.message : "Satın alma bilgileri yüklenemedi");
       }
     })();
+    return () => { aktarimSirasi.current++; };
   }, [listeyiYukle, detayAc]);
 
   const stokSecenekleri = useMemo(
@@ -197,6 +211,12 @@ export default function SatinAlmaTalepleriSayfasi() {
   function talepKaydet() {
     if (!form) return;
     void calistir(async () => {
+      if (aktarim) {
+        if (form.kalemler.length !== 1 || form.kalemler[0].stokId !== aktarim.sonuc.stok.id || form.kalemler[0].miktar !== aktarim.sonuc.hesap.eksik || form.ihtiyacTarihi !== aktarim.sonuc.ihtiyacTarihi) throw Error("Aktarılan ihtiyaç değişti. İhtiyacı yeniden yükleyin.");
+        const guncel = await api<IhtiyacSonucu>(ihtiyacSorgusu(aktarim.girdi), { cache: "no-store" });
+        if (ihtiyacKaniti(guncel) !== ihtiyacKaniti(aktarim.sonuc)) throw Error("Stok ihtiyacı değişti. İhtiyacı yeniden yükleyip miktarı kontrol edin; talep kaydedilmedi.");
+        if (!form.butceAnahtari || !form.kalemler[0]?.tahminiBirimFiyat) throw Error("Bütçe kalemini seçin ve tahmini birim fiyatı girin.");
+      }
       const govde = {
         departmanId: form.departmanId || null,
         ihtiyacTarihi: form.ihtiyacTarihi,
@@ -207,12 +227,24 @@ export default function SatinAlmaTalepleriSayfasi() {
       const sonuc = form.id
         ? await api<{ id: string }>(`/satin-alma/talepler/${form.id}`, { method: "PUT", body: JSON.stringify(govde) })
         : await api<{ id: string; no: string }>("/satin-alma/talepler", { method: "POST", body: JSON.stringify(govde) });
-      setForm(null);
+      setForm(null); setAktarim(null);
+      const adres = new URL(window.location.href);
+      for (const k of ["kaynak", "stokId", "depoId", "miktar", "birim", "ihtiyacTarihi"]) adres.searchParams.delete(k);
+      adres.searchParams.set("talep", sonuc.id); window.history.replaceState(null, "", adres);
       await yenile(form.id ? "Talep güncellendi." : "Talep taslak olarak kaydedildi; onaya göndermeyi unutmayın.", sonuc.id);
     });
   }
 
+  function aktarimiKapat() {
+    aktarimSirasi.current++;
+    setAktarim(null);
+    const adres = new URL(window.location.href);
+    for (const k of ["kaynak", "stokId", "depoId", "miktar", "birim", "ihtiyacTarihi"]) adres.searchParams.delete(k);
+    window.history.replaceState(null, "", adres);
+  }
+
   function talepDuzenle(d: TalepDetay) {
+    aktarimiKapat();
     setForm({
       id: d.id,
       departmanId: d.departman?.id ?? "",
@@ -318,27 +350,34 @@ export default function SatinAlmaTalepleriSayfasi() {
       <PageHeader
         title="Satın Alma Talepleri"
         subtitle={`Talep → onay → teklif → alış siparişi. ${secenekler ? `Onay eşiği ${tl(secenekler.onayEsigi)}: eşiğe kadar muhasebe, üstünü yönetici onaylar.` : ""}`}
-        actions={secenekler?.yetkiler.talepAcabilir ? <Button variant="primary" onClick={() => { setDetay(null); setForm(bosTalep()); }}>Yeni talep</Button> : undefined}
+        actions={secenekler?.yetkiler.talepAcabilir ? <Button disabled={islemde} variant="primary" onClick={() => { setDetay(null); aktarimiKapat(); setForm(bosTalep()); }}>Yeni talep</Button> : undefined}
       />
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
       {form && secenekler && (
         <Card title={form.id ? "Talebi düzenle" : "Yeni satın alma talebi"}>
+          {aktarim && <div><Alert tone="warning">Eksik miktar {aktarim.sonuc.depo.ad} deposundan, ana birimde aktarıldı. Bu form stok ayırmaz; taslak kaydından sonra onaya gönderilmelidir.</Alert><Button disabled={islemde} onClick={() => void calistir(async () => {
+            const sonuc = await api<IhtiyacSonucu>(ihtiyacSorgusu(aktarim.girdi), { cache: "no-store" });
+            const yeni = ihtiyactanTalep(sonuc);
+            setForm({ ...yeni, departmanId: form.departmanId, butceAnahtari: form.butceAnahtari, kalemler: [{ ...yeni.kalemler[0], tahminiBirimFiyat: form.kalemler[0]?.tahminiBirimFiyat ?? "" }] });
+            setAktarim({ ...aktarim, sonuc }); setBasari("İhtiyaç güncellendi. Miktarı kontrol edip taslağı kaydedebilirsiniz.");
+          })}>İhtiyacı yeniden yükle</Button></div>}
           <div className="form-grid">
-            <Field label="İhtiyaç tarihi"><Input type="date" value={form.ihtiyacTarihi} onChange={(e) => setForm({ ...form, ihtiyacTarihi: e.target.value })} /></Field>
+            <Field label="İhtiyaç tarihi"><Input disabled={!!aktarim || islemde} type="date" value={form.ihtiyacTarihi} onChange={(e) => setForm({ ...form, ihtiyacTarihi: e.target.value })} /></Field>
             <Field label="Bütçe kalemi">
-              <Select value={form.butceAnahtari} onChange={(e) => setForm({ ...form, butceAnahtari: e.target.value })}>
+              <Select disabled={islemde} value={form.butceAnahtari} onChange={(e) => setForm({ ...form, butceAnahtari: e.target.value })}>
+                {aktarim && <option value="">Bütçe kalemi seçin</option>}
                 {secenekler.butceKalemleri.map((k) => <option key={k.anahtar} value={k.anahtar}>{k.ad}</option>)}
               </Select>
             </Field>
             <Field label="Departman (isteğe bağlı)">
-              <Select value={form.departmanId} onChange={(e) => setForm({ ...form, departmanId: e.target.value })}>
+              <Select disabled={islemde} value={form.departmanId} onChange={(e) => setForm({ ...form, departmanId: e.target.value })}>
                 <option value="">—</option>
                 {secenekler.departmanlar.map((d) => <option key={d.id} value={d.id}>{d.ad}</option>)}
               </Select>
             </Field>
-            <Field label="Gerekçe"><Input value={form.gerekce} onChange={(e) => setForm({ ...form, gerekce: e.target.value })} placeholder="Neden gerekli?" /></Field>
+            <Field label="Gerekçe"><Input disabled={islemde} value={form.gerekce} onChange={(e) => setForm({ ...form, gerekce: e.target.value })} placeholder="Neden gerekli?" /></Field>
           </div>
           <TableWrap>
             <thead><tr><th>Stok / hizmet kartı</th><th className="num">Miktar</th><th className="num">Tahmini birim fiyat (TL, KDV hariç)</th><th className="num">Tutar</th><th /></tr></thead>
@@ -349,7 +388,7 @@ export default function SatinAlmaTalepleriSayfasi() {
                 return (
                   <tr key={i}>
                     <td style={{ minWidth: 260 }}>
-                      <AramaSecici
+                      {aktarim || islemde ? <Input aria-label={`${i + 1}. kalem kartı`} readOnly value={stok ? `${stok.kod} — ${stok.ad}` : k.stokId} /> : <AramaSecici
                         ariaLabel={`${i + 1}. kalem kartı`}
                         deger={k.stokId}
                         secenekler={stokSecenekleri}
@@ -357,24 +396,24 @@ export default function SatinAlmaTalepleriSayfasi() {
                           const secilen = secenekler.stoklar.find((s) => s.id === stokId);
                           kalemGuncelle({ stokId, tahminiBirimFiyat: k.tahminiBirimFiyat || (secilen?.alisFiyati ? String(Number(secilen.alisFiyati)) : "") });
                         }}
-                      />
+                      />}
                     </td>
-                    <td className="num"><Input type="number" min="0" step="0.001" value={k.miktar} onChange={(e) => kalemGuncelle({ miktar: e.target.value })} style={{ maxWidth: 110 }} /> {stok?.anaBirim}</td>
-                    <td className="num"><Input type="number" min="0" step="0.0001" value={k.tahminiBirimFiyat} onChange={(e) => kalemGuncelle({ tahminiBirimFiyat: e.target.value })} style={{ maxWidth: 140 }} /></td>
+                    <td className="num"><Input aria-label={`${i + 1}. kalem miktarı`} disabled={!!aktarim || islemde} type="number" min="0" step="0.001" value={k.miktar} onChange={(e) => kalemGuncelle({ miktar: e.target.value })} style={{ maxWidth: 110 }} /> {stok?.anaBirim}</td>
+                    <td className="num"><Input aria-label={`${i + 1}. kalem tahmini birim fiyatı`} disabled={islemde} type="number" min="0" step="0.0001" value={k.tahminiBirimFiyat} onChange={(e) => kalemGuncelle({ tahminiBirimFiyat: e.target.value })} style={{ maxWidth: 140 }} /></td>
                     <td className="num">{tl(Number(k.miktar || 0) * Number(k.tahminiBirimFiyat || 0))}</td>
-                    <td><Button size="sm" variant="ghost" disabled={form.kalemler.length === 1} onClick={() => setForm({ ...form, kalemler: form.kalemler.filter((_, j) => j !== i) })}>Kaldır</Button></td>
+                    <td><Button size="sm" variant="ghost" disabled={!!aktarim || islemde || form.kalemler.length === 1} onClick={() => setForm({ ...form, kalemler: form.kalemler.filter((_, j) => j !== i) })}>Kaldır</Button></td>
                   </tr>
                 );
               })}
             </tbody>
           </TableWrap>
           <div className="between">
-            <Button size="sm" onClick={() => setForm({ ...form, kalemler: [...form.kalemler, { stokId: "", miktar: "1", tahminiBirimFiyat: "" }] })}>Kalem ekle</Button>
+            <Button disabled={!!aktarim || islemde} size="sm" onClick={() => setForm({ ...form, kalemler: [...form.kalemler, { stokId: "", miktar: "1", tahminiBirimFiyat: "" }] })}>Kalem ekle</Button>
             <strong>Tahmini toplam: {tl(form.kalemler.reduce((t, k) => t + Number(k.miktar || 0) * Number(k.tahminiBirimFiyat || 0), 0))}</strong>
           </div>
           <div className="row-tight">
             <Button variant="primary" disabled={islemde} onClick={talepKaydet}>{form.id ? "Kaydet" : "Taslak kaydet"}</Button>
-            <Button variant="ghost" onClick={() => setForm(null)}>Vazgeç</Button>
+            <Button variant="ghost" disabled={islemde} onClick={() => { setForm(null); aktarimiKapat(); }}>Vazgeç</Button>
           </div>
         </Card>
       )}

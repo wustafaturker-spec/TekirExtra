@@ -1,4 +1,6 @@
 import "./stok.raporlar";
+import { IhtiyacController } from "./ihtiyac.controller";
+import { IhtiyacService } from "./ihtiyac.service";
 import "./urun-hareket.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
@@ -18,8 +20,8 @@ import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
   imports: [TenantModule],
-  controllers: [StokTutarlilikController, StokMaliyetController, MaliyetDagitimiController, StokController, DepoController],
-  providers: [StokService, DepoService, TransferService, StokTutarlilikService, StokMaliyetService, SayimService, MaliyetDagitimiService],
+  controllers: [IhtiyacController, StokTutarlilikController, StokMaliyetController, MaliyetDagitimiController, StokController, DepoController],
+  providers: [IhtiyacService, StokService, DepoService, TransferService, StokTutarlilikService, StokMaliyetService, SayimService, MaliyetDagitimiService],
   exports: [StokService, DepoService],
 })
 export class StokModule implements OnModuleInit {
