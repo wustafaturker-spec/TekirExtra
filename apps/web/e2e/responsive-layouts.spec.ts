@@ -321,6 +321,8 @@ for (const gorunum of [
         animations: "disabled",
         caret: "hide",
         fullPage: true,
+        // Yukarıdaki arama kutusu metniyle aynı alt piksel kayması.
+        maxDiffPixels: 1000,
       });
     });
 
@@ -358,6 +360,8 @@ for (const gorunum of [
         animations: "disabled",
         caret: "hide",
         fullPage: true,
+        // Yukarıdaki arama kutusu metniyle aynı alt piksel kayması.
+        maxDiffPixels: 1000,
       });
     });
 
