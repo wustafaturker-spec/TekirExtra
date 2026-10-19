@@ -1,0 +1,43 @@
+name: E2E taban görüntüleri
+
+# Görsel testlerin taban görüntüleri CI'ın çizim ortamında üretilmelidir: yerel makinede
+# çekilenler yazı tipi ve kenar yumuşatma farkıyla koşucuda %2-6 tutmaz (2026-10-19).
+# Elle tetiklenir; görüntüler indirilebilir dosya olarak bırakılır, gözden geçirilip commit'lenir.
+on:
+  workflow_dispatch:
+
+jobs:
+  taban:
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Bağımlılıkları kur
+        run: pnpm install --frozen-lockfile
+
+      - name: Web'i derle
+        run: pnpm turbo build --filter=@tekirextra/web...
+
+      - name: Görsel testleri taban yenileyerek koştur
+        # Taban yazılmadan önce düşen bir adım olursa iş yine de görüntüleri bırakır.
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          OTURUM_ISARETI_SECRET: e2e-oturum-isareti-sirri-yalniz-ci-testi
+        run: pnpm --filter @tekirextra/web exec playwright test e2e/responsive-layouts.spec.ts --update-snapshots=all
+
+      - name: Taban görüntüleri bırak
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-taban-goruntuleri
+          path: apps/web/e2e/responsive-layouts.spec.ts-snapshots/
+          if-no-files-found: error
