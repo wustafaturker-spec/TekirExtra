@@ -52,6 +52,21 @@ export class GelenEpostaController {
     return this.imapService.senkronizeEt(tenantId);
   }
 
+  /** Yeni ileti / yanıt / iletme; kiracının SMTP ayarıyla gerçekten gönderilir. */
+  @Post("ileti")
+  async iletiGonder(@Body() body: unknown) {
+    const { tenantId } = aktifBaglam();
+    const sema = z.object({
+      kime: z.array(z.email("Geçersiz alıcı adresi")).min(1, "En az bir alıcı girin").max(20, "En fazla 20 alıcı"),
+      konu: z.string().trim().min(1, "Konu zorunludur").max(300),
+      metin: z.string().trim().min(1, "İleti boş olamaz").max(50_000),
+      yanitlananId: z.string().uuid().optional(),
+    });
+    const parsed = sema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((s) => s.message).join("; "));
+    return this.imapService.iletiGonder(tenantId, parsed.data);
+  }
+
   /**
    * E-posta detayını getirir.
    */

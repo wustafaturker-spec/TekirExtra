@@ -264,6 +264,31 @@ export class ImapService {
   /**
    * Tek bir e-postanın tüm detaylarını ve eklerini getirir.
    */
+  /**
+   * E-posta ekranından yazılan ileti (yeni / yanıt / iletme). Yanıtta `yanitlananId` iletinin
+   * zincirini (In-Reply-To + References) taşır; kiracının kendi adresi alıcılardan düşülür.
+   */
+  async iletiGonder(tenantId: string, girdi: { kime: string[]; konu: string; metin: string; yanitlananId?: string }) {
+    let zincir: { inReplyTo?: string; references?: string[] } = {};
+    if (girdi.yanitlananId) {
+      const asil = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.gelenEposta.findFirst({ where: { id: girdi.yanitlananId, tenantId }, select: { mesajId: true, yanitlananMesajIdleri: true } }),
+      );
+      if (!asil) throw new NotFoundException("Yanıtlanan e-posta bulunamadı");
+      zincir = { inReplyTo: asil.mesajId, references: [...new Set([...asil.yanitlananMesajIdleri, asil.mesajId])].slice(-20) };
+    }
+    const kendi = new Set(await this.epostaService.kendiAdresleri(tenantId));
+    const tumu = [...new Set(girdi.kime.map((a) => a.trim().toLowerCase()))];
+    const disaridakiler = tumu.filter((a) => !kendi.has(a));
+    const alicilar = disaridakiler.length ? disaridakiler : tumu;
+    try {
+      await this.epostaService.serbestIletiGonder({ alici: alicilar.join(", "), konu: girdi.konu, metin: girdi.metin, ...zincir });
+    } catch (hata) {
+      throw new BadRequestException(`İleti gönderilemedi: ${hata instanceof Error ? hata.message : String(hata)}`);
+    }
+    return { gonderildi: true, alicilar };
+  }
+
   async getir(tenantId: string, id: string) {
     const eposta = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.gelenEposta.findFirst({

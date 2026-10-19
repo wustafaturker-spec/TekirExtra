@@ -6,6 +6,8 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { Alert } from "@/components/ui";
 import { CariSecModali, type OnerilenCari } from "@/components/cari-sec-modali";
+import { EpostaIletiPenceresi } from "@/components/eposta-ileti-penceresi";
+import { iletiTaslagi, type IletiTaslagi } from "@/lib/eposta-ileti";
 import { TeklifTalebiPaneli, TeklifTalebiRozeti } from "@/components/teklif-talebi-paneli";
 import {
   Archive,
@@ -37,7 +39,6 @@ import {
   ReplyAll,
   ScanLine,
   Search,
-  Send,
   Settings,
   Sparkles,
   Tag,
@@ -145,7 +146,7 @@ export default function GelenEpostalarSayfasi() {
   const [tab, setTab] = useState<"odaklanmis" | "diger">("odaklanmis");
   const [htmlModu, setHtmlModu] = useState(true);
   const [bayraklilar, setBayraklilar] = useState<Record<string, boolean>>({});
-  const [yeniIletiAcik, setYeniIletiAcik] = useState(false);
+  const [iletiTaslak, setIletiTaslak] = useState<IletiTaslagi | null>(null);
   const [mobilDetayAcik, setMobilDetayAcik] = useState(false);
 
   const [yukleniyor, setYukleniyor] = useState(false);
@@ -453,7 +454,7 @@ export default function GelenEpostalarSayfasi() {
           {/* YENİ İLETİ BUTONU (OUTLOOK PRIMARY) */}
           <button
             type="button"
-            onClick={() => setYeniIletiAcik(true)}
+            onClick={() => setIletiTaslak(iletiTaslagi("yeni", null))}
             className="bg-[#e8792b] hover:bg-[#d76c1f] text-white font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
@@ -955,7 +956,7 @@ export default function GelenEpostalarSayfasi() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setYeniIletiAcik(true)}
+                    onClick={() => setIletiTaslak(iletiTaslagi("yanitla", seciliEposta))}
                     className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-[#f3f2f1] text-[#323130] border border-[#d2d0ce] text-xs font-semibold rounded shadow-2xs transition-colors"
                   >
                     <Reply className="w-3.5 h-3.5 text-[#0078d4]" />
@@ -964,7 +965,7 @@ export default function GelenEpostalarSayfasi() {
 
                   <button
                     type="button"
-                    onClick={() => setYeniIletiAcik(true)}
+                    onClick={() => setIletiTaslak(iletiTaslagi("tumunu", seciliEposta))}
                     className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-[#f3f2f1] text-[#323130] border border-[#d2d0ce] text-xs font-medium rounded shadow-2xs transition-colors"
                   >
                     <ReplyAll className="w-3.5 h-3.5 text-[#0078d4]" />
@@ -973,7 +974,7 @@ export default function GelenEpostalarSayfasi() {
 
                   <button
                     type="button"
-                    onClick={() => setYeniIletiAcik(true)}
+                    onClick={() => setIletiTaslak(iletiTaslagi("ilet", seciliEposta))}
                     className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-[#f3f2f1] text-[#323130] border border-[#d2d0ce] text-xs font-medium rounded shadow-2xs transition-colors"
                   >
                     <Forward className="w-3.5 h-3.5 text-[#0078d4]" />
@@ -1250,86 +1251,15 @@ export default function GelenEpostalarSayfasi() {
           onerilenler={cariOnerileri}
         />
       )}
-      {yeniIletiAcik && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4">
-          <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-full max-w-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* MODAL BAŞLIĞI */}
-            <div className="bg-[#0078d4] text-white px-4 py-2.5 flex items-center justify-between">
-              <span className="font-semibold text-sm flex items-center gap-2">
-                <Mail className="w-4 h-4" />
-                <span>Yeni İleti Oluştur</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setYeniIletiAcik(false)}
-                className="text-white hover:bg-white/20 p-1 rounded"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* MODAL İÇERİĞİ */}
-            <div className="p-4 space-y-3 text-xs">
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded text-blue-900 leading-relaxed">
-                <strong>Bilgi:</strong> TekirExtra sisteminde giden e-postalar (teklif, sipariş, fatura PDF'leri veya vade hatırlatmaları) ilgili belge ve cari ekranlarından SMTP üzerinden doğrudan gönderilmektedir.
-              </div>
-
-              <div>
-                <label className="block font-semibold text-gray-700 mb-1">Kime:</label>
-                <input
-                  type="email"
-                  placeholder="musteri@firma.com"
-                  defaultValue={seciliEposta?.gonderenEposta || ""}
-                  className="w-full border border-gray-300 rounded p-2 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-gray-700 mb-1">Konu:</label>
-                <input
-                  type="text"
-                  placeholder="Konu başlığı..."
-                  defaultValue={seciliEposta ? `Ynt: ${seciliEposta.konu}` : ""}
-                  className="w-full border border-gray-300 rounded p-2 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-gray-700 mb-1">İleti:</label>
-                <textarea
-                  rows={6}
-                  placeholder="E-posta içeriğinizi yazın..."
-                  className="w-full border border-gray-300 rounded p-2 text-xs"
-                />
-              </div>
-            </div>
-
-            {/* MODAL AKSİYONLARI */}
-            <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-              <span className="text-[11px] text-gray-500">SMTP Ayarları: Ayarlar &gt; E-posta sekmesi</span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setYeniIletiAcik(false)}
-                  className="px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-100 rounded text-xs text-gray-700 font-medium"
-                >
-                  Kapat
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setYeniIletiAcik(false);
-                    setBasari("İleti gönderim kuyruğuna alındı.");
-                  }}
-                  className="px-4 py-1.5 bg-[#0078d4] hover:bg-[#106ebe] text-white rounded text-xs font-semibold flex items-center gap-1.5"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Gönder</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {iletiTaslak && (
+        <EpostaIletiPenceresi
+          taslak={iletiTaslak}
+          onKapat={() => setIletiTaslak(null)}
+          onGonderildi={(mesaj) => {
+            setIletiTaslak(null);
+            setBasari(mesaj);
+          }}
+        />
       )}
     </div>
   );

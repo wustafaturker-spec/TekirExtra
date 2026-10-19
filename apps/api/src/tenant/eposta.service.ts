@@ -43,8 +43,8 @@ export class EpostaService {
     await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, alici, konu, tur, durum, ekSayisi, hataMesaji } })).catch(() => undefined);
   }
   /** AI-38: dönen `messageId` gelen yanıtı (In-Reply-To) gönderilen belgeye bağlar. */
-  private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[] }): Promise<{ messageId: string | null }> {
-    try { const { transport, from, replyTo } = await this.transporter(); const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) }); await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "gonderildi", girdi.ekler?.length ?? 0); this.logger.log(`E-posta gönderildi: ${girdi.alici} (${girdi.konu})`); return { messageId: typeof bilgi?.messageId === "string" ? bilgi.messageId : null }; }
+  private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[]; inReplyTo?: string; references?: string[] }): Promise<{ messageId: string | null }> {
+    try { const { transport, from, replyTo } = await this.transporter(); const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, inReplyTo: girdi.inReplyTo, references: girdi.references, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) }); await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "gonderildi", girdi.ekler?.length ?? 0); this.logger.log(`E-posta gönderildi: ${girdi.alici} (${girdi.konu})`); return { messageId: typeof bilgi?.messageId === "string" ? bilgi.messageId : null }; }
     catch (hata) { await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "basarisiz", girdi.ekler?.length ?? 0, hata); throw hata; }
   }
   async ayarlariGetir() {
@@ -138,6 +138,10 @@ export class EpostaService {
   async gecmis(adet = 50) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.epostaGonderim.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(adet, 100) })); }
   dogrulamaGonder(eposta: string, adSoyad: string, link: string) { return this.gonder({ alici: eposta, konu: "TekirExtra — e-posta adresinizi doğrulayın", tur: "dogrulama", metin: `Merhaba ${adSoyad},\n\nTekirExtra kaydınızı tamamlamak için e-posta adresinizi doğrulayın:\n${link}\n\nBu link 24 saat geçerlidir.`, html: `<p>Merhaba ${adSoyad},</p><p><a href="${link}">E-postamı doğrula</a></p>` }); }
   iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string }) { return this.gonder(girdi); }
+  /** E-posta ekranından yazılan ileti; yanıtta In-Reply-To/References zinciri korur. */
+  serbestIletiGonder(girdi: { alici: string; konu: string; metin: string; inReplyTo?: string; references?: string[] }) { return this.gonder({ ...girdi, tur: "ileti" }); }
+  /** Kiracının kendi adresleri (gönderici + IMAP kullanıcısı); "Tümünü Yanıtla"da alıcılardan düşülür. */
+  async kendiAdresleri(tenantId: string): Promise<string[]> { const a = await this.saklananAyar(tenantId); return [a?.gondericiEposta, a?.imapKullaniciAdi].filter((x): x is string => Boolean(x && x.includes("@"))).map((x) => x.toLowerCase()); }
   ekliIletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[] }) { return this.gonder({ ...girdi, tur: "belge" }); }
   /** RPR-24: zamanlanmış rapor; gönderim geçmişinde "rapor" türüyle ayrılır. */
   raporGonder(girdi: { alici: string; konu: string; metin: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[] }) { return this.gonder({ ...girdi, tur: "rapor" }); }
