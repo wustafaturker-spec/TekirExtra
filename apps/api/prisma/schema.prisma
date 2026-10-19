@@ -251,6 +251,7 @@ model Tenant {
   aiAyari               TenantAiAyari?
   aiTavani              PlatformAiTavani?
   epostaTeklifIslemleri EpostaTeklifIslemi[]
+  aiHafiza              AiHafiza[]
   teklifTakipleri       TeklifTakibi[]
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
@@ -596,6 +597,8 @@ model EpostaTeklifIslemi {
   hata             String?   @db.Text
   deneme           Int       @default(1)
   sonrakiDenemeAt  DateTime? @map("sonraki_deneme_at")
+  /// AI-61: taslak dışına çıkan teklifin son satırlarından öğrenme yapıldı (tek sefer).
+  hafizaIslendiAt  DateTime? @map("hafiza_islendi_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
 
@@ -604,6 +607,40 @@ model EpostaTeklifIslemi {
 
   @@index([tenantId, durum])
   @@map("eposta_teklif_islemleri")
+}
+
+/// AI-58…65: kiracıya ait ajan hafızası. Tutar/fiyat/bakiye saklanmaz; muhasebe verisi
+/// her zaman güncel kayıttan okunur. Tekillik (tenant, tür, cari, anahtar) göçteki ifade indeksindedir.
+model AiHafiza {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  /// urun_eslesme | cari_eslesme | musteri_tercihi | siniflandirma | susturma
+  tur             String
+  /// Normalize ifade / gönderen adresi / tercih metni / e-posta kimliği.
+  anahtar         String
+  cariId          String?   @map("cari_id") @db.Uuid
+  stokId          String?   @map("stok_id") @db.Uuid
+  varyantId       String?   @map("varyant_id") @db.Uuid
+  /// Kullanıcıya gösterilen metin (asıl ifade, tercih, örnek e-posta özeti).
+  metin           String?   @db.Text
+  /// siniflandirma: teklif | teklif_degil
+  etiket          String?
+  /// kullanici | otomatik | ai_onerisi
+  kaynak          String
+  /// aktif | oneri | pasif
+  durum           String    @default("aktif")
+  olusturanUserId String?   @map("olusturan_user_id") @db.Uuid
+  kaynakEpostaId  String?   @map("kaynak_eposta_id") @db.Uuid
+  kullanimSayisi  Int       @default(0) @map("kullanim_sayisi")
+  sonKullanimAt   DateTime? @map("son_kullanim_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, tur, anahtar])
+  @@index([tenantId, cariId])
+  @@map("ai_hafiza")
 }
 
 model GelenEpostaEk {

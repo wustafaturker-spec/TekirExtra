@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma, PrismaClient, type EpostaTeklifIslemi } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -13,11 +13,13 @@ import { UcCagirici } from "../ajan/uc-cagirici";
 import { AiSinirHatasi } from "../saglayici/ai-butce";
 import { cariAdaylari, type CariAdayi } from "../../cari/cari-aday";
 import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
+import { HafizaService } from "../hafiza/hafiza.service";
+import { ifadeAnahtari, orneklerBlogu } from "../hafiza/hafiza.kurallari";
 import type { IAiProvider } from "../saglayici/ai-provider.interface";
 import { TEKLIF_TALEBI_MODULU, TEKLIF_TALEBI_ROLLERI, teklifTalebiAyariSemasi, type TeklifTalebiAyari } from "./teklif-talebi-ayari";
 import {
   ADAY_SAYISI, ASGARI_GUVEN, AZAMI_DENEME, CIKARIM_TALIMATI, ESLESME_TALIMATI, YENIDEN_CALISTIRILABILIR,
-  cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeIstemi, eslesmeSemasi, miktarMetni, otomatikIletiMi,
+  cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeIstemi, eslesmeSemasi, miktarMetni, otomatikIletiMi, veriEtiketiTemizle,
   secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yedekAramalar,
   type Cikarim, type StokAdayi, type TeklifIslemDurumu,
 } from "./teklif-talebi.kurallari";
@@ -33,7 +35,9 @@ type Eposta = { id: string; konu: string; tarih: Date; gonderenAdi: string | nul
 type KalemSonucu = {
   ifade: string; miktar: number | null; birim: string | null; stokId: string | null; varyantId: string | null; kod: string | null; ad: string | null; kartBirimi: string | null;
   /** Kart bulundu ama müşteri varyantı belirtmedi (seçilmedi). */
-  belirsizKart?: { kartKodu: string; kartAdi: string; secenekler: string[] };
+  belirsizKart?: { stokId?: string; kartKodu: string; kartAdi: string; secenekler: string[] };
+  /** AI-61: aynı cari için önceki düzeltmeden hatırlandı (modele sorulmadı). */
+  hatirlandi?: boolean;
 };
 type Sonuc = { durum: TeklifIslemDurumu; uyarilar: string[]; belgeId?: string | null; firsatId?: string | null; onayTalebiId?: string | null; cariId?: string | null; kalemler?: KalemSonucu[]; cariAdaylari?: CariAdayi[] };
 
@@ -80,6 +84,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     private readonly uc: UcCagirici,
     private readonly yurutucu: AracYurutucu,
     private readonly bildirimler: BildirimService,
+    @Optional() private readonly hafiza?: HafizaService,
   ) {}
 
   /** Testlerde değiştirilebilir; çağrılar "teklif" özelliğiyle sayılır ve bütçeye tabidir. */
@@ -106,8 +111,8 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
    * özellik kapalıyken de. `cariId` verilirse cari eşleşmesi atlanır ve önceki
    * çıkarım yeniden kullanılır (gönderen birden çok caride kayıtlıysa).
    */
-  async elleHazirla(epostaId: string, secim: { cariId?: string; yeniCari?: boolean } = {}): Promise<TeklifIslemGorunumu> {
-    const { cariId, yeniCari } = secim;
+  async elleHazirla(epostaId: string, secim: { cariId?: string; yeniCari?: boolean; teklifTalebiydi?: boolean } = {}): Promise<TeklifIslemGorunumu> {
+    const { cariId, yeniCari, teklifTalebiydi } = secim;
     const { tenantId, userId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const eposta = await tx.gelenEposta.findFirst({ where: { id: epostaId, tenantId }, select: { id: true } });
@@ -126,13 +131,17 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       });
       if (!alindi.count) throw new ConflictException("E-posta şu an işleniyor.");
       return { ...mevcut, durum: "isleniyor", cariId: cariId ?? null, deneme: mevcut.deneme + 1 };
+    }).catch((hata: unknown) => {
+      // Worker aynı anda ilk kaydı açtıysa tekil indeks bu yazımı reddeder: yarışı kaybeden çakışma alır.
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("E-posta şu an işleniyor.");
+      throw hata;
     });
     if ("devam" in kayit) {
       // Cari açma onayı verildiyse beklemeden devam edilir; hâlâ bekliyorsa işlem yapılmaz.
       if (!(await this.cariOnayiniIzle(kayit))) throw new ConflictException("Cari açma onayı bekliyor; onaylandıktan sonra taslak hazırlanır.");
       return (await this.getir(epostaId))!;
     }
-    const sonuc = await this.isle(kayit, { cikarimiYenile: !cariId && !yeniCari, yeniCari });
+    const sonuc = await this.isle(kayit, { cikarimiYenile: !cariId && !yeniCari, yeniCari, teklifTalebiydi });
     if (!cariId || ["hata", "sinirda"].includes(sonuc.durum)) return sonuc;
     // AI-46: kullanıcının seçtiği cariye gönderen adresi ilgili kişi olarak öğretilir.
     const not = await this.gondereniOgret(epostaId, cariId);
@@ -140,8 +149,57 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     return gorunum(await this.kaydet(sonuc.id, { uyarilar: [...sonuc.uyarilar, not] }));
   }
 
+  /**
+   * AI-61: panelde "Doğru ürünü seç" — kalemin ifadesi bu cari için seçilen
+   * kart/varyanta öğretilir. Taslak henüz yoksa önceki çıkarımla yeniden hazırlanır.
+   */
+  async urunSec(epostaId: string, secim: { kalem: number; stokId: string; varyantId?: string }): Promise<TeklifIslemGorunumu> {
+    const { tenantId } = aktifBaglam();
+    if (!this.hafiza) throw new ConflictException("Hafıza kullanılamıyor");
+    const { islem, varyantSayisi, kart, varyant } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      islem: await tx.epostaTeklifIslemi.findFirst({ where: { tenantId, gelenEpostaId: epostaId } }),
+      kart: await tx.stokKart.findFirst({ where: { id: secim.stokId, tenantId, aktif: true }, select: { id: true } }),
+      varyantSayisi: await tx.stokVaryant.count({ where: { stokId: secim.stokId, tenantId, aktif: true } }),
+      varyant: secim.varyantId ? await tx.stokVaryant.findFirst({ where: { id: secim.varyantId, stokId: secim.stokId, tenantId, aktif: true }, select: { id: true } }) : null,
+    }));
+    if (!islem) throw new NotFoundException("Bu e-posta teklif talebi olarak işlenmedi");
+    if (!islem.cariId) throw new ConflictException("Önce cariyi seçin; ürün eşleşmesi cariye göre hatırlanır.");
+    const kalem = ((islem.kalemler as KalemSonucu[]) ?? [])[secim.kalem];
+    if (!kalem) throw new NotFoundException("Kalem bulunamadı");
+    if (!kart) throw new NotFoundException("Stok kartı bulunamadı ya da pasif");
+    if (secim.varyantId && !varyant) throw new NotFoundException("Varyant bu karta ait değil ya da pasif");
+    if (!secim.varyantId && varyantSayisi) throw new BadRequestException("Bu kartın varyantları var; varyantı seçin.");
+    await this.hafiza.urunOgret({ cariId: islem.cariId, ifade: kalem.ifade, stokId: kart.id, varyantId: varyant?.id ?? null, kaynak: "kullanici", kaynakEpostaId: epostaId });
+    if (!islem.belgeId && YENIDEN_CALISTIRILABILIR.includes(islem.durum as TeklifIslemDurumu)) return this.elleHazirla(epostaId, { cariId: islem.cariId });
+    return gorunum(islem);
+  }
+
+  /**
+   * AI-64: kullanıcının sınıflandırma kararı. "teklif_degil" ve "sustur" taslağı olmayan
+   * işlemi `teklif_degil` yapar; "teklifti" yeniden çıkarır ve sınıflandırmayı geçersiz kılar.
+   */
+  async geriBildirim(epostaId: string, tur: "teklif_degil" | "teklifti" | "sustur"): Promise<TeklifIslemGorunumu | null> {
+    const { tenantId } = aktifBaglam();
+    if (!this.hafiza) throw new ConflictException("Hafıza kullanılamıyor");
+    const { eposta, islem } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      eposta: await tx.gelenEposta.findFirst({ where: { id: epostaId, tenantId }, select: { id: true, konu: true, icerikMetin: true, gonderenEposta: true } }),
+      islem: await tx.epostaTeklifIslemi.findFirst({ where: { tenantId, gelenEpostaId: epostaId } }),
+    }));
+    if (!eposta) throw new NotFoundException("E-posta bulunamadı");
+    if (tur === "teklifti") {
+      if (islem?.belgeId) throw new ConflictException("Bu e-postadan taslak zaten hazırlandı.");
+      await this.hafiza.siniflandirmaKaydet(eposta, "teklif");
+      return this.elleHazirla(epostaId, { teklifTalebiydi: true });
+    }
+    if (tur === "sustur") await this.hafiza.sustur(eposta.gonderenEposta, epostaId);
+    else await this.hafiza.siniflandirmaKaydet(eposta, "teklif_degil");
+    if (!islem || islem.belgeId || islem.durum === "isleniyor" || islem.durum === "cari_onayi_bekliyor") return islem ? gorunum(islem) : null;
+    const not = tur === "sustur" ? `${eposta.gonderenEposta} susturuldu; bu adresten gelen e-postalar teklif talebi olarak işlenmeyecek.` : "Kullanıcı teklif talebi değil olarak işaretledi.";
+    return gorunum(await this.kaydet(islem.id, { durum: "teklif_degil", uyarilar: [not], hata: null, sonrakiDenemeAt: null }));
+  }
+
   /** Talep alınmış (durum `isleniyor`) kaydı baştan ya da kaldığı yerden işler. */
-  async isle(kayit: Pick<EpostaTeklifIslemi, "id" | "gelenEpostaId" | "cikarim" | "cariId" | "deneme">, secenek: { cikarimiYenile?: boolean; yeniCari?: boolean } = {}): Promise<TeklifIslemGorunumu> {
+  async isle(kayit: Pick<EpostaTeklifIslemi, "id" | "gelenEpostaId" | "cikarim" | "cariId" | "deneme">, secenek: { cikarimiYenile?: boolean; yeniCari?: boolean; teklifTalebiydi?: boolean } = {}): Promise<TeklifIslemGorunumu> {
     const { tenantId } = aktifBaglam();
     let sonuc: Sonuc;
     let guven: number | null = null;
@@ -154,10 +212,19 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       if (!eposta) throw new NotFoundException("E-posta bulunamadı");
       if (!cikarim && otomatikIletiMi(eposta)) {
         sonuc = { durum: "atlandi", uyarilar: ["Otomatik ileti (yanıt, bülten ya da teslim raporu); teklif talebi olarak işlenmedi."] };
+      } else if (!cikarim && !secenek.teklifTalebiydi && (await this.hafiza?.susturulduMu(eposta.gonderenEposta))) {
+        // AI-64: kullanıcı bu göndericiyi susturdu; model çağrılmaz.
+        sonuc = { durum: "atlandi", uyarilar: [`${eposta.gonderenEposta} susturuldu ("Bu göndericiden teklif gelmez"); teklif talebi olarak işlenmedi. Hafıza ekranından geri alınabilir.`] };
       } else {
         const { saglayici } = await this.saglayiciBul(tenantId);
         if (!cikarim) {
-          cikarim = await saglayici.yapilandirilmisUretim({ sistemRol: CIKARIM_TALIMATI, prompt: cikarimIstemi({ ...eposta, ekAdlari: eposta.ekler.map((e) => e.dosyaAdi) }) }, cikarimSemasi);
+          const ornekler = this.hafiza ? orneklerBlogu(await this.hafiza.siniflandirmaOrnekleri(), veriEtiketiTemizle) : "";
+          cikarim = await saglayici.yapilandirilmisUretim({ sistemRol: CIKARIM_TALIMATI, prompt: cikarimIstemi({ ...eposta, ekAdlari: eposta.ekler.map((e) => e.dosyaAdi) }, ornekler) }, cikarimSemasi);
+          await this.kaydet(kayit.id, { cikarim: cikarim as unknown as Prisma.InputJsonValue, guven: cikarim.guven });
+        }
+        // AI-64: kullanıcının "teklif talebiydi" sözü sınıflandırmanın yerine geçer; kalemleri yine model çıkarır.
+        if (secenek.teklifTalebiydi && (!cikarim.teklifTalebi || cikarim.guven < ASGARI_GUVEN)) {
+          cikarim = { ...cikarim, teklifTalebi: true, guven: Math.max(cikarim.guven, ASGARI_GUVEN), gerekce: `Kullanıcı teklif talebi olarak işaretledi. ${cikarim.gerekce}`.slice(0, 300) };
           await this.kaydet(kayit.id, { cikarim: cikarim as unknown as Prisma.InputJsonValue, guven: cikarim.guven });
         }
         guven = cikarim.guven;
@@ -206,11 +273,19 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     }
     const cari = { tek: cariId };
 
-    const kalemler = await this.kalemleriEslestir(cikarim, saglayici);
+    const uyarilar: string[] = [...onUyarilar];
+    // AI-63: modelin gördüğü kalıcı istekler öneri olarak; kullanıcı onaylamadan hiçbir yerde kullanılmaz.
+    // Sağlayıcı çıktısı şemadan geçer; yine de alan eksikse (eski kayıt/sahte model) öneri yoktur.
+    const kaliciTercihler = cikarim.kaliciTercihler ?? [];
+    if (this.hafiza && kaliciTercihler.length) {
+      const n = await this.hafiza.tercihOnerileri(cari.tek, kaliciTercihler, eposta.id);
+      if (n) uyarilar.push(`${n} müşteri tercihi önerisi kaydedildi; onaylarsanız sonraki tekliflerde kullanılır.`);
+    }
+    const kalemler = await this.kalemleriEslestir(cikarim, saglayici, cari.tek);
     const eslesen = kalemler.filter((k) => k.stokId);
     const miktarli = (k: KalemSonucu) => `${k.ifade}${k.miktar !== null ? ` (${k.miktar}${k.birim ? ` ${k.birim}` : ""})` : ""}`;
     const eslesmeyenler = kalemler.filter((k) => !k.stokId && !k.belirsizKart).map(miktarli);
-    const uyarilar: string[] = [...onUyarilar];
+    for (const k of kalemler.filter((x) => x.hatirlandi)) uyarilar.push(`"${k.ifade}" önceki düzeltmeden hatırlandı: [${k.kod}] ${k.ad}.`);
     for (const k of kalemler.filter((x) => !x.stokId && x.belirsizKart)) {
       const b = k.belirsizKart!;
       uyarilar.push(`${b.kartKodu} – ${b.kartAdi} bulundu; müşteri hangisini istediğini belirtmemiş (${b.secenekler.join(" / ")}). Ölçüyü müşteriye sorun ya da taslağı doğru varyantla elle açın.`);
@@ -229,7 +304,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
 
     const belge = await this.taslakAc({
       tur: "teklif", cariId: cari.tek,
-      aciklama: taslakAciklamasi(eposta, eslesmeyenler, cikarim.notlar),
+      aciklama: taslakAciklamasi(eposta, eslesmeyenler, cikarim.notlar, this.hafiza ? await this.hafiza.aktifTercihler(cari.tek) : []),
       satirlar: eslesen.map((k) => ({ stokId: k.stokId!, ...(k.varyantId ? { varyantId: k.varyantId } : {}), miktar: miktarMetni(k.miktar ?? 1), ...(fiyatsiz.includes(k.stokId!) ? { birimFiyat: "0" } : {}) })),
     });
     const firsat = await this.firsataBagla(eposta, cari.tek, belge.id).catch((hata: unknown) => {
@@ -260,6 +335,8 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       const var_ = adres ? await tx.cariHesap.count({ where: { id: cariId, tenantId, OR: [{ eposta: { equals: adres, mode: "insensitive" } }, { kisiler: { some: { eposta: { equals: adres, mode: "insensitive" } } } }] } }) : 1;
       return { eposta: e, kayitli: var_ > 0 };
     });
+    // AI-62: seçim ilgili kişi eklenemese de (rol) hafızada kalır.
+    if (eposta?.gonderenEposta.trim()) await this.hafiza?.cariOgret(eposta.gonderenEposta, cariId, epostaId);
     if (!eposta || kayitli || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(eposta.gonderenEposta)) return null;
     const adSoyad = (eposta.gonderenAdi?.trim() || eposta.gonderenEposta.split("@")[0]).slice(0, 120).padEnd(2, ".");
     try {
@@ -281,7 +358,8 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       tx.cariHesap.findMany({ where: { tenantId, aktif: true, eposta: { equals: adres, mode: "insensitive" } }, select: { id: true }, take: 5 }),
       tx.cariKisi.findMany({ where: { tenantId, eposta: { equals: adres, mode: "insensitive" }, cari: { aktif: true } }, select: { cariId: true }, take: 5 }),
     ]));
-    const adaylar = [...new Set([...kartlar.map((k) => k.id), ...kisiler.map((k) => k.cariId)])];
+    const hafizadan = (await this.hafiza?.adresCarileri(adres)) ?? [];
+    const adaylar = [...new Set([...kartlar.map((k) => k.id), ...kisiler.map((k) => k.cariId), ...hafizadan])];
     return { tek: adaylar.length === 1 ? adaylar[0] : null, adaylar };
   }
 
@@ -334,24 +412,52 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     return { durum: "cari_onayi_bekliyor", uyarilar: [`Gönderen hiçbir cariyle eşleşmedi. "${girdi.unvan}" (${girdi.kod}) için cari açma onayı bekleniyor; onaylanınca taslak hazırlanır.`], onayTalebiId: sonuc.talep.id };
   }
 
-  /** AI-35: her kalem için en çok 5 stok adayı; model yalnız bu adaylardan seçebilir. */
-  private async kalemleriEslestir(cikarim: Cikarim, saglayici: IAiProvider): Promise<KalemSonucu[]> {
+  /**
+   * AI-35: her kalem için en çok 5 stok adayı; model yalnız bu adaylardan seçebilir.
+   * AI-61: aynı caride hafızadaki ifade modele sorulmadan eşlenir; başka carinin
+   * hafızası yalnız ilk aday olur.
+   */
+  private async kalemleriEslestir(cikarim: Cikarim, saglayici: IAiProvider, cariId: string): Promise<KalemSonucu[]> {
+    const hatira = this.hafiza ? await this.hafiza.urunleriHatirla(cariId, cikarim.kalemler.map((k) => k.ifade)) : null;
+    const kesinler = cikarim.kalemler.map((k) => hatira?.kesin.get(ifadeAnahtari(k.ifade)) ?? null);
+    const kesinAdaylar = await Promise.all(kesinler.map((h) => (h ? this.hafizaAdayi(h.stokId, h.varyantId) : null)));
     const adaylar: StokAdayi[][] = [];
-    for (const k of cikarim.kalemler) {
+    for (const [i, k] of cikarim.kalemler.entries()) {
+      if (kesinAdaylar[i]) { adaylar.push([]); continue; }
       let liste = await this.stokAdaylari(k.ifade);
       for (const yedek of liste.length ? [] : yedekAramalar(k.ifade)) {
         liste = await this.stokAdaylari(yedek);
         if (liste.length) break;
       }
-      adaylar.push(liste);
+      const hafizaAdaylari = (await Promise.all((hatira?.aday.get(ifadeAnahtari(k.ifade)) ?? []).map((h) => this.hafizaAdayi(h.stokId, h.varyantId))))
+        .filter((a): a is StokAdayi => Boolean(a))
+        .map((a) => ({ ...a, hafizadan: true }));
+      const ayni = (a: StokAdayi, b: StokAdayi) => a.stokId === b.stokId && a.varyantId === b.varyantId;
+      adaylar.push([...hafizaAdaylari, ...liste.filter((a) => !hafizaAdaylari.some((h) => ayni(h, a)))].slice(0, ADAY_SAYISI));
     }
     const secilen = adaylar.some((a) => a.length)
       ? secimleriUygula(adaylar, (await saglayici.yapilandirilmisUretim({ sistemRol: ESLESME_TALIMATI, prompt: eslesmeIstemi(cikarim.kalemler, adaylar) }, eslesmeSemasi)).secimler)
       : adaylar.map(() => null);
+    await this.hafiza?.kullanildi(kesinler.filter((h, i) => h && kesinAdaylar[i]).map((h) => h!.id));
     return cikarim.kalemler.map((k, i) => {
+      const hatirlanan = kesinAdaylar[i];
+      if (hatirlanan) return { ...k, stokId: hatirlanan.stokId, varyantId: hatirlanan.varyantId, kod: hatirlanan.kod, ad: hatirlanan.ad, kartBirimi: hatirlanan.birim, hatirlandi: true };
       const belirsiz = secilen[i] ? null : varyantBelirsizligi(adaylar[i]);
       return { ...k, stokId: secilen[i]?.stokId ?? null, varyantId: secilen[i]?.varyantId ?? null, kod: secilen[i]?.kod ?? null, ad: secilen[i]?.ad ?? null, kartBirimi: secilen[i]?.birim ?? null, ...(belirsiz ? { belirsizKart: belirsiz } : {}) };
     });
+  }
+
+  /** Hafızadaki kart/varyant, stok adayı biçiminde (aktif değilse null). */
+  private async hafizaAdayi(stokId: string, varyantId: string | null): Promise<StokAdayi | null> {
+    const { tenantId } = aktifBaglam();
+    const [kart, varyant] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.stokKart.findFirst({ where: { id: stokId, tenantId, aktif: true }, select: { id: true, kod: true, ad: true, anaBirim: true } }),
+      varyantId ? tx.stokVaryant.findFirst({ where: { id: varyantId, stokId, tenantId, aktif: true }, select: { id: true, kod: true, ad: true } }) : null,
+    ]));
+    if (!kart || (varyantId && !varyant)) return null;
+    return varyant
+      ? { stokId: kart.id, varyantId: varyant.id, kod: varyant.kod ?? kart.kod, ad: `${kart.ad} — ${varyant.ad ?? varyant.kod}`, birim: kart.anaBirim ?? null, kartKodu: kart.kod, kartAdi: kart.ad, varyantAdi: varyant.ad ?? varyant.kod }
+      : { stokId: kart.id, varyantId: null, kod: kart.kod, ad: kart.ad, birim: kart.anaBirim ?? null };
   }
 
   private async stokAdaylari(arama: string): Promise<StokAdayi[]> {
@@ -440,9 +546,11 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       const yonetim = new PrismaClient({ datasourceUrl: url });
       let kiracilar: Array<{ tenantId: string; ayarlar: unknown }>;
       let bekleyenKiracilar: string[];
+      let ogrenecekKiracilar: string[];
       try {
         kiracilar = await yonetim.modulAyar.findMany({ where: { modul: TEKLIF_TALEBI_MODULU }, select: { tenantId: true, ayarlar: true } });
         bekleyenKiracilar = (await yonetim.epostaTeklifIslemi.findMany({ where: { durum: "cari_onayi_bekliyor" }, select: { tenantId: true }, distinct: ["tenantId"] })).map((x) => x.tenantId);
+        ogrenecekKiracilar = this.hafiza ? (await yonetim.epostaTeklifIslemi.findMany({ where: { belgeId: { not: null }, hafizaIslendiAt: null }, select: { tenantId: true }, distinct: ["tenantId"] })).map((x) => x.tenantId) : [];
       } finally {
         await yonetim.$disconnect().catch(() => undefined);
       }
@@ -450,6 +558,11 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       for (const tenantId of bekleyenKiracilar) {
         try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.bekleyenCarileriIzle()); }
         catch (hata) { this.logger.error(`Cari onayı izlenemedi (${tenantId}): ${hataMetni(hata)}`); }
+      }
+      // AI-61: onaylanan tekliflerden öğrenme (özellik kapalıyken de; elle hazırlananlar dahil).
+      for (const tenantId of ogrenecekKiracilar) {
+        try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.hafiza!.tekliftenOgren()); }
+        catch (hata) { this.logger.error(`Tekliften öğrenilemedi (${tenantId}): ${hataMetni(hata)}`); }
       }
       for (const k of kiracilar) {
         const ayar = teklifTalebiAyariSemasi.safeParse(k.ayarlar);

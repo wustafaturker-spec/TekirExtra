@@ -6,6 +6,8 @@ import { BildirimService } from "../../bildirimler/bildirim.service";
 import { aktifBaglam, baglamlaCalistir } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { kiraciSaglayicisi } from "../../ai/saglayici/kiraci-saglayici";
+import { tercihlerBlogu } from "../../ai/hafiza/hafiza.kurallari";
+import { veriEtiketiTemizle } from "../../ai/teklif-talebi/teklif-talebi.kurallari";
 import { EpostaService } from "../../tenant/eposta.service";
 import { BelgelerService } from "../belgeler.service";
 import { hatirlatmaGunu, takipAyari, tatiller, teklifGonderiminiKaydet } from "./teklif-takip.kayit";
@@ -130,11 +132,16 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
   async takipMetni(belgeId: string): Promise<{ konu: string; metin: string; alici: string | null; kaynak: "model" | "sablon" }> {
     const { tenantId } = aktifBaglam();
     const { userId } = aktifBaglam();
-    const { b, t, firma, gonderen } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
-      b: await this.teklif(tx, belgeId), t: await tx.teklifTakibi.findUnique({ where: { belgeId } }),
-      firma: (await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }))?.unvan.trim() ?? "",
-      gonderen: (await tx.user.findFirst({ where: { id: userId, tenantId }, select: { adSoyad: true } }))?.adSoyad ?? "",
-    }));
+    const { b, t, firma, gonderen, tercihler } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await this.teklif(tx, belgeId);
+      return {
+        b: belge, t: await tx.teklifTakibi.findUnique({ where: { belgeId } }),
+        // AI-63: yalnız kullanıcı onaylı müşteri tercihleri.
+        tercihler: (await tx.aiHafiza.findMany({ where: { tenantId, tur: "musteri_tercihi", durum: "aktif", cariId: belge.cariId }, orderBy: { createdAt: "asc" }, select: { metin: true } })).map((x) => x.metin ?? "").filter(Boolean),
+        firma: (await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }))?.unvan.trim() ?? "",
+        gonderen: (await tx.user.findFirst({ where: { id: userId, tenantId }, select: { adSoyad: true } }))?.adSoyad ?? "",
+      };
+    });
     const bilgi = {
       unvan: b.cari.unvan, no: belgeNoMetni(b.no ?? "", b.revizyonNo), tarih: tarihTR(b.tarih), gecerlilik: b.gecerlilikTarihi ? tarihTR(b.gecerlilikTarihi) : null,
       tutar: Number(b.genelToplam).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), doviz: b.dovizCinsi,
@@ -143,7 +150,7 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
     const alici = t?.alici ?? b.cari.eposta ?? null;
     try {
       const { saglayici } = await this.saglayiciBul(tenantId);
-      const m = await saglayici.yapilandirilmisUretim({ sistemRol: TAKIP_METNI_TALIMATI, prompt: takipMetniIstemi(bilgi) }, takipMetniSemasi);
+      const m = await saglayici.yapilandirilmisUretim({ sistemRol: TAKIP_METNI_TALIMATI, prompt: [takipMetniIstemi(bilgi), tercihlerBlogu(tercihler, veriEtiketiTemizle)].filter(Boolean).join("\n\n") }, takipMetniSemasi);
       if (yerTutucuVar(m.konu) || yerTutucuVar(m.metin)) throw new Error("Model metninde yer tutucu kaldı");
       return { ...m, alici, kaynak: "model" };
     } catch (hata) {

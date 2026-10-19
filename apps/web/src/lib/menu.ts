@@ -19,6 +19,7 @@ import {
   Bell,
   BookUser,
   Boxes,
+  Brain,
   Building2,
   Calculator,
   CalendarRange,
@@ -97,6 +98,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/nakit-akisi", ikon: TrendingUp, baslik: "Nakit Akışı", eslesme: "tam", esanlamlilar: ["nakit akış tahmini", "nakit tahmini", "likidite", "senaryo"] },
       { href: "/panel/butce", ikon: CalendarRange, baslik: "Bütçe", eslesme: "tam", esanlamlilar: ["plan", "gerçekleşen", "sapma", "revizyon"] },
       { href: "/panel/ai", ikon: Sparkles, baslik: "Asistan ve Onaylar", eslesme: "tam", esanlamlilar: ["yapay zeka", "asistan", "onay talepleri", "ai"] },
+      { href: "/panel/ai/hafiza", ikon: Brain, baslik: "Yapay Zekâ Hafızası", eslesme: "tam", esanlamlilar: ["hafıza", "öğrenme", "müşteri tercihi", "susturma", "ürün eşleşmesi"] },
     ],
   },
   {

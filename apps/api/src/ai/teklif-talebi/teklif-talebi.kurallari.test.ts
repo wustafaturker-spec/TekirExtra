@@ -83,7 +83,7 @@ describe("teklif talebi kuralları (AI-33…35)", () => {
 describe("varyant belirsizliği (pilot 2026-10-18)", () => {
   const v = (varyantId: string, varyantAdi: string, stokId = "s1") => ({ stokId, varyantId, kod: `SF0101-${varyantAdi}`, ad: `SİL FIX — ${varyantAdi}`, birim: "adet", kartKodu: "SF0101", kartAdi: "SİL FIX MUMLU BEZ", varyantAdi });
   it("aynı kartın birden çok varyantı: kart bulunmuş, seçenekler listelenir", () => {
-    expect(varyantBelirsizligi([v("a", "150x35 mm"), v("b", "150x45mm")])).toEqual({ kartKodu: "SF0101", kartAdi: "SİL FIX MUMLU BEZ", secenekler: ["150x35 mm", "150x45mm"] });
+    expect(varyantBelirsizligi([v("a", "150x35 mm"), v("b", "150x45mm")])).toEqual({ stokId: "s1", kartKodu: "SF0101", kartAdi: "SİL FIX MUMLU BEZ", secenekler: ["150x35 mm", "150x45mm"] });
   });
   it("farklı kartlar, tek aday ya da varyantsız kart belirsizlik sayılmaz", () => {
     expect(varyantBelirsizligi([v("a", "x"), v("b", "y", "s2")])).toBeNull();
