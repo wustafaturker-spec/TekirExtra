@@ -68,9 +68,19 @@ jobs:
       # Geçici olarak uyarı: e2e paketi CI'ın derleme adımında kaldığı haftalarda bakımsız kaldı (2026-10-18);
       # onarılınca continue-on-error kaldırılacak. Süre sınırı, düşen testlerin yeniden denemeleri işi saatlerce sürdürmesin diye.
       - name: Kritik web akışları
+        id: e2e
         continue-on-error: true
         timeout-minutes: 30
         env:
           # Derlenmiş uygulamada rota koruması sır ister; testler aynı sırla oturum çerezi üretir.
           OTURUM_ISARETI_SECRET: e2e-oturum-isareti-sirri-yalniz-ci-testi
         run: pnpm --fail-if-no-match --filter @tekirextra/web test:e2e
+
+      # Düşen testlerin izi ve ekran görüntüsü farkları (beklenen/gerçek/fark) incelenebilsin.
+      - name: E2E sonuçlarını bırak
+        if: steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-sonuclari
+          path: apps/web/test-results/
+          retention-days: 7
