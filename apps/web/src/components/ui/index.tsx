@@ -334,12 +334,9 @@ export function Field({
   htmlFor?: string;
 }) {
   const uretilenId = useId();
-  const cocukTipi = isValidElement(children)
-    ? children.type as unknown as { name?: string; displayName?: string; render?: { name?: string } }
-    : null;
-  const cocukAdi = cocukTipi?.displayName ?? cocukTipi?.name ?? cocukTipi?.render?.name ?? "";
+  // Üretim küçültmesi fonksiyon adlarını değiştirir; etiket bağını bileşen kimliğiyle kur.
   const dogrudanKontrol = isValidElement<{ id?: string }>(children)
-    && ["Input", "Select", "SearchInput"].includes(cocukAdi);
+    && (children.type === Input || children.type === Select || children.type === SearchInput);
   const kontrolId = htmlFor ?? (dogrudanKontrol ? children.props.id ?? uretilenId : undefined);
   const icerik = dogrudanKontrol && !children.props.id
     ? cloneElement(children, { id: kontrolId })
