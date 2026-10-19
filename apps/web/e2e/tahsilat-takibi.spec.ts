@@ -23,6 +23,7 @@ async function kur(page:Page,rol="muhasebe",ozel?:(r:Route,url:URL,s:State)=>Pro
   }
   let json:unknown={};
   if(yol==="/auth/ben")json={rol,userId:u,tenantId:c};
+  else if(yol==="/cari/odeme-sozleri/is-listesi")json={kayitlar:[],sonrakiImlec:null};
   else if(yol==="/cari/tahsilat-takipleri/sorumlular")json={kayitlar:[{id:u,adSoyad:"Muhasebe Sorumlusu"}],varsayilanUserId:u};
   else if(yol==="/cari/tahsilat-takipleri"){
    const gorunum=url.searchParams.get("gorunum")??"bugun",cariId=url.searchParams.get("cariId"),sorumluUserId=url.searchParams.get("sorumluUserId");
@@ -30,6 +31,8 @@ async function kur(page:Page,rol="muhasebe",ozel?:(r:Route,url:URL,s:State)=>Pro
    json={kullanimModu:s.mod,bugun:tarih,alindigiZaman:zaman,cariId,gorunum,sorumluUserId,toplam:kayitlar.length,sonrakiImlec:null,kayitlar};
   }else if(yol===`/cari/tahsilat-takipleri/${id}`)json={kullanimModu:s.mod,kayit:s.kayitlar[0],gorusmeSayisi:s.notlar.length,olaySayisi:0,gorusmeler:s.notlar,olaylar:[]};
   else if(yol===`/cari/${c}`)json=cari;
+  else if(yol===`/cari/${c}/durum`)json={hesaplandiAt:zaman,gostergeler:null,bulgular:[],toplamBulgu:0};
+  else if(yol==="/ai/cari-durum/kullanilabilir")json={kullanilabilir:false};
   else if(yol==="/cari")json={kayitlar:[cari],sonrakiImlec:null};
   else if(yol.endsWith("/crm"))json={etkilesimler:[],gorevler:[],teklifler:[],kullanicilar:[]};
   else if(yol.endsWith("/davranis-analizi")){await r.fulfill({status:403,json:{message:"Testte kapalı"}});return;}
@@ -104,4 +107,31 @@ test("aynı ekranda başka bildirim bağlantısına geçince eski takip detayı 
  const bolge=page.getByRole("region",{name:"Tahsilat takip detayı"});await expect(bolge.getByText(/Vadesi geçen alacak/)).toBeVisible();
  await page.evaluate((hedef)=>window.history.pushState(null,"",`/panel/cari/tahsilat?takip=${hedef}`),diger);
  await expect(bolge.getByText(/İkinci bildirim takibi/)).toBeVisible();await expect(bolge.getByText(/Vadesi geçen alacak/)).toHaveCount(0);
+});
+
+test("iş listesinden ileri tarihli takip açılır ve yeni detay görünür kalır",async({page})=>{
+ const s=await kur(page);s.kayitlar=[];const p=await daily(page);
+ await p.getByRole("button",{name:"Yeni tahsilat takibi",exact:true}).click();
+ const modal=page.getByRole("dialog");await modal.getByLabel("Cari ara").fill("Takip");
+ await modal.getByRole("button",{name:"Seç",exact:true}).click();
+ const f=page.getByRole("region",{name:"Tahsilat takip işlemi"});
+ await expect(p.getByText("Takip oluşturulan cari:")).toContainText("Takip müşterisi");
+ await f.getByLabel("Takip konusu",{exact:true}).fill("Gelecek hafta ödeme görüşmesi");
+ await f.getByRole("button",{name:"Yarın",exact:true}).click();
+ const yarin=await f.getByLabel("Sonraki işlem günü").inputValue();
+ await f.getByRole("button",{name:"Bir hafta sonra",exact:true}).click();
+ expect(await f.getByLabel("Sonraki işlem günü").inputValue()).not.toBe(yarin);
+ await f.getByLabel("Sonraki işlem günü").fill("2035-01-01");
+ await f.getByLabel("Sonraki işlem",{exact:true}).fill("Ödeme planını görüş");
+ await f.getByRole("button",{name:"Takibi oluştur"}).click();
+ await expect(p.getByLabel("İş listesi",{exact:true})).toHaveValue("tum");
+ const d=page.getByRole("region",{name:"Tahsilat takip detayı",exact:true});
+ await expect(d.getByText("Gelecek hafta ödeme görüşmesi",{exact:true})).toBeVisible();
+ expect(s.yazilar).toHaveLength(1);expect(s.yazilar[0].body).toMatchObject({cariId:c,sonrakiIslemTarihi:"2035-01-01"});
+});
+test("cari seçimini iptal etmek kayıt oluşturmaz",async({page})=>{
+ const s=await kur(page);const p=await daily(page);
+ await p.getByRole("button",{name:"Yeni tahsilat takibi",exact:true}).click();
+ await page.keyboard.press("Escape");await expect(page.getByRole("dialog")).toHaveCount(0);
+ await expect(page.getByRole("region",{name:"Tahsilat takip işlemi"})).toHaveCount(0);expect(s.yazilar).toHaveLength(0);
 });

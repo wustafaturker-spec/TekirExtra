@@ -41,6 +41,9 @@ async function kur(page: Page, rol = "muhasebe", ozel?: (r: Route, u: URL, state
     }
     let json: unknown = {};
     if (yol === "/auth/ben") json = { rol, userId: "u1", tenantId: "t1" };
+    else if (yol === `/cari/${cariId}/durum`) json = { hesaplandiAt: "2026-10-15T12:00:00.000Z", gostergeler: null, bulgular: [], toplamBulgu: 0 };
+    else if (yol === "/ai/cari-durum/kullanilabilir") json = { kullanilabilir: false };
+    else if (yol === "/cari/tahsilat-takipleri") json = { kullanimModu: state.mod, bugun: "2026-10-15", alindigiZaman: "2026-10-15T12:00:00.000Z", cariId, gorunum: "tum", sorumluUserId: null, toplam: 0, sonrakiImlec: null, kayitlar: [] };
     else if (yol === "/cari/odeme-sozleri") {
       expect(u.searchParams.get("cariId")).toBe(cariId);
       json = { cari: { id: cariId, unvan: cari.unvan }, kullanimModu: state.mod, alindigiZaman: "2026-10-15T12:00:00.000Z", zamanHassasiyeti: "gun", uyari: "Aynı gün verilen söz ve ödemenin sırası kanıtlanamaz; bu tahsilatlar otomatik gerçekleşme sayılmaz.", sozler: state.sozler };
@@ -79,13 +82,14 @@ test("sekme isteğe bağlı yüklenir; güncel gerçekleşme ve tarih uyarısı 
 });
 test("yeni söz doğru cari/fatura/döviz ve aynı tekrar anahtarıyla yazılır; geçmiş yenilenir", async ({ page }) => {
   const state = await kur(page); await ac(page); const form = await yeniDoldur(page);
+  const ilkOkumalar = state.okumalar;
   await expect(form.getByLabel("Satış faturası").getByRole("option", { name: /SAT-001|KAPALI-01/ })).toHaveCount(0);
   await form.getByRole("button", { name: "Sözü kaydet", exact: true }).click();
   await expect(page.getByRole("table", { name: "Ödeme sözü geçmişi" }).getByText("1.250,50 USD", { exact: true })).toHaveCount(2);
   expect(state.yazilar).toHaveLength(1); const w = state.yazilar[0];
   expect(w.govde).toMatchObject({ cariId, faturaId: f2, dovizCinsi: "USD", tutar: "1250.50", sozTarihi: "2035-01-21" });
   expect(w.anahtar).toBe(w.govde.istekAnahtari); expect(w.govde).not.toHaveProperty("tenantId");
-  expect(state.okumalar).toBe(2);
+  expect(state.okumalar).toBe(ilkOkumalar + 1);
 });
 test("revizyon gerekçesi ve beklenen sürüm gönderilir, eski söz korunur", async ({ page }) => {
   const state = await kur(page); await ac(page); await page.getByRole("button", { name: "Revize et", exact: true }).click();
@@ -194,4 +198,41 @@ test("ilk fatura sayfasında uygun kayıt yoksa sonraki sayfa seçilebilir", asy
   const form = page.getByRole("region", { name: "Ödeme sözü işlemi" });
   await expect(form.getByText("Yüklenen sayfalarda", { exact: false })).toBeVisible(); await form.getByRole("button", { name: "Daha fazla fatura" }).click();
   await form.getByLabel("Satış faturası").selectOption(f2); await expect(form.getByText("Fatura dövizi: USD", { exact: false })).toBeVisible();
+});
+
+test("cari özeti iptal ve revizyonu korur, dövizleri ve geçersiz faturayı ayırır", async ({ page }) => {
+  const state = await kur(page);
+  const ek = (n: number) => `77777777-7777-4777-8777-${String(n).padStart(12, "0")}`;
+  for (const [n, durum] of [[1, "iptal"], [2, "revize"]] as const) state.sozler.push({ ...soz(), id: ek(n), kayitDurumu: durum, gerceklesme: { sozId: ek(n), durum, gerceklesen: "0.00", kalan: "1000.00" } });
+  state.sozler.push({ ...soz(), id: ek(3), faturaId: f2, dovizCinsi: "USD", tutar: "10.25", gerceklesme: { sozId: ek(3), durum: "aktif", gerceklesen: "0.00", kalan: "10.25" } });
+  state.sozler.push({ ...soz(), id: ek(4), faturaId: ek(5), gerceklesme: { sozId: ek(4), durum: "kaynak_gecersiz", gerceklesen: "0.00", kalan: "1000.00" } });
+  const panel = await ac(page), summary = panel.getByRole("region", { name: "Ödeme sözü özeti", exact: true });
+  await expect(summary.getByText("Toplam 5 kayıt · Aktif 3 · İptal 1 · Revize 1", { exact: true })).toBeVisible();
+  await expect(summary.getByText("Faturası geçersiz 1 aktif söz tutar özetine katılmadı.", { exact: false })).toBeVisible();
+  await expect(summary.getByRole("article", { name: "TRY söz özeti" }).getByText("Söz tutarı toplamı: 1.000,00 TRY", { exact: true })).toBeVisible();
+  await expect(summary.getByRole("article", { name: "USD söz özeti" }).getByText("Sözlerden kalan: 10,25 USD", { exact: true })).toBeVisible();
+  expect(state.yazilar).toEqual([]);
+});
+test("özeti yenilemek güncel ödeme geri almasını ve gecikmiş kalanı yansıtır", async ({ page }) => {
+  const state = await kur(page); state.sozler[0].sozTarihi = "2026-10-14";
+  state.sozler[0].gerceklesme = { sozId: s1, durum: "gerceklesti", gerceklesen: "1000.00", kalan: "0.00" };
+  const panel = await ac(page), summary = panel.getByRole("region", { name: "Ödeme sözü özeti", exact: true });
+  await expect(summary.getByText("Güncel gerçekleşen: 1.000,00 TRY", { exact: true })).toBeVisible();
+  state.sozler[0].gerceklesme = { sozId: s1, durum: "gecikti", gerceklesen: "400.00", kalan: "600.00" };
+  await panel.getByRole("button", { name: "Sözleri yenile" }).click();
+  await expect(summary.getByText("Güncel gerçekleşen: 400,00 TRY", { exact: true })).toBeVisible();
+  await expect(summary.getByText("Söz günü geçmiş kalan: 600,00 TRY", { exact: true })).toBeVisible();
+  await expect(summary.getByText("Güncel tamamen gerçekleşen 0 · Kısmen gerçekleşen 1 · Söz günü geçmiş ve kalanı olan 1", { exact: true })).toBeVisible();
+  expect(state.yazilar).toEqual([]);
+});
+test("mobil salt okunur özette tutarlar görünür ve yazma isteği oluşmaz", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await kur(page, "salt_okunur"); const panel = await ac(page);
+  const summary = panel.getByRole("region", { name: "Ödeme sözü özeti", exact: true });
+  await expect(summary.getByText("Sözlerden kalan: 600,00 TRY", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Yeni ödeme sözü" })).toHaveCount(0);
+  await summary.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("soz-ozeti-mobil.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(state.yazilar).toEqual([]);
 });

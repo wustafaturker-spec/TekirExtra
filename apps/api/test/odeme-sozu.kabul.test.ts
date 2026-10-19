@@ -373,6 +373,38 @@ describe("F02 sözlerin gerçek nakit kaynağına bağlanması", () => {
   });
 });
 
+describe("Tahsilat iş listesindeki ödeme sözleri", () => {
+  it("gelecek söz worker/takip olmadan görünür; revizyon ve iptal yansır, finans kaydı değişmez", async () => {
+    const f = await fixture(), baska = await fixture();
+    const once = await finans(f); const s = await olustur(f); await olustur(baska);
+    const oku = () => baglam(f, () => servis.isListesi({}));
+    expect((await oku()).kayitlar).toMatchObject([{ cari: { id: f.cariId }, sozler: [{ id: s.id, sozTarihi: gun(7), gerceklesme: { kalan: "1000.00" } }] }]);
+    expect(await tx(f, t => t.tahsilatTakibi.count())).toBe(0);
+    const yeni = await baglam(f, () => servis.revize(s.id, { beklenenSurum: 1, sozTarihi: gun(9), tutar: "700.00", aciklama: "Yeni söz", gerekce: "Tarih değişti", istekAnahtari: randomUUID() }));
+    expect((await oku()).kayitlar.flatMap(k => k.sozler.map(s => s.id))).toEqual([yeni.id]);
+    await baglam(f, () => servis.iptal(yeni.id, { beklenenSurum: 1, gerekce: "Müşteri iptal etti" }));
+    expect((await oku()).kayitlar).toEqual([]); expect(await finans(f)).toBe(once);
+  });
+  it("sayfalar tekrar/kayıp üretmez; yabancı imleç, kapalı mod ve satış rolü engellenir", async () => {
+    const f = await fixture(), diger = await fixture(); const foreign = await olustur(diger);
+    const ids: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      const faturaId = i === 0 ? f.faturaId : await tx(f, async t => { const { id: _id, aramaNormal: _arama, ...data } = await t.fatura.findUniqueOrThrow({ where: { id: f.faturaId } }); return (await t.fatura.create({ data })).id; });
+      ids.push((await olustur(f, { ...govde(f), faturaId })).id);
+    }
+    const ilk = await baglam(f, () => servis.isListesi({})); expect(ilk.kayitlar).toHaveLength(20);
+    const son = await baglam(f, () => servis.isListesi({ imlec: ilk.sonrakiImlec })); expect(son.kayitlar).toHaveLength(1); expect(son.sonrakiImlec).toBeNull();
+    expect([...ilk.kayitlar, ...son.kayitlar].flatMap(k => k.sozler.map(s => s.id)).sort()).toEqual(ids.sort());
+    await expect(baglam(f, () => servis.isListesi({ imlec: foreign.id }))).rejects.toMatchObject({ status: 409 });
+    for (const rol of ["yonetici", "muhasebe", "salt_okunur", "satis"]) {
+      const r = await fetch(base + "/cari/odeme-sozleri/is-listesi", { headers: { "x-test-tenant": f.tenantId, "x-test-user": f.userId, "x-test-rol": rol } });
+      expect(r.status).toBe(rol === "satis" ? 403 : 200);
+    }
+    await baglam(f, () => new AyarlarService(a).guncelle("tahsilat_operasyonu", { surum: 1, mod: "kapali" }));
+    await expect(baglam(f, () => servis.isListesi({}))).rejects.toMatchObject({ status: 403 });
+  });
+});
+
 describe("Kalıcı söz ve güvenli geçmiş", () => {
   it("oluşturur, idempotent tekrar tek kayıt/audit üretir ve finansı değiştirmez", async () => {
     const f = await fixture(), g = govde(f), once = await finans(f);

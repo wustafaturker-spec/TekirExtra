@@ -11,6 +11,11 @@ export class OdemeSozuController {
   @Roller("muhasebe", "mali_musavir", "salt_okunur")
   listele(@Query() sorgu: unknown) { return this.servis.listele(sorgu); }
 
+  @Get("is-listesi")
+  @Header("Cache-Control", "no-store")
+  @Roller("muhasebe", "mali_musavir", "salt_okunur")
+  isListesi(@Query() sorgu: unknown) { return this.servis.isListesi(sorgu); }
+
   @Post()
   @Roller("muhasebe")
   olustur(@Body() govde: unknown) { return this.servis.olustur(govde); }

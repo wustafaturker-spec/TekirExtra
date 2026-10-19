@@ -22,6 +22,27 @@ const kimlik = (v: string) => ayristir(z.uuid().transform((s) => s.toLowerCase()
 export class OdemeSozuService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async isListesi(sorgu: unknown) {
+    const g = ayristir(z.object({ imlec: z.uuid().optional() }).strict(), sorgu);
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kullanimModu = await tahsilatErisiminiDogrula(tx);
+      const where = { tenantId, kayitDurumu: "aktif" as const };
+      if (g.imlec && !await tx.odemeSozu.findFirst({ where: { ...where, id: g.imlec }, select: { id: true } })) throw new ConflictException("Söz listesi değişti; listeyi baştan yenileyin");
+      const adaylar = await tx.odemeSozu.findMany({ where, orderBy: [{ sozTarihi: "asc" }, { id: "asc" }], take: 21, ...(g.imlec ? { cursor: { id: g.imlec }, skip: 1 } : {}), select: { id: true, cariId: true } });
+      const sayfa = adaylar.slice(0, 20);
+      const kaynaklar = new Map<string, Awaited<ReturnType<typeof odemeSozuKaynaklariniOku>>>();
+      for (const { cariId } of sayfa) if (!kaynaklar.has(cariId)) kaynaklar.set(cariId, await odemeSozuKaynaklariniOku(tx, tenantId, cariId));
+      const kayitlar = sayfa.map(({ id, cariId }) => {
+        const kaynak = kaynaklar.get(cariId)!;
+        const soz = kaynak.sozler.find(s => s.id === id);
+        if (!soz) throw new ConflictException("Söz listesi değişti; listeyi baştan yenileyin");
+        return { ...kaynak, kullanimModu, sozler: [soz] };
+      });
+      return { kayitlar, sonrakiImlec: adaylar.length > 20 ? sayfa[19].id : null };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
+  }
+
   async listele(sorgu: unknown) {
     const { cariId } = ayristir(odemeSozuListeSemasi, sorgu);
     const { tenantId } = aktifBaglam();

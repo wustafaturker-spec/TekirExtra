@@ -31,11 +31,12 @@ export class EpostaService {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: "eposta" } } }));
     return kayit?.ayarlar as SaklananAyar | null;
   }
-  private async transporter(): Promise<{ transport: Transporter; from: string; replyTo?: string }> {
+  private async transporter(zamanAsimiMs?: number): Promise<{ transport: Transporter; from: string; replyTo?: string }> {
+    const sureler = zamanAsimiMs ? { connectionTimeout: zamanAsimiMs, greetingTimeout: zamanAsimiMs, socketTimeout: zamanAsimiMs } : {};
     const baglam = this.baglam(); const ayar = baglam ? await this.saklananAyar(baglam.tenantId) : null;
-    if (!ayar) return { transport: createTransport({ host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false }), from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>" };
+    if (!ayar) return { transport: createTransport({ ...sureler, host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false }), from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>" };
     const parola = ayar.sifreliParola ? coz(ayar.sifreliParola) : undefined;
-    return { transport: createTransport({ host: ayar.host, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
+    return { transport: createTransport({ ...sureler, host: ayar.host, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
   }
   private async kaydet(alici: string, konu: string, tur: string, durum: string, ekSayisi: number, hata?: unknown) {
     const baglam = this.baglam(); if (!baglam) return;
@@ -43,8 +44,8 @@ export class EpostaService {
     await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, alici, konu, tur, durum, ekSayisi, hataMesaji } })).catch(() => undefined);
   }
   /** AI-38: dönen `messageId` gelen yanıtı (In-Reply-To) gönderilen belgeye bağlar. */
-  private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[]; inReplyTo?: string; references?: string[] }): Promise<{ messageId: string | null }> {
-    try { const { transport, from, replyTo } = await this.transporter(); const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, inReplyTo: girdi.inReplyTo, references: girdi.references, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) }); await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "gonderildi", girdi.ekler?.length ?? 0); this.logger.log(`E-posta gönderildi: ${girdi.alici} (${girdi.konu})`); return { messageId: typeof bilgi?.messageId === "string" ? bilgi.messageId : null }; }
+  private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[]; inReplyTo?: string; references?: string[]; messageId?: string }): Promise<{ messageId: string | null }> {
+    try { const { transport, from, replyTo } = await this.transporter(girdi.tur === "odeme_sozu_hatirlatma" ? 60_000 : undefined); const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, messageId: girdi.messageId, inReplyTo: girdi.inReplyTo, references: girdi.references, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) }); await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "gonderildi", girdi.ekler?.length ?? 0); this.logger.log(`E-posta gönderildi: ${girdi.alici} (${girdi.konu})`); return { messageId: typeof bilgi?.messageId === "string" ? bilgi.messageId : null }; }
     catch (hata) { await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "basarisiz", girdi.ekler?.length ?? 0, hata); throw hata; }
   }
   async ayarlariGetir() {
@@ -137,6 +138,8 @@ export class EpostaService {
   }
   async gecmis(adet = 50) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.epostaGonderim.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(adet, 100) })); }
   dogrulamaGonder(eposta: string, adSoyad: string, link: string) { return this.gonder({ alici: eposta, konu: "TekirExtra — e-posta adresinizi doğrulayın", tur: "dogrulama", metin: `Merhaba ${adSoyad},\n\nTekirExtra kaydınızı tamamlamak için e-posta adresinizi doğrulayın:\n${link}\n\nBu link 24 saat geçerlidir.`, html: `<p>Merhaba ${adSoyad},</p><p><a href="${link}">E-postamı doğrula</a></p>` }); }
+  /** Ödeme sözü günü gönderimi: sabit Message-ID, ayrı geçmiş türü. */
+  odemeSozuHatirlat(girdi: { alici: string; konu: string; metin: string; messageId: string }) { return this.gonder({ ...girdi, tur: "odeme_sozu_hatirlatma" }); }
   iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string }) { return this.gonder(girdi); }
   /** E-posta ekranından yazılan ileti; yanıtta In-Reply-To/References zinciri korur. */
   serbestIletiGonder(girdi: { alici: string; konu: string; metin: string; inReplyTo?: string; references?: string[] }) { return this.gonder({ ...girdi, tur: "ileti" }); }

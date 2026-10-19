@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "outDir": "dist-odeme-sozu-worker", "sourceMap": false },
+  "include": ["src/main.odeme-sozu-worker.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test-veri.ts"]
+}

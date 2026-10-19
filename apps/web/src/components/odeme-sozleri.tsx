@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 import { odemeSozuListesiniDogrula, sozFaturalariniDogrula, sozGunuGecerli, sozParaBicimi, sozTutari, turkiyeGunu, type OdemeSozu, type OdemeSozuListesi, type SozDurumu, type SozFaturasi } from "@/lib/odeme-sozu";
+
+import { odemeSozuOzetiniHesapla, sozOzetTutariBicimi } from "@/lib/odeme-sozu-ozeti";
+import { RefreshCw, Wallet } from "lucide-react";
 
 const durumlar: Record<SozDurumu, string> = { aktif: "Aktif", kismen_gerceklesti: "Kısmen gerçekleşti", gerceklesti: "Gerçekleşti", gecikti: "Gecikti", iptal: "İptal edildi", revize: "Revize edildi", kaynak_gecersiz: "Fatura geçersiz" };
 const gun = (v: string) => v.split("-").reverse().join(".");
@@ -24,16 +27,33 @@ export function OdemeSozleri({ cariId, rol }: { cariId: string; rol: string | nu
       .finally(() => { if (etkin) setYukleniyor(false); });
     return () => { etkin = false; };
   }, [cariId, okur, yenile]);
+  const ozet = useMemo(() => veri?.cari.id === cariId ? odemeSozuOzetiniHesapla(veri, cariId) : null, [veri, cariId]);
   if (!okur) return null;
   const yazabilir = Boolean(veri && veri.kullanimModu !== "salt_okunur" && ["yonetici", "muhasebe"].includes(rol ?? ""));
-  return <section aria-label="Ödeme sözleri" className="stack">
-    <div className="between"><h2>Ödeme sözleri</h2><Button disabled={yukleniyor || kaydediliyor} onClick={() => setYenile((n) => n + 1)}>Sözleri yenile</Button></div>
+  return <section aria-label="Ödeme sözleri" className="stack collection-customer-promises">
+    <div className="between"><div className="collection-heading"><span className="collection-heading__icon"><Wallet size={20} aria-hidden="true"/></span><div><h2>Ödeme sözleri</h2><p>Bu carinin ödeme taahhütleri ve tahsilat geçmişi.</p></div></div><Button disabled={yukleniyor || kaydediliyor} onClick={() => setYenile((n) => n + 1)}><RefreshCw size={15} aria-hidden="true"/>Sözleri yenile</Button></div>
     <p className="muted">Her söz bir satış faturasına bağlıdır. Söz kaydı nakit hareketi veya yeni alacak oluşturmaz.</p>
     <Alert tone="error">{hata}</Alert><Alert tone="success">{bilgi}</Alert>
     {yukleniyor && <p role="status">Ödeme sözleri yükleniyor…</p>}
     {veri && <>
       <p>Şirket modu: <strong>{{ salt_okunur: "Salt okunur", pilot: "Pilot", acik: "Açık" }[veri.kullanimModu]}</strong> · Güncellik: {new Date(veri.alindigiZaman).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}</p>
       <Alert tone="warning">{veri.uyari}</Alert>
+      {ozet && <section aria-label="Ödeme sözü özeti" className="stack collection-promise-summary">
+        <h3>Cari söz özeti</h3>
+        <p>Toplam {ozet.toplam} kayıt · Aktif {ozet.aktif} · İptal {ozet.iptal} · Revize {ozet.revize}</p>
+        <p>Güncel tamamen gerçekleşen {ozet.tamamenGerceklesen} · Kısmen gerçekleşen {ozet.kismenGerceklesen} · Söz günü geçmiş ve kalanı olan {ozet.geciken}</p>
+        <p className="muted">Bu carinin yüklenen tüm söz geçmişini kapsar. Tutarlar yalnız faturası geçerli aktif sözlerden, dövizler ayrı tutularak hesaplanır. Güncel gerçekleşme, ödemenin söz gününde yapıldığını kanıtlamaz.</p>
+        {ozet.kaynakGecersiz > 0 && <Alert tone="warning">Faturası geçersiz {ozet.kaynakGecersiz} aktif söz tutar özetine katılmadı. Kaynak faturaları inceleyin.</Alert>}
+        {ozet.dovizler.map((d) => <article key={d.dovizCinsi} aria-label={`${d.dovizCinsi} söz özeti`} className="stack">
+          <strong>{d.dovizCinsi} · {d.aktifSoz} geçerli aktif söz</strong>
+          <p>Söz tutarı toplamı: {sozOzetTutariBicimi(d.sozTutari, d.dovizCinsi)}</p>
+          <p>Güncel gerçekleşen: {sozOzetTutariBicimi(d.gerceklesen, d.dovizCinsi)}</p>
+          <p>Gerçekleşme oranı: %{d.gerceklesmeOrani.replace(".", ",")}</p>
+          <p>Sözlerden kalan: {sozOzetTutariBicimi(d.kalan, d.dovizCinsi)}</p>
+          <p>Söz günü geçmiş kalan: {sozOzetTutariBicimi(d.gecikenKalan, d.dovizCinsi)}</p>
+        </article>)}
+        {ozet.dovizler.length === 0 && <p>Tutar özetine alınabilecek geçerli aktif söz yok.</p>}
+      </section>}
       {!yazabilir && <p className="muted">Şirket modu veya rolünüz nedeniyle bu görünüm salt okunur.</p>}
       {yazabilir && <div><Button variant="primary" disabled={Boolean(islem) || kaydediliyor} onClick={() => { setBilgi(""); setIslem({ tur: "yeni" }); }}>Yeni ödeme sözü</Button></div>}
       {veri.sozler.length === 0 ? <p>Henüz ödeme sözü yok.</p> : <TableWrap>
@@ -42,12 +62,12 @@ export function OdemeSozleri({ cariId, rol }: { cariId: string; rol: string | nu
         <tbody>{[...veri.sozler].reverse().map((s) => {
           const aktif = s.kayitDurumu === "aktif", durum = s.gerceklesme.durum;
           return <tr key={s.id}>
-            <td><a href={`/panel/fatura?fatura=${s.faturaId}`}>{s.faturaNo ?? "Numarasız fatura"}</a><div>{gun(s.sozTarihi)}</div><small className="muted">Veriliş: {new Date(s.verildigiZaman).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}</small></td>
-            <td><Badge variant={durum === "gerceklesti" ? "success" : durum === "gecikti" || durum === "kaynak_gecersiz" ? "warning" : "neutral"}>{durumlar[durum]}</Badge>{s.oncekiSozId && <p className="muted">Önceki sözün revizyonu</p>}</td>
-            <td className="num">{sozParaBicimi(s.tutar, s.dovizCinsi)}</td>
-            <td className="num">{aktif && durum !== "kaynak_gecersiz" ? sozParaBicimi(s.gerceklesme.gerceklesen, s.dovizCinsi) : "—"}</td>
-            <td className="num">{aktif && durum !== "kaynak_gecersiz" ? sozParaBicimi(s.gerceklesme.kalan, s.dovizCinsi) : "—"}</td>
-            <td><p>{s.aciklama}</p>{s.sonlandirmaNedeni && <p>Gerekçe: {s.sonlandirmaNedeni}</p>}{durum === "kaynak_gecersiz" && <p>Hedef fatura kesin değil; gerçekleşme izlenmiyor.</p>}
+            <td data-label="Fatura ve söz günü"><a href={`/panel/fatura?fatura=${s.faturaId}`}>{s.faturaNo ?? "Numarasız fatura"}</a><div>{gun(s.sozTarihi)}</div><small className="muted">Veriliş: {new Date(s.verildigiZaman).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}</small></td>
+            <td data-label="Durum"><Badge variant={durum === "gerceklesti" ? "success" : durum === "gecikti" ? "danger" : durum === "kaynak_gecersiz" ? "warning" : "neutral"}>{durumlar[durum]}</Badge>{s.oncekiSozId && <p className="muted">Önceki sözün revizyonu</p>}</td>
+            <td data-label="Söz tutarı" className="num">{sozParaBicimi(s.tutar, s.dovizCinsi)}</td>
+            <td data-label="Gerçekleşen" className="num">{aktif && durum !== "kaynak_gecersiz" ? sozParaBicimi(s.gerceklesme.gerceklesen, s.dovizCinsi) : "—"}</td>
+            <td data-label="Sözden kalan" className="num collection-money">{aktif && durum !== "kaynak_gecersiz" ? sozParaBicimi(s.gerceklesme.kalan, s.dovizCinsi) : "—"}</td>
+            <td data-label="Açıklama ve işlem"><p>{s.aciklama}</p>{s.sonlandirmaNedeni && <p>Gerekçe: {s.sonlandirmaNedeni}</p>}{durum === "kaynak_gecersiz" && <p>Hedef fatura kesin değil; gerçekleşme izlenmiyor.</p>}
               {yazabilir && aktif && <div className="row-tight"><Button size="sm" disabled={Boolean(islem)} onClick={() => setIslem({ tur: "revize", soz: s })}>Revize et</Button><Button size="sm" disabled={Boolean(islem)} onClick={() => setIslem({ tur: "iptal", soz: s })}>Sözü iptal et</Button></div>}
             </td>
           </tr>;
@@ -124,14 +144,14 @@ function OdemeSozuFormu({ cariId, islem, yazabilir, aktifHedefler, onMesgul, onK
       if (etkin.current) { setKaydediliyor(false); onMesgul(false); }
     }
   }
-  return <Card><section aria-label="Ödeme sözü işlemi" className="stack">
+  return <Card className="collection-form"><section aria-label="Ödeme sözü işlemi" className="stack">
     <h3>{islem.tur === "yeni" ? "Yeni ödeme sözü" : islem.tur === "revize" ? "Ödeme sözünü revize et" : "Ödeme sözünü iptal et"}</h3>
     {s && <p>{s.faturaNo ?? "Numarasız fatura"} · {sozParaBicimi(s.tutar, s.dovizCinsi)} · Söz günü: {gun(s.sozTarihi)}</p>}
     {islem.tur === "revize" && <p>Eski söz geçmişte korunur. Yeni veriliş zamanından önceki ödemeler yeni sözün gerçekleşmesi sayılmaz.</p>}
     {islem.tur === "iptal" && <p>İptal, bu sözün takibini sonlandırır. Fatura ve tahsilat kayıtları korunur.</p>}
     <Alert tone="error">{hata}</Alert>
     {cakisma && <Alert tone="warning">İşlem kaydı veya erişim değişmiş olabilir. Taslağınız korunuyor. Sözleri yenileyip güncel kaydı inceleyin; bu işlemi kapatıp yeniden açın.</Alert>}
-    <form className="stack" onSubmit={(e) => void kaydet(e)}>
+    <form className="collection-form__grid" onSubmit={(e) => void kaydet(e)}>
       {islem.tur === "yeni" && <>
         <Alert tone="error">{faturaHata}</Alert>
         <Field label="Satış faturası" htmlFor={`${formId}-fatura`}><Select id={`${formId}-fatura`} required value={faturaId} disabled={durdur || faturaYukleniyor} onChange={(e) => setFaturaId(e.target.value)}><option value="">Fatura seçin</option>{secenekler.map((f) => <option key={f.id} value={f.id}>{f.no ?? "Numarasız fatura"} · kalan {sozParaBicimi(f.kalan, f.dovizCinsi)}</option>)}</Select></Field>

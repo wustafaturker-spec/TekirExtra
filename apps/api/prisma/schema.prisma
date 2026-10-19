@@ -833,6 +833,7 @@ model TahsilatGorusmesi {
 /// türetilir; kayitDurumu mali gerçekleşme durumu değildir. Aktif tekilliği
 /// migration'daki kısmi unique index ile korunur. Silme servisi yoktur.
 model OdemeSozu {
+  hatirlatma OdemeSozuHatirlatma?
   takipBaglantisi    TahsilatSozBaglantisi?
   id                String     @id @default(uuid()) @db.Uuid
   tenantId          String     @map("tenant_id") @db.Uuid
@@ -857,6 +858,7 @@ model OdemeSozu {
   oncekiSoz OdemeSozu? @relation("SozRevizyonu", fields: [oncekiSozId], references: [id])
   yeniSoz   OdemeSozu? @relation("SozRevizyonu")
 
+  @@unique([tenantId, id])
   @@unique([tenantId, istekAnahtari])
   @@index([tenantId, cariId, verildigiZaman])
   @@index([tenantId, faturaId])
@@ -6471,4 +6473,23 @@ model TenantAiGorevCalisma {
   @@unique([gorevId, tetikGunu])
   @@index([tenantId, durum, sonrakiDenemeAt])
   @@map("tenant_ai_gorev_calismalari")
+}
+
+
+// Söz kimliği değişmeden ikinci e-posta çıkmaz. Belirsiz SMTP sonucu otomatik tekrarlanmaz.
+model OdemeSozuHatirlatma {
+  tenantId String @map("tenant_id") @db.Uuid
+  sozId String @map("soz_id") @db.Uuid
+  durum String @default("gonderiliyor")
+  deneme Int @default(1)
+  alici String @db.VarChar(255)
+  konu String @db.VarChar(255)
+  messageId String? @map("message_id") @db.VarChar(255)
+  hataMesaji String? @map("hata_mesaji") @db.VarChar(1000)
+  baslangicAt DateTime @default(now()) @map("baslangic_at")
+  gonderildiAt DateTime? @map("gonderildi_at")
+  sonrakiDenemeAt DateTime? @map("sonraki_deneme_at")
+  soz OdemeSozu @relation(fields: [tenantId, sozId], references: [tenantId, id])
+  @@id([tenantId, sozId])
+  @@map("odeme_sozu_hatirlatmalari")
 }
