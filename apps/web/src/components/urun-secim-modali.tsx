@@ -176,7 +176,7 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
   const para = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (!acik) return null;
   return <div className="product-picker-layer" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onKapat(); }}>
-    <section className="product-picker" role="dialog" aria-modal="true" aria-label="Ürün veya hizmet ekle">
+    <section className="product-picker" role="dialog" aria-modal="true" aria-label="Ürün veya hizmet ekle" onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onKapat(); } }}>
       <header><div><small>ÜRÜN / HİZMETLER</small><h3>{stok ? `${stok.kod} ${stok.ad}` : "Ürün seçin"}</h3></div><button type="button" aria-label="Kapat" onClick={onKapat}>×</button></header>
       {!stok ? <div className="product-picker__search">
         <Input autoFocus value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Kod, barkod veya ürün adıyla ara" />

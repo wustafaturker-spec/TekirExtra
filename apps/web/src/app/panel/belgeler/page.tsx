@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
@@ -455,6 +455,8 @@ export default function BelgelerSayfasi() {
   const [kur, setKur] = useState("1");
   const [kurBilgisi, setKurBilgisi] = useState("");
   const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string; varyantId?: string } | null>(null);
+  const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
+  const satirEkleDugmesiId = useId();
   const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [satirlar, setSatirlar] = useState<BelgeSatirForm[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 },
@@ -620,8 +622,20 @@ export default function BelgelerSayfasi() {
   }
 
   function satirEkle() {
+    const yeniIndex = satirlar.length;
     setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
+    requestAnimationFrame(() => urunRefleri.current[yeniIndex]?.focus());
   }
+
+  // Ürün penceresi kapanınca odak sayfaya kaybolmasın: eklendiyse sonraki satıra
+  // (son satırsa "+ Satır ekle"ye), vazgeçildiyse aynı satırın ürün seçicisine döner.
+  function urunPenceresindenDon(satir: number, eklendi: boolean) {
+    requestAnimationFrame(() => {
+      const hedef = urunRefleri.current[eklendi ? satir + 1 : satir];
+      (hedef ?? document.getElementById(satirEkleDugmesiId))?.focus();
+    });
+  }
+
   function satirSil(i: number) {
     if (satirlar.length === 1) return;
     setSatirlar(satirlar.filter((_, idx) => idx !== i));
@@ -1347,6 +1361,7 @@ export default function BelgelerSayfasi() {
                       <AramaSecici
                         ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
                         deger={s.stokId}
+                        inputRef={(eleman) => { urunRefleri.current[i] = eleman; }}
                         onChange={(deger) => { if (deger) setUrunModali({ satir: i, ...varyantDegeriCoz(deger) }); }}
                         placeholder="Kod veya ürün adıyla ara"
                         secenekler={[...stoklar.map((stok) => ({
@@ -1384,7 +1399,7 @@ export default function BelgelerSayfasi() {
             </TableWrap>
 
             <div className="invoice-lines__footer">
-              <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
+              <Button type="button" id={satirEkleDugmesiId} onClick={satirEkle}>+ Satır ekle</Button>
               <small className="muted">Ctrl+S taslağı kaydeder</small>
             </div>
           </div>
@@ -1677,13 +1692,14 @@ export default function BelgelerSayfasi() {
         </div>
       )}
 
-      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={kodTablosu.vergiTurleri} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={kodTablosu.vergiTurleri} onKapat={() => { if (urunModali) urunPenceresindenDon(urunModali.satir, false); setUrunModali(null); }} onEkle={(urun) => {
         setSatirlar((eskiler) => {
           // EBLG-132: pencerede gösterilen (gerekirse düzeltilen) KDV dışı vergiler satıra gelir.
           const satir: BelgeSatirForm = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, ekVergiler: karttanEkVergiler(urun.ekVergiler, kodTablosu.vergiTurleri) };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
           return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
         });
+        if (urunModali) urunPenceresindenDon(urunModali.satir, true);
         setUrunModali(null);
       }} />
 

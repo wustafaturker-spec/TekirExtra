@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
@@ -600,6 +600,7 @@ export default function FaturaSayfasi() {
   const [cariDogrulamaHatasi, setCariDogrulamaHatasi] = useState("");
   const [satirDogrulamaHatalari, setSatirDogrulamaHatalari] = useState<number[]>([]);
   const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string; varyantId?: string } | null>(null);
+  const satirEkleDugmesiId = useId();
   const [faturaListesiYukleniyor, setFaturaListesiYukleniyor] = useState(false);
   const [faturaFiltreleriHazir, setFaturaFiltreleriHazir] = useState(false);
 
@@ -1000,6 +1001,15 @@ export default function FaturaSayfasi() {
     const yeniIndex = satirlar.length;
     setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
     requestAnimationFrame(() => urunRefleri.current[yeniIndex]?.focus());
+  }
+
+  // Ürün penceresi kapanınca odak sayfaya kaybolmasın: eklendiyse sonraki satıra
+  // (son satırsa "+ Satır ekle"ye), vazgeçildiyse aynı satırın ürün seçicisine döner.
+  function urunPenceresindenDon(satir: number, eklendi: boolean) {
+    requestAnimationFrame(() => {
+      const hedef = urunRefleri.current[eklendi ? satir + 1 : satir];
+      (hedef ?? document.getElementById(satirEkleDugmesiId))?.focus();
+    });
   }
 
   function satirKopyala(index: number) {
@@ -2241,10 +2251,6 @@ export default function FaturaSayfasi() {
                           kullanimAnahtari="tekir_son_urunler"
                           inputRef={(eleman) => { urunRefleri.current[index] = eleman; }}
                           onChange={(deger) => { if (deger) { setUrunModali({ satir: index, ...varyantDegeriCoz(deger) }); setSatirDogrulamaHatalari((hatalar) => hatalar.filter((satirIndex) => satirIndex !== index)); } }}
-                          onSecim={(deger) => requestAnimationFrame(() => {
-                            if (s.stokId === deger) urunRefleri.current[index]?.focus();
-                            else miktarRefleri.current[index]?.focus();
-                          })}
                           placeholder="Kod, barkod veya ürün adıyla ara"
                           yeniKayit={{
                             etiket: "Yeni ürün oluştur",
@@ -2434,7 +2440,7 @@ export default function FaturaSayfasi() {
 
             {!saltOkunur && (
               <div className="invoice-lines__footer">
-                <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
+                <Button type="button" id={satirEkleDugmesiId} onClick={satirEkle}>+ Satır ekle</Button>
                 <small className="muted">Son sütunda Enter yeni satır açar · Ctrl+S taslağı kaydeder</small>
               </div>
             )}
@@ -2760,7 +2766,7 @@ export default function FaturaSayfasi() {
           </div>
         </div>
       )}
-      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={tip === "satis" || tip === "alis" ? kodTablosu.vergiTurleri : undefined} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={tip === "satis" || tip === "alis" ? kodTablosu.vergiTurleri : undefined} onKapat={() => { if (urunModali) urunPenceresindenDon(urunModali.satir, false); setUrunModali(null); }} onEkle={(urun) => {
         setSatirlar((eskiler) => {
           // EBLG-125: pencerede gösterilen (gerekirse düzeltilen) KDV dışı vergiler satıra gelir.
           const ekVergiler = tip === "satis" || tip === "alis" ? karttanEkVergiler(urun.ekVergiler, kodTablosu.vergiTurleri) : [];
@@ -2768,6 +2774,7 @@ export default function FaturaSayfasi() {
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
           return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
         });
+        if (urunModali) urunPenceresindenDon(urunModali.satir, true);
         setUrunModali(null);
       }} />
 

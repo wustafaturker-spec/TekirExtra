@@ -1190,6 +1190,20 @@ test("fatura kalemleri yalnız klavyeyle kesintisiz girilebilir", async ({ page 
   await expect(pencere).toBeHidden();
   await expect(page.getByLabel("Miktar")).toHaveValue("3");
   await expect(page.getByText("450,00 TL", { exact: true }).last()).toBeVisible();
+
+  // Pencere kapanınca odak kaybolmaz: son satırdan sonra "+ Satır ekle"ye, oradan yeni satırın seçicisine geçilir.
+  await expect(page.getByRole("button", { name: "+ Satır ekle" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  const ikinci = page.getByRole("combobox", { name: "2. satır ürün veya hizmet seçimi" });
+  await expect(ikinci).toBeFocused();
+
+  // Vazgeçilirse odak aynı satırın seçicisine döner.
+  await ikinci.fill("TED-42");
+  await ikinci.press("Enter");
+  await expect(pencere.getByLabel("Miktar")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(pencere).toBeHidden();
+  await expect(ikinci).toBeFocused();
 });
 
 
