@@ -17,6 +17,7 @@ import { cariAdaylari } from "../src/cari/cari-aday";
 import { teklifYanitiniEslestir } from "../src/belgeler/teklif-takibi/teklif-yaniti";
 import { IsKutusuService } from "../src/is-kutusu/is-kutusu.service";
 import { HafizaService } from "../src/ai/hafiza/hafiza.service";
+import { IsKutusuKapanisService } from "../src/is-kutusu/is-kutusu-kapanis.service";
 
 /**
  * AI-52…57: e-posta → teklif hattının güvenlik kabulü. Gerçek PostgreSQL
@@ -397,5 +398,156 @@ describe("AI-65 hafıza kabulü", () => {
     await expect(olarak(A, () => hafiza.sil(muhasebeninki.id), satis.id, "satis")).rejects.toThrow(ForbiddenException);
     await expect(olarak(A, () => hafiza.durumDegistir(muhasebeninki.id, "pasif"), satis.id, "satis")).rejects.toThrow(ForbiddenException);
     expect((await olarak(A, () => hafiza.sil(kendi.id), satis.id, "satis")).silindi).toBe(true);
+  });
+});
+
+describe("AI-66…70 iş kutusundan kaldırma", () => {
+  /** Belge servisinin sahtesi: taslak gerçekten silinir; fırsat bağlı taslak silinemez, iptal edilir. */
+  const belgeler = {
+    silinemez: new Set<string>(),
+    async sil(id: string) {
+      if (this.silinemez.has(id)) throw new ConflictException("Fırsat bağı geçmişi olan teklif silinemez");
+      const { tenantId } = aktifBaglam();
+      await db.tenantIslem(tenantId, (t) => t.belge.delete({ where: { id } }));
+    },
+    async iptal(id: string) {
+      const { tenantId } = aktifBaglam();
+      await db.tenantIslem(tenantId, (t) => t.belge.update({ where: { id }, data: { durum: "iptal" } }));
+    },
+  };
+  const kapanis = new IsKutusuKapanisService(db, belgeler as never, onay, hafiza);
+  const sifir = { toplamBrut: "0", toplamSatirIskontosu: "0", genelIskontoToplam: "0", toplamMatrah: "0", toplamKdv: "0", toplamNetKdv: "0", genelToplam: "0" };
+
+  async function taslakliIslem(k: Kiraci = A, userId = k.userId) {
+    const e = await eposta(k, { gonderen: "ali@acme.com.tr", konu: `Kaldırma ${randomUUID().slice(0, 6)}` });
+    return tx(k, async (t) => {
+      const b = await t.belge.create({ data: { tenantId: k.tenantId, tur: "teklif", yon: "satis", durum: "taslak", tarih: new Date(), cariId: k.acme, ...sifir } });
+      return t.epostaTeklifIslemi.create({ data: { tenantId: k.tenantId, gelenEpostaId: e.id, calistiranUserId: userId, durum: "taslak_hazir", cariId: k.acme, belgeId: b.id, uyarilar: ["kontrol edin"] } });
+    });
+  }
+  async function taslaksizIslem(durum = "incelenmeli", k: Kiraci = A) {
+    const e = await eposta(k, { gonderen: "ali@acme.com.tr", konu: `İncelenecek ${randomUUID().slice(0, 6)}`, metin: "Merhaba, toplantı saatini teyit eder misiniz?" });
+    return tx(k, (t) => t.epostaTeklifIslemi.create({ data: { tenantId: k.tenantId, gelenEpostaId: e.id, calistiranUserId: k.userId, durum } }));
+  }
+  const kutudaMi = async (id: string, k: Kiraci = A) => {
+    const g = await olarak(k, () => isKutusu.listele("bana"));
+    return [...g.cariSecimi, ...g.taslaklar, ...g.incelenecek].some((i) => i.id === id);
+  };
+  const islemi = (id: string) => tx(A, (t) => t.epostaTeklifIslemi.findUniqueOrThrow({ where: { id } }));
+
+  it("is_kutusu_kapanislari zorunlu RLS altında; başka kiracı kapanışı görmez, geri alamaz", async () => {
+    const [r] = await db.$queryRaw<any[]>`SELECT c.relrowsecurity AS rls, c.relforcerowsecurity AS zorunlu, pg_get_userbyid(c.relowner) <> current_user AS sahip_degil FROM pg_class c WHERE c.relname = 'is_kutusu_kapanislari'`;
+    expect(r).toEqual({ rls: true, zorunlu: true, sahip_degil: true });
+    const i = await taslaksizIslem();
+    const { kapanisId } = await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal" }));
+    expect((await olarak(B, () => kapanis.kapatilanlar("bana"))).kayitlar).toEqual([]);
+    await expect(olarak(B, () => kapanis.geriAl(kapanisId), B.userId)).rejects.toThrow(/bulunamadı/);
+    await expect(olarak(B, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal" }), B.userId)).rejects.toThrow(/bulunamadı/);
+  });
+
+  it("İptal: taslak silinir, işlem kutudan ve rozetten düşer; geri alınca incelenecek olur", async () => {
+    const i = await taslakliIslem();
+    expect(await kutudaMi(i.id)).toBe(true);
+    const once = (await olarak(A, () => isKutusu.sayac())).toplam;
+    const { kapanisId, uyari } = await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal", not: "müşteri vazgeçti" }));
+    expect(uyari).toBeNull();
+    expect(await tx(A, (t) => t.belge.count({ where: { id: i.belgeId! } }))).toBe(0);
+    expect(await islemi(i.id)).toMatchObject({ durum: "kapatildi", belgeId: null, uyarilar: ["İş kutusundan kaldırıldı: İptal / gerek yok — müşteri vazgeçti"] });
+    expect(await kutudaMi(i.id)).toBe(false);
+    expect((await olarak(A, () => isKutusu.sayac())).toplam).toBe(once - 1);
+    // Kaldırılan işlem elle yeniden çalıştırılamaz.
+    await expect(olarak(A, () => hat.elleHazirla(i.gelenEpostaId))).rejects.toBeInstanceOf(ConflictException);
+    const k = (await olarak(A, () => kapanis.kapatilanlar("bana"))).kayitlar.find((x) => x.id === kapanisId)!;
+    expect(k).toMatchObject({ nedenAdi: "İptal / gerek yok", not: "müşteri vazgeçti", taslakSonucu: "silindi", geriAlinabilir: true });
+    await olarak(A, () => kapanis.geriAl(kapanisId));
+    expect(await islemi(i.id)).toMatchObject({ durum: "incelenmeli", belgeId: null, cariId: A.acme });
+    expect(await kutudaMi(i.id)).toBe(true);
+    expect((await olarak(A, () => kapanis.kapatilanlar("bana"))).kayitlar.some((x) => x.id === kapanisId)).toBe(false);
+    await expect(olarak(A, () => kapanis.geriAl(kapanisId))).rejects.toThrow(/bulunamadı/);
+  });
+
+  it("fırsat bağlı taslak silinmez, iptal edilir", async () => {
+    const i = await taslakliIslem();
+    belgeler.silinemez.add(i.belgeId!);
+    const { kapanisId } = await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "elle_yapildi" }));
+    expect((await tx(A, (t) => t.belge.findUniqueOrThrow({ where: { id: i.belgeId! } }))).durum).toBe("iptal");
+    expect((await tx(A, (t) => t.isKutusuKapanisi.findUniqueOrThrow({ where: { id: kapanisId } }))).taslakSonucu).toBe("iptal_edildi");
+  });
+
+  it("Elle yapıldı + teklif bağı: işlem elle girilen teklife ve onun carisine bağlanır, öğrenmeye açılır; geri alınca bağ çözülür", async () => {
+    const i = await taslaksizIslem("cari_secimi");
+    await tx(A, (t) => t.epostaTeklifIslemi.update({ where: { id: i.id }, data: { hafizaIslendiAt: new Date() } }));
+    const elle = await tx(A, (t) => t.belge.create({ data: { tenantId: A.tenantId, tur: "teklif", yon: "satis", durum: "onaylandi", no: "TKF2026000777", tarih: new Date(), cariId: A.beta, ...sifir } }));
+    const adaylar = await olarak(A, () => kapanis.teklifAdaylari({ cariId: A.beta }));
+    expect(adaylar.map((a) => a.id)).toContain(elle.id);
+    expect((await olarak(A, () => kapanis.teklifAdaylari({ arama: "000777" }))).map((a) => a.id)).toEqual([elle.id]);
+    expect(await olarak(B, () => kapanis.teklifAdaylari({ arama: "000777" }), B.userId)).toEqual([]);
+    // Başka kiracının teklifi bağlanamaz.
+    const bTeklif = await tx(B, (t) => t.belge.findFirstOrThrow({ where: { tur: "teklif" } }));
+    await expect(olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "elle_yapildi", belgeId: bTeklif.id }))).rejects.toBeInstanceOf(BadRequestException);
+    const { kapanisId } = await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "elle_yapildi", belgeId: elle.id }));
+    expect(await islemi(i.id)).toMatchObject({ durum: "kapatildi", belgeId: elle.id, cariId: A.beta, hafizaIslendiAt: null });
+    expect(await kutudaMi(i.id)).toBe(false);
+    const k = (await olarak(A, () => kapanis.kapatilanlar("bana"))).kayitlar.find((x) => x.id === kapanisId)!;
+    expect(k.bagliTeklif).toMatchObject({ id: elle.id, cari: "Beta Yapı A.Ş." });
+    await olarak(A, () => kapanis.geriAl(kapanisId));
+    expect(await islemi(i.id)).toMatchObject({ durum: "cari_secimi", belgeId: null, cariId: null });
+  });
+
+  it("Teklif talebi değil: işlem teklif_degil olur ve sınıflandırma örneği öğretilir", async () => {
+    const i = await taslaksizIslem();
+    await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "teklif_degil" }));
+    expect((await islemi(i.id)).durum).toBe("teklif_degil");
+    const ornek = await tx(A, (t) => t.aiHafiza.findFirst({ where: { tur: "siniflandirma", anahtar: i.gelenEpostaId } }));
+    expect(ornek?.etiket).toBe("teklif_degil");
+  });
+
+  it("yalnız sahibi ya da yönetici kaldırır; iki eşzamanlı kaldırmadan biri reddedilir", async () => {
+    const i = await taslakliIslem();
+    await expect(olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal" }), A.digerUserId)).rejects.toBeInstanceOf(ForbiddenException);
+    const [x, y] = await Promise.allSettled([
+      olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal" })),
+      olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "elle_yapildi" }), A.digerUserId, "yonetici"),
+    ]);
+    expect([x.status, y.status].sort()).toEqual(["fulfilled", "rejected"]);
+    expect(await tx(A, (t) => t.isKutusuKapanisi.count({ where: { kayitId: i.id, geriAlindiAt: null } }))).toBe(1);
+    // Firma geneli yalnız yöneticide; yönetici başkasının kaydını geri alır.
+    await expect(olarak(A, () => kapanis.kapatilanlar("firma"))).rejects.toBeInstanceOf(ForbiddenException);
+    const k = (await olarak(A, () => kapanis.kapatilanlar("firma"), A.digerUserId, "yonetici")).kayitlar.find((r) => r.baslik.startsWith("Kaldırma"))!;
+    await expect(olarak(A, () => kapanis.geriAl(k.id), A.digerUserId)).rejects.toBeInstanceOf(ForbiddenException);
+    await olarak(A, () => kapanis.geriAl(k.id), A.digerUserId, "yonetici");
+  });
+
+  it("kutuya başka yoldan dönen kayıt yeniden kaldırılabilir; eski kapanış geri alınamaz görünür", async () => {
+    const i = await taslaksizIslem();
+    const ilk = await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal" }));
+    await tx(A, (t) => t.epostaTeklifIslemi.update({ where: { id: i.id }, data: { durum: "incelenmeli" } }));
+    expect((await olarak(A, () => kapanis.kapatilanlar("bana"))).kayitlar.find((x) => x.id === ilk.kapanisId)?.geriAlinabilir).toBe(false);
+    await expect(olarak(A, () => kapanis.geriAl(ilk.kapanisId))).rejects.toBeInstanceOf(ConflictException);
+    const ikinci = await olarak(A, () => kapanis.kapat({ tur: "eposta", id: i.id, neden: "iptal" }));
+    expect(ikinci.kapanisId).not.toBe(ilk.kapanisId);
+  });
+
+  it("yanıt gelen teklif: takip kapanır, geri alınınca yanıt geldi'ye döner", async () => {
+    const takip = await tx(A, async (t) => {
+      const b = await t.belge.create({ data: { tenantId: A.tenantId, tur: "teklif", yon: "satis", durum: "onaylandi", no: "TKF2026000888", tarih: new Date(), cariId: A.acme, ...sifir } });
+      return t.teklifTakibi.create({ data: { tenantId: A.tenantId, belgeId: b.id, kaynak: "eposta", durum: "yanit_geldi", alici: "ali@acme.com.tr", sorumluUserId: A.userId, gonderildiAt: new Date(), hatirlatmaGunu: new Date(), yanitAt: new Date(), kapanisNedeni: "Müşteri yanıtladı" } });
+    });
+    expect((await olarak(A, () => isKutusu.listele("bana"))).yanitGelen.some((t) => t.id === takip.id)).toBe(true);
+    const { kapanisId } = await olarak(A, () => kapanis.kapat({ tur: "yanit", id: takip.id, neden: "elle_yapildi", not: "siparişi telefonla aldık" }));
+    const kapali = await tx(A, (t) => t.teklifTakibi.findUniqueOrThrow({ where: { id: takip.id } }));
+    expect(kapali).toMatchObject({ durum: "kapandi", kapanisNedeni: "İş kutusundan kaldırıldı: Elle yapıldı — siparişi telefonla aldık" });
+    expect((await olarak(A, () => isKutusu.listele("bana"))).yanitGelen.some((t) => t.id === takip.id)).toBe(false);
+    await olarak(A, () => kapanis.geriAl(kapanisId));
+    expect(await tx(A, (t) => t.teklifTakibi.findUniqueOrThrow({ where: { id: takip.id } }))).toMatchObject({ durum: "yanit_geldi", kapanisNedeni: "Müşteri yanıtladı" });
+  });
+
+  it("onay talebi: yalnız açan reddederek kaldırır; geri alınamaz", async () => {
+    const talep = await olarak(A, () => onay.olustur({ arac: "cari_olustur", parametreler: {}, ozet: "Yeni cari: Deneme", kaynak: "otomasyon" }));
+    await expect(olarak(A, () => kapanis.kapat({ tur: "onay", id: talep.id, neden: "iptal" }), A.digerUserId, "yonetici")).rejects.toBeInstanceOf(ForbiddenException);
+    const { kapanisId } = await olarak(A, () => kapanis.kapat({ tur: "onay", id: talep.id, neden: "iptal" }));
+    expect((await tx(A, (t) => t.aiOnayTalebi.findUniqueOrThrow({ where: { id: talep.id } }))).durum).toBe("reddedildi");
+    expect((await olarak(A, () => kapanis.kapatilanlar("bana"))).kayitlar.find((x) => x.id === kapanisId)).toMatchObject({ baslik: "Yeni cari: Deneme", geriAlinabilir: false });
+    await expect(olarak(A, () => kapanis.geriAl(kapanisId))).rejects.toBeInstanceOf(ConflictException);
   });
 });

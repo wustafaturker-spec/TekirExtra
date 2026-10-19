@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { Alert, Badge, Button, Input } from "@/components/ui";
 import { CariSecModali } from "@/components/cari-sec-modali";
 
-type Durum = "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_secimi" | "cari_onayi_bekliyor" | "cari_yok" | "taslak_hazir" | "sinirda" | "hata";
+type Durum = "isleniyor" | "atlandi" | "teklif_degil" | "incelenmeli" | "cari_secimi" | "cari_onayi_bekliyor" | "cari_yok" | "taslak_hazir" | "sinirda" | "hata" | "kapatildi";
 
 interface Kalem {
   ifade: string; miktar: number | null; birim: string | null; stokId: string | null; kod: string | null; ad: string | null;
@@ -32,6 +32,7 @@ export const TEKLIF_DURUMU: Record<Durum, { ad: string; varyant: Varyant }> = {
   taslak_hazir: { ad: "Teklif taslağı hazır", varyant: "success" },
   sinirda: { ad: "Teklif: AI sınırında", varyant: "danger" },
   hata: { ad: "Teklif: hata", varyant: "danger" },
+  kapatildi: { ad: "İş kutusundan kaldırıldı", varyant: "neutral" },
 };
 
 /** Listede küçük rozet; teklifle ilgisi olmayan sonuçlar gösterilmez. */

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { belgeNoMetni } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { INCELENECEK, epostaKutudaMi } from "./is-kutusu.kurallari";
 
 type Tx = Prisma.TransactionClient;
 export type Kapsam = "bana" | "firma";
@@ -10,7 +11,6 @@ export type Kapsam = "bana" | "firma";
 /** Yanıt gelen teklif bu kadar gün iş kutusunda kalır (siparişe dönüşmediyse). */
 const YANIT_GUN = 14;
 const SINIR = 50;
-const INCELENECEK = ["incelenmeli", "cari_yok", "sinirda", "hata"];
 
 const kisa = (m: string | null | undefined, n = 240) => (m && m.length > n ? `${m.slice(0, n - 1)}…` : m ?? "");
 
@@ -81,7 +81,7 @@ export class IsKutusuService {
     const sayilar = await this.prisma.tenantIslem(tenantId, async (tx) => Promise.all([
       tx.epostaTeklifIslemi.count({ where: { tenantId, calistiranUserId: userId, durum: { in: ["cari_secimi", ...INCELENECEK] }, belgeId: null } }),
       (async () => {
-        const idler = (await tx.epostaTeklifIslemi.findMany({ where: { tenantId, calistiranUserId: userId, belgeId: { not: null } }, select: { belgeId: true }, take: 500 })).map((k) => k.belgeId!);
+        const idler = (await tx.epostaTeklifIslemi.findMany({ where: { tenantId, calistiranUserId: userId, belgeId: { not: null }, durum: { notIn: ["kapatildi", "teklif_degil"] } }, select: { belgeId: true }, take: 500 })).map((k) => k.belgeId!);
         return idler.length ? tx.belge.count({ where: { tenantId, id: { in: idler }, durum: "taslak" } }) : 0;
       })(),
       tx.aiOnayTalebi.count({ where: { tenantId, userId, durum: "bekliyor", gecerlilikSonu: { gt: new Date() } } }),
@@ -94,7 +94,8 @@ export class IsKutusuService {
     const kayitlar = await tx.epostaTeklifIslemi.findMany({
       where: {
         tenantId, ...(userId ? { calistiranUserId: userId } : {}),
-        OR: [{ durum: { in: ["cari_secimi", ...INCELENECEK] } }, { belgeId: { not: null } }],
+        // AI-68: kaldırılan işlem (elle girilmiş teklife bağlı olsa da) kutuya dönmez.
+        OR: [{ durum: { in: ["cari_secimi", ...INCELENECEK] } }, { belgeId: { not: null }, durum: { notIn: ["kapatildi", "teklif_degil"] } }],
       },
       select: {
         id: true, durum: true, uyarilar: true, cariAdaylari: true, belgeId: true, updatedAt: true, calistiranUserId: true,
@@ -120,7 +121,7 @@ export class IsKutusuService {
           adres: b ? `/panel/belgeler?odak=${b.id}` : "/panel/eposta",
         };
       })
-      .filter((k) => k.durum === "cari_secimi" || INCELENECEK.includes(k.durum) && !k.belge || k.belge?.durum === "taslak")
+      .filter((k) => epostaKutudaMi(k.durum, k.belge?.durum ?? null))
       .slice(0, SINIR);
   }
 

@@ -252,6 +252,7 @@ model Tenant {
   aiTavani              PlatformAiTavani?
   epostaTeklifIslemleri EpostaTeklifIslemi[]
   aiHafiza              AiHafiza[]
+  isKutusuKapanislari   IsKutusuKapanisi[]
   teklifTakipleri       TeklifTakibi[]
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
@@ -582,7 +583,7 @@ model EpostaTeklifIslemi {
   tenantId         String    @map("tenant_id") @db.Uuid
   gelenEpostaId    String    @unique @map("gelen_eposta_id") @db.Uuid
   calistiranUserId String?   @map("calistiran_user_id") @db.Uuid
-  /// isleniyor | atlandi | teklif_degil | incelenmeli | cari_secimi | cari_onayi_bekliyor | cari_yok | taslak_hazir | sinirda | hata
+  /// isleniyor | atlandi | teklif_degil | incelenmeli | cari_secimi | cari_onayi_bekliyor | cari_yok | taslak_hazir | sinirda | hata | kapatildi
   durum            String
   guven            Decimal?  @db.Decimal(4, 3)
   cikarim          Json?
@@ -641,6 +642,35 @@ model AiHafiza {
   @@index([tenantId, tur, anahtar])
   @@index([tenantId, cariId])
   @@map("ai_hafiza")
+}
+
+/// AI-66…70: teklif iş kutusundan kaldırılan kayıt; önceki durumla geri alınabilir.
+/// Kayıt başına tek açık kapanış (geri_alindi_at IS NULL) kısmi tekil indeksle göçte korunur.
+model IsKutusuKapanisi {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  /// eposta (eposta_teklif_islemleri) | yanit (teklif_takipleri) | onay (ai_onay_talepleri)
+  tur             String
+  kayitId         String    @map("kayit_id") @db.Uuid
+  /// elle_yapildi | iptal | teklif_degil
+  neden           String
+  notMetni        String?   @map("not_metni")
+  bagliBelgeId    String?   @map("bagli_belge_id") @db.Uuid
+  /// silindi | iptal_edildi — e-postadan açılmış taslağa yapılan
+  taslakSonucu    String?   @map("taslak_sonucu")
+  /// Geri alma için kaydın kapanıştan önceki alanları.
+  onceki          Json      @default("{}")
+  /// Kaydın sahibi (çalıştıran / sorumlu / talebi açan); "Benim işlerim" süzgeci.
+  sahipUserId     String?   @map("sahip_user_id") @db.Uuid
+  kapatanUserId   String?   @map("kapatan_user_id") @db.Uuid
+  kapandiAt       DateTime  @default(now()) @map("kapandi_at")
+  geriAlanUserId  String?   @map("geri_alan_user_id") @db.Uuid
+  geriAlindiAt    DateTime? @map("geri_alindi_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kapandiAt])
+  @@map("is_kutusu_kapanislari")
 }
 
 model GelenEpostaEk {
