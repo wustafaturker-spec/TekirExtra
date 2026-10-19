@@ -4898,6 +4898,9 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .teklif-talebi__tercihler ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
 .teklif-talebi__tercihler li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .teklif-talebi__tercihler form .input, .teklif-talebi__urun-sec .input { flex: 1; min-width: 0; }
+.teklif-talebi__tercihler form.row-tight, .teklif-talebi__urun-sec .row-tight { flex-wrap: nowrap; }
+.teklif-talebi__tercihler form.row-tight > .input, .teklif-talebi__urun-sec .row-tight > .input { flex: 1 1 auto; width: auto; }
+.teklif-talebi__tercihler form.row-tight > .btn, .teklif-talebi__urun-sec .row-tight > .btn { flex: none; width: auto; }
 .teklif-talebi__geri { flex-wrap: wrap; align-items: center; padding-top: 8px; border-top: 1px solid var(--border); }
 .hafiza__ne { display: grid; gap: 2px; min-width: 0; }
 .hafiza__ne span { overflow-wrap: anywhere; }

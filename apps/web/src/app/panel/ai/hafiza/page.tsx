@@ -90,7 +90,7 @@ export default function HafizaSayfasi() {
     <PageHeader
       title="Yapay Zekâ Hafızası"
       subtitle="E-posta teklif hattının düzeltmelerinizden öğrendikleri: ürün ve cari eşleşmeleri, müşteri tercihleri, sınıflandırma örnekleri ve susturulan gönderenler. Tutar ya da bakiye tutulmaz; AI önerileri siz onaylamadan kullanılmaz."
-      actions={<>
+      actions={<div className="row-tight">
         <Select value={tur} onChange={(e) => { setTur(e.target.value as Tur | ""); setSayfa(1); }} aria-label="Tür">
           <option value="">Tüm türler</option>
           {(Object.keys(TUR_ADI) as Tur[]).map((t) => <option key={t} value={t}>{TUR_ADI[t]}</option>)}
@@ -99,7 +99,7 @@ export default function HafizaSayfasi() {
           <option value="">Tüm durumlar</option>
           {(Object.keys(DURUM) as Durum[]).map((d) => <option key={d} value={d}>{DURUM[d].ad}</option>)}
         </Select>
-      </>}
+      </div>}
     />
     <Alert tone="error">{hata}</Alert>
     {veri && !veri.kayitlar.length && <Card><p className="muted">{tur || durum ? "Bu süzgeçle kayıt yok." : "Henüz öğrenilen bir şey yok. Teklif panelinde doğru ürünü seçtiğinizde, cari seçtiğinizde ya da sınıflandırmayı düzelttiğinizde burada görünür."}</p></Card>}

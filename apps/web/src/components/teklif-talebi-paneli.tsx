@@ -133,7 +133,7 @@ export function TeklifTalebiPaneli({ epostaId, onDegisti }: { epostaId: string; 
               {islem.cariId && <Button size="sm" disabled={yukleniyor} onClick={() => setUrunSec(urunSec === i ? null : i)}>{k.stokId ? "Düzelt" : "Doğru ürünü seç"}</Button>}
               {urunSec === i && (
                 <UrunSecici
-                  ifade={k.ifade}
+                  arama={k.belirsizKart?.kartKodu ?? k.kod ?? ilkAramaKelimesi(k.ifade)}
                   onSec={(stokId, varyantId) => void urunuOgret(i, stokId, varyantId)}
                   onKapat={() => setUrunSec(null)}
                 />
@@ -189,11 +189,17 @@ function YanitOnerisi({ metin }: { metin: string }) {
   );
 }
 
+/** Stok araması tam ifadeyle çoğu zaman boş döner; önce kod benzeri (harf + rakam), yoksa en uzun kelime. */
+function ilkAramaKelimesi(ifade: string): string {
+  const kelimeler = ifade.split(/[\s,;/()]+/).filter((k) => k.length >= 3 && !/^\d+([.,]\d+)?$/.test(k));
+  return kelimeler.find((k) => /\p{L}/u.test(k) && /\d/.test(k)) ?? [...kelimeler].sort((a, b) => b.length - a.length)[0] ?? ifade;
+}
+
 interface StokSonucu { id: string; kod: string; ad: string; varyantlar?: Array<{ id: string; kod: string; ad: string; aktif?: boolean }> }
 
 /** AI-61: kalem için doğru kartı/varyantı arayıp seçme; varyantlı kartta varyant seçilir. */
-function UrunSecici({ ifade, onSec, onKapat }: { ifade: string; onSec: (stokId: string, varyantId: string | null) => void; onKapat: () => void }) {
-  const [arama, setArama] = useState(ifade);
+function UrunSecici({ arama: ilkArama, onSec, onKapat }: { arama: string; onSec: (stokId: string, varyantId: string | null) => void; onKapat: () => void }) {
+  const [arama, setArama] = useState(ilkArama);
   const [sonuclar, setSonuclar] = useState<StokSonucu[] | null>(null);
   const [hata, setHata] = useState("");
   useEffect(() => {
