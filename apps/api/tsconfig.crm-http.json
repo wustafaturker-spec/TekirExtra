@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../.release-candidates/f03-http-20261018/api",
+    "incremental": false
+  },
+  "include": [
+    "src/ayar-tanimlari.ts",
+    "src/auth/auth.controller.ts",
+    "src/auth/auth.guard.ts",
+    "src/auth/roller.guard.ts",
+    "src/crm/crm-belge.controller.ts",
+    "src/crm/crm-firsat.controller.ts",
+    "src/belgeler/belgeler.controller.ts",
+    "src/fatura/fatura.controller.ts"
+  ]
+}

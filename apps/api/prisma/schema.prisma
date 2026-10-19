@@ -927,6 +927,28 @@ model FirsatKapamaPayi {
   @@map("firsat_kapama_paylari")
 }
 
+model FirsatIadePayi {
+  id String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  cariId String @map("cari_id") @db.Uuid
+  firsatId String @map("firsat_id") @db.Uuid
+  faturaId String @map("fatura_id") @db.Uuid
+  iadeFaturaId String @map("iade_fatura_id") @db.Uuid
+  surum Int
+  matrah Decimal @db.Decimal(15,2)
+  kanitOzeti String @map("kanit_ozeti") @db.VarChar(64)
+  istekAnahtari String @map("istek_anahtari") @db.Uuid
+  girdiOzeti String @map("girdi_ozeti") @db.VarChar(64)
+  gerekce String @db.VarChar(500)
+  olusturanUserId String @map("olusturan_user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([tenantId,istekAnahtari])
+  @@unique([tenantId,faturaId,iadeFaturaId,firsatId,surum])
+  @@index([tenantId,faturaId])
+  @@index([tenantId,iadeFaturaId])
+  @@map("firsat_iade_paylari")
+}
+
 model FaturaKapama {
   id                  String   @id @default(uuid()) @db.Uuid
   tenantId            String   @map("tenant_id") @db.Uuid

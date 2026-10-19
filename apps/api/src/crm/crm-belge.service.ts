@@ -9,6 +9,8 @@ import { BelgelerService } from "../belgeler/belgeler.service";
 import { ticariSonucuOku } from "./crm-ticari-sonuc";
 import { kapamaPayiKaynak, kapamaPayiGorunumu } from "./crm-kapama-paylari";
 import { crmKapamaPayiSemasi } from "./crm-belge.semalar";
+import { crmIadePayiSemasi } from "./crm-belge.semalar";
+import { iadePaylariniOku } from "./crm-iade-paylari";
 type Tx = Prisma.TransactionClient;
 function parse<T>(schema: z.ZodType<T>, value: unknown): T { const r = schema.safeParse(value); if (!r.success) throw new BadRequestException(r.error.issues.map(i => i.message).join("; ")); return r.data; }
 const uuid = (s: string) => parse(z.uuid().transform(s => s.toLowerCase()), s);
@@ -40,6 +42,37 @@ export class CrmBelgeService {
   if (kilit) await tx.$queryRaw`SELECT id FROM crm_firsatlari WHERE id=${id}::uuid AND tenant_id=${tenantId}::uuid FOR UPDATE`;
   const f = await tx.crmFirsat.findFirst({ where: { id, tenantId }, select: { id: true, cariId: true, baslik: true, updatedAt: true } });
   if (!f) throw new NotFoundException("Fırsat bulunamadı"); return f;
+ }
+ async iadePaylari(id:string,invoiceId:string){
+  const firsatId=uuid(id),faturaId=uuid(invoiceId),{tenantId}=aktifBaglam();
+  return this.prisma.tenantIslem(tenantId,async tx=>{
+   const mod=await this.erisim(tx),f=await this.firsat(tx,firsatId),c=await iadePaylariniOku(tx,tenantId,f.cariId,firsatId,faturaId);
+   if(c.view.sonuc.satisMatrahi===null && !c.hasHistory)throw new NotFoundException('Bu fırsata ait doğrulanmış satış matrahı yok');
+   return {...c.view,mod};
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
+ }
+ async iadePayiYaz(id:string,invoiceId:string,body:unknown){
+  const firsatId=uuid(id),faturaId=uuid(invoiceId),raw=parse(crmIadePayiSemasi,body),g={...raw,matrah:new Prisma.Decimal(raw.matrah).toFixed(2)},{tenantId,userId,rol}=aktifBaglam(),ozet=hash({firsatId,faturaId,...g});
+  return this.yaz(tenantId,async tx=>{
+   const mod=await this.erisim(tx);
+   if(!['pilot','acik'].includes(mod) || !['yonetici','muhasebe'].includes(rol) || !await tx.user.findFirst({where:{id:userId,tenantId,aktif:true,rol:{in:['yonetici','muhasebe']}},select:{id:true}}))throw new ForbiddenException('Ticari iade payını aktif yönetici veya muhasebe düzenleyebilir');
+   const f=await this.firsat(tx,firsatId);
+   const replay=await tx.firsatIadePayi.findUnique({where:{tenantId_istekAnahtari:{tenantId,istekAnahtari:g.istekAnahtari}}});
+   if(replay){if(replay.girdiOzeti!==ozet)throw new ConflictException('İstek anahtarı farklı iade dağıtımı için kullanılmış');return {id:replay.id,surum:replay.surum};}
+   await tx.$queryRaw`SELECT id FROM cari_hesaplar WHERE id=${f.cariId}::uuid AND tenant_id=${tenantId}::uuid FOR UPDATE`;
+   let c=await iadePaylariniOku(tx,tenantId,f.cariId,firsatId,faturaId),i=c.view.iadeler.find(i=>i.id===g.iadeFaturaId);
+   if(!i)throw new NotFoundException('Bu faturaya referanslı iade bulunamadı');
+   const lockIds=[...new Set([faturaId,i.id,...i.kaynakFaturalar.map(k=>k.id)])].sort();
+   await tx.$queryRaw`SELECT id FROM faturalar WHERE tenant_id=${tenantId}::uuid AND id = ANY(${lockIds}::uuid[]) ORDER BY id FOR UPDATE`;
+   c=await iadePaylariniOku(tx,tenantId,f.cariId,firsatId,faturaId);i=c.view.iadeler.find(i=>i.id===g.iadeFaturaId);
+   if(!i)throw new ConflictException('İadenin kaynakları değişti; dağıtımı yenileyin');
+   if(i.surum!==g.beklenenSurum || i.kanitOzeti!==g.kanitOzeti)throw new ConflictException('Satış, iade veya fırsat bağı değişti; dağıtımı yenileyin');
+   if(!i.gecerli || new Prisma.Decimal(g.matrah).gt(i.azamiMatrah))throw new ConflictException('Pay iadenin boşta kalan matrahını veya fırsatın satış matrahını aşıyor');
+   if(c.historyCount>=5000 || i.surum>=200)throw new ConflictException('Ticari iade geçmişi sınırına ulaşıldı');
+   const row=await tx.firsatIadePayi.create({data:{tenantId,cariId:f.cariId,firsatId,faturaId,iadeFaturaId:i.id,surum:i.surum+1,matrah:g.matrah,kanitOzeti:i.kanitOzeti,istekAnahtari:g.istekAnahtari,girdiOzeti:ozet,gerekce:g.gerekce,olusturanUserId:userId}});
+   await tx.auditLog.create({data:{tenantId,userId,islem:'firsat_iade_payi_belirtildi',varlik:'firsat_iade_payi',varlikId:row.id,detay:{firsatId,faturaId,iadeFaturaId:i.id,matrah:g.matrah,surum:row.surum,gerekce:g.gerekce}}});
+   return {id:row.id,surum:row.surum};
+  },true);
  }
  async kapamaPaylari(id:string,invoiceId:string){
   const firsatId=uuid(id),faturaId=uuid(invoiceId),{tenantId}=aktifBaglam();
@@ -81,10 +114,12 @@ export class CrmBelgeService {
    const docs = await tx.belge.findMany({ where: { id: { in: rows.map(r => r.belgeId) }, tenantId, cariId: firsat.cariId }, select: teklifSecimi });
    const byId = new Map(docs.map(b => [b.id, teklifGorunumu(b)]));
    const zincir = await this.zinciriOku(tx, tenantId, firsat.cariId, rows.filter(r => !r.cozulduAt && byId.has(r.belgeId)).map(r => r.belgeId));
-   const ticariSonuc = await ticariSonucuOku(tx, tenantId, firsat.cariId, rows.filter(r=>!r.cozulduAt).map(r=>r.belgeId), zincir.belgeler.map(b=>b.id), zincir.faturalar.map(f=>f.id));
+   const ticariSonuc = await ticariSonucuOku(tx, tenantId, firsat.cariId, firsatId, rows.filter(r=>!r.cozulduAt).map(r=>r.belgeId), zincir.belgeler.map(b=>b.id), zincir.faturalar.map(f=>f.id));
    const payHistory=await tx.firsatKapamaPayi.findMany({where:{tenantId,cariId:firsat.cariId,firsatId},select:{faturaId:true},take:5001});
+   const iadeHistory=await tx.firsatIadePayi.findMany({where:{tenantId,cariId:firsat.cariId,firsatId},select:{faturaId:true},take:5001});
+   if(iadeHistory.length>5000)throw new ConflictException('Ticari iade geçmişi sınırı aşıldı');
    if(payHistory.length>5000)throw new ConflictException('Kapama payı geçmişi sınırı aşıldı');
-   const payFaturaGecmisi=await tx.fatura.findMany({where:{tenantId,cariId:firsat.cariId,id:{in:[...new Set(payHistory.map(r=>r.faturaId))]}},select:{id:true,no:true},orderBy:{id:'asc'}});
+   const payFaturaGecmisi=await tx.fatura.findMany({where:{tenantId,cariId:firsat.cariId,id:{in:[...new Set([...payHistory,...iadeHistory].map(r=>r.faturaId))]}},select:{id:true,no:true},orderBy:{id:'asc'}});
    return { mod, firsat, zincir, ticariSonuc, payFaturaGecmisi, baglar: rows.map(r => ({ id: r.id, belgeId: r.belgeId, gerekce: r.gerekce, createdAt: r.createdAt, surum: r.surum, cozulduAt: r.cozulduAt, cozmeGerekcesi: r.cozmeGerekcesi, belge: byId.get(r.belgeId) ?? null })) };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
  }

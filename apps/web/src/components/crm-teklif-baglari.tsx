@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CrmKapamaDagitimi } from "./crm-kapama-dagitimi";
+import { CrmIadeDagitimi } from "./crm-iade-dagitimi";
 import { api, ApiHata } from "@/lib/api";
 import { Alert, Button, Card, Input, Para } from "@/components/ui";
 import { paraBicimle } from "@tekirextra/shared";
@@ -11,7 +12,7 @@ const durumAdi = (d: string) => DURUM_ADI[d] ?? d;
 interface Teklif { id: string; no: string | null; durum: string; dovizCinsi: string; genelToplam: string; updatedAt: string; revizyonNo: number; bagli?: boolean }
 interface Bag { id: string; surum: number; gerekce: string; cozulduAt: string | null; cozmeGerekcesi: string | null; belge: Teklif | null }
 interface ZincirBelgesi { id: string; no: string | null; tur: "siparis" | "irsaliye"; durum: string; kaynakBelgeId: string; faturaId: string | null }
-interface TicariSonuc { id:string; no:string|null; durum:string; dovizCinsi:string; faturaPayi:string|null; payKapsami:string; kapama:{durum:string;kasaBanka:string|null;iade:string|null;diger:string|null;kalan:string|null} }
+interface TicariSonuc { netSatis?:{durum:string;neden:string|null;satisMatrahi:string|null;iadeMatrahi:string|null;netMatrah:string|null};id:string; no:string|null; durum:string; dovizCinsi:string; faturaPayi:string|null; payKapsami:string; kapama:{durum:string;kasaBanka:string|null;iade:string|null;diger:string|null;kalan:string|null} }
 interface Liste { payFaturaGecmisi?: {id:string;no:string|null}[]; ticariSonuc?: TicariSonuc[]; mod: string; firsat: { id: string; baslik: string; updatedAt: string }; baglar: Bag[]; zincir?: { belgeler: ZincirBelgesi[]; faturalar: { id: string; no: string | null; durum: string; kaynakBelgeIds: string[]; ortakKaynak: boolean }[] } }
 interface Adaylar { firsat: Liste["firsat"]; kayitlar: Teklif[]; sonrakiImlec: string | null }
 export function CrmTeklifBaglari({ firsatId }: { firsatId: string }) {
@@ -75,9 +76,19 @@ export function CrmTeklifBaglari({ firsatId }: { firsatId: string }) {
       {s.faturaPayi===null ? <p>{s.payKapsami==="kesin_degil"?"Kesinleşmiş satış payı yok; fatura taslak veya iptal.":"Fatura payı dağıtılamadı; kaynak satır kanıtı eksik veya tutarsız."}</p> : <p>Bu fırsatın fatura payı (KDV dahil): <strong><Para deger={s.faturaPayi} dovizCinsi={s.dovizCinsi} /></strong>{s.payKapsami==="kismi" && " · Yalnız doğrulanan satırlar"}</p>}
       {s.kapama.durum!=="tam" ? <p>Kapama payları dağıtılamadı. Karma veya kaynağı eksik faturada oranla tahsilat/iade dağıtılmaz.</p> : <dl><dt>Kasa/banka ile kapama</dt><dd><Para deger={s.kapama.kasaBanka} dovizCinsi={s.dovizCinsi} /></dd><dt>İade ile kapama</dt><dd><Para deger={s.kapama.iade} dovizCinsi={s.dovizCinsi} /></dd><dt>Diğer kapama (çek/senet/kart)</dt><dd><Para deger={s.kapama.diger} dovizCinsi={s.dovizCinsi} /></dd><dt>Faturanın kalan bakiyesi</dt><dd><Para deger={s.kapama.kalan} dovizCinsi={s.dovizCinsi} /></dd></dl>}
       <CrmKapamaDagitimi firsatId={firsatId} faturaId={s.id} />
+      <CrmIadeDagitimi firsatId={firsatId} faturaId={s.id} />
+      {s.netSatis && <section aria-label="Referanslı iade sonrası satış">
+       <h4>Referanslı iade sonrası satış (KDV hariç)</h4>
+       {s.netSatis.durum==='referans_kapsaminda'?<>
+        <dl><dt>Satış matrahı</dt><dd><Para deger={s.netSatis.satisMatrahi} dovizCinsi={s.dovizCinsi} /></dd>
+         <dt>Referanslı iade matrahı</dt><dd><Para deger={s.netSatis.iadeMatrahi} dovizCinsi={s.dovizCinsi} /></dd>
+         <dt>İade sonrası matrah</dt><dd><Para deger={s.netSatis.netMatrah} dovizCinsi={s.dovizCinsi} /></dd></dl>
+        <p className="muted">Tek kaynaklı kesin iadeler tam matrahıyla hesaba katılır. Çok kaynaklı iadeler, bütün kaynak/fırsat payları doğrulanıp iade toplamı tamamlanınca yalnız bu fatura ve fırsata ayrılan pay kadar hesaba girer. Referanssız iadeler ölçüm dışındadır; tahsilat ve kapama dağıtımları net satış matrahını değiştirmez.</p>
+       </>:<p>{s.netSatis.neden?.startsWith("cok_kaynakli_iade_")?"Çok kaynaklı iade net satışa katılmadı. Kaynak doğrulaması veya bütün kaynak/fırsat paylarının tam dağıtımı eksik ya da geçersiz.":s.payKapsami==="kismi"?"Bu ortak faturada net satış bu bölümde hesaplanmaz; iade sonrası fırsat payı, yukarıdaki kaynak/fırsat iade dağıtımı tamamlandığında gösterilir.":"Satış/iade sonucu dağıtılamadı. Tam fatura sahipliği veya iadenin tek kaynak ve tutar kanıtı doğrulanamadı."}</p>}
+      </section>}
      </li>)}</ul>
     </section>}
-    {(liste.payFaturaGecmisi??[]).filter(f=>!liste.ticariSonuc?.some(s=>s.id===f.id)).map(f=><div key={f.id} className="card" style={{padding:'1rem'}}><p>Kapama payı geçmişi: {f.no??'Numarasız fatura'}</p><CrmKapamaDagitimi firsatId={firsatId} faturaId={f.id} /></div>)}
+    {(liste.payFaturaGecmisi??[]).filter(f=>!liste.ticariSonuc?.some(s=>s.id===f.id)).map(f=><div key={f.id} className="card" style={{padding:'1rem'}}><p>Fatura payı geçmişi: {f.no??'Numarasız fatura'}</p><CrmKapamaDagitimi firsatId={firsatId} faturaId={f.id} /><CrmIadeDagitimi firsatId={firsatId} faturaId={f.id} /></div>)}
     {aday && <section ref={bagFormu} aria-label="Teklif bağlama" className="stack">
      <label>Teklif numarasıyla ara<Input aria-label="Teklif numarasıyla ara" value={arama} maxLength={100} onChange={e=>setArama(e.target.value)} /></label><Button onClick={()=>void adaylariOku()} disabled={islemde}>Teklifleri ara</Button>
      <label>Satış teklifi<select aria-label="Satış teklifi" className="input" value={secim} onChange={e=>{setSecim(e.target.value);setBagAnahtari(crypto.randomUUID());}} disabled={islemde}><option value="">Teklif seçin</option>{aday.kayitlar.map(b=><option key={b.id} value={b.id} disabled={b.bagli}>{b.no??"Numarasız teklif"} · {paraBicimle(b.genelToplam, { dovizCinsi: b.dovizCinsi })}{b.bagli?" · zaten bağlı":""}</option>)}</select></label>

@@ -1,15 +1,28 @@
 import { expect,test,type Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
 const f="11111111-1111-4111-8111-111111111111",b="22222222-2222-4222-8222-222222222222",linkId="33333333-3333-4333-8333-333333333333",date="2026-10-17T10:00:00.000Z";
+const oturumSirri="crm-belge-playwright-session-secret-2026";
 async function kur(page:Page,mod="pilot",conflict=false) {
- const state={baglar:[] as any[],yazilar:[] as {path:string;body:any}[],mod,rol:"satis",payHatasi:false,dagitim:null as any,olusturmaHatasi:false,ticariSonuc:[] as any[],zincir:{belgeler:[] as any[],faturalar:[] as any[]}};
+ const state={baglar:[] as any[],yazilar:[] as {path:string;body:any}[],mod,rol:"satis",payHatasi:false,kapamaOkumaHatasi:false,dagitim:null as any,iadeDagitim:null as any,iadeHatasi:false,iadeOkumaHatasi:false,olusturmaHatasi:false,ticariSonuc:[] as any[],zincir:{belgeler:[] as any[],faturalar:[] as any[]}};
  const doc={id:b,no:"TEK-001",durum:"onaylandi",dovizCinsi:"USD",genelToplam:"1200.25",updatedAt:date,revizyonNo:1};
  const cariId="77777777-7777-4777-8777-777777777777",stokId="88888888-8888-4888-8888-888888888888";
  const firsat={id:f,cariId,baslik:"Makine satış fırsatı",updatedAt:date};
  page.on("pageerror",e=>{throw e;});await page.addInitScript(()=>sessionStorage.setItem("tekir_access","fixture-token"));
+ const govde=`v1.${Math.floor(Date.now()/1000)+3600}`;
+ await page.context().addCookies([{name:"tekir_oturum",value:`${govde}.${createHmac("sha256",oturumSirri).update(govde).digest("base64url")}`,domain:"127.0.0.1",path:"/",expires:-1,httpOnly:true,sameSite:"Lax"}]);
  await page.route("**/api/v1/**",async route=>{
   const req=route.request(),path=new URL(req.url()).pathname.replace("/api/v1","");
+  if(path==="/auth/yenile")return route.fulfill({json:{accessToken:"fixture-token"}});
   if(req.method()!=="GET") {
    const body=req.postDataJSON();state.yazilar.push({path,body});
+   if(path.endsWith('/iade-paylari')){
+    expect(body).toMatchObject({kanitOzeti:'c'.repeat(64),beklenenSurum:0});expect(body).not.toHaveProperty('tenantId');
+    if(state.iadeHatasi)return route.fulfill({status:409,json:{message:'Satış, iade veya fırsat bağı değişti; dağıtımı yenileyin'}});
+    state.iadeDagitim.iadeler[0]={...state.iadeDagitim.iadeler[0],pay:body.matrah,surum:1};
+    state.iadeDagitim.sonuc={durum:'tam',satisMatrahi:'100.10',belirtilenIadeMatrahi:body.matrah,netMatrah:'80.05'};
+    state.iadeDagitim.gecmis=[{id:linkId,iadeFaturaId:body.iadeFaturaId,surum:1,matrah:body.matrah,gerekce:body.gerekce,gecerli:true}];
+    return route.fulfill({status:201,json:{id:linkId,surum:1}});
+   }
    if(path.endsWith('/kapama-paylari')){
     expect(body).toMatchObject({kanitOzeti:'a'.repeat(64),kaynakOzeti:'b'.repeat(64),beklenenSurum:0});
     if(state.payHatasi)return route.fulfill({status:409,json:{message:'Fatura, kaynak veya dağıtım değişti; dağıtımı yenileyin'}});
@@ -21,11 +34,12 @@ async function kur(page:Page,mod="pilot",conflict=false) {
     if(state.olusturmaHatasi)return route.fulfill({status:409,json:{message:"Fırsat değişti; fırsatı yenileyin"}});
     state.baglar=[{id:linkId,belgeId:b,surum:1,gerekce:body.gerekce,cozulduAt:null,cozmeGerekcesi:null,belge:{...doc,durum:"taslak"}}];return route.fulfill({status:201,json:{id:b,bagId:linkId,surum:1,cozulduAt:null}});
    }
-   if(path.endsWith('/kapama-paylari'))return route.fulfill({json:state.dagitim});
+   if(path.endsWith('/kapama-paylari'))return state.kapamaOkumaHatasi?route.fulfill({status:409,json:{message:'Kapama dağıtımı 5000 kayıt sınırını aşıyor; eksik sonuç gösterilmedi'}}):route.fulfill({json:state.dagitim});
   if(path===`/crm/firsatlar/${f}/belgeler`){expect(body).toMatchObject({belgeId:b,beklenenFirsatZamani:date,beklenenBelgeZamani:date});expect(body).not.toHaveProperty("tenantId");expect(body.istekAnahtari).toMatch(/^[a-f0-9-]{36}$/);if(conflict)return route.fulfill({status:409,json:{message:"Teklif değişti; listeyi yenileyin"}});state.baglar=[{id:linkId,belgeId:b,surum:1,gerekce:body.gerekce,cozulduAt:null,cozmeGerekcesi:null,belge:doc}];return route.fulfill({status:201,json:{id:linkId,surum:1,cozulduAt:null}});}
    expect(path).toBe(`/crm/firsatlar/${f}/belgeler/${linkId}/coz`);expect(body.beklenenSurum).toBe(1);state.baglar[0]={...state.baglar[0],surum:2,cozulduAt:date,cozmeGerekcesi:body.gerekce};return route.fulfill({status:201,json:{id:linkId,surum:2,cozulduAt:date}});
   }
-  if(path.endsWith('/kapama-paylari'))return route.fulfill({json:state.dagitim});
+  if(path.endsWith('/kapama-paylari'))return state.kapamaOkumaHatasi?route.fulfill({status:409,json:{message:'Kapama dağıtımı 5000 kayıt sınırını aşıyor; eksik sonuç gösterilmedi'}}):route.fulfill({json:state.dagitim});
+  if(path.endsWith('/iade-paylari'))return state.iadeOkumaHatasi?route.fulfill({status:409,json:{message:'Ticari iade dağıtımı 5000 kayıt sınırını aşıyor'}}):route.fulfill({json:state.iadeDagitim});
   if(path===`/crm/firsatlar/${f}/belgeler`)return route.fulfill({json:{mod:state.mod,firsat,baglar:state.baglar,zincir:state.zincir,ticariSonuc:state.ticariSonuc}});
   if(path===`/crm/firsatlar/${f}/belgeler/adaylar`)return route.fulfill({json:{firsat,kayitlar:[doc,{...doc,id:"44444444-4444-4444-8444-444444444444",no:"TEK-BAGLI",bagli:true}],sonrakiImlec:null}});
   if(path==="/auth/ben")return route.fulfill({json:{rol:state.rol,userId:linkId,tenantId:f}});
@@ -125,4 +139,84 @@ test('satış dağıtımı mobilde salt okur; geçersiz kaynak ve geçmiş gör�
  await expect(region.getByRole('button',{name:'Kapama payını kaydet',exact:true})).toHaveCount(0);await region.getByText('Dağıtım geçmişi',{exact:true}).click();await expect(region.getByText(/Geçmiş \/ geçersiz kaynak/)).toBeVisible();
  expect(state.yazilar).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  if(process.env.F03_SCREENSHOT_DIR)await region.screenshot({path:process.env.F03_SCREENSHOT_DIR+'/acik-kapama-mobil.png'});
+});
+test('karma kapama özeti eksik dağıtımı ve iade payını açıklar; geçersiz kaynakta tutar gizlenir',async({page})=>{
+ const {state,region}=await dagitimKur(page,'satis');
+ state.dagitim.ozet={durum:'kismi',kasaBanka:'30.02',iade:'20.05',diger:'0.00',dagitilmamisPay:'50.03'};
+ await region.getByRole('button',{name:'Dağıtımı yenile',exact:true}).click();
+ const ozet=region.getByRole('region',{name:'Kapama dağıtım özeti',exact:true});
+ await expect(ozet.getByText(/Dağıtım eksik/)).toBeVisible();
+ await expect(ozet.getByText('₺30,02',{exact:true})).toBeVisible();
+ await expect(ozet.getByText('₺20,05',{exact:true})).toBeVisible();
+ await expect(ozet.getByText('₺50,03',{exact:true})).toBeVisible();
+ await expect(ozet.getByText(/gerçek alacak bakiyesi değildir/)).toBeVisible();
+ state.dagitim.ozet={durum:'dagitilamadi',kasaBanka:null,iade:null,diger:null,dagitilmamisPay:null};
+ await region.getByRole('button',{name:'Dağıtımı yenile',exact:true}).click();
+ await expect(ozet.getByText(/özeti hesaplanamadı/)).toBeVisible();
+ await expect(ozet.locator('dd')).toHaveCount(0);expect(state.yazilar).toEqual([]);
+});
+test('referanslı iade sonrası satış KDV hariç ve kapamadan ayrı gösterilir; belirsiz sonuç sıfır değildir',async({page})=>{
+ const state=await kur(page);
+ const base={id:'66666666-6666-4666-8666-666666666666',no:'FAT-NET',durum:'kesin',dovizCinsi:'TRY',faturaPayi:'120.12',payKapsami:'tam',kapama:{durum:'tam',kasaBanka:'0.00',iade:'0.00',diger:'0.00',kalan:'120.12'}};
+ state.ticariSonuc=[{...base,netSatis:{durum:'referans_kapsaminda',neden:null,satisMatrahi:'100.10',iadeMatrahi:'20.05',netMatrah:'80.05'}}];
+ await page.getByRole('button',{name:'Bağları yenile',exact:true}).click();
+ const region=page.getByRole('region',{name:'Referanslı iade sonrası satış',exact:true});
+ await expect(region.getByText('Referanslı iade sonrası satış (KDV hariç)',{exact:true})).toBeVisible();
+ await expect(region.getByText('₺80,05',{exact:true})).toBeVisible();
+ await expect(region.getByText(/Referanssız iadeler ölçüm dışındadır/)).toBeVisible();
+ state.ticariSonuc=[{...base,netSatis:{durum:'dagitilamadi',neden:'tam_fatura_sahipligi_yok',satisMatrahi:null,iadeMatrahi:null,netMatrah:null}}];
+ await page.getByRole('button',{name:'Bağları yenile',exact:true}).click();
+ await expect(region.getByText(/Satış\/iade sonucu dağıtılamadı/)).toBeVisible();
+ await expect(region.locator('dd')).toHaveCount(0);expect(state.yazilar).toEqual([]);
+});
+async function ticariIadeKur(page:Page,rol='muhasebe'){
+ const state=await kur(page);state.rol=rol;
+ const invoice='66666666-6666-4666-8666-666666666666',iade='99999999-9999-4999-8999-999999999999';
+ state.ticariSonuc=[{id:invoice,no:'FAT-KARMA',durum:'kesin',dovizCinsi:'TRY',faturaPayi:'120.12',payKapsami:'kismi',kapama:{durum:'dagitilamadi',kasaBanka:null,iade:null,diger:null,kalan:null}}];
+ state.iadeDagitim={mod:'pilot',fatura:{id:invoice,no:'FAT-KARMA',dovizCinsi:'TRY'},sonuc:{durum:'eksik_veya_gecersiz',satisMatrahi:'100.10',belirtilenIadeMatrahi:'0.00',netMatrah:null},iadeler:[{id:iade,no:'IAD-001',durum:'kesin',matrah:'20.05',dagitilanMatrah:'0.00',kalanMatrah:'20.05',dagitimDurumu:'eksik',kaynakFaturalar:[{id:invoice,no:'FAT-KARMA'}],gecerli:true,kanitOzeti:'c'.repeat(64),surum:0,pay:null,azamiMatrah:'20.05',gecersizEskiPay:false}],gecmis:[]};
+ await page.getByRole('button',{name:'Bağları yenile',exact:true}).click();await page.getByRole('button',{name:'Ticari iade dağıtımını aç',exact:true}).click();
+ const region=page.getByRole('region',{name:'Ticari iade dağıtımı',exact:true});await expect(region.getByText('Dağıtım eksik veya kaynak geçersiz',{exact:true})).toBeVisible();return {state,region,iade};
+}
+test('muhasebe karma ticari iadeyi dağıtır; sonuç ve gerekçeli geçmiş görünür',async({page})=>{
+ const {state,region,iade}=await ticariIadeKur(page);await region.getByLabel('Ticari iade',{exact:true}).selectOption(iade);
+ await region.getByLabel('İade matrah payı',{exact:true}).fill('20,05');await region.getByLabel('Ticari iade gerekçesi',{exact:true}).fill('İade teslim dökümü');
+ await region.getByRole('button',{name:'Ticari iade payını kaydet',exact:true}).click();await expect(region.getByText('₺80,05',{exact:true})).toBeVisible();
+ await region.getByText('Ticari iade geçmişi',{exact:true}).click();await expect(region.getByText(/İade teslim dökümü/)).toBeVisible();expect(state.yazilar).toHaveLength(1);
+ expect(state.yazilar[0].body).toMatchObject({matrah:'20.05',iadeFaturaId:iade,beklenenSurum:0});
+});
+test('ticari iade çatışması taslağı ve tekrar anahtarını korur',async({page})=>{
+ const {state,region,iade}=await ticariIadeKur(page);state.iadeHatasi=true;await region.getByLabel('Ticari iade',{exact:true}).selectOption(iade);
+ await region.getByLabel('İade matrah payı',{exact:true}).fill('20.05');await region.getByLabel('Ticari iade gerekçesi',{exact:true}).fill('İade satırları');
+ const button=region.getByRole('button',{name:'Ticari iade payını kaydet',exact:true});await button.click();await expect(region.getByText(/Satış, iade veya fırsat bağı değişti/)).toBeVisible();
+ await expect(region.getByLabel('İade matrah payı',{exact:true})).toHaveValue('20.05');await button.click();await expect.poll(()=>state.yazilar.length).toBe(2);expect(state.yazilar[0].body.istekAnahtari).toBe(state.yazilar[1].body.istekAnahtari);
+});
+test('mobil satış ticari dağıtımı salt okur; geçersiz kaynakta sonuç gösterilmez',async({page})=>{
+ await page.setViewportSize({width:390,height:844});const {state,region}=await ticariIadeKur(page,'satis');
+ state.iadeDagitim.iadeler[0]={...state.iadeDagitim.iadeler[0],gecerli:false,gecersizEskiPay:true};await region.getByRole('button',{name:'Ticari iadeleri yenile',exact:true}).click();
+ await expect(region.getByText(/Önceki pay geçersiz/)).toBeVisible();await expect(region.getByRole('button',{name:'Ticari iade payını kaydet',exact:true})).toHaveCount(0);
+ expect(state.yazilar).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('iade hacim hatası boş veya kısmi dağıtım olarak gösterilmez ve yazma formu açılmaz',async({page})=>{
+ const state=await kur(page);state.rol='muhasebe';state.iadeOkumaHatasi=true;
+ state.ticariSonuc=[{id:'66666666-6666-4666-8666-666666666666',no:'FAT-HACIM',durum:'kesin',dovizCinsi:'TRY',faturaPayi:'120.12',payKapsami:'kismi',kapama:{durum:'dagitilamadi',kasaBanka:null,iade:null,diger:null,kalan:null}}];
+ await page.getByRole('button',{name:'Bağları yenile',exact:true}).click();
+ await page.getByRole('button',{name:'Ticari iade dağıtımını aç',exact:true}).click();
+ const region=page.getByRole('region',{name:'Ticari iade dağıtımı',exact:true});
+ await expect(region.getByText('Ticari iade dağıtımı 5000 kayıt sınırını aşıyor',{exact:true})).toBeVisible();
+ await expect(region.getByText('Bu faturaya referans veren iade yok.',{exact:true})).toHaveCount(0);
+ await expect(region.getByLabel('Ticari iade',{exact:true})).toHaveCount(0);
+ await expect(region.getByRole('button',{name:'Ticari iade payını kaydet',exact:true})).toHaveCount(0);
+ expect(state.yazilar).toEqual([]);
+});
+
+test('kapama hacim hatası boş liste veya tutar olarak gösterilmez ve yazma formu açılmaz',async({page})=>{
+ const state=await kur(page);state.rol='muhasebe';state.kapamaOkumaHatasi=true;
+ state.ticariSonuc=[{id:'66666666-6666-4666-8666-666666666666',no:'FAT-KAPAMA-HACIM',durum:'kesin',dovizCinsi:'TRY',faturaPayi:'120.12',payKapsami:'kismi',kapama:{durum:'dagitilamadi',kasaBanka:null,iade:null,diger:null,kalan:null}}];
+ await page.getByRole('button',{name:'Bağları yenile',exact:true}).click();await page.getByRole('button',{name:'Kapama dağıtımını aç',exact:true}).click();
+ const region=page.getByRole('region',{name:'Açık kapama dağıtımı',exact:true});
+ await expect(region.getByText('Kapama dağıtımı 5000 kayıt sınırını aşıyor; eksik sonuç gösterilmedi',{exact:true})).toBeVisible();
+ await expect(region.getByText('Güncel kapama yok; varsa önceki paylar geçmişte korunur.',{exact:true})).toHaveCount(0);
+ await expect(region.getByLabel('Dağıtılacak kapama',{exact:true})).toHaveCount(0);await expect(region.getByRole('button',{name:'Kapama payını kaydet',exact:true})).toHaveCount(0);
+ expect(state.yazilar).toEqual([]);
 });

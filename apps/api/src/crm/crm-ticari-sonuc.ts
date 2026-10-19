@@ -1,18 +1,20 @@
 import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { belirsizNetSatis, referansliIadeleriOku } from "./crm-net-satis";
 
 const D = (n: Prisma.Decimal | string | number) => new Prisma.Decimal(n);
 function sinir(rows: unknown[]) { if (rows.length > 5000) throw new ConflictException("Ticari sonuç 5000 satır sınırını aşıyor; eksik sonuç gösterilmedi"); }
 
 /** Başlık, stok veya tutar benzerliği kaynak satır kanıtının yerine geçmez. */
-export async function ticariSonucuOku(tx: Prisma.TransactionClient, tenantId: string, cariId: string, teklifIds: string[], belgeIds: string[], faturaIds: string[]) {
+export async function ticariSonucuOku(tx: Prisma.TransactionClient, tenantId: string, cariId: string, firsatId: string, teklifIds: string[], belgeIds: string[], faturaIds: string[]) {
  if (!faturaIds.length) return [];
  const docs = await tx.belge.findMany({ where: { tenantId, cariId, yon: "satis", id: { in: [...teklifIds, ...belgeIds] } }, select: { id:true, tur:true, durum:true, kaynakBelgeId:true, faturaId:true, dovizCinsi:true } });
  const rows = await tx.belgeSatir.findMany({ where: { tenantId, belgeId: { in: docs.map(d=>d.id) } }, select: { id:true, belgeId:true, stokId:true, kaynakSatirId:true }, take:5001 });sinir(rows);
- const invoices = await tx.fatura.findMany({ where: { tenantId, cariId, tip:"satis", id:{in:faturaIds} }, select:{id:true,no:true,durum:true,dovizCinsi:true,genelToplam:true}, orderBy:{id:"asc"} });
- const invoiceRows = await tx.faturaSatir.findMany({ where:{tenantId,faturaId:{in:invoices.map(f=>f.id)}}, select:{id:true,faturaId:true,kaynakBelgeSatirId:true,stokId:true,toplamTutar:true},take:5001 });sinir(invoiceRows);
+ const invoices = await tx.fatura.findMany({ where: { tenantId, cariId, tip:"satis", id:{in:faturaIds} }, select:{id:true,no:true,durum:true,dovizCinsi:true,genelToplam:true,toplamMatrah:true}, orderBy:{id:"asc"} });
+ const invoiceRows = await tx.faturaSatir.findMany({ where:{tenantId,faturaId:{in:invoices.map(f=>f.id)}}, select:{id:true,faturaId:true,kaynakBelgeSatirId:true,stokId:true,toplamTutar:true,matrah:true},take:5001 });sinir(invoiceRows);
  const closings = await tx.faturaKapama.findMany({where:{tenantId,cariId,faturaId:{in:invoices.filter(f=>f.durum==="kesin").map(f=>f.id)}},select:{faturaId:true,tutar:true,kasaBankaHareketId:true,iadeFaturaId:true,krediKartiHareketId:true,cekSenetId:true,
   kasaBankaHareket:{select:{tenantId:true,cariId:true,tip:true}},iadeFatura:{select:{tenantId:true,cariId:true,tip:true,durum:true}},krediKartiHareket:{select:{tenantId:true,cariId:true}},cekSenet:{select:{tenantId:true,cariId:true}}},take:5001});sinir(closings);
+ const netSatisOku=await referansliIadeleriOku(tx,tenantId,cariId,invoices.map(f=>f.id));
  const docMap=new Map(docs.map(d=>[d.id,d])),rowMap=new Map(rows.map(r=>[r.id,r])),roots=new Set(teklifIds);
  const kanitli = (sourceId:string,invoiceId:string,stokId:string,dovizCinsi:string) => {
   let row=rowMap.get(sourceId);const source=row && docMap.get(row.belgeId);
@@ -46,7 +48,10 @@ export async function ticariSonucuOku(tx: Prisma.TransactionClient, tenantId: st
   }
   const kalan=f.genelToplam.sub(kasa).sub(iade).sub(diger);
   const kapamaTam=f.durum==="kesin" && complete && valid && !kalan.isNegative();
+  const matrahTutarli=lines.every(r=>!r.matrah.isNegative()) && lines.reduce((v,r)=>v.add(r.matrah),D(0)).equals(f.toplamMatrah);
+  const netSatis=f.durum!=="kesin"?belirsizNetSatis("kesin_degil"):!complete?belirsizNetSatis("tam_fatura_sahipligi_yok"):!matrahTutarli?belirsizNetSatis("satis_matrahi_tutarsiz"):netSatisOku(f.id,f.dovizCinsi,f.toplamMatrah,closings.filter(k=>k.faturaId===f.id).flatMap(k=>k.iadeFaturaId?[k.iadeFaturaId]:[]),firsatId);
   return {id:f.id,no:f.no,durum:f.durum,dovizCinsi:f.dovizCinsi,
+   netSatis,
    faturaPayi:f.durum==="kesin" && matched.length ? pay.toFixed(2) : null,
    payKapsami:f.durum!=="kesin" ? "kesin_degil" : !matched.length ? "dagitilamadi" : complete ? "tam" : "kismi",
    payDisiVeyaBelirsizSatirSayisi:lines.length-matched.length,

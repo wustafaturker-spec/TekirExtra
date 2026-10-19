@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { randomUUID } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { beforeAll, afterAll, expect, it } from "vitest";
 import type { Rol } from "@tekirextra/shared";
 import { PrismaService } from "../src/core/prisma.service";
@@ -157,6 +157,50 @@ async function kanitliFatura(f:F) {
  return {quoteId:quote.id,orderId:order.belgeId!,invoiceId:invoice.faturaId!};
 }
 const sonuc=(f:F,id:string)=>ctx(f,async()=>{const l=await s.listele(f.firsatId);return l.ticariSonuc.find(r=>r.id===id)!;});
+async function referansliIade(f:F,invoiceId:string,matrah='20.05',kdv='4.01'){
+ return tx(f,async t=>{
+  const source=await t.faturaSatir.findFirstOrThrow({where:{faturaId:invoiceId}});
+  const total=new Prisma.Decimal(matrah).add(kdv).toFixed(2);
+  const iade=await t.fatura.create({data:{tenantId:f.tenantId,cariId:f.cariId,...totals,toplamMatrah:matrah,toplamKdv:kdv,toplamNetKdv:kdv,genelToplam:total,toplamTevkifat:'0',tip:'satis_iade',durum:'kesin',tarih:new Date('2026-10-18'),dovizCinsi:'TRY'}});
+  await t.faturaSatir.create({data:{tenantId:f.tenantId,faturaId:iade.id,stokId:source.stokId,miktar:'1',birimFiyat:matrah,matrah,toplamTutar:total,kdvTutari:kdv,netKdvTutari:kdv}});
+  await t.faturaIadeReferansi.create({data:{tenantId:f.tenantId,faturaId:iade.id,kaynakFaturaId:invoiceId,sira:1,belgeNo:'SAT2026000000001',tarih:new Date('2026-10-17')}});
+  return iade;
+ });
+}
+it('tek kaynaklı ticari iade kapama gerektirmeden KDV hariç sonucu azaltır; iptal ve taslak sonucu geri getirir',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f);
+ expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({durum:'referans_kapsaminda',satisMatrahi:'100.10',iadeMatrahi:'0.00',netMatrah:'100.10'});
+ const i=await referansliIade(f,k.invoiceId),before=await resources(f);
+ expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({durum:'referans_kapsaminda',satisMatrahi:'100.10',iadeMatrahi:'20.05',netMatrah:'80.05'});
+ expect((await sonuc(f,k.invoiceId)).kapama.iade).toBe('0.00');expect(await resources(f)).toBe(before);
+ for(const durum of ['iptal','taslak'] as const){await tx(f,t=>t.fatura.update({where:{id:i.id},data:{durum}}));expect((await sonuc(f,k.invoiceId)).netSatis.netMatrah).toBe('100.10');}
+});
+it('çok kaynaklı iade, farklı döviz ve tutarsız iade satırında net satış bilinmez kalır',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f),second=await kanitliFatura(f),i=await referansliIade(f,k.invoiceId);
+ const ref=await tx(f,t=>t.faturaIadeReferansi.create({data:{tenantId:f.tenantId,faturaId:i.id,kaynakFaturaId:second.invoiceId,sira:2,belgeNo:'SAT2026000000002',tarih:new Date('2026-10-17')}}));
+ expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({durum:'dagitilamadi',netMatrah:null});
+ await tx(f,t=>t.faturaIadeReferansi.delete({where:{id:ref.id}}));
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{dovizCinsi:'USD'}}));expect((await sonuc(f,k.invoiceId)).netSatis.netMatrah).toBeNull();
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{dovizCinsi:'TRY'}}));
+ await tx(f,t=>t.faturaSatir.updateMany({where:{faturaId:i.id},data:{matrah:'19.99'}}));expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({neden:'iade_tutarlari_tutarsiz',netMatrah:null});
+});
+it('karma sahiplik, referanssız iade kapaması ve satıştan fazla iade net tutara dönüşmez',async()=>{
+ const {f,invoiceId}=await acikDagitim();expect((await sonuc(f,invoiceId)).netSatis).toMatchObject({neden:'tam_fatura_sahipligi_yok',netMatrah:null});
+ const own=await fixture(),k=await kanitliFatura(own),i=await referansliIade(own,k.invoiceId);
+ await tx(own,t=>t.faturaIadeReferansi.deleteMany({where:{faturaId:i.id}}));
+ await tx(own,t=>t.faturaKapama.create({data:{tenantId:own.tenantId,cariId:own.cariId,faturaId:k.invoiceId,iadeFaturaId:i.id,tutar:'5'}}));
+ expect((await sonuc(own,k.invoiceId)).netSatis).toMatchObject({neden:'kapama_iadesinin_referansi_dogrulanamadi',netMatrah:null});
+ await tx(own,t=>t.faturaKapama.deleteMany({where:{faturaId:k.invoiceId}}));await referansliIade(own,k.invoiceId,'101.00','0');
+ expect((await sonuc(own,k.invoiceId)).netSatis).toMatchObject({neden:'iade_satis_matrahini_asiyor',netMatrah:null});
+});
+it('birden fazla iade tam ondalıkla toplanır; başka cari ve tutarsız satış matrahı gizlenir',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f);await referansliIade(f,k.invoiceId,'0.01','0');const i=await referansliIade(f,k.invoiceId,'0.02','0');
+ expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({iadeMatrahi:'0.03',netMatrah:'100.07'});
+ const c=await tx(f,t=>t.cariHesap.create({data:{tenantId:f.tenantId,kod:'IADE-BASKA',unvan:'Başka cari',tip:'musteri'}}));
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{cariId:c.id}}));expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({neden:'iade_referansi_belirsiz',netMatrah:null});
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{cariId:f.cariId}}));
+ await tx(f,t=>t.fatura.update({where:{id:k.invoiceId},data:{toplamMatrah:'99.99'}}));expect((await sonuc(f,k.invoiceId)).netSatis).toMatchObject({neden:'satis_matrahi_tutarsiz',netMatrah:null});
+});
 it('gerçek belge dönüşümü satır kaynağını saklar; kesin fatura payı ondalık olarak hesaplanır',async()=>{
  const f=await fixture(),k=await kanitliFatura(f),before=await resources(f);
  const row=await tx(f,t=>t.faturaSatir.findFirstOrThrow({where:{faturaId:k.invoiceId}}));expect(row.kaynakBelgeSatirId).not.toBeNull();
@@ -216,7 +260,7 @@ async function acikDagitim(){
  const f=await fixture(),first=await kanitliFatura(f);
  const opp=await tx(f,t=>t.crmFirsat.create({data:{tenantId:f.tenantId,cariId:f.cariId,baslik:'Diğer fırsat',tahminiTutar:'800'}}));
  const other={...f,firsatId:opp.id,firsatZamani:opp.updatedAt.toISOString()},second=await kanitliFatura(other);
- await tx(f,async t=>{await t.faturaSatir.updateMany({where:{faturaId:second.invoiceId},data:{faturaId:first.invoiceId}});await t.belge.update({where:{id:second.orderId},data:{faturaId:first.invoiceId}});await t.fatura.update({where:{id:first.invoiceId},data:{genelToplam:'200.20'}});await t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}});});
+ await tx(f,async t=>{await t.faturaSatir.updateMany({where:{faturaId:second.invoiceId},data:{faturaId:first.invoiceId}});await t.belge.update({where:{id:second.orderId},data:{faturaId:first.invoiceId}});await t.fatura.update({where:{id:first.invoiceId},data:{genelToplam:'200.20',toplamMatrah:'200.20'}});await t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}});});
  const hareket=await tx(f,t=>t.kasaBankaHareket.create({data:{tenantId:f.tenantId,cariId:f.cariId,tip:'tahsilat',tutar:'150.15',tutarTry:'150.15',tarih:new Date('2026-10-17')}}));
  const cap=await tx(f,t=>t.faturaKapama.create({data:{tenantId:f.tenantId,cariId:f.cariId,faturaId:first.invoiceId,kasaBankaHareketId:hareket.id,tutar:'150.15'}}));
  return {f,other,invoiceId:first.invoiceId,cap,quoteId:first.quoteId};
@@ -279,5 +323,190 @@ it('karma faturanın iade kapaması açık pay alır; iade iptal edilince dağı
  const d=await payOku(f,invoiceId),k=d.kapamalar.find(k=>k.id===cap.id)!;
  await payYaz(f,invoiceId,{kapamaId:k.id,istekAnahtari:randomUUID(),gerekce:'İadenin fırsata ait kapaması',beklenenSurum:k.surum,kanitOzeti:d.kanitOzeti,kaynakOzeti:k.kaynakOzeti,tutar:'20.05'});
  expect((await payOku(f,invoiceId)).kapamalar.find(k=>k.id===cap.id)).toMatchObject({tur:'iade',pay:'20.05'});
+ expect((await payOku(f,invoiceId)).ozet).toEqual({durum:'kismi',kasaBanka:'0.00',iade:'20.05',diger:'0.00',dagitilmamisPay:'80.05'});
  await tx(f,t=>t.fatura.update({where:{id:iade.id},data:{durum:'iptal'}}));expect((await payOku(f,invoiceId)).kapamalar.find(k=>k.id===cap.id)).toMatchObject({pay:null,gecersizEskiPay:true,gecerli:false});
+ expect((await payOku(f,invoiceId)).ozet).toEqual({durum:'dagitilamadi',kasaBanka:null,iade:null,diger:null,dagitilmamisPay:null});
 });
+it('karma kapama özeti iki fırsatın dağıtımını ayrı tutar; sıfır revizyonu özeti eksik yapar',async()=>{
+ const {f,other,invoiceId}=await acikDagitim(),before=await resources(f);
+ expect((await payOku(f,invoiceId)).ozet).toMatchObject({durum:'kismi',kasaBanka:'0.00',dagitilmamisPay:'100.10'});
+ await payYaz(f,invoiceId,await payGirdisi(f,invoiceId,'80.00'));
+ expect((await payOku(f,invoiceId)).ozet).toMatchObject({durum:'kismi',kasaBanka:'80.00',dagitilmamisPay:'20.10'});
+ await payYaz(other,invoiceId,await payGirdisi(other,invoiceId,'70.15'));
+ expect((await payOku(f,invoiceId)).ozet).toMatchObject({durum:'tam',kasaBanka:'80.00',dagitilmamisPay:'20.10'});
+ expect((await payOku(other,invoiceId)).ozet).toMatchObject({durum:'tam',kasaBanka:'70.15',dagitilmamisPay:'29.95'});
+ await payYaz(f,invoiceId,await payGirdisi(f,invoiceId,'0'));
+ expect((await payOku(f,invoiceId)).ozet).toMatchObject({durum:'kismi',kasaBanka:'0.00',dagitilmamisPay:'100.10'});
+ expect(await resources(f)).toBe(before);
+});
+
+const iadeOku=(f:F,id:string)=>ctx(f,()=>s.iadePaylari(f.firsatId,id));
+async function iadeGirdisi(f:F,id:string,iadeFaturaId:string,matrah:string){const d=await iadeOku(f,id),i=d.iadeler.find(i=>i.id===iadeFaturaId)!;return {iadeFaturaId,matrah,istekAnahtari:randomUUID(),gerekce:'İade edilen ürünlerin fırsat dağılımı',beklenenSurum:i.surum,kanitOzeti:i.kanitOzeti};}
+const iadeYaz=(f:F,id:string,g:Awaited<ReturnType<typeof iadeGirdisi>>,service=s)=>ctx(f,()=>service.iadePayiYaz(f.firsatId,id,g),'muhasebe');
+it('karma ticari iade iki fırsata açık dağıtılır; eksik sonuç bilinmez ve kapama defteri değişmez',async()=>{
+ const {f,other,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId,'50.05','10.01'),before=await resources(f);
+ expect((await iadeOku(f,invoiceId)).sonuc.netMatrah).toBeNull();
+ const g=await iadeGirdisi(f,invoiceId,i.id,'20.05'),r=await iadeYaz(f,invoiceId,g);expect(await iadeYaz(f,invoiceId,g)).toEqual(r);
+ expect((await iadeOku(f,invoiceId)).sonuc).toMatchObject({durum:'eksik_veya_gecersiz',belirtilenIadeMatrahi:'20.05',netMatrah:null});
+ await iadeYaz(other,invoiceId,await iadeGirdisi(other,invoiceId,i.id,'30.00'));
+ expect((await iadeOku(f,invoiceId)).sonuc).toEqual({durum:'tam',satisMatrahi:'100.10',belirtilenIadeMatrahi:'20.05',netMatrah:'80.05'});
+ expect((await iadeOku(other,invoiceId)).sonuc.netMatrah).toBe('70.10');expect(await resources(f)).toBe(before);
+ expect(await tx(f,t=>t.firsatIadePayi.count())).toBe(2);expect(await tx(f,t=>t.auditLog.count({where:{islem:'firsat_iade_payi_belirtildi'}}))).toBe(2);
+ await expect(iadeYaz(f,invoiceId,{...g,matrah:'21'})).rejects.toMatchObject({status:409});
+});
+it('iki bağlantı aynı iade matrahını eşzamanlı aşamaz; tüm iadelerde fırsat satış sınırı korunur',async()=>{
+ const {f,other,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId,'50','0');
+ const g=await iadeGirdisi(f,invoiceId,i.id,'40'),h=await iadeGirdisi(other,invoiceId,i.id,'40');
+ const r=await Promise.allSettled([iadeYaz(f,invoiceId,g),iadeYaz(other,invoiceId,h,s2)]);expect(r.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((r.find(r=>r.status==='rejected') as PromiseRejectedResult).reason.status).toBe(409);
+ const winner=r[0].status==='fulfilled'?f:other;
+ const second=await referansliIade(f,invoiceId,'80','0');
+ const d=await iadeOku(winner,invoiceId);expect(d.iadeler.find(r=>r.id===second.id)!.azamiMatrah).toBe('60.10');
+ await expect(iadeYaz(winner,invoiceId,await iadeGirdisi(winner,invoiceId,second.id,'61'))).rejects.toMatchObject({status:409});
+});
+it('sıfır sürümü payı kaldırır; eski sürüm reddedilir ve kaynak değişirse pay geçersizleşir',async()=>{
+ const {f,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId,'20','0'),g=await iadeGirdisi(f,invoiceId,i.id,'20');await iadeYaz(f,invoiceId,g);
+ await expect(iadeYaz(f,invoiceId,{...g,istekAnahtari:randomUUID()})).rejects.toMatchObject({status:409});
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'0'));expect((await iadeOku(f,invoiceId)).iadeler[0]).toMatchObject({surum:2,pay:'0.00'});
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'10'));const stale=await iadeGirdisi(f,invoiceId,i.id,'5');
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{no:'IADE-DEGISTI'}}));expect((await iadeOku(f,invoiceId)).iadeler[0]).toMatchObject({pay:null,gecersizEskiPay:true});
+ await expect(iadeYaz(f,invoiceId,stale)).rejects.toMatchObject({status:409});expect((await iadeOku(f,invoiceId)).gecmis).toHaveLength(3);
+});
+it('çok kaynak, döviz ve iptal ticari dağıtımı engeller; iptal iade satış sonucundan çıkar',async()=>{
+ const {f,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId,'20','0');
+ const ref=await tx(f,t=>t.faturaIadeReferansi.create({data:{tenantId:f.tenantId,faturaId:i.id,sira:2,belgeNo:'HAR2026000000001',tarih:new Date('2026-10-18')}}));
+ expect((await iadeOku(f,invoiceId)).iadeler[0].gecerli).toBe(false);await tx(f,t=>t.faturaIadeReferansi.delete({where:{id:ref.id}}));
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{dovizCinsi:'USD'}}));expect((await iadeOku(f,invoiceId)).iadeler[0].gecerli).toBe(false);
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{dovizCinsi:'TRY'}}));await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'20'));
+ await tx(f,t=>t.fatura.update({where:{id:i.id},data:{durum:'iptal'}}));const d=await iadeOku(f,invoiceId);expect(d.iadeler[0]).toMatchObject({gecerli:false,pay:null});expect(d.sonuc.netMatrah).toBe('100.10');
+});
+it('ticari dağıtımda satış yazamaz; kapalı/salt okunur mod, pasif kullanıcı ve yabancı tenant engellenir',async()=>{
+ const {f,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId),g=await iadeGirdisi(f,invoiceId,i.id,'10'),foreign=await fixture();
+ await expect(ctx(f,()=>s.iadePayiYaz(f.firsatId,invoiceId,g))).rejects.toMatchObject({status:403});await expect(iadeOku(foreign,invoiceId)).rejects.toMatchObject({status:404});
+ for(const mod of ['salt_okunur','kapali']){await tx(f,t=>t.modulAyar.update({where:{tenantId_modul:{tenantId:f.tenantId,modul:'crm_belge_baglari'}},data:{ayarlar:{surum:1,mod}}}));await expect(iadeYaz(f,invoiceId,g)).rejects.toMatchObject({status:403});}
+ await tx(f,t=>t.modulAyar.update({where:{tenantId_modul:{tenantId:f.tenantId,modul:'crm_belge_baglari'}},data:{ayarlar:{surum:1,mod:'pilot'}}}));await tx(f,t=>t.user.update({where:{id:f.userId},data:{aktif:false}}));await expect(iadeYaz(f,invoiceId,g)).rejects.toMatchObject({status:403});
+});
+it('ticari iade geçmişi değişmez; RLS, bileşik FK ve audit rollback uygulanır',async()=>{
+ const {f,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId),g=await iadeGirdisi(f,invoiceId,i.id,'10');
+ const adapter={tenantIslem:(tenantId:string,work:(t:Prisma.TransactionClient)=>Promise<unknown>)=>a.tenantIslem(tenantId,t=>work(new Proxy(t,{get(target,key){return key==='auditLog'?{create:async()=>{throw Error('İade audit hatası');}}:Reflect.get(target,key);}})))};
+ await expect(iadeYaz(f,invoiceId,g,new CrmBelgeService(adapter as unknown as PrismaService,belgeler(a)))).rejects.toThrow('İade audit hatası');expect(await tx(f,t=>t.firsatIadePayi.count())).toBe(0);
+ const r=await iadeYaz(f,invoiceId,g),foreign=await fixture(),foreignInvoice=await kanitliFatura(foreign);expect(await tx(foreign,t=>t.firsatIadePayi.findMany({where:{id:r.id}}))).toEqual([]);
+ await expect(tx(f,t=>t.firsatIadePayi.update({where:{id:r.id},data:{matrah:'11'}}))).rejects.toThrow();await expect(tx(f,t=>t.firsatIadePayi.delete({where:{id:r.id}}))).rejects.toThrow();
+ const row=await tx(f,t=>t.firsatIadePayi.findUniqueOrThrow({where:{id:r.id}}));const {id,createdAt,...data}=row;
+ await expect(tx(f,t=>t.firsatIadePayi.create({data:{...data,iadeFaturaId:foreignInvoice.invoiceId,surum:2,istekAnahtari:randomUUID()}}))).rejects.toThrow();
+ const [rls]=await a.$queryRaw<{relrowsecurity:boolean;relforcerowsecurity:boolean}[]>`SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname='firsat_iade_paylari'`;expect(rls).toEqual({relrowsecurity:true,relforcerowsecurity:true});
+ await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'satis'}}));await expect(tx(f,t=>t.firsatIadePayi.create({data:{...data,surum:2,istekAnahtari:randomUUID()}}))).rejects.toThrow();
+});
+it('fırsat bağı çözülünce ticari iade geçmişi kaybolmaz ve güncel net sonuç hesaplanmaz',async()=>{
+ const {f,invoiceId,quoteId}=await acikDagitim(),i=await referansliIade(f,invoiceId);await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'10'));
+ await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'yonetici'}}));const link=await tx(f,t=>t.firsatBelgeBagi.findFirstOrThrow({where:{belgeId:quoteId,cozulduAt:null}}));
+ await ctx(f,()=>s.coz(f.firsatId,link.id,closeBody()),'yonetici');const d=await iadeOku(f,invoiceId);expect(d.sonuc.netMatrah).toBeNull();expect(d.gecmis[0].gecerli).toBe(false);
+ expect((await ctx(f,()=>s.listele(f.firsatId))).payFaturaGecmisi).toContainEqual({id:invoiceId,no:null});
+});
+it('iadenin kaynak faturası düzeltilince eski pay geçersiz kalır ve yeni faturada sürüm oluşturulabilir',async()=>{
+ const {f,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId,'20','0');await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'10'));
+ await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'yonetici'}}));const next=await kanitliFatura(f);await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}}));
+ await tx(f,t=>t.faturaIadeReferansi.updateMany({where:{faturaId:i.id},data:{kaynakFaturaId:next.invoiceId}}));
+ const old=await iadeOku(f,invoiceId);expect(old.gecmis[0].gecerli).toBe(false);
+ await iadeYaz(f,next.invoiceId,await iadeGirdisi(f,next.invoiceId,i.id,'20'));expect((await iadeOku(f,next.invoiceId)).sonuc.netMatrah).toBe('80.10');
+});
+
+it('iade payı revizyonunda eski pay satış kapasitesine ikinci kez eklenmez',async()=>{
+ const {f,invoiceId}=await acikDagitim(),i=await referansliIade(f,invoiceId,'150','0');
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'80'));
+ const before=await resources(f),sayim=()=>tx(f,async t=>({pay:await t.firsatIadePayi.count(),audit:await t.auditLog.count({where:{islem:'firsat_iade_payi_belirtildi'}})})),once=await sayim();
+ expect((await iadeOku(f,invoiceId)).iadeler.find(x=>x.id===i.id)?.azamiMatrah).toBe('100.10');
+ await expect(iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'100.11'))).rejects.toMatchObject({status:409});
+ expect(await sayim()).toEqual(once);
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,i.id,'100.10'));
+ expect((await iadeOku(f,invoiceId)).iadeler.find(x=>x.id===i.id)).toMatchObject({pay:'100.10',surum:2,azamiMatrah:'100.10'});
+ expect(await resources(f)).toBe(before);
+});
+it('revize edilen iade payının sınırı diğer iadelerde kullanılan satış payını düşer',async()=>{
+ const {f,invoiceId}=await acikDagitim(),ilk=await referansliIade(f,invoiceId,'150','0'),diger=await referansliIade(f,invoiceId,'20','0');
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,ilk.id,'40'));
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,diger.id,'20'));
+ expect((await iadeOku(f,invoiceId)).iadeler.find(x=>x.id===ilk.id)?.azamiMatrah).toBe('80.10');
+ await expect(iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,ilk.id,'80.11'))).rejects.toMatchObject({status:409});
+ await iadeYaz(f,invoiceId,await iadeGirdisi(f,invoiceId,ilk.id,'80.10'));
+ const d=await iadeOku(f,invoiceId);expect(d.sonuc.belirtilenIadeMatrahi).toBe('100.10');
+ expect(d.iadeler.find(x=>x.id===diger.id)).toMatchObject({pay:'20.00',surum:1});
+});
+
+it('5000 gerçek iade okunur ve pay yazılır; 5001 kayıtta okuma/yazma 409 ile bütün olarak reddedilir',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f),ids=Array.from({length:5000},()=>randomUUID());
+ await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}}));
+ await ctx(f,()=>a.tenantIslem(f.tenantId,async t=>{
+  const source=await t.faturaSatir.findFirstOrThrow({where:{faturaId:k.invoiceId}});
+  for(let n=0;n<ids.length;n+=500){const batch=ids.slice(n,n+500);
+   await t.fatura.createMany({data:batch.map(id=>({id,tenantId:f.tenantId,cariId:f.cariId,...totals,toplamBrut:'0.01',toplamMatrah:'0.01',genelToplam:'0.01',toplamTevkifat:'0',tip:'satis_iade' as const,durum:'kesin',tarih:new Date('2026-10-18'),dovizCinsi:'TRY' as const}))});
+   await t.faturaSatir.createMany({data:batch.map(faturaId=>({tenantId:f.tenantId,faturaId,stokId:source.stokId,miktar:'1',birimFiyat:'0.01',matrah:'0.01',toplamTutar:'0.01',kdvOrani:'0',kdvTutari:'0',netKdvTutari:'0'}))});
+   await t.faturaIadeReferansi.createMany({data:batch.map(faturaId=>({tenantId:f.tenantId,faturaId,kaynakFaturaId:k.invoiceId,sira:1,belgeNo:'SAT2026000000001',tarih:new Date('2026-10-17')}))});
+  }
+ },{timeout:30000}));
+ const view=await iadeOku(f,k.invoiceId);expect(view.iadeler).toHaveLength(5000);expect(view.iadeler.every(i=>i.gecerli)).toBe(true);
+ const g=await iadeGirdisi(f,k.invoiceId,ids[0],'0.01');await iadeYaz(f,k.invoiceId,g);
+ const counts=()=>tx(f,async t=>({pay:await t.firsatIadePayi.count(),audit:await t.auditLog.count({where:{islem:'firsat_iade_payi_belirtildi'}})}));
+ const once=await counts();expect(once).toEqual({pay:1,audit:1});
+ await referansliIade(f,k.invoiceId,'0.01','0');
+ await expect(iadeOku(f,k.invoiceId)).rejects.toMatchObject({status:409});
+ await expect(iadeYaz(f,k.invoiceId,{...g,istekAnahtari:randomUUID(),beklenenSurum:1})).rejects.toMatchObject({status:409});
+ expect(await counts()).toEqual(once);
+},60000);
+
+it('5000 pay geçmişi okunur ama yeni pay yazılmaz; 5001 geçmişte kısmi okuma da yapılmaz',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f);await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}}));
+ const target=await referansliIade(f,k.invoiceId,'0.01','0'),oldIds:string[]=[];
+ for(let i=0;i<26;i++)oldIds.push((await referansliIade(f,k.invoiceId,'0.01','0')).id);
+ const row=(iadeFaturaId:string,surum:number)=>({tenantId:f.tenantId,cariId:f.cariId,firsatId:f.firsatId,faturaId:k.invoiceId,iadeFaturaId,surum,matrah:'0',kanitOzeti:'a'.repeat(64),istekAnahtari:randomUUID(),girdiOzeti:'b'.repeat(64),gerekce:'Hacim testi geçmiş kaydı',olusturanUserId:f.userId});
+ await ctx(f,()=>a.tenantIslem(f.tenantId,async t=>{
+  for(const id of oldIds.slice(0,25))await t.firsatIadePayi.createMany({data:Array.from({length:200},(_,n)=>row(id,n+1))});
+ },{timeout:30000}));
+ const view=await iadeOku(f,k.invoiceId);expect(view.gecmis).toHaveLength(5000);expect(view.iadeler.find(i=>i.id===target.id)?.surum).toBe(0);
+ const g=await iadeGirdisi(f,k.invoiceId,target.id,'0.01');
+ await expect(iadeYaz(f,k.invoiceId,g)).rejects.toMatchObject({status:409,message:'Ticari iade geçmişi sınırına ulaşıldı'});
+ expect(await tx(f,t=>t.firsatIadePayi.count())).toBe(5000);
+ expect(await tx(f,t=>t.auditLog.count({where:{islem:'firsat_iade_payi_belirtildi'}}))).toBe(0);
+ await tx(f,t=>t.firsatIadePayi.create({data:row(oldIds[25],1)}));
+ await expect(iadeOku(f,k.invoiceId)).rejects.toMatchObject({status:409});
+ await expect(iadeYaz(f,k.invoiceId,{...g,istekAnahtari:randomUUID()})).rejects.toMatchObject({status:409});
+ expect(await tx(f,t=>t.firsatIadePayi.count())).toBe(5001);
+ expect(await tx(f,t=>t.auditLog.count({where:{islem:'firsat_iade_payi_belirtildi'}}))).toBe(0);
+},60000);
+
+async function hacimKapamalari(f:F,invoiceId:string,adet:number){
+ const ids=Array.from({length:adet},()=>({id:randomUUID(),hareketId:randomUUID()}));
+ await ctx(f,()=>a.tenantIslem(f.tenantId,async t=>{
+  for(let n=0;n<ids.length;n+=500){const batch=ids.slice(n,n+500);
+   await t.kasaBankaHareket.createMany({data:batch.map(r=>({id:r.hareketId,tenantId:f.tenantId,cariId:f.cariId,tip:'tahsilat' as const,tutar:'0.01',tutarTry:'0.01',dovizCinsi:'TRY' as const,kur:'1',kaynakTur:'manuel',tarih:new Date('2026-10-17')}))});
+   await t.faturaKapama.createMany({data:batch.map(r=>({id:r.id,tenantId:f.tenantId,cariId:f.cariId,faturaId:invoiceId,kasaBankaHareketId:r.hareketId,tutar:'0.01'}))});
+  }
+ },{timeout:30000}));return ids;
+}
+it('5000 gerçek kapama tam okunur ve pay yazılır; 5001 kapamada okuma/yazma kısmi sonuç vermez',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f);await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}}));
+ await hacimKapamalari(f,k.invoiceId,5000);
+ const view=await payOku(f,k.invoiceId);expect(view.kapamalar).toHaveLength(5000);expect(view.kapamalar.every(k=>k.gecerli)).toBe(true);
+ const g=await payGirdisi(f,k.invoiceId,'0.01');await payYaz(f,k.invoiceId,g);
+ const count=()=>tx(f,async t=>({pay:await t.firsatKapamaPayi.count(),audit:await t.auditLog.count({where:{islem:'firsat_kapama_payi_belirtildi'}})}));
+ const before=await count();expect(before).toEqual({pay:1,audit:1});
+ await hacimKapamalari(f,k.invoiceId,1);
+ await expect(payOku(f,k.invoiceId)).rejects.toMatchObject({status:409});
+ await expect(payYaz(f,k.invoiceId,{...g,istekAnahtari:randomUUID(),beklenenSurum:1})).rejects.toMatchObject({status:409});
+ expect(await count()).toEqual(before);
+},60000);
+it('5000 kapama payı geçmişi okunur ama yazılmaz; 5001 geçmişte okuma da bütünüyle reddedilir',async()=>{
+ const f=await fixture(),k=await kanitliFatura(f);await tx(f,t=>t.user.update({where:{id:f.userId},data:{rol:'muhasebe'}}));
+ const caps=await hacimKapamalari(f,k.invoiceId,27);
+ const row=(kapamaId:string,surum:number)=>({tenantId:f.tenantId,cariId:f.cariId,firsatId:f.firsatId,faturaId:k.invoiceId,kapamaId,surum,tutar:'0',kanitOzeti:'a'.repeat(64),kaynakOzeti:'b'.repeat(64),istekAnahtari:randomUUID(),girdiOzeti:'c'.repeat(64),gerekce:'Kapama hacim testi geçmişi',olusturanUserId:f.userId});
+ await ctx(f,()=>a.tenantIslem(f.tenantId,async t=>{for(const c of caps.slice(1,26))await t.firsatKapamaPayi.createMany({data:Array.from({length:200},(_,i)=>row(c.id,i+1))});},{timeout:30000}));
+ const view=await payOku(f,k.invoiceId);expect(view.gecmis).toHaveLength(5000);
+ const cap=view.kapamalar.find(c=>c.id===caps[0].id)!;expect(cap.surum).toBe(0);
+ const g={kapamaId:cap.id,istekAnahtari:randomUUID(),gerekce:'Geçmiş sınırında yeni pay',beklenenSurum:0,kanitOzeti:view.kanitOzeti,kaynakOzeti:cap.kaynakOzeti,tutar:'0.01'};
+ await expect(payYaz(f,k.invoiceId,g)).rejects.toMatchObject({status:409,message:'Dağıtım geçmişi sınırına ulaşıldı'});
+ expect(await tx(f,t=>t.firsatKapamaPayi.count())).toBe(5000);
+ await tx(f,t=>t.firsatKapamaPayi.create({data:row(caps[26].id,1)}));
+ await expect(payOku(f,k.invoiceId)).rejects.toMatchObject({status:409});
+ await expect(payYaz(f,k.invoiceId,{...g,istekAnahtari:randomUUID()})).rejects.toMatchObject({status:409});
+ expect(await tx(f,t=>t.firsatKapamaPayi.count())).toBe(5001);
+ expect(await tx(f,t=>t.auditLog.count({where:{islem:'firsat_kapama_payi_belirtildi'}}))).toBe(0);
+},60000);

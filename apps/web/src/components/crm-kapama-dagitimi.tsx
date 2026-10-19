@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { Alert, Button, Input } from "@/components/ui";
 import { paraBicimle } from "@tekirextra/shared";
 interface Kapama {id:string;tur:string;tutar:string;kaynakOzeti:string;gecerli:boolean;surum:number;pay:string|null;azamiTutar:string;gecersizEskiPay:boolean}
-interface Gorunum {mod:string;fatura:{id:string;no:string|null;dovizCinsi:string};kanitOzeti:string;faturaPayi:string;dagitilanToplam:string;kapamalar:Kapama[];gecmis:{id:string;kapamaId:string;surum:number;tutar:string;gerekce:string;createdAt:string;gecerli:boolean}[]}
+interface Gorunum {ozet?:{durum:string;kasaBanka:string|null;iade:string|null;diger:string|null;dagitilmamisPay:string|null};mod:string;fatura:{id:string;no:string|null;dovizCinsi:string};kanitOzeti:string;faturaPayi:string;dagitilanToplam:string;kapamalar:Kapama[];gecmis:{id:string;kapamaId:string;surum:number;tutar:string;gerekce:string;createdAt:string;gecerli:boolean}[]}
 const turAdi=(tur:string)=>tur==='kasa_banka'?'Kasa/banka':tur==='iade'?'İade':'Diğer (çek/senet/kart)';
 export function CrmKapamaDagitimi({firsatId,faturaId}:{firsatId:string;faturaId:string}){
  const [data,setData]=useState<Gorunum|null>(null),[rol,setRol]=useState(''),[hata,setHata]=useState(''),[busy,setBusy]=useState(false);
@@ -22,6 +22,17 @@ export function CrmKapamaDagitimi({firsatId,faturaId}:{firsatId:string;faturaId:
   {data && <>
    <p>Bu fırsat için açıkça belirtilen kapama payı: <strong>{paraBicimle(data.dagitilanToplam, { dovizCinsi: data.fatura.dovizCinsi })}</strong></p>
    <p className="muted">Bu dağıtım muhasebe kapamasını değiştirmez ve otomatik tutarlara eklenmez. Kaynak veya fırsat bağı değişirse pay geçersizleşir. Sıfır girerek önceki payı kaldırabilirsiniz.</p>
+   {data.ozet && <section aria-label="Kapama dağıtım özeti">
+    <h4>Belirtilen payların özeti</h4>
+    {data.ozet.durum==='dagitilamadi'?<p>Kaynak veya paylar doğrulanamadığı için dağıtım özeti hesaplanamadı.</p>:<>
+     <p>{data.ozet.durum==='tam'?'Faturanın bütün kapamaları fırsatlara dağıtılmış.':'Dağıtım eksik; aşağıdaki tutarlar yalnız belirtilen güncel payları içerir.'}</p>
+     <dl><dt>Kasa/banka kapama payı</dt><dd>{paraBicimle(data.ozet.kasaBanka!,{dovizCinsi:data.fatura.dovizCinsi})}</dd>
+      <dt>İade kapama payı</dt><dd>{paraBicimle(data.ozet.iade!,{dovizCinsi:data.fatura.dovizCinsi})}</dd>
+      <dt>Diğer kapama payı</dt><dd>{paraBicimle(data.ozet.diger!,{dovizCinsi:data.fatura.dovizCinsi})}</dd>
+      <dt>Fatura payının dağıtılmamış kısmı</dt><dd>{paraBicimle(data.ozet.dagitilmamisPay!,{dovizCinsi:data.fatura.dovizCinsi})}</dd></dl>
+     <p className="muted">Dağıtılmamış kısım gerçek alacak bakiyesi değildir. İade kapama payı net satıştan indirim olarak kullanılamaz.</p>
+    </>}
+   </section>}
    {!data.kapamalar.length && <p>Güncel kapama yok; varsa önceki paylar geçmişte korunur.</p>}
    <ul>{data.kapamalar.map(k=><li key={k.id}>{turAdi(k.tur)} · Kapama {paraBicimle(k.tutar, { dovizCinsi: data.fatura.dovizCinsi })} · Fırsat payı {k.pay===null?'belirtilmedi':paraBicimle(k.pay, { dovizCinsi: data.fatura.dovizCinsi })}{k.gecersizEskiPay?' · Önceki payın kaynağı değişti':''}</li>)}</ul>
    {yazabilir ? <>

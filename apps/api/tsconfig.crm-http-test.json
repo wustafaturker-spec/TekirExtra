@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.crm-http.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "module": "ESNext", "lib": ["ES2023", "DOM"] },
+  "include": ["test/crm-http.kabul.test.ts", "vitest.crm-http.config.ts"]
+}

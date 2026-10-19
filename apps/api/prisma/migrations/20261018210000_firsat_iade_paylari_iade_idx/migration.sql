@@ -1,0 +1,1 @@
+CREATE INDEX firsat_iade_paylari_iade_idx ON firsat_iade_paylari(tenant_id,iade_fatura_id);

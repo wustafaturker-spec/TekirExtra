@@ -6,6 +6,10 @@ export class CrmBelgeController {
  constructor(private readonly service: CrmBelgeService) {}
  @Get() @Roller("yonetici", "satis", "muhasebe")
  listele(@Param("firsatId") id: string) { return this.service.listele(id); }
+ @Get("faturalar/:faturaId/iade-paylari") @Roller("yonetici","satis","muhasebe")
+ iadePaylari(@Param("firsatId") id:string,@Param("faturaId") faturaId:string){return this.service.iadePaylari(id,faturaId);}
+ @Post("faturalar/:faturaId/iade-paylari") @Roller("yonetici","muhasebe")
+ iadePayiYaz(@Param("firsatId") id:string,@Param("faturaId") faturaId:string,@Body() body:unknown){return this.service.iadePayiYaz(id,faturaId,body);}
  @Get("faturalar/:faturaId/kapama-paylari") @Roller("yonetici","satis","muhasebe")
  kapamaPaylari(@Param("firsatId") id:string,@Param("faturaId") faturaId:string){return this.service.kapamaPaylari(id,faturaId);}
  @Post("faturalar/:faturaId/kapama-paylari") @Roller("yonetici","muhasebe")
