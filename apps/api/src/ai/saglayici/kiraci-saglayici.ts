@@ -29,6 +29,27 @@ export function ayardanYapilandirma(ayar: Pick<TenantAiAyari, "saglayici" | "api
 /** AI-15: sayaçta görünen özellik. */
 export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim";
 
+/** Kısa, ucuz işler ekonomik modele gider; geri kalanlar güçlü modele. */
+export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim"];
+
+/**
+ * Özelliğin modeli: ekonomik işte ekonomik, diğerlerinde güçlü model; boş
+ * alan ana modele düşer (o da boşsa sağlayıcının varsayılanı). 2026-10-20'ye
+ * dek yalnız Ollama'da geçerliydi; EVREN gibi yavaş ana modeller için tüm
+ * sağlayıcılara açıldı.
+ */
+export function ozellikModeli(ayar: Pick<TenantAiAyari, "modelAdi" | "ekonomikModelAdi" | "gucluModelAdi">, ozellik: AiOzelligi): string | null {
+  return (EKONOMIK_OZELLIKLER.includes(ozellik) ? ayar.ekonomikModelAdi : ayar.gucluModelAdi)?.trim() || ayar.modelAdi || null;
+}
+
+/** Yurt dışı onayının kapsadığı modeller; birden çok model virgülle saklanır. */
+export const onayModelleri = (deger: string | null | undefined) => new Set((deger ?? "").split(",").map((m) => m.trim()).filter(Boolean));
+
+/** Ayarın kullanabileceği bütün modeller; onay hepsini kapsamalıdır. */
+export function ayarModelleri(ayar: Pick<TenantAiAyari, "ekonomikModelAdi" | "gucluModelAdi">, anaModel: string | null | undefined): string[] {
+  return [...new Set([anaModel, ayar.ekonomikModelAdi?.trim(), ayar.gucluModelAdi?.trim()].filter((m): m is string => Boolean(m)))];
+}
+
 /** AI-14: verinin yurt dışına çıktığı sağlayıcılar (platform anahtarıyla da). */
 const DIS_SAGLAYICILAR: AiProviderTuru[] = ["gemini", "openai", "anthropic"];
 
@@ -117,11 +138,7 @@ export async function kiraciSaglayicisi(
     }
     return kayit;
   });
-  const saglayiciTuru = (ayar?.saglayici && ayar.saglayici !== "varsayilan" ? ayar.saglayici : process.env.AI_PROVIDER)?.toLowerCase();
-  const ekonomikIs = ["ozet", "gorev", "hatirlatma"].includes(secenek.ozellik);
-  const yonlendirilmisModel = saglayiciTuru === "ollama"
-    ? (ekonomikIs ? ayar?.ekonomikModelAdi : ayar?.gucluModelAdi) || ayar?.modelAdi
-    : undefined;
+  const yonlendirilmisModel = ayar ? ozellikModeli(ayar, secenek.ozellik) : undefined;
   const temel = ayar
     ? AiProviderFactory.uret({ ...ayardanYapilandirma(ayar), ...(yonlendirilmisModel ? { modelAdi: yonlendirilmisModel } : {}) })
     : (secenek.varsayilan ?? (() => AiProviderFactory.uret()))();
@@ -129,7 +146,7 @@ export async function kiraciSaglayicisi(
   if (ayar?.ozelliklerEtkin === false) return { saglayici: new TanimsizAiProvider("Yapay zekâ özellikleri bu firma için yönetici tarafından kapatıldı."), ozelTalimatlar };
   const onayGecerli = Boolean(ayar?.yurtDisiOnayAt
     && ayar.yurtDisiOnaySaglayici === temel.saglayiciAdi
-    && ayar.yurtDisiOnayModel === temel.modelAdi
+    && Boolean(temel.modelAdi) && onayModelleri(ayar.yurtDisiOnayModel).has(temel.modelAdi!)
     && ayar.yurtDisiOnayPolitika === AI_AKTARIM_POLITIKA_SURUMU);
   if (DIS_SAGLAYICILAR.includes(temel.saglayiciAdi) && !onayGecerli) {
     return { saglayici: new TanimsizAiProvider(ONAY_YOK_MESAJI), ozelTalimatlar };

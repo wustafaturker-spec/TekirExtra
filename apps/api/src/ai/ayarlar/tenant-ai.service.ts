@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AiGorevYurutucu } from "./ai-gorev-yurutucu";
 import { PrismaService } from "../../core/prisma.service";
 import { AiProviderFactory, TenantAiYapilandirma, kiraciAdresiHatasi } from "../saglayici/ai-provider.factory";
-import { apiAnahtariMaskele, apiAnahtariSifrele, ayardanYapilandirma, kiraciSaglayicisi, maskeliMi, VARSAYILAN_GUNLUK_SINIR } from "../saglayici/kiraci-saglayici";
+import { apiAnahtariMaskele, apiAnahtariSifrele, ayardanYapilandirma, ayarModelleri, kiraciSaglayicisi, maskeliMi, onayModelleri, VARSAYILAN_GUNLUK_SINIR } from "../saglayici/kiraci-saglayici";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { hassasCoz } from "../../personel/personel-hassas";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "./ai-aktarim-politikasi";
@@ -100,7 +100,9 @@ export class TenantAiService {
       : null;
 
     const etkin = AiProviderFactory.uret(ayardanYapilandirma(ayar));
-    const onayGecerli = Boolean(ayar.yurtDisiOnayAt && ayar.yurtDisiOnaySaglayici === etkin.saglayiciAdi && ayar.yurtDisiOnayModel === (etkin.modelAdi ?? null) && ayar.yurtDisiOnayPolitika === AI_AKTARIM_POLITIKA_SURUMU);
+    // Onay ana, ekonomik ve güçlü modelin hepsini kapsamalı; yeni model eklenince yeniden istenir.
+    const onaylilar = onayModelleri(ayar.yurtDisiOnayModel);
+    const onayGecerli = Boolean(ayar.yurtDisiOnayAt && ayar.yurtDisiOnaySaglayici === etkin.saglayiciAdi && ayarModelleri(ayar, etkin.modelAdi).every((m) => onaylilar.has(m)) && ayar.yurtDisiOnayPolitika === AI_AKTARIM_POLITIKA_SURUMU);
     return {
       ...ayar,
       // AI-11: yalnız son 4 karakter görünür.
@@ -135,7 +137,10 @@ export class TenantAiService {
       const mevcut = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
       const yeniSaglayici = girdi.saglayici !== undefined ? (girdi.saglayici || "varsayilan") : (mevcut?.saglayici ?? "varsayilan");
       const yeniModel = girdi.modelAdi !== undefined ? (girdi.modelAdi || null) : (mevcut?.modelAdi ?? null);
-      const onayDegisti = Boolean(mevcut?.yurtDisiOnayAt && (mevcut.saglayici !== yeniSaglayici || mevcut.modelAdi !== yeniModel));
+      const yeniEkonomik = girdi.ekonomikModelAdi !== undefined ? girdi.ekonomikModelAdi?.trim() || null : (mevcut?.ekonomikModelAdi ?? null);
+      const yeniGuclu = girdi.gucluModelAdi !== undefined ? girdi.gucluModelAdi?.trim() || null : (mevcut?.gucluModelAdi ?? null);
+      const onayDegisti = Boolean(mevcut?.yurtDisiOnayAt && (mevcut.saglayici !== yeniSaglayici || mevcut.modelAdi !== yeniModel
+        || (mevcut.ekonomikModelAdi ?? null) !== yeniEkonomik || (mevcut.gucluModelAdi ?? null) !== yeniGuclu));
       if (onayDegisti) await tx.aiVeriAktarimOnayi.create({ data: { tenantId, userId: aktifBaglam().userId, olay: "gecersiz_kildi", saglayici: mevcut!.yurtDisiOnaySaglayici ?? mevcut!.saglayici, model: mevcut!.yurtDisiOnayModel ?? mevcut!.modelAdi, politikaSurumu: mevcut!.yurtDisiOnayPolitika ?? "legacy" } });
       const girisFiyati = girdi.girisTokenMilyonUsd !== undefined ? girdi.girisTokenMilyonUsd : mevcut?.girisTokenMilyonUsd?.toNumber() ?? null;
       const cikisFiyati = girdi.cikisTokenMilyonUsd !== undefined ? girdi.cikisTokenMilyonUsd : mevcut?.cikisTokenMilyonUsd?.toNumber() ?? null;
@@ -326,7 +331,8 @@ export class TenantAiService {
       const ayar = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
       const etkin = AiProviderFactory.uret(ayar ? ayardanYapilandirma(ayar) : undefined);
       const saglayici = etkin.saglayiciAdi;
-      const model = etkin.modelAdi ?? null;
+      // Ekonomik ve güçlü model de onayın kapsamındadır (virgülle saklanır).
+      const model = (ayar ? ayarModelleri(ayar, etkin.modelAdi) : [etkin.modelAdi].filter(Boolean)).join(", ") || null;
       const olay = { tenantId, userId, olay: onay ? "onaylandi" : "geri_alindi", saglayici, model, politikaSurumu: AI_AKTARIM_POLITIKA_SURUMU };
       await tx.aiVeriAktarimOnayi.create({ data: olay });
       const veri = onay

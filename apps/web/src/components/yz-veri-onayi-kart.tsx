@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Tarih } from "@/components/ui";
 
 const POLITIKA_SURUMU = "2026-10-v1";
-interface Ayar { saglayici: string; modelAdi?: string | null; yurtDisiOnay: { tarih: string; onaylayan: string | null; saglayici: string | null; model: string | null; politikaSurumu: string | null } | null }
+interface Ayar { saglayici: string; modelAdi?: string | null; ekonomikModelAdi?: string | null; gucluModelAdi?: string | null; yurtDisiOnay: { tarih: string; onaylayan: string | null; saglayici: string | null; model: string | null; politikaSurumu: string | null } | null }
 
 /**
  * AI-14: yurt dışındaki yapay zekâ sağlayıcısına veri aktarımı için yönetici
@@ -40,7 +40,7 @@ export function YzVeriOnayiKart() {
           Asistan, MCP, fiş/kartvizit tarama, yönetici özeti yorumu, ekstre önerisi ve hatırlatma metni kullanıldığında şu veriler
           seçili yapay zekâ sağlayıcısına (Google Gemini, OpenAI ya da Anthropic; sunucuları yurt dışında) gönderilir:
         </p>
-        <p>Onay kapsamı: <strong>{ayar?.saglayici ?? "—"}</strong> / {ayar?.modelAdi || "varsayılan model"} · Metin sürümü {POLITIKA_SURUMU}. Sağlayıcı veya model değişirse yeniden onay gerekir.</p>
+        <p>Onay kapsamı: <strong>{ayar?.saglayici ?? "—"}</strong> / {[...new Set([ayar?.modelAdi || "varsayılan model", ayar?.ekonomikModelAdi?.trim(), ayar?.gucluModelAdi?.trim()].filter(Boolean))].join(", ")} · Metin sürümü {POLITIKA_SURUMU}. Sağlayıcı veya modellerden biri değişirse yeniden onay gerekir.</p>
         <ul>
           <li>Cari unvanı, vergi kimlik numarası, iletişim bilgileri ve bakiyeler</li>
           <li>Stok, fiyat, teklif, fatura, masraf ve rapor rakamları</li>

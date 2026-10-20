@@ -72,7 +72,7 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
     await expect(engelli.saglayici.metinUret({ prompt: "x" })).rejects.toThrow(ONAY_YOK_MESAJI);
   });
 
-  it("Ollama'da basit ve karmaşık işleri ayrı modellere yönlendirir; harici onaylı modeli değiştirmez", async () => {
+  it("basit ve karmaşık işleri ayrı modellere yönlendirir; dış sağlayıcıda onay her modeli ayrıca kapsamalı", async () => {
     const uretimler: unknown[] = [];
     vi.spyOn(AiProviderFactory, "uret").mockImplementation((config) => {
       uretimler.push(config);
@@ -98,8 +98,16 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
       yurtDisiOnayAt: new Date(), yurtDisiOnaySaglayici: "openai", yurtDisiOnayModel: "gpt-onayli", yurtDisiOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU,
     };
     const dis = kur(disAyar);
-    await olarak(() => kiraciSaglayicisi(dis.prisma as never, TENANT, { ozellik: "asistan" }));
-    expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("gpt-onayli");
+    const onaysiz = await olarak(() => kiraciSaglayicisi(dis.prisma as never, TENANT, { ozellik: "asistan" }));
+    // Güçlü model onayın kapsamında değil: çağrı hiç gitmez.
+    expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("gpt-guclu");
+    expect(onaysiz.saglayici.saglayiciAdi).toBe("tanimsiz");
+
+    uretimler.length = 0;
+    const kapsayan = kur({ ...disAyar, yurtDisiOnayModel: "gpt-onayli, gpt-ucuz, gpt-guclu" });
+    const ucuz = await olarak(() => kiraciSaglayicisi(kapsayan.prisma as never, TENANT, { ozellik: "ondenetim" }));
+    expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("gpt-ucuz");
+    expect(ucuz.saglayici.saglayiciAdi).toBe("openai");
   });
 
   it("onay varsa çalışır ve her çağrıyı kullanıcı + özellik bazında sayar", async () => {
@@ -260,5 +268,19 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
       await olarak(() => saglayici.metinUret({ prompt: "x" }));
       expect(tx.platformAiTavani.findUnique).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("özellik modeli ve onay kapsamı", () => {
+  it("ekonomik iş ekonomik modele, diğerleri güçlüye; boş alan ana modele düşer", async () => {
+    const { ozellikModeli, ayarModelleri, onayModelleri } = await import("./kiraci-saglayici");
+    const ayar = { modelAdi: "deepseek-v4.1-flash", ekonomikModelAdi: "gemma-4-31b", gucluModelAdi: " " };
+    expect(ozellikModeli(ayar, "ondenetim")).toBe("gemma-4-31b");
+    expect(ozellikModeli(ayar, "ozet")).toBe("gemma-4-31b");
+    expect(ozellikModeli(ayar, "asistan")).toBe("deepseek-v4.1-flash");
+    expect(ozellikModeli({ modelAdi: null, ekonomikModelAdi: null, gucluModelAdi: null }, "asistan")).toBeNull();
+    expect(ayarModelleri(ayar, "deepseek-v4.1-flash")).toEqual(["deepseek-v4.1-flash", "gemma-4-31b"]);
+    expect([...onayModelleri("deepseek-v4.1-flash, gemma-4-31b")]).toEqual(["deepseek-v4.1-flash", "gemma-4-31b"]);
+    expect(onayModelleri(null).size).toBe(0);
   });
 });
