@@ -17,13 +17,66 @@ function baglantiAdresi(b: NonNullable<OnDenetimBulgusu["baglanti"]>): string {
 
 const BAGLANTI_ADI = { cari: "Cari kartı", stok: "Ürün kartı", fatura: "Faturayı aç" } as const;
 
+/** AI-71: sunucunun yapay zekâ kontrolü yanıtı; bulgular onay istemez. */
+export interface AiDenetimSonucu {
+  durum: "tamam" | "kapali" | "zaman_asimi" | "hata";
+  mesaj?: string;
+  bulgular: OnDenetimBulgusu[];
+}
+
+function BulguSatiri({ b, onSustur }: { b: OnDenetimBulgusu; onSustur?: (kod: OnDenetimBulgusu["kod"]) => void }) {
+  return (
+    <li className={b.duzey === "bilgi" ? "on-denetim__bilgi" : undefined}>
+      {b.duzey === "bilgi" && <span>Bilgi · </span>}
+      {b.satir ? <span className="subtle">{b.satir}. satır · </span> : null}
+      {b.mesaj}
+      {b.baglanti && (
+        <>
+          {" "}
+          <a className="btn-link" href={baglantiAdresi(b.baglanti)} target="_blank" rel="noreferrer">
+            {b.baglanti.tur === "fatura" ? `${b.baglanti.etiket ?? ""} ${BAGLANTI_ADI.fatura}`.trim() : BAGLANTI_ADI[b.baglanti.tur]}
+          </a>
+        </>
+      )}
+      {onSustur && (
+        <>
+          {" · "}
+          <button type="button" className="btn-link" onClick={() => onSustur(b.kod)} title="Bu kural bu cari için ön denetimde bir daha gösterilmez">
+            Bu cari için gösterme
+          </button>
+        </>
+      )}
+    </li>
+  );
+}
+
+/** AI-71: yapay zekâ kontrolü kendi bölümünde; yüklenirken sihirbaz beklemez. */
+function AiBolumu({ ai, onSustur }: { ai: AiDenetimSonucu | "yukleniyor"; onSustur?: (kod: OnDenetimBulgusu["kod"]) => void }) {
+  if (ai === "yukleniyor") return <p className="subtle" style={{ margin: "0.5rem 0 0" }}>Yapay zekâ kontrolü sürüyor… Beklemeden devam edebilirsiniz.</p>;
+  const durumNotu = ai.durum === "tamam" ? null : ai.mesaj;
+  if (!ai.bulgular.length) {
+    return <p className="subtle" style={{ margin: "0.5rem 0 0" }}>{durumNotu ?? "Yapay zekâ kontrolü: dikkat edilecek bir şey bulunmadı."}</p>;
+  }
+  return (
+    <div style={{ marginTop: "0.6rem" }}>
+      <strong className="on-denetim__baslik">Yapay zekâ kontrolü</strong>
+      <span className="subtle"> · öneri niteliğindedir, onay istemez{durumNotu ? ` · ${durumNotu}` : ""}</span>
+      <ul className="stack" style={{ margin: 0, paddingLeft: "1.1rem" }}>
+        {ai.bulgular.map((b, i) => <BulguSatiri key={`ai-${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} />)}
+      </ul>
+    </div>
+  );
+}
+
 export function OnDenetimPaneli({
   bulgular,
   susturulan = 0,
   onSustur,
+  ai,
 }: {
   bulgular: OnDenetimBulgusu[] | undefined;
   susturulan?: number;
+  ai?: AiDenetimSonucu | "yukleniyor";
   /** EBLG-141: kuralı bu cari için bir daha gösterme. */
   onSustur?: (kod: OnDenetimBulgusu["kod"]) => void;
 }) {
@@ -35,40 +88,25 @@ export function OnDenetimPaneli({
       {" "}Bu cari için susturulmuş {susturulan} bulgu gösterilmiyor (<a className="btn-link" href="/panel/ayarlar/on-denetim" target="_blank" rel="noreferrer">susturmalar</a>).
     </span>
   );
+  const aiUyarisi = ai && ai !== "yukleniyor" && ai.bulgular.some((b) => b.duzey === "uyari");
   if (!bulgular.length) {
-    return <p className="subtle">Ön denetim: fiyat, vergi, cari ve mükerrer kontrollerinde dikkat edilecek bir şey bulunmadı.{susturmaNotu}</p>;
+    return (
+      <section aria-label="Ön denetim" className={`on-denetim${aiUyarisi ? "" : " is-bilgi"}`}>
+        <span>Ön denetim: fiyat, vergi, cari ve mükerrer kontrollerinde dikkat edilecek bir şey bulunmadı.{susturmaNotu}</span>
+        {ai && <AiBolumu ai={ai} onSustur={onSustur} />}
+      </section>
+    );
   }
   return (
-    <section aria-label="Ön denetim" className={`on-denetim${uyarilar.length ? "" : " is-bilgi"}`}>
+    <section aria-label="Ön denetim" className={`on-denetim${uyarilar.length || aiUyarisi ? "" : " is-bilgi"}`}>
       <strong className="on-denetim__baslik">
         Ön denetim: {uyarilar.length ? `${uyarilar.length} uyarı` : ""}{uyarilar.length && bilgiler.length ? ", " : ""}{bilgiler.length ? `${bilgiler.length} bilgi` : ""}
       </strong>
       <p className="subtle">Belgeyi durdurmaz; uyarılar gönderim adımında onayınızı ister.{susturmaNotu}</p>
       <ul className="stack" style={{ margin: 0, paddingLeft: "1.1rem" }}>
-        {[...uyarilar, ...bilgiler].map((b, i) => (
-          <li key={`${b.kod}-${b.satir ?? 0}-${i}`} className={b.duzey === "bilgi" ? "on-denetim__bilgi" : undefined}>
-            {b.duzey === "bilgi" && <span>Bilgi · </span>}
-            {b.satir ? <span className="subtle">{b.satir}. satır · </span> : null}
-            {b.mesaj}
-            {b.baglanti && (
-              <>
-                {" "}
-                <a className="btn-link" href={baglantiAdresi(b.baglanti)} target="_blank" rel="noreferrer">
-                  {b.baglanti.tur === "fatura" ? `${b.baglanti.etiket ?? ""} ${BAGLANTI_ADI.fatura}`.trim() : BAGLANTI_ADI[b.baglanti.tur]}
-                </a>
-              </>
-            )}
-            {onSustur && (
-              <>
-                {" · "}
-                <button type="button" className="btn-link" onClick={() => onSustur(b.kod)} title="Bu kural bu cari için ön denetimde bir daha gösterilmez">
-                  Bu cari için gösterme
-                </button>
-              </>
-            )}
-          </li>
-        ))}
+        {[...uyarilar, ...bilgiler].map((b, i) => <BulguSatiri key={`${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} />)}
       </ul>
+      {ai && <AiBolumu ai={ai} onSustur={onSustur} />}
     </section>
   );
 }

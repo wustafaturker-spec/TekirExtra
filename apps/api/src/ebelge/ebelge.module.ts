@@ -13,6 +13,7 @@ import { EbelgeUygulamasiGuard } from "./ebelge-uygulamasi.guard";
 import { EirsaliyeController } from "./eirsaliye.controller";
 import { EirsaliyeService } from "./eirsaliye.service";
 import { MukellefListesiService } from "./mukellef-listesi.service";
+import { OnDenetimAiService } from "./on-denetim-ai.service";
 
 @Module({
   // Gelen belgenin taslak alış faturasına dönüşü FaturaService üzerinden
@@ -21,7 +22,7 @@ import { MukellefListesiService } from "./mukellef-listesi.service";
   controllers: [EbelgeController, EirsaliyeController],
   providers: [
     EbelgeService, EbelgeKuyrukService, EbelgeGorunumService, EirsaliyeService, MukellefListesiService,
-    EbelgeUygulamalariService,
+    EbelgeUygulamalariService, OnDenetimAiService,
     // EBLG-77: kapalı e-belge uygulamasının ucu reddedilir. Guard global
     // çalışır ama dekoratörsüz uçlara hiç dokunmaz.
     { provide: APP_GUARD, useClass: EbelgeUygulamasiGuard },

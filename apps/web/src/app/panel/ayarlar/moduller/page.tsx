@@ -60,6 +60,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     baslik: "e-Belge", ikon: "🧾", alanlar: [
       { ad: "onDenetimFiyatYuzde", etiket: "Ön denetim: fiyat sapması eşiği (%)", tip: "sayi", min: 1, max: 1000, ipucu: "Satır fiyatı aynı ürünün bu cariye (yoksa tüm carilere) son satışlarından ya da carinin fiyat listesinden bu oranda farklıysa gönderim sihirbazı uyarır." },
       { ad: "onDenetimKurYuzde", etiket: "Ön denetim: kur sapması eşiği (%)", tip: "sayi", min: 0.1, max: 100, ipucu: "Dövizli faturanın kuru belge günündeki alış–satış aralığının bu oranda dışındaysa uyarır." },
+      { ad: "onDenetimYapayZeka", etiket: "Ön denetimde yapay zekâ kontrolü", tip: "onay", ipucu: "Sihirbaz açılınca satır adları, vergi kodları ve belge açıklaması yapay zekâya sorulur (çağrı sayılır, aylık bütçeye ve yurt dışı aktarım onayına tabidir). Bulgular gönderimi durdurmaz. Açıklamadaki TCKN/IBAN/telefon taraması kapalıyken de yapılır." },
       { ad: "efaturaYanitGunSayisi", etiket: "Ticari e-Fatura yanıtı kaç gün sorgulansın", tip: "sayi", min: 1, max: 60 },
       { ad: "eirsaliyeYanitGunSayisi", etiket: "e-İrsaliye yanıtı kaç gün sorgulansın", tip: "sayi", min: 1, max: 60 },
     ],

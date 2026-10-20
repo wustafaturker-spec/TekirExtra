@@ -20,7 +20,7 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { OnDenetimKararlari, OnDenetimPaneli } from "@/components/on-denetim-paneli";
+import { OnDenetimKararlari, OnDenetimPaneli, type AiDenetimSonucu } from "@/components/on-denetim-paneli";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
@@ -580,6 +580,8 @@ export default function FaturaSayfasi() {
     /** Önizleme ayrı, tam ekran katmanda açık mı. */
     tamEkran?: boolean;
   } | null>(null);
+  /** AI-71: sihirbaz açılınca arka planda istenen yapay zekâ kontrolü; gönderimi beklemez. */
+  const [aiDenetim, setAiDenetim] = useState<{ faturaId: string; sonuc: AiDenetimSonucu | null } | null>(null);
   // EBLG-113: taşıyıcı VKN'si yazıldıkça eşleşen cari kartı aranır; unvan
   // boşsa karttan dolar. Adresi gönderimde sunucu aynı kuralla karttan alır.
   const wizardTasiyiciVkn = ebelgeWizard?.internet.isaretli ? ebelgeWizard.internet.tasiyiciVkn : "";
@@ -1558,6 +1560,12 @@ export default function FaturaSayfasi() {
         adim: 1,
         onizleme: null,
       });
+      if (bilgi.gonderilebilir) {
+        setAiDenetim({ faturaId: fatura.id, sonuc: null });
+        void api<AiDenetimSonucu>(`/ebelge/on-denetim/ai/${fatura.id}`, { method: "POST" })
+          .then((sonuc) => setAiDenetim((g) => (g?.faturaId === fatura.id ? { faturaId: fatura.id, sonuc } : g)))
+          .catch((h) => setAiDenetim((g) => (g?.faturaId === fatura.id ? { faturaId: fatura.id, sonuc: { durum: "hata", mesaj: h instanceof Error ? h.message : "Yapay zekâ kontrolü yapılamadı", bulgular: [] } } : g)));
+      }
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
   }
 
@@ -1572,6 +1580,7 @@ export default function FaturaSayfasi() {
       setEbelgeWizard((guncel) => guncel && guncel.fatura.id === w.fatura.id
         ? { ...guncel, bilgi: { ...guncel.bilgi, onDenetim: bilgi.onDenetim }, onDenetimOnay: false }
         : guncel);
+      setAiDenetim((g) => (g?.sonuc ? { ...g, sonuc: { ...g.sonuc, bulgular: g.sonuc.bulgular.filter((b) => b.kod !== kod) } } : g));
     } catch (h) { setHata(h instanceof Error ? h.message : "Kural susturulamadı"); }
   }
 
@@ -2944,6 +2953,7 @@ export default function FaturaSayfasi() {
                 bulgular={ebelgeWizard.bilgi.onDenetim?.bulgular}
                 susturulan={ebelgeWizard.bilgi.onDenetim?.susturulan ?? 0}
                 onSustur={ebelgeWizard.bilgi.cariId ? (kod) => void onDenetimSustur(kod) : undefined}
+                ai={aiDenetim?.faturaId === ebelgeWizard.fatura.id ? aiDenetim.sonuc ?? "yukleniyor" : undefined}
               />
             )}
             {ebelgeWizard.adim === 1 && Boolean(ebelgeWizard.bilgi.yurtDisiEarsiv?.engeller.length) && (

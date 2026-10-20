@@ -29,6 +29,10 @@ export const ON_DENETIM_KODLARI = [
   "KUR_SAPMA",
   "KUR_BULUNAMADI",
   "RET_GECMISI",
+  // AI-71: yapay zekâ kontrolü; hiçbir zaman onay istemez.
+  "AI_KOD_UYUMU",
+  "AI_KISISEL_VERI",
+  "AI_RET_NEDENI",
 ] as const;
 
 export type OnDenetimKodu = (typeof ON_DENETIM_KODLARI)[number];
@@ -53,6 +57,9 @@ export const ON_DENETIM_KURAL_ADLARI: Record<OnDenetimKodu, string> = {
   KUR_SAPMA: "Kur sapması",
   KUR_BULUNAMADI: "Belge günü kuru yok",
   RET_GECMISI: "Alıcının geçmiş reddi / gönderim hatası",
+  AI_KOD_UYUMU: "Yapay zekâ: satır ve vergi kodu uyumu",
+  AI_KISISEL_VERI: "Açıklamada kişisel veri",
+  AI_RET_NEDENI: "Yapay zekâ: ret nedeni",
 };
 
 /** EBLG-140: ret ve gönderim hatası nedeni sınıfları. */

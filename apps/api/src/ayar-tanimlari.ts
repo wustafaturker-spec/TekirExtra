@@ -118,8 +118,10 @@ registerModulAyar(
     onDenetimFiyatYuzde: z.number().min(1).max(1000),
     /** EBLG-139: ön denetimde kurun belge günü kurundan sapma eşiği (yüzde). */
     onDenetimKurYuzde: z.number().min(0.1).max(100),
+    /** AI-71: ön denetimde yapay zekâ kontrolü (kiracının AI ayarı ve onayına da tabidir). */
+    onDenetimYapayZeka: z.boolean(),
   }),
-  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, onDenetimFiyatYuzde: 25, onDenetimKurYuzde: 3 },
+  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, onDenetimFiyatYuzde: 25, onDenetimKurYuzde: 3, onDenetimYapayZeka: true },
 );
 
 registerModulAyar(

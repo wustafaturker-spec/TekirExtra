@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Optional,
   Param,
   ParseUUIDPipe,
   Post,
@@ -18,6 +19,7 @@ import { EbelgeUygulamalariService } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
+import { OnDenetimAiService } from "./on-denetim-ai.service";
 import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
@@ -29,6 +31,7 @@ export class EbelgeController {
     private readonly kuyrukService: EbelgeKuyrukService,
     private readonly gorunumService: EbelgeGorunumService,
     private readonly uygulamalarService: EbelgeUygulamalariService,
+    @Optional() private readonly onDenetimAiService?: OnDenetimAiService,
   ) {}
 
   /**
@@ -95,6 +98,18 @@ export class EbelgeController {
   @Roller("muhasebe")
   onDenetimKararlari(@Param("faturaId", ParseUUIDPipe) faturaId: string) {
     return this.ebelgeService.onDenetimKararlari(faturaId);
+  }
+
+  /**
+   * AI-71: ön denetimde yapay zekâ. Sihirbaz bunu beklemeden açılır; sonuç
+   * yalnız gösterilir, gönderim onayına girmez.
+   */
+  @EbelgeUygulamasi("efatura", "earsiv")
+  @Post("on-denetim/ai/:faturaId")
+  @Roller("muhasebe")
+  onDenetimAi(@Param("faturaId", ParseUUIDPipe) faturaId: string) {
+    if (!this.onDenetimAiService) throw new BadRequestException("Yapay zekâ ön denetimi kullanılamıyor");
+    return this.onDenetimAiService.denetle(faturaId);
   }
 
   /** EBLG-143: ön denetimin etkisi (aylık ret oranı, geçilen uyarılar). */
