@@ -51,6 +51,9 @@ import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 import { onDenetimCalistir } from "./on-denetim";
 import { ON_DENETIM_KURAL_ADLARI, onDenetimAnahtari, type OnDenetimBulgusu } from "@tekirextra/shared";
 
+/** EBLG-143: ön denetimin canlıya alındığı gün; ölçümde öncesi/sonrası ayrımı. */
+export const ON_DENETIM_BASLANGIC = "2026-10-20";
+
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
   | "alici_urun_kodu"
@@ -2695,6 +2698,71 @@ export class EbelgeService {
         gerekce: k.gerekce,
         bulgular: k.bulgular,
       }));
+    });
+  }
+
+  /**
+   * EBLG-143: ön denetimin etkisi. Gönderilen = entegratöre ulaşmış (kuyrukta
+   * ya da hata değil); sorunlu = GİB/alıcı reddi ya da iptal. Ay, kaydın ilk
+   * gönderim ayıdır (İstanbul). Gösterilip düzeltilen bulgular saklanmadığı
+   * için ölçülmez; yalnız onaylanarak geçilen uyarılar sayılır.
+   */
+  async onDenetimOlcumu(aySayisi = 6) {
+    const { tenantId } = aktifBaglam();
+    const ay = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7);
+    const simdi = new Date();
+    const baslangicAyi = new Date(Date.UTC(simdi.getUTCFullYear(), simdi.getUTCMonth() - (aySayisi - 1), 1));
+    // Ay sınırı İstanbul saatine göre; UTC ayın başından 3 saat önce başlatılır.
+    const baslangic = new Date(baslangicAyi.getTime() - 3 * 3_600_000);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [kayitlar, kararlar] = await Promise.all([
+        tx.ebelgeKayit.findMany({
+          where: { tenantId, createdAt: { gte: baslangic } },
+          select: { faturaId: true, createdAt: true, durum: true, aliciYaniti: true, fatura: { select: { durum: true } } },
+        }),
+        tx.onDenetimKarari.findMany({ where: { tenantId, createdAt: { gte: baslangic } }, select: { faturaId: true, bulgular: true } }),
+      ]);
+      const sorunlu = (k: (typeof kayitlar)[number]) => k.durum === "ret" || k.durum === "iptal" || k.aliciYaniti === "ret" || k.fatura.durum === "iptal";
+      const gonderilmis = kayitlar.filter((k) => k.durum !== "kuyrukta" && k.durum !== "hata");
+      const kararli = new Set(kararlar.map((k) => k.faturaId));
+      const sorunluFaturalar = new Set(gonderilmis.filter(sorunlu).map((k) => k.faturaId));
+
+      const aylar = new Map<string, { gonderilen: number; sorunlu: number; uyariIleGonderilen: number }>();
+      for (let i = 0; i < aySayisi; i++) {
+        aylar.set(ay(new Date(Date.UTC(baslangicAyi.getUTCFullYear(), baslangicAyi.getUTCMonth() + i, 15))), { gonderilen: 0, sorunlu: 0, uyariIleGonderilen: 0 });
+      }
+      const toplam = { once: { gonderilen: 0, sorunlu: 0 }, sonra: { gonderilen: 0, sorunlu: 0 } };
+      const ozellikBasi = new Date(`${ON_DENETIM_BASLANGIC}T00:00:00+03:00`);
+      for (const k of gonderilmis) {
+        const satir = aylar.get(ay(k.createdAt));
+        const donem = k.createdAt >= ozellikBasi ? toplam.sonra : toplam.once;
+        donem.gonderilen++;
+        if (sorunlu(k)) donem.sorunlu++;
+        if (!satir) continue;
+        satir.gonderilen++;
+        if (sorunlu(k)) satir.sorunlu++;
+        if (kararli.has(k.faturaId)) satir.uyariIleGonderilen++;
+      }
+
+      const kurallar = new Map<string, { gecilen: number; sonradanSorunlu: number }>();
+      for (const k of kararlar) {
+        for (const b of k.bulgular as { kod: string }[]) {
+          const satir = kurallar.get(b.kod) ?? { gecilen: 0, sonradanSorunlu: 0 };
+          satir.gecilen++;
+          if (sorunluFaturalar.has(k.faturaId)) satir.sonradanSorunlu++;
+          kurallar.set(b.kod, satir);
+        }
+      }
+      const oran = (t: { gonderilen: number; sorunlu: number }) => (t.gonderilen ? Math.round((t.sorunlu / t.gonderilen) * 1000) / 10 : null);
+      return {
+        ozellikBaslangici: ON_DENETIM_BASLANGIC,
+        aylar: [...aylar.entries()].map(([a, v]) => ({ ay: a, ...v, sorunluOrani: oran(v) })),
+        once: { ...toplam.once, oran: oran(toplam.once) },
+        sonra: { ...toplam.sonra, oran: oran(toplam.sonra) },
+        kurallar: [...kurallar.entries()]
+          .map(([kod, v]) => ({ kod, kural: ON_DENETIM_KURAL_ADLARI[kod as OnDenetimBulgusu["kod"]] ?? kod, ...v }))
+          .sort((a, b) => b.gecilen - a.gecilen),
+      };
     });
   }
 

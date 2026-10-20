@@ -54,3 +54,43 @@ describe("ön denetim onayı (EBLG-141)", () => {
     await expect(servis(onceki).onDenetimOnayiDenetle("f1", [uyari("KUR_SAPMA")])).rejects.toThrow();
   });
 });
+
+describe("ön denetim ölçümü (EBLG-143)", () => {
+  it("aylık sorunlu oranı, öncesi/sonrası ve kural başına geçilen uyarılar", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-25T12:00:00Z"));
+    const kayit = (faturaId: string, createdAt: string, durum = "iletildi", aliciYaniti: string | null = null, faturaDurum = "kesin") =>
+      ({ faturaId, createdAt: new Date(createdAt), durum, aliciYaniti, fatura: { durum: faturaDurum } });
+    const kayitlar = [
+      kayit("a", "2026-09-10T09:00:00Z", "iletildi", "ret"),
+      kayit("b", "2026-09-11T09:00:00Z"),
+      kayit("c", "2026-09-30T22:30:00Z"), // İstanbul'da 1 Ekim
+      kayit("d", "2026-10-21T09:00:00Z", "kabul"),
+      kayit("e", "2026-10-22T09:00:00Z", "iletildi", null, "iptal"),
+      kayit("f", "2026-10-23T09:00:00Z", "hata"), // gönderilmemiş sayılmaz
+    ];
+    const kararlar = [
+      { faturaId: "e", bulgular: [{ kod: "FIYAT_SAPMA" }, { kod: "MUKERRER_SUPHESI" }] },
+      { faturaId: "d", bulgular: [{ kod: "FIYAT_SAPMA" }] },
+    ];
+    const tx = {
+      ebelgeKayit: { findMany: vi.fn(async () => kayitlar) },
+      onDenetimKarari: { findMany: vi.fn(async () => kararlar) },
+    };
+    const prisma = { tenantIslem: vi.fn(async (_t: string, fn: (tx: unknown) => unknown) => fn(tx)) } as any;
+    const servis = new EbelgeService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const o = await servis.onDenetimOlcumu(2);
+    vi.useRealTimers();
+
+    expect(o.aylar).toEqual([
+      { ay: "2026-09", gonderilen: 2, sorunlu: 1, uyariIleGonderilen: 0, sorunluOrani: 50 },
+      { ay: "2026-10", gonderilen: 3, sorunlu: 1, uyariIleGonderilen: 2, sorunluOrani: 33.3 },
+    ]);
+    expect(o.once).toEqual({ gonderilen: 3, sorunlu: 1, oran: 33.3 });
+    expect(o.sonra).toEqual({ gonderilen: 2, sorunlu: 1, oran: 50 });
+    expect(o.kurallar).toEqual([
+      { kod: "FIYAT_SAPMA", kural: "Fiyat sapması", gecilen: 2, sonradanSorunlu: 1 },
+      { kod: "MUKERRER_SUPHESI", kural: "Mükerrer fatura şüphesi", gecilen: 1, sonradanSorunlu: 1 },
+    ]);
+  });
+});

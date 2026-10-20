@@ -19,12 +19,28 @@ interface Susturma {
   zaman: string;
 }
 
+/** EBLG-143: ön denetimin etkisi. */
+interface Olcum {
+  ozellikBaslangici: string;
+  aylar: { ay: string; gonderilen: number; sorunlu: number; uyariIleGonderilen: number; sorunluOrani: number | null }[];
+  once: { gonderilen: number; sorunlu: number; oran: number | null };
+  sonra: { gonderilen: number; sorunlu: number; oran: number | null };
+  kurallar: { kod: string; kural: string; gecilen: number; sonradanSorunlu: number }[];
+}
+
+const oranMetni = (oran: number | null) => (oran === null ? "—" : `%${oran.toLocaleString("tr-TR")}`);
+const ayAdi = (ay: string) => new Date(`${ay}-15T00:00:00Z`).toLocaleDateString("tr-TR", { month: "long", year: "numeric" });
+
 export default function OnDenetimSayfasi() {
   const [kayitlar, setKayitlar] = useState<Susturma[]>([]);
+  const [olcum, setOlcum] = useState<Olcum | null>(null);
   const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [islem, setIslem] = useState<string | null>(null);
 
   const yukle = useCallback(async () => setKayitlar(await api<Susturma[]>("/ebelge/on-denetim/susturmalar")), []);
   useEffect(() => { if (tokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Susturmalar yüklenemedi")); }, [yukle]);
+  useEffect(() => {
+    if (tokenAl()) void api<Olcum>("/ebelge/on-denetim/olcum?ay=6").then(setOlcum).catch((e) => setHata(e instanceof Error ? e.message : "Ölçüm yüklenemedi"));
+  }, []);
 
   async function kaldir(s: Susturma) {
     setIslem(s.id); setHata(""); setBasari("");
@@ -41,6 +57,31 @@ export default function OnDenetimSayfasi() {
       subtitle="Gönderim sihirbazı belgeyi göndermeden önce fiyat, vergi, cari ve mükerrer kontrolleri yapar. Burada cari başına susturduğunuz kurallar listelenir."
     />
     <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
+    {olcum && <Card title="Etkisi: son 6 ay" pad={false}>
+      <p className="muted" style={{ padding: "0.8rem 1.25rem 0", margin: 0 }}>
+        Sorunlu: GİB ya da alıcı reddi veya iptal. Ön denetim {new Date(`${olcum.ozellikBaslangici}T12:00:00Z`).toLocaleDateString("tr-TR")} tarihinde açıldı;
+        öncesinde gönderilen {olcum.once.gonderilen} belgenin sorunlu oranı <strong>{oranMetni(olcum.once.oran)}</strong>,
+        sonrasında gönderilen {olcum.sonra.gonderilen} belgenin <strong>{oranMetni(olcum.sonra.oran)}</strong>.
+      </p>
+      <TableWrap>
+        <thead><tr><th>Ay</th><th>Gönderilen</th><th>Uyarı onaylanarak</th><th>Sorunlu</th><th>Oran</th></tr></thead>
+        <tbody>
+          {olcum.aylar.map((a) => <tr key={a.ay}>
+            <td>{ayAdi(a.ay)}</td><td>{a.gonderilen}</td><td>{a.uyariIleGonderilen}</td><td>{a.sorunlu}</td><td>{oranMetni(a.sorunluOrani)}</td>
+          </tr>)}
+        </tbody>
+      </TableWrap>
+      <TableWrap>
+        <thead><tr><th>Kural</th><th>Onaylanarak geçilen</th><th>Bunlardan sonradan sorunlu</th></tr></thead>
+        <tbody>
+          {olcum.kurallar.map((k) => <tr key={k.kod}><td>{k.kural}</td><td>{k.gecilen}</td><td>{k.sonradanSorunlu}</td></tr>)}
+          {!olcum.kurallar.length && <tr><td colSpan={3}>Bu dönemde uyarı onaylanarak gönderilmiş belge yok.</td></tr>}
+        </tbody>
+      </TableWrap>
+      <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>
+        Sihirbazda gösterilip gönderimden önce düzeltilen bulgular kaydedilmez; burada yalnız onaylanarak geçilen uyarılar sayılır.
+      </p>
+    </Card>}
     <Card title={`Susturulan kurallar (${kayitlar.length})`} pad={false}>
       <TableWrap>
         <thead><tr><th>Cari</th><th>Kural</th><th>Susturan</th><th>Tarih</th><th /></tr></thead>

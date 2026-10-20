@@ -28,6 +28,7 @@ export const ON_DENETIM_KODLARI = [
   "KAYNAK_ASIMI",
   "KUR_SAPMA",
   "KUR_BULUNAMADI",
+  "RET_GECMISI",
 ] as const;
 
 export type OnDenetimKodu = (typeof ON_DENETIM_KODLARI)[number];
@@ -51,7 +52,59 @@ export const ON_DENETIM_KURAL_ADLARI: Record<OnDenetimKodu, string> = {
   KAYNAK_ASIMI: "Sipariş/irsaliye satırı fazla faturalanıyor",
   KUR_SAPMA: "Kur sapması",
   KUR_BULUNAMADI: "Belge günü kuru yok",
+  RET_GECMISI: "Alıcının geçmiş reddi / gönderim hatası",
 };
+
+/** EBLG-140: ret ve gönderim hatası nedeni sınıfları. */
+export type RetNedeni = "kimlik" | "adres" | "fiyat" | "senaryo" | "mukerrer" | "diger";
+
+export const RET_NEDENI_ADLARI: Record<RetNedeni, string> = {
+  kimlik: "VKN/kimlik",
+  adres: "adres",
+  fiyat: "fiyat/tutar",
+  senaryo: "senaryo/vergi",
+  mukerrer: "mükerrer",
+  diger: "diğer",
+};
+
+/** Sıra önemlidir: "kdv tutarı" fiyat değil vergi sınıfına, "mükerrer fatura" mükerrere düşmeli. */
+const RET_ANAHTARLARI: [RetNedeni, RegExp][] = [
+  ["mukerrer", /mükerrer|mukerrer|daha önce (gönderil|kesil|gel)|zaten (gönderil|kesil|var)|iki kez|aynı fatura|duplicate/],
+  ["kimlik", /\bvkn\b|tckn|vergi (no|numara|kimlik)|vergi dairesi|ünvan|unvan|kimlik|alıcı bulunamadı|posta kutusu|etiket|urn:mail/],
+  ["senaryo", /senaryo|profil|fatura tipi|faturanın tipi|temel fatura|ticari fatura|tevkifat|istisna|kdv|vergi oran|özel matrah|ihraç kayıtlı/],
+  ["fiyat", /fiyat|tutar|bedel|iskonto|indirim|miktar|\bkuru?\b|toplam|ücret|para birimi|döviz/],
+  ["adres", /adres|ilçe|\bil\b|posta kodu|teslim yeri|sevk yeri/],
+];
+
+/** Ret açıklamasını ya da entegratör hata metnini anahtar sözcüklerle sınıflar. */
+export function retNedeniSiniflandir(metin: string | null | undefined): RetNedeni {
+  const m = (metin ?? "").toLocaleLowerCase("tr-TR");
+  if (!m.trim()) return "diger";
+  return RET_ANAHTARLARI.find(([, re]) => re.test(m))?.[0] ?? "diger";
+}
+
+/** Sınıfın bu belgede tetiklenmiş hangi kurallarla ilgili olduğu (uyarı/bilgi kararı). */
+const RET_NEDENI_KURALLARI: Record<RetNedeni, OnDenetimKodu[]> = {
+  kimlik: ["CARI_UNVAN_FARKLI", "CARI_VERGI_DAIRESI_YOK", "POSTA_KUTUSU_YENI"],
+  adres: [],
+  fiyat: ["FIYAT_SAPMA", "FIYAT_KAT_HATASI", "MIKTAR_KAT_HATASI", "MALIYET_ALTI", "LISTE_FIYATI_FARKLI", "KUR_SAPMA", "KAYNAK_ASIMI"],
+  senaryo: ["SENARYO_ALISKANLIK", "KDV_KARTTAN_FARKLI", "KDV_GECMISTEN_FARKLI", "TEVKIFAT_ALISKANLIK", "ISTISNA_MAL_HIZMET"],
+  mukerrer: ["MUKERRER_SUPHESI"],
+  diger: [],
+};
+
+/** Bu carinin (ya da bu faturanın) son 12 aydaki reddi ya da gönderim hatası. */
+export interface RetKaydi {
+  faturaId: string;
+  no: string | null;
+  /** YYYY-MM-DD */
+  tarih: string;
+  /** alici: alıcının ticari reddi; entegrator: gönderim hatası ya da GİB reddi. */
+  kaynak: "alici" | "entegrator";
+  metin: string | null;
+  /** Kayıt bu faturanın kendi önceki gönderimi mi. */
+  buFatura: boolean;
+}
 
 /**
  * Uyarının onay anahtarı (EBLG-141): kural + satır. Kullanıcı onayladıktan
@@ -116,6 +169,8 @@ export interface MukerrerAdayi {
 }
 
 export interface OnDenetimGirdisi {
+  /** EBLG-140: yeniden eskiye; yalnız ilk 3'ü gösterilir. */
+  retGecmisi?: RetKaydi[];
   fatura: {
     senaryo: string;
     doviz: string;
@@ -349,17 +404,53 @@ function kurKurallari(g: OnDenetimGirdisi, esik: OnDenetimEsikleri): OnDenetimBu
     mesaj: `Faturadaki kur ${g.fatura.kur.toLocaleString("tr-TR", { maximumFractionDigits: 6 })}, belge günündeki ${g.fatura.doviz} kuru ${g.gunKuru.alis.toLocaleString("tr-TR", { maximumFractionDigits: 6 })} (alış) – ${g.gunKuru.satis.toLocaleString("tr-TR", { maximumFractionDigits: 6 })} (satış).` }];
 }
 
-/** Bütün kuralları çalıştırır; sıra: belge, cari, satırlar (satır sırasıyla). */
+const kisalt = (m: string, n = 160) => (m.length > n ? `${m.slice(0, n - 1)}…` : m);
+
+/**
+ * EBLG-140: alıcının geçmiş reddi her zaman gösterilir; başka faturanın
+ * entegratör hatası yalnız sınıfı belliyse (genel sunucu hataları cariyle
+ * ilgili değildir), bu faturanın kendi hatası her zaman. Neden bu belgede
+ * tetiklenen bir kuralla örtüşüyorsa uyarı, değilse bilgi.
+ */
+export function retGecmisiBulgulari(retler: RetKaydi[], tetiklenen: OnDenetimBulgusu[]): OnDenetimBulgusu[] {
+  const kodlar = new Set(tetiklenen.map((b) => b.kod));
+  return retler
+    .map((r) => ({ r, neden: retNedeniSiniflandir(r.metin) }))
+    .filter(({ r, neden }) => r.kaynak === "alici" || r.buFatura || neden !== "diger")
+    .slice(0, 3)
+    .map(({ r, neden }) => {
+      const tarih = r.tarih.split("-").reverse().join(".");
+      const gerekce = r.metin?.trim() ? `"${kisalt(r.metin.trim())}"` : "gerekçe belirtilmeden";
+      const sinif = neden === "diger" ? "" : ` (${RET_NEDENI_ADLARI[neden]})`;
+      const fatura = r.no ? `${r.no} numaralı faturanızı` : "bir faturanızı";
+      const mesaj = r.kaynak === "alici"
+        ? `Bu alıcı ${tarih} tarihinde ${fatura} ${gerekce} gerekçesiyle reddetti${sinif}.`
+        : r.buFatura
+          ? `Bu faturanın önceki gönderimi ${tarih} tarihinde ${gerekce} hatasıyla düştü${sinif}.`
+          : `Bu cariye kesilen ${r.no ? `${r.no} numaralı faturanın` : "bir faturanın"} gönderimi ${tarih} tarihinde ${gerekce} hatasıyla düştü${sinif}.`;
+      const ortusuyor = RET_NEDENI_KURALLARI[neden].some((k) => kodlar.has(k));
+      return {
+        kod: "RET_GECMISI" as const,
+        // Kendi önceki hatası bilgi kalır: "Yeniden gönder" onay istemeden çalışsın.
+        duzey: ortusuyor ? ("uyari" as const) : ("bilgi" as const),
+        mesaj,
+        ...(r.buFatura ? {} : { baglanti: { tur: "fatura" as const, id: r.faturaId, etiket: r.no ?? undefined } }),
+      };
+    });
+}
+
+/** Bütün kuralları çalıştırır; sıra: belge, cari, satırlar (satır sırasıyla), ret geçmişi. */
 export function onDenetimYap(g: OnDenetimGirdisi): OnDenetimBulgusu[] {
   // Ayarda boş kalan eşik varsayılana düşer (undefined üstüne yazmasın).
   const esik: OnDenetimEsikleri = {
     fiyatYuzde: g.esikler?.fiyatYuzde ?? ON_DENETIM_VARSAYILAN_ESIKLER.fiyatYuzde,
     kurYuzde: g.esikler?.kurYuzde ?? ON_DENETIM_VARSAYILAN_ESIKLER.kurYuzde,
   };
-  return [
+  const bulgular = [
     ...mukerrerKurallari(g),
     ...kurKurallari(g, esik),
     ...cariKurallari(g),
     ...g.satirlar.flatMap((s) => [...vergiKurallari(g, s), ...fiyatKurallari(g, s, esik)]),
   ];
+  return [...bulgular, ...retGecmisiBulgulari(g.retGecmisi ?? [], bulgular)];
 }

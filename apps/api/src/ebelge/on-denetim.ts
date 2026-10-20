@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { onDenetimYap, type MukerrerAdayi, type OnDenetimBulgusu, type OnDenetimSatiri } from "@tekirextra/shared";
+import { onDenetimYap, type MukerrerAdayi, type OnDenetimBulgusu, type OnDenetimSatiri, type RetKaydi } from "@tekirextra/shared";
 import { kurBul } from "../doviz/kur-coz";
 import { fiyatBirimi, yilOnce } from "./fiyat-analizi";
 
@@ -167,6 +167,31 @@ export async function onDenetimCalistir(
     }
   }
 
+  // EBLG-140: son 12 ayda bu carinin faturalarındaki ret ve gönderim hataları
+  // (bu faturanın kendi önceki denemesi dahil); kayıt güncel durumundan okunur.
+  const retKayitlari = await tx.ebelgeKayit.findMany({
+    where: {
+      tenantId,
+      fatura: { cariId: fatura.cariId },
+      updatedAt: { gte: new Date(Date.now() - 365 * 86_400_000) },
+      OR: [{ durum: { in: ["ret", "hata"] } }, { aliciYaniti: "ret" }],
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 10,
+    select: { faturaId: true, durum: true, hataMesaji: true, aliciYaniti: true, aliciYanitNotu: true, aliciYanitZamani: true, updatedAt: true, fatura: { select: { no: true } } },
+  });
+  const retGecmisi: RetKaydi[] = retKayitlari.map((r) => {
+    const alici = r.aliciYaniti === "ret";
+    return {
+      faturaId: r.faturaId,
+      no: r.fatura.no,
+      tarih: gun(alici && r.aliciYanitZamani ? r.aliciYanitZamani : r.updatedAt),
+      kaynak: alici ? "alici" : "entegrator",
+      metin: alici ? r.aliciYanitNotu : r.hataMesaji,
+      buFatura: r.faturaId === faturaId,
+    };
+  });
+
   const gunKuru = fatura.dovizCinsi === "TRY" ? null : await kurBul(tx, tenantId, fatura.dovizCinsi, fatura.tarih);
 
   const bulgular = onDenetimYap({
@@ -177,6 +202,7 @@ export async function onDenetimCalistir(
     satirlar: denetimSatirlari,
     mukerrerAdaylari,
     gunKuru: gunKuru ? { alis: sayi(gunKuru.alis), satis: sayi(gunKuru.satis) } : null,
+    retGecmisi,
     esikler: secenek.esikler,
   });
   // EBLG-141: kullanıcının bu cari için susturduğu kurallar gösterilmez ve onay istemez.

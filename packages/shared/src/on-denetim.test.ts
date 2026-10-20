@@ -136,3 +136,42 @@ describe("ön denetçi kuralları", () => {
     expect(onDenetimYap(girdi({ fatura: usd(40) }))).toMatchObject([{ kod: "KUR_BULUNAMADI", duzey: "bilgi" }]);
   });
 });
+
+describe("ret geçmişi (EBLG-140)", () => {
+  it("ret ve hata metnini sınıflar", async () => {
+    const { retNedeniSiniflandir } = await import("./on-denetim");
+    expect(retNedeniSiniflandir("Fiyat hatalı")).toBe("fiyat");
+    expect(retNedeniSiniflandir("KDV tutarı yanlış")).toBe("senaryo");
+    expect(retNedeniSiniflandir("Bu fatura daha önce gönderildi")).toBe("mukerrer");
+    expect(retNedeniSiniflandir("Mükerrer fatura")).toBe("mukerrer");
+    expect(retNedeniSiniflandir("Alıcı VKN hatalı")).toBe("kimlik");
+    expect(retNedeniSiniflandir("Teslim adresi eksik")).toBe("adres");
+    expect(retNedeniSiniflandir("NES 500: HATALI ISTEK")).toBe("diger");
+    expect(retNedeniSiniflandir("Kurum adı")).toBe("diger");
+    expect(retNedeniSiniflandir(null)).toBe("diger");
+  });
+
+  const ret = (r: Partial<import("./on-denetim").RetKaydi> = {}) => ({
+    faturaId: "f9", no: "SAT2026000000007", tarih: "2026-10-12", kaynak: "alici" as const, metin: "Fiyat hatalı", buFatura: false, ...r,
+  });
+
+  it("örtüşen kural varsa uyarı, yoksa bilgi", () => {
+    const fiyatli = onDenetimYap(girdi({ retGecmisi: [ret()], satirlar: [satir({ netBirimFiyat: 200, gecmisFiyatlar: [{ fiyat: 100, ayniCari: true }] })] }));
+    const r = fiyatli.find((b) => b.kod === "RET_GECMISI")!;
+    expect(r).toMatchObject({ duzey: "uyari", baglanti: { tur: "fatura", id: "f9" } });
+    expect(r.mesaj).toBe("Bu alıcı 12.10.2026 tarihinde SAT2026000000007 numaralı faturanızı \"Fiyat hatalı\" gerekçesiyle reddetti (fiyat/tutar).");
+    expect(onDenetimYap(girdi({ retGecmisi: [ret()] }))).toMatchObject([{ kod: "RET_GECMISI", duzey: "bilgi" }]);
+  });
+
+  it("başka faturanın sınıfsız entegratör hatası gösterilmez; bu faturanınki her zaman bilgi olarak görünür", () => {
+    expect(onDenetimYap(girdi({ retGecmisi: [ret({ kaynak: "entegrator", metin: "NES 500: HATALI ISTEK" })] }))).toEqual([]);
+    const kendi = onDenetimYap(girdi({ retGecmisi: [ret({ kaynak: "entegrator", metin: "NES 500: HATALI ISTEK", buFatura: true })] }));
+    expect(kendi).toMatchObject([{ kod: "RET_GECMISI", duzey: "bilgi" }]);
+    expect(kendi[0].baglanti).toBeUndefined();
+    expect(kendi[0].mesaj).toContain("Bu faturanın önceki gönderimi");
+  });
+
+  it("en çok 3 kayıt gösterir", () => {
+    expect(onDenetimYap(girdi({ retGecmisi: [ret(), ret(), ret(), ret()] }))).toHaveLength(3);
+  });
+});

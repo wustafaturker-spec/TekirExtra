@@ -97,6 +97,16 @@ export class EbelgeController {
     return this.ebelgeService.onDenetimKararlari(faturaId);
   }
 
+  /** EBLG-143: ön denetimin etkisi (aylık ret oranı, geçilen uyarılar). */
+  @EbelgeUygulamasi("efatura", "earsiv")
+  @Get("on-denetim/olcum")
+  @Roller("muhasebe")
+  onDenetimOlcumu(@Query("ay") ay?: string) {
+    const aySayisi = Number(ay ?? 6);
+    if (!Number.isInteger(aySayisi) || aySayisi < 1 || aySayisi > 24) throw new BadRequestException("Ay sayısı 1–24 olmalıdır");
+    return this.ebelgeService.onDenetimOlcumu(aySayisi);
+  }
+
   @EbelgeUygulamasi("efatura", "earsiv")
   @Get("on-denetim/susturmalar")
   @Roller("muhasebe")
