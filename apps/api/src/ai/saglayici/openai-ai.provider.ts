@@ -35,12 +35,12 @@ export class OpenAiAiProvider implements IAiProvider {
       messages.push({
         role: "system",
         content: `${girdi.sistemRol}\nYanıtını SADECE geçerli bir JSON nesnesi olarak ver. Markdown codeblock tırnakları ekleme.`,
-      }, { dnsDogrula: this.dnsDogrula });
+      });
     } else {
       messages.push({
         role: "system",
         content: "Lütfen yanıtını SADECE geçerli bir JSON formatında döndür.",
-      }, { dnsDogrula: this.dnsDogrula });
+      });
     }
 
     const userContent: any[] = [{ type: "text", text: girdi.prompt }];
