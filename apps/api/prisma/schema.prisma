@@ -253,6 +253,8 @@ model Tenant {
   epostaTeklifIslemleri EpostaTeklifIslemi[]
   aiHafiza              AiHafiza[]
   isKutusuKapanislari   IsKutusuKapanisi[]
+  onDenetimKararlari    OnDenetimKarari[]
+  onDenetimSusturmalari OnDenetimSusturma[]
   teklifTakipleri       TeklifTakibi[]
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
@@ -6492,4 +6494,37 @@ model OdemeSozuHatirlatma {
   soz OdemeSozu @relation(fields: [tenantId, sozId], references: [tenantId, id])
   @@id([tenantId, sozId])
   @@map("odeme_sozu_hatirlatmalari")
+}
+
+/// EBLG-141: ön denetim uyarıları geçilerek yapılan gönderim kararı.
+model OnDenetimKarari {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  faturaId  String   @map("fatura_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  /// Geçilen uyarılar: [{kod, satir, mesaj}]
+  bulgular  Json
+  gerekce   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, faturaId])
+  @@index([tenantId, createdAt])
+  @@map("on_denetim_kararlari")
+}
+
+/// EBLG-141: cari başına "bu kuralı gösterme".
+model OnDenetimSusturma {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  cariId    String   @map("cari_id") @db.Uuid
+  kod       String
+  userId    String?  @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, cariId, kod])
+  @@map("on_denetim_susturmalari")
 }

@@ -94,6 +94,7 @@ describe("ön denetçi kuralları", () => {
     expect(kodlar(girdi({ satirlar: [satir({ netBirimFiyat: 100, gecmisFiyatlar: [{ fiyat: 50, ayniCari: false }] })] }))).toEqual(["FIYAT_SAPMA"]);
     // Eşik ayardan değişir.
     expect(kodlar(girdi({ esikler: { fiyatYuzde: 10 }, satirlar: [satir({ netBirimFiyat: 120, gecmisFiyatlar: ayni })] }))).toEqual(["FIYAT_SAPMA"]);
+    expect(kodlar(girdi({ esikler: { fiyatYuzde: undefined }, satirlar: [satir({ netBirimFiyat: 120, gecmisFiyatlar: ayni })] }))).toEqual([]);
   });
 
   it("10/100/1000 kat fiyat ve miktar hatasını ayrıca adlandırır", () => {

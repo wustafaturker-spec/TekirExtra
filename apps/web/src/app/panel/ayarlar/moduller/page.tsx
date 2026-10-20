@@ -56,6 +56,14 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "acildiAt", etiket: "Açılış zamanı", tip: "gizli" },
     ],
   },
+  ebelge: {
+    baslik: "e-Belge", ikon: "🧾", alanlar: [
+      { ad: "onDenetimFiyatYuzde", etiket: "Ön denetim: fiyat sapması eşiği (%)", tip: "sayi", min: 1, max: 1000, ipucu: "Satır fiyatı aynı ürünün bu cariye (yoksa tüm carilere) son satışlarından ya da carinin fiyat listesinden bu oranda farklıysa gönderim sihirbazı uyarır." },
+      { ad: "onDenetimKurYuzde", etiket: "Ön denetim: kur sapması eşiği (%)", tip: "sayi", min: 0.1, max: 100, ipucu: "Dövizli faturanın kuru belge günündeki alış–satış aralığının bu oranda dışındaysa uyarır." },
+      { ad: "efaturaYanitGunSayisi", etiket: "Ticari e-Fatura yanıtı kaç gün sorgulansın", tip: "sayi", min: 1, max: 60 },
+      { ad: "eirsaliyeYanitGunSayisi", etiket: "e-İrsaliye yanıtı kaç gün sorgulansın", tip: "sayi", min: 1, max: 60 },
+    ],
+  },
   teklif_takibi: {
     baslik: "Teklif Takibi", ikon: "⏰", alanlar: [
       { ad: "acik", etiket: "Yanıt gelmeyen teklifleri hatırlat", tip: "onay", ipucu: "E-postayla gönderilen (ya da gönderildi olarak işaretlenen) teklife belirlenen sürede yanıt gelmezse teklifi gönderen kullanıcıya bildirim düşer ve carinin CRM görevlerine takip görevi açılır. Kapalıyken de gönderim kaydı tutulur ve gelen yanıt teklifle eşleştirilir. Sistem müşteriye kendiliğinden e-posta göndermez." },
@@ -141,7 +149,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "ebelge", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;

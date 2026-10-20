@@ -31,7 +31,7 @@ export async function onDenetimCalistir(
   tenantId: string,
   faturaId: string,
   secenek: { yurtDisi: boolean; esikler?: { fiyatYuzde?: number; kurYuzde?: number } },
-): Promise<OnDenetimBulgusu[]> {
+): Promise<{ bulgular: OnDenetimBulgusu[]; susturulan: number }> {
   const fatura = await tx.fatura.findUniqueOrThrow({
     where: { id: faturaId },
     select: {
@@ -169,7 +169,7 @@ export async function onDenetimCalistir(
 
   const gunKuru = fatura.dovizCinsi === "TRY" ? null : await kurBul(tx, tenantId, fatura.dovizCinsi, fatura.tarih);
 
-  return onDenetimYap({
+  const bulgular = onDenetimYap({
     fatura: { senaryo: fatura.senaryo, doviz: fatura.dovizCinsi, kur, yurtDisi: secenek.yurtDisi },
     cari: { id: fatura.cari.id, unvan: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, vergiDairesi: fatura.cari.vergiDairesi },
     mukellef,
@@ -179,4 +179,8 @@ export async function onDenetimCalistir(
     gunKuru: gunKuru ? { alis: sayi(gunKuru.alis), satis: sayi(gunKuru.satis) } : null,
     esikler: secenek.esikler,
   });
+  // EBLG-141: kullanıcının bu cari için susturduğu kurallar gösterilmez ve onay istemez.
+  const susturulanlar = new Set((await tx.onDenetimSusturma.findMany({ where: { tenantId, cariId: fatura.cariId }, select: { kod: true } })).map((k) => k.kod));
+  const gorunen = bulgular.filter((b) => !susturulanlar.has(b.kod));
+  return { bulgular: gorunen, susturulan: bulgular.length - gorunen.length };
 }

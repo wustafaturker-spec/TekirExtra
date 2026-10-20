@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -17,7 +18,7 @@ import { EbelgeUygulamalariService } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
-import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi } from "./ebelge.semalar";
+import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -79,8 +80,45 @@ export class EbelgeController {
   @Post("gonder/:faturaId")
   @Roller("muhasebe")
   async gonder(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
-    await this.sihirbazSeciminiKaydet(faturaId, govde);
-    return this.kuyrukService.kuyrugaEkle(faturaId);
+    const { wizard, secim } = await this.sihirbazSeciminiKaydet(faturaId, govde);
+    // EBLG-141: ön denetim uyarıları kullanıcı onayı olmadan kuyruğa girmez.
+    const bulgular = "onDenetim" in wizard && wizard.onDenetim ? wizard.onDenetim.bulgular : [];
+    const karar = await this.ebelgeService.onDenetimOnayiDenetle(faturaId, bulgular, secim.onDenetimOnayi);
+    const sonuc = await this.kuyrukService.kuyrugaEkle(faturaId);
+    if (karar) await this.ebelgeService.onDenetimKarariYaz(faturaId, karar);
+    return sonuc;
+  }
+
+  /** EBLG-141: faturada geçilen ön denetim uyarıları. */
+  @EbelgeUygulamasi("efatura", "earsiv")
+  @Get("on-denetim/kararlar/:faturaId")
+  @Roller("muhasebe")
+  onDenetimKararlari(@Param("faturaId", ParseUUIDPipe) faturaId: string) {
+    return this.ebelgeService.onDenetimKararlari(faturaId);
+  }
+
+  @EbelgeUygulamasi("efatura", "earsiv")
+  @Get("on-denetim/susturmalar")
+  @Roller("muhasebe")
+  onDenetimSusturmalari() {
+    return this.ebelgeService.onDenetimSusturmalari();
+  }
+
+  @EbelgeUygulamasi("efatura", "earsiv")
+  @Post("on-denetim/susturmalar")
+  @Roller("muhasebe")
+  onDenetimSustur(@Body() govde: unknown) {
+    const girdi = onDenetimSusturmaSemasi.safeParse(govde ?? {});
+    if (!girdi.success) throw new BadRequestException(girdi.error.issues.map((s) => s.message).join("; "));
+    return this.ebelgeService.onDenetimSustur(girdi.data.cariId, girdi.data.kod);
+  }
+
+  @EbelgeUygulamasi("efatura", "earsiv")
+  @Delete("on-denetim/susturmalar/:id")
+  @Roller("muhasebe")
+  async onDenetimSusturmaKaldir(@Param("id", ParseUUIDPipe) id: string) {
+    await this.ebelgeService.onDenetimSusturmaKaldir(id);
+    return { kaldirildi: true };
   }
 
   /**
@@ -143,6 +181,7 @@ export class EbelgeController {
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);
     }
+    return { wizard, secim: secim.data };
   }
 
   /** EBLG-54: gümrük beyanname numarası; belge gönderildikten sonra da işlenir. */

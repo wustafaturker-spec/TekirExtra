@@ -40,6 +40,8 @@ describe("EbelgeController.gonder", () => {
       ihracatBilgisiniKaydet: vi.fn().mockResolvedValue(undefined),
       internetSatisiniKaydet: vi.fn().mockResolvedValue(undefined),
       earsivGonderimSekliniKaydet: vi.fn().mockResolvedValue(undefined),
+      onDenetimOnayiDenetle: vi.fn().mockResolvedValue(null),
+      onDenetimKarariYaz: vi.fn().mockResolvedValue(undefined),
     };
     const kuyruk = { kuyrugaEkle: vi.fn().mockResolvedValue({ isId: "is-1", durum: "waiting" }) };
     const controller = new EbelgeController(ebelge as never, kuyruk as never, {} as never);
@@ -84,6 +86,28 @@ describe("EbelgeController.gonder", () => {
     expect(ebelge.internetSatisiniKaydet).toHaveBeenCalledWith("f1", { internetSatisi: false });
     const kayitSirasi = ebelge.ihracatBilgisiniKaydet.mock.invocationCallOrder[0];
     expect(kayitSirasi).toBeLessThan(ebelge.wizardBilgisi.mock.invocationCallOrder[0]);
+  });
+
+  it("EBLG-141: ön denetim onayı reddederse kuyruğa almaz", async () => {
+    const bulgular = [{ kod: "FIYAT_SAPMA", satir: 1, duzey: "uyari", mesaj: "fiyat" }];
+    const { controller, ebelge, kuyruk } = kur({ gonderilebilir: true, onDenetim: { bulgular, susturulan: 0 } });
+    ebelge.onDenetimOnayiDenetle.mockRejectedValue(new BadRequestException("Ön denetimde onaylanmamış 1 uyarı var"));
+
+    await expect(controller.gonder("f1", {})).rejects.toThrow(/onaylanmamış/);
+    expect(ebelge.onDenetimOnayiDenetle).toHaveBeenCalledWith("f1", bulgular, undefined);
+    expect(kuyruk.kuyrugaEkle).not.toHaveBeenCalled();
+  });
+
+  it("EBLG-141: onaylı gönderimde karar kuyruğa alındıktan sonra yazılır", async () => {
+    const bulgular = [{ kod: "FIYAT_SAPMA", satir: 1, duzey: "uyari", mesaj: "fiyat" }];
+    const { controller, ebelge, kuyruk } = kur({ gonderilebilir: true, onDenetim: { bulgular, susturulan: 0 } });
+    const karar = { bulgular: [{ kod: "FIYAT_SAPMA", satir: 1, mesaj: "fiyat" }], gerekce: null };
+    ebelge.onDenetimOnayiDenetle.mockResolvedValue(karar);
+
+    await controller.gonder("f1", { onDenetimOnayi: { anahtarlar: ["FIYAT_SAPMA:1"] } });
+    expect(ebelge.onDenetimOnayiDenetle).toHaveBeenCalledWith("f1", bulgular, { anahtarlar: ["FIYAT_SAPMA:1"] });
+    expect(ebelge.onDenetimKarariYaz).toHaveBeenCalledWith("f1", karar);
+    expect(kuyruk.kuyrugaEkle.mock.invocationCallOrder[0]).toBeLessThan(ebelge.onDenetimKarariYaz.mock.invocationCallOrder[0]);
   });
 });
 

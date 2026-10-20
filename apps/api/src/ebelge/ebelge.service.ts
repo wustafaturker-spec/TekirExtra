@@ -49,6 +49,7 @@ import { internetSatisOzeti } from "./internet-satis-bilgisi";
 import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 import { onDenetimCalistir } from "./on-denetim";
+import { ON_DENETIM_KURAL_ADLARI, onDenetimAnahtari, type OnDenetimBulgusu } from "@tekirextra/shared";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
@@ -417,7 +418,11 @@ export class EbelgeService {
           }
         : undefined;
       // EBLG-134: engel değil; belgeyi durdurmaz, uyarı ve bilgi olarak gösterilir.
-      const onDenetim = await onDenetimCalistir(tx, tenantId, faturaId, { yurtDisi: ihracat.yurtDisi });
+      const ebelgeAyari = this.ayarlar ? await this.ayarlar.getir("ebelge", tx) : {};
+      const onDenetim = await onDenetimCalistir(tx, tenantId, faturaId, {
+        yurtDisi: ihracat.yurtDisi,
+        esikler: { fiyatYuzde: ebelgeAyari.onDenetimFiyatYuzde as number | undefined, kurYuzde: ebelgeAyari.onDenetimKurYuzde as number | undefined },
+      });
       return {
         // Bağlantı, kimlik ve tarih kontrolleri geçti. Türe özel eksikler
         // (ihracat, internet satışı) kendi listelerinde döner: değerleri
@@ -429,6 +434,7 @@ export class EbelgeService {
         vknTckn: fatura.cari.vknTckn,
         saglayici: baglanti.saglayici,
         mevcutEbelge: fatura.ebelge,
+        cariId: fatura.cariId,
         onDenetim,
         // EBLG-77: sihirbaz kanalı ve kapalı yordamları buna göre gösterir.
         uygulamalar,
@@ -2630,5 +2636,106 @@ export class EbelgeService {
       satirSayisi: ubl.satirlar.length,
       mesaj: "XML e-Fatura başarıyla içeri aktarıldı ve gelen kutusuna eklendi.",
     };
+  }
+
+  // ─── ÖN DENETİM KARARI VE SUSTURMA (EBLG-141) ─────────────────────────
+
+  /**
+   * Gönderimden önce: her uyarı ya bu istekteki onayda ya da bu faturanın
+   * önceki bir kararında (yeniden gönderim) bulunmalıdır. Kaydedilecek yeni
+   * kararı döner; onay gerekmiyorsa null.
+   */
+  async onDenetimOnayiDenetle(
+    faturaId: string,
+    bulgular: OnDenetimBulgusu[],
+    onay?: { anahtarlar: string[]; gerekce?: string },
+  ): Promise<{ bulgular: { kod: string; satir: number | null; mesaj: string }[]; gerekce: string | null } | null> {
+    const uyarilar = bulgular.filter((b) => b.duzey === "uyari");
+    if (!uyarilar.length) return null;
+    const { tenantId } = aktifBaglam();
+    const onceki = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.onDenetimKarari.findMany({ where: { tenantId, faturaId }, select: { bulgular: true } }));
+    const onaylanan = new Set([
+      ...(onay?.anahtarlar ?? []),
+      ...onceki.flatMap((k) => (k.bulgular as { kod: string; satir: number | null }[]).map((b) => onDenetimAnahtari({ kod: b.kod as OnDenetimBulgusu["kod"], satir: b.satir ?? undefined }))),
+    ]);
+    const eksik = uyarilar.filter((b) => !onaylanan.has(onDenetimAnahtari(b)));
+    if (eksik.length) {
+      throw new BadRequestException(
+        `Ön denetimde onaylanmamış ${eksik.length} uyarı var; e-Belge sihirbazında uyarıları görüp "Uyarıları gördüm" ile gönderin. ${eksik.map((b) => b.mesaj).join(" ")}`,
+      );
+    }
+    // Uyarıların hepsi önceki kararlardaysa (yeniden gönderim) yeni kayıt açılmaz.
+    if (!onay) return null;
+    return {
+      bulgular: uyarilar.map((b) => ({ kod: b.kod, satir: b.satir ?? null, mesaj: b.mesaj })),
+      gerekce: onay.gerekce?.trim() || null,
+    };
+  }
+
+  async onDenetimKarariYaz(faturaId: string, karar: { bulgular: { kod: string; satir: number | null; mesaj: string }[]; gerekce: string | null }) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.onDenetimKarari.create({ data: { tenantId, faturaId, userId: userId ?? null, bulgular: karar.bulgular, gerekce: karar.gerekce } }));
+  }
+
+  /** Fatura detayında: kim, ne zaman, hangi uyarıları geçti. */
+  async onDenetimKararlari(faturaId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kararlar = await tx.onDenetimKarari.findMany({ where: { tenantId, faturaId }, orderBy: { createdAt: "desc" } });
+      const kullanicilar = await tx.user.findMany({
+        where: { id: { in: kararlar.map((k) => k.userId).filter((x): x is string => Boolean(x)) } },
+        select: { id: true, adSoyad: true },
+      });
+      return kararlar.map((k) => ({
+        id: k.id,
+        zaman: k.createdAt,
+        kullanici: kullanicilar.find((u) => u.id === k.userId)?.adSoyad ?? null,
+        gerekce: k.gerekce,
+        bulgular: k.bulgular,
+      }));
+    });
+  }
+
+  async onDenetimSusturmalari() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayitlar = await tx.onDenetimSusturma.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
+      const cariler = await tx.cariHesap.findMany({ where: { tenantId, id: { in: kayitlar.map((k) => k.cariId) } }, select: { id: true, unvan: true } });
+      const kullanicilar = await tx.user.findMany({
+        where: { id: { in: kayitlar.map((k) => k.userId).filter((x): x is string => Boolean(x)) } },
+        select: { id: true, adSoyad: true },
+      });
+      return kayitlar.map((k) => ({
+        id: k.id,
+        cariId: k.cariId,
+        cari: cariler.find((c) => c.id === k.cariId)?.unvan ?? null,
+        kod: k.kod,
+        kural: ON_DENETIM_KURAL_ADLARI[k.kod as OnDenetimBulgusu["kod"]] ?? k.kod,
+        kullanici: kullanicilar.find((u) => u.id === k.userId)?.adSoyad ?? null,
+        zaman: k.createdAt,
+      }));
+    });
+  }
+
+  async onDenetimSustur(cariId: string, kod: OnDenetimBulgusu["kod"]) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cari = await tx.cariHesap.findFirst({ where: { id: cariId, tenantId }, select: { id: true } });
+      if (!cari) throw new NotFoundException("Cari bulunamadı");
+      return tx.onDenetimSusturma.upsert({
+        where: { tenantId_cariId_kod: { tenantId, cariId, kod } },
+        create: { tenantId, cariId, kod, userId: userId ?? null },
+        update: {},
+        select: { id: true },
+      });
+    });
+  }
+
+  async onDenetimSusturmaKaldir(id: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) => tx.onDenetimSusturma.deleteMany({ where: { id, tenantId } }));
+    if (!silinen.count) throw new NotFoundException("Susturma bulunamadı");
   }
 }

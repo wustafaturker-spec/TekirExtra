@@ -20,14 +20,14 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { OnDenetimPaneli } from "@/components/on-denetim-paneli";
+import { OnDenetimKararlari, OnDenetimPaneli } from "@/components/on-denetim-paneli";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla, BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
-import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari, type OnDenetimBulgusu } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, onDenetimAnahtari, type EbelgeUygulamalari, type OnDenetimBulgusu } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -295,8 +295,9 @@ interface EbelgeWizardBilgisi {
   birimUyarilari?: { sira: number; stok: string; birim: string }[];
   /** EBLG-55: cari kartında adres yok; belgeye il/ilçe "-" gidecek. */
   adresEksik?: boolean;
-  /** EBLG-134: gönderim öncesi ön denetim bulguları; engel değildir. */
-  onDenetim?: OnDenetimBulgusu[];
+  cariId?: string;
+  /** EBLG-134: gönderim öncesi ön denetim bulguları; engel değildir. `susturulan` bu cari için gizlenenler. */
+  onDenetim?: { bulgular: OnDenetimBulgusu[]; susturulan: number };
   /** EBLG-56: internet satışı işareti ve alan grubu; yalnız e-Arşiv kanalında belgeye yazılır. */
   internetSatisi?: {
     isaretli: boolean;
@@ -570,6 +571,9 @@ export default function FaturaSayfasi() {
       sehir: string; ulke: string; bankaHesapNo: string; bankaAdi: string;
       araciKurumVkn: string; araciKurumEtiket: string; araciKurumUnvan: string;
     };
+    /** EBLG-141: "uyarıları gördüm" onayı ve isteğe bağlı gerekçe. */
+    onDenetimOnay: boolean;
+    onDenetimGerekce: string;
     /** L: 1 kontrol, 2 türe özel bilgiler, 3 önizleme ve gönderim. */
     adim: 1 | 2 | 3;
     onizleme: EbelgeOnizleme | null;
@@ -1549,10 +1553,26 @@ export default function FaturaSayfasi() {
           bitis: bilgi.sarj?.bitis ?? "",
           esuRaporlari: bilgi.sarj?.esuRaporlari ?? [],
         },
+        onDenetimOnay: false,
+        onDenetimGerekce: "",
         adim: 1,
         onizleme: null,
       });
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
+  }
+
+  /** EBLG-141: kural bu cari için susturulur; ön denetim yeniden okunur, onay sıfırlanır. */
+  async function onDenetimSustur(kod: string) {
+    const w = ebelgeWizard;
+    if (!w?.bilgi.cariId) return;
+    setHata("");
+    try {
+      await api("/ebelge/on-denetim/susturmalar", { method: "POST", body: JSON.stringify({ cariId: w.bilgi.cariId, kod }) });
+      const bilgi = await api<EbelgeWizardBilgisi>(`/ebelge/wizard/${w.fatura.id}`);
+      setEbelgeWizard((guncel) => guncel && guncel.fatura.id === w.fatura.id
+        ? { ...guncel, bilgi: { ...guncel.bilgi, onDenetim: bilgi.onDenetim }, onDenetimOnay: false }
+        : guncel);
+    } catch (h) { setHata(h instanceof Error ? h.message : "Kural susturulamadı"); }
   }
 
   /** Sihirbazda girilenler; gönderim ve önizleme aynı gövdeyi yollar. */
@@ -1662,9 +1682,15 @@ export default function FaturaSayfasi() {
     if (!ebelgeWizard) return;
     setHata(""); setBasari("");
     try {
+      const uyarilar = ebelgeWizard.bilgi.onDenetim?.bulgular.filter((b) => b.duzey === "uyari") ?? [];
       await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, {
         method: "POST",
-        body: JSON.stringify(wizardSecimi(ebelgeWizard)),
+        body: JSON.stringify({
+          ...wizardSecimi(ebelgeWizard),
+          ...(uyarilar.length && ebelgeWizard.onDenetimOnay
+            ? { onDenetimOnayi: { anahtarlar: uyarilar.map(onDenetimAnahtari), gerekce: ebelgeWizard.onDenetimGerekce.trim() || undefined } }
+            : {}),
+        }),
       });
       setEbelgeWizard(null);
       setBasari("e-Belge oluşturuldu ve entegratöre gönderim kuyruğuna alındı.");
@@ -1829,6 +1855,7 @@ export default function FaturaSayfasi() {
     });
     return [...new Set([...(sevkiyat?.gecikmeler ?? []), ...yeniler])];
   })();
+  const wizardOnDenetimUyarisi = ebelgeWizard?.bilgi.onDenetim?.bulgular.filter((b) => b.duzey === "uyari").length ?? 0;
   const wizardGonderilebilir = Boolean(
     ebelgeWizard?.bilgi.gonderilebilir && sevkiyatWizardEksikleri.length === 0 && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && sgkEksikleri.length === 0 && sarjEksikleri.length === 0 && idisEksikleri.length === 0 && ytbEksikleri.length === 0 && yolcuEksikleri.length === 0,
   );
@@ -2904,7 +2931,13 @@ export default function FaturaSayfasi() {
                 </strong>
               </div>
             </div>}
-            {ebelgeWizard.adim === 1 && ebelgeWizard.bilgi.gonderilebilir && <OnDenetimPaneli bulgular={ebelgeWizard.bilgi.onDenetim} />}
+            {ebelgeWizard.adim === 1 && ebelgeWizard.bilgi.gonderilebilir && (
+              <OnDenetimPaneli
+                bulgular={ebelgeWizard.bilgi.onDenetim?.bulgular}
+                susturulan={ebelgeWizard.bilgi.onDenetim?.susturulan ?? 0}
+                onSustur={ebelgeWizard.bilgi.cariId ? (kod) => void onDenetimSustur(kod) : undefined}
+              />
+            )}
             {ebelgeWizard.adim === 1 && Boolean(ebelgeWizard.bilgi.yurtDisiEarsiv?.engeller.length) && (
               <Alert tone="warning">{ebelgeWizard.bilgi.yurtDisiEarsiv!.engeller.map((e) => e.mesaj).join(" ")}</Alert>
             )}
@@ -3511,8 +3544,26 @@ export default function FaturaSayfasi() {
                 </>
               );
             })()}
-            {ebelgeWizard.adim === 3 && Boolean(ebelgeWizard.bilgi.onDenetim?.some((b) => b.duzey === "uyari")) && (
-              <p className="subtle">Ön denetimde {ebelgeWizard.bilgi.onDenetim!.filter((b) => b.duzey === "uyari").length} uyarı var; ayrıntısı ilk adımda (Kontrol).</p>
+            {ebelgeWizard.adim === 3 && wizardOnDenetimUyarisi > 0 && (
+              <div className="approval-impact is-warning stack">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={ebelgeWizard.onDenetimOnay}
+                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, onDenetimOnay: e.target.checked })}
+                  />{" "}
+                  Ön denetimdeki {wizardOnDenetimUyarisi} uyarıyı gördüm, yine de gönder
+                </label>
+                <Field label="Gerekçe (isteğe bağlı)">
+                  <Input
+                    value={ebelgeWizard.onDenetimGerekce}
+                    maxLength={300}
+                    placeholder="Ör. kampanya fiyatı, müşteriyle anlaşıldı"
+                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, onDenetimGerekce: e.target.value })}
+                  />
+                </Field>
+                <span className="subtle">Uyarıların ayrıntısı ilk adımda (Kontrol). Onay faturanın e-Belge geçmişine kaydedilir.</span>
+              </div>
             )}
             <div className="quick-panel__actions">
               {ebelgeWizard.adim === 1
@@ -3528,7 +3579,7 @@ export default function FaturaSayfasi() {
                 <Button
                   type="button"
                   variant="primary"
-                  disabled={!(ebelgeWizard.onizleme?.durum === "hazir" && (ebelgeWizard.onizleme.basarili || !ebelgeWizard.onizleme.destekleniyor))}
+                  disabled={!(ebelgeWizard.onizleme?.durum === "hazir" && (ebelgeWizard.onizleme.basarili || !ebelgeWizard.onizleme.destekleniyor)) || (wizardOnDenetimUyarisi > 0 && !ebelgeWizard.onDenetimOnay)}
                   onClick={() => void ebelgeWizardGonder()}
                 >
                   Gönder
@@ -3582,6 +3633,7 @@ export default function FaturaSayfasi() {
                 Alıcı ret gerekçesi: {ebelgeDetayi.ebelge.aliciYanitNotu || "belirtilmedi"}. Ret alan ticari fatura için iade faturası kesilmesi gerekir.
               </div>
             )}
+            <OnDenetimKararlari key={`od-${ebelgeDetayi.ebelge.updatedAt}`} faturaId={ebelgeDetayi.id} />
             {/* EBLG-35: kayıt güncellendikçe key değişir, geçmiş yeniden yüklenir. */}
             <DurumGecmisi
               key={ebelgeDetayi.ebelge.updatedAt}

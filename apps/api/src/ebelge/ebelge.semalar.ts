@@ -1,4 +1,4 @@
-import { AZAMI_KAP_ADEDI, IADE_REFERANS_UST_SINIRI, KAP_NO_UZUNLUGU, kapCinsiGecerliMi, odemeSekliGecerliMi, SEVKIYAT_YONTEM_KODLARI, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
+import { AZAMI_KAP_ADEDI, ON_DENETIM_KODLARI, IADE_REFERANS_UST_SINIRI, KAP_NO_UZUNLUGU, kapCinsiGecerliMi, odemeSekliGecerliMi, SEVKIYAT_YONTEM_KODLARI, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
 export const gelenFiyatAnaliziSemasi = z.object({
@@ -35,6 +35,16 @@ export const gelenYanitSemasi = z
 
 /** EBLG-26/53: sihirbazda seçilen e-Arşiv teslim şekli ve ihracat alanları; boşsa faturadaki kalır. */
 export const ebelgeGonderSemasi = z.object({
+  /**
+   * EBLG-141: ön denetim uyarılarını gördüm onayı. `anahtarlar` onaylanan
+   * uyarıların kural:satır anahtarlarıdır; sunucu o anki uyarılarla karşılaştırır.
+   */
+  onDenetimOnayi: z
+    .object({
+      anahtarlar: z.array(z.string().max(80)).max(500),
+      gerekce: z.string().trim().max(300, "Gerekçe en çok 300 karakter olabilir").optional(),
+    })
+    .optional(),
   /**
    * EBLG-76: sevkiyatın nasıl belgelendiği. `irsaliye` seçilen e-İrsaliyelere
    * bağlanır, `fatura_once` sonra kesilecek irsaliyeyi bekler,
@@ -174,4 +184,10 @@ export const earsivRaporAralikSemasi = z.object({
 
 export const gelenXmlYukleSemasi = z.object({
   xml: z.string().min(10, "Geçerli bir XML içeriği girilmelidir"),
+});
+
+/** EBLG-141: cari başına ön denetim kuralını susturma. */
+export const onDenetimSusturmaSemasi = z.object({
+  cariId: z.string().uuid(),
+  kod: z.enum(ON_DENETIM_KODLARI),
 });

@@ -114,8 +114,12 @@ registerModulAyar(
      * geç gelen yanıtı gelen tarama okur. Planlayıcı en fazla 60 güne bakar.
      */
     efaturaYanitGunSayisi: z.number().int().min(1).max(60),
+    /** EBLG-137: ön denetimde fiyatın geçmişten/listeden sapma eşiği (yüzde). */
+    onDenetimFiyatYuzde: z.number().min(1).max(1000),
+    /** EBLG-139: ön denetimde kurun belge günü kurundan sapma eşiği (yüzde). */
+    onDenetimKurYuzde: z.number().min(0.1).max(100),
   }),
-  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10 },
+  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, onDenetimFiyatYuzde: 25, onDenetimKurYuzde: 3 },
 );
 
 registerModulAyar(

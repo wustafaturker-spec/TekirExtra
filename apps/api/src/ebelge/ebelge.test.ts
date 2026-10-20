@@ -14,7 +14,7 @@ vi.mock("../core/kripto", () => ({
 }));
 
 // Ön denetim (EBLG-134) kendi testlerinde; sihirbaz testleri engelleri sınar.
-vi.mock("./on-denetim", () => ({ onDenetimCalistir: async () => [] }));
+vi.mock("./on-denetim", () => ({ onDenetimCalistir: async () => ({ bulgular: [], susturulan: 0 }) }));
 
 /** Ayrıştırma testlerinde kullanılan asgari ama gerçekçi UBL-TR faturası. */
 const GELEN_UBL = `<?xml version="1.0" encoding="UTF-8"?>

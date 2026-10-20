@@ -10,24 +10,54 @@
 
 export type OnDenetimDuzeyi = "uyari" | "bilgi";
 
-export type OnDenetimKodu =
-  | "CARI_UNVAN_FARKLI"
-  | "CARI_VERGI_DAIRESI_YOK"
-  | "POSTA_KUTUSU_YENI"
-  | "SENARYO_ALISKANLIK"
-  | "KDV_KARTTAN_FARKLI"
-  | "KDV_GECMISTEN_FARKLI"
-  | "TEVKIFAT_ALISKANLIK"
-  | "ISTISNA_MAL_HIZMET"
-  | "FIYAT_SAPMA"
-  | "FIYAT_KAT_HATASI"
-  | "MIKTAR_KAT_HATASI"
-  | "MALIYET_ALTI"
-  | "LISTE_FIYATI_FARKLI"
-  | "MUKERRER_SUPHESI"
-  | "KAYNAK_ASIMI"
-  | "KUR_SAPMA"
-  | "KUR_BULUNAMADI";
+export const ON_DENETIM_KODLARI = [
+  "CARI_UNVAN_FARKLI",
+  "CARI_VERGI_DAIRESI_YOK",
+  "POSTA_KUTUSU_YENI",
+  "SENARYO_ALISKANLIK",
+  "KDV_KARTTAN_FARKLI",
+  "KDV_GECMISTEN_FARKLI",
+  "TEVKIFAT_ALISKANLIK",
+  "ISTISNA_MAL_HIZMET",
+  "FIYAT_SAPMA",
+  "FIYAT_KAT_HATASI",
+  "MIKTAR_KAT_HATASI",
+  "MALIYET_ALTI",
+  "LISTE_FIYATI_FARKLI",
+  "MUKERRER_SUPHESI",
+  "KAYNAK_ASIMI",
+  "KUR_SAPMA",
+  "KUR_BULUNAMADI",
+] as const;
+
+export type OnDenetimKodu = (typeof ON_DENETIM_KODLARI)[number];
+
+/** Susturma ekranında ve karar kaydında kuralın adı. */
+export const ON_DENETIM_KURAL_ADLARI: Record<OnDenetimKodu, string> = {
+  CARI_UNVAN_FARKLI: "Cari unvanı GİB listesinden farklı",
+  CARI_VERGI_DAIRESI_YOK: "Vergi dairesi boş",
+  POSTA_KUTUSU_YENI: "Alıcının yeni posta kutusu",
+  SENARYO_ALISKANLIK: "Senaryo alışkanlıktan farklı",
+  KDV_KARTTAN_FARKLI: "KDV ürün kartından farklı",
+  KDV_GECMISTEN_FARKLI: "KDV son satışlardan farklı",
+  TEVKIFAT_ALISKANLIK: "Tevkifat alışkanlıktan farklı",
+  ISTISNA_MAL_HIZMET: "301/302 mal–hizmet uyumsuzluğu",
+  FIYAT_SAPMA: "Fiyat sapması",
+  FIYAT_KAT_HATASI: "Fiyatta 10/100/1000 kat farkı",
+  MIKTAR_KAT_HATASI: "Miktarda 10/100/1000 kat farkı",
+  MALIYET_ALTI: "Maliyetin altında satış",
+  LISTE_FIYATI_FARKLI: "Fiyat listesinden farklı",
+  MUKERRER_SUPHESI: "Mükerrer fatura şüphesi",
+  KAYNAK_ASIMI: "Sipariş/irsaliye satırı fazla faturalanıyor",
+  KUR_SAPMA: "Kur sapması",
+  KUR_BULUNAMADI: "Belge günü kuru yok",
+};
+
+/**
+ * Uyarının onay anahtarı (EBLG-141): kural + satır. Kullanıcı onayladıktan
+ * sonra yeni bir uyarı çıkarsa (ör. fiyat değişti) gönderim yeniden onay ister.
+ */
+export const onDenetimAnahtari = (b: Pick<OnDenetimBulgusu, "kod" | "satir">) => `${b.kod}:${b.satir ?? 0}`;
 
 export interface OnDenetimBulgusu {
   kod: OnDenetimKodu;
@@ -321,7 +351,11 @@ function kurKurallari(g: OnDenetimGirdisi, esik: OnDenetimEsikleri): OnDenetimBu
 
 /** Bütün kuralları çalıştırır; sıra: belge, cari, satırlar (satır sırasıyla). */
 export function onDenetimYap(g: OnDenetimGirdisi): OnDenetimBulgusu[] {
-  const esik = { ...ON_DENETIM_VARSAYILAN_ESIKLER, ...g.esikler };
+  // Ayarda boş kalan eşik varsayılana düşer (undefined üstüne yazmasın).
+  const esik: OnDenetimEsikleri = {
+    fiyatYuzde: g.esikler?.fiyatYuzde ?? ON_DENETIM_VARSAYILAN_ESIKLER.fiyatYuzde,
+    kurYuzde: g.esikler?.kurYuzde ?? ON_DENETIM_VARSAYILAN_ESIKLER.kurYuzde,
+  };
   return [
     ...mukerrerKurallari(g),
     ...kurKurallari(g, esik),
