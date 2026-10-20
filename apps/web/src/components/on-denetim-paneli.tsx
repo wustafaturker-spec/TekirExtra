@@ -39,15 +39,15 @@ export function OnDenetimPaneli({
     return <p className="subtle">Ön denetim: fiyat, vergi, cari ve mükerrer kontrollerinde dikkat edilecek bir şey bulunmadı.{susturmaNotu}</p>;
   }
   return (
-    <section aria-label="Ön denetim" className={`approval-impact${uyarilar.length ? " is-warning" : ""}`}>
-      <strong>
+    <section aria-label="Ön denetim" className={`on-denetim${uyarilar.length ? "" : " is-bilgi"}`}>
+      <strong className="on-denetim__baslik">
         Ön denetim: {uyarilar.length ? `${uyarilar.length} uyarı` : ""}{uyarilar.length && bilgiler.length ? ", " : ""}{bilgiler.length ? `${bilgiler.length} bilgi` : ""}
       </strong>
       <p className="subtle">Belgeyi durdurmaz; uyarılar gönderim adımında onayınızı ister.{susturmaNotu}</p>
       <ul className="stack" style={{ margin: 0, paddingLeft: "1.1rem" }}>
         {[...uyarilar, ...bilgiler].map((b, i) => (
-          <li key={`${b.kod}-${b.satir ?? 0}-${i}`}>
-            {b.duzey === "bilgi" && <span className="subtle">Bilgi · </span>}
+          <li key={`${b.kod}-${b.satir ?? 0}-${i}`} className={b.duzey === "bilgi" ? "on-denetim__bilgi" : undefined}>
+            {b.duzey === "bilgi" && <span>Bilgi · </span>}
             {b.satir ? <span className="subtle">{b.satir}. satır · </span> : null}
             {b.mesaj}
             {b.baglanti && (

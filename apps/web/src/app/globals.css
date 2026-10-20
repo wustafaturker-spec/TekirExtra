@@ -1146,6 +1146,12 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .approval-summary dd { font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; }
 .approval-impact { background: var(--info-soft); border-left: 3px solid var(--info); font-size: 0.82rem; padding: 0.7rem; }
 .approval-impact.is-warning { background: var(--danger-soft); border-left-color: var(--danger); color: var(--danger); }
+/* EBLG-134: ön denetim — engel değil dikkat; uyarı amber, bilgi sönük. */
+.on-denetim { background: var(--warning-soft); border-left: 3px solid var(--warning); color: var(--text); font-size: 0.82rem; padding: 0.7rem; }
+.on-denetim.is-bilgi { background: var(--info-soft); border-left-color: var(--info); }
+.on-denetim__baslik { color: var(--warning); }
+.on-denetim.is-bilgi .on-denetim__baslik { color: var(--text); }
+.on-denetim__bilgi { color: var(--text-muted); }
 .approval-effects { border: 1px solid var(--border); display: grid; grid-template-columns: 1fr 1fr; }
 .approval-effects > div { padding: 0.65rem; }
 .approval-effects > div:nth-child(odd) { border-right: 1px solid var(--border); }

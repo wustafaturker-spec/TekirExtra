@@ -1889,7 +1889,15 @@ export default function FaturaSayfasi() {
       setEbelgeDetayi(await api<FaturaDetay>(`/fatura/${id}`));
       void yukle();
     } catch (h) {
-      setHata(h instanceof Error ? h.message : "e-Belge yeniden gönderilemedi");
+      const mesaj = h instanceof Error ? h.message : "e-Belge yeniden gönderilemedi";
+      // EBLG-141: onaylanmamış ön denetim uyarısı varsa yeniden gönderim
+      // sihirbazdan yapılır; uyarılar orada görülüp onaylanır.
+      if (mesaj.includes("Ön denetimde onaylanmamış")) {
+        setEbelgeDetayi(null);
+        await ebelgeWizardAc(await api<FaturaDetay>(`/fatura/${id}`));
+        return;
+      }
+      setHata(mesaj);
     }
   }
 
@@ -3545,7 +3553,7 @@ export default function FaturaSayfasi() {
               );
             })()}
             {ebelgeWizard.adim === 3 && wizardOnDenetimUyarisi > 0 && (
-              <div className="approval-impact is-warning stack">
+              <div className="on-denetim stack">
                 <label>
                   <input
                     type="checkbox"
