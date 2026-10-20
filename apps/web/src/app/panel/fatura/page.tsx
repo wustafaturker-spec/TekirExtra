@@ -20,13 +20,14 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
+import { OnDenetimPaneli } from "@/components/on-denetim-paneli";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla, BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
-import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari, type OnDenetimBulgusu } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -294,6 +295,8 @@ interface EbelgeWizardBilgisi {
   birimUyarilari?: { sira: number; stok: string; birim: string }[];
   /** EBLG-55: cari kartında adres yok; belgeye il/ilçe "-" gidecek. */
   adresEksik?: boolean;
+  /** EBLG-134: gönderim öncesi ön denetim bulguları; engel değildir. */
+  onDenetim?: OnDenetimBulgusu[];
   /** EBLG-56: internet satışı işareti ve alan grubu; yalnız e-Arşiv kanalında belgeye yazılır. */
   internetSatisi?: {
     isaretli: boolean;
@@ -2901,6 +2904,7 @@ export default function FaturaSayfasi() {
                 </strong>
               </div>
             </div>}
+            {ebelgeWizard.adim === 1 && ebelgeWizard.bilgi.gonderilebilir && <OnDenetimPaneli bulgular={ebelgeWizard.bilgi.onDenetim} />}
             {ebelgeWizard.adim === 1 && Boolean(ebelgeWizard.bilgi.yurtDisiEarsiv?.engeller.length) && (
               <Alert tone="warning">{ebelgeWizard.bilgi.yurtDisiEarsiv!.engeller.map((e) => e.mesaj).join(" ")}</Alert>
             )}
@@ -3507,6 +3511,9 @@ export default function FaturaSayfasi() {
                 </>
               );
             })()}
+            {ebelgeWizard.adim === 3 && Boolean(ebelgeWizard.bilgi.onDenetim?.some((b) => b.duzey === "uyari")) && (
+              <p className="subtle">Ön denetimde {ebelgeWizard.bilgi.onDenetim!.filter((b) => b.duzey === "uyari").length} uyarı var; ayrıntısı ilk adımda (Kontrol).</p>
+            )}
             <div className="quick-panel__actions">
               {ebelgeWizard.adim === 1
                 ? <Button type="button" onClick={() => setEbelgeWizard(null)}>Vazgeç</Button>

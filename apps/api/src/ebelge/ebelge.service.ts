@@ -48,6 +48,7 @@ import { tasiyiciAdresiniBagla, tasiyiciCariBul, tasiyiciCariOzeti } from "./tas
 import { internetSatisOzeti } from "./internet-satis-bilgisi";
 import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
+import { onDenetimCalistir } from "./on-denetim";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
@@ -415,6 +416,8 @@ export class EbelgeService {
             donemBitis: fatura.sgkDonemBitis ? fatura.sgkDonemBitis.toISOString().slice(0, 10) : null,
           }
         : undefined;
+      // EBLG-134: engel değil; belgeyi durdurmaz, uyarı ve bilgi olarak gösterilir.
+      const onDenetim = await onDenetimCalistir(tx, tenantId, faturaId, { yurtDisi: ihracat.yurtDisi });
       return {
         // Bağlantı, kimlik ve tarih kontrolleri geçti. Türe özel eksikler
         // (ihracat, internet satışı) kendi listelerinde döner: değerleri
@@ -426,6 +429,7 @@ export class EbelgeService {
         vknTckn: fatura.cari.vknTckn,
         saglayici: baglanti.saglayici,
         mevcutEbelge: fatura.ebelge,
+        onDenetim,
         // EBLG-77: sihirbaz kanalı ve kapalı yordamları buna göre gösterir.
         uygulamalar,
         sevkiyat: {

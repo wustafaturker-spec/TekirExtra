@@ -13,6 +13,9 @@ vi.mock("../core/kripto", () => ({
   coz: (val: string) => val, // pass-through for config JSON
 }));
 
+// Ön denetim (EBLG-134) kendi testlerinde; sihirbaz testleri engelleri sınar.
+vi.mock("./on-denetim", () => ({ onDenetimCalistir: async () => [] }));
+
 /** Ayrıştırma testlerinde kullanılan asgari ama gerçekçi UBL-TR faturası. */
 const GELEN_UBL = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
