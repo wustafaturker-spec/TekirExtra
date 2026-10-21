@@ -90,7 +90,7 @@ export class OnDenetimAiService {
     let zamanlayici: NodeJS.Timeout | undefined;
     try {
       const yanit = await Promise.race([
-        saglayici.yapilandirilmisUretim<AiYaniti>({ sistemRol: AI_SISTEM_ROLU, prompt: aiIstemi(girdi) }, AI_YANIT_SEMASI),
+        saglayici.yapilandirilmisUretim<AiYaniti>({ sistemRol: AI_SISTEM_ROLU, prompt: aiIstemi(girdi), dusunmeKapali: true }, AI_YANIT_SEMASI),
         new Promise<"sure">((coz) => { zamanlayici = setTimeout(() => coz("sure"), this.sureMs); }),
       ]);
       if (yanit === "sure") return yalnizKurallar("zaman_asimi", "Yapay zekâ zamanında yanıt vermedi; kontrol atlandı.");

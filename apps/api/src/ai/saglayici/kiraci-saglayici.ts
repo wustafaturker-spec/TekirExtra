@@ -27,10 +27,10 @@ export function ayardanYapilandirma(ayar: Pick<TenantAiAyari, "saglayici" | "api
 }
 
 /** AI-15: sayaçta görünen özellik. */
-export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim";
+export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim" | "gelendenetim";
 
 /** Kısa, ucuz işler ekonomik modele gider; geri kalanlar güçlü modele. */
-export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim"];
+export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim"];
 
 /**
  * Özelliğin modeli: ekonomik işte ekonomik, diğerlerinde güçlü model; boş

@@ -13,6 +13,12 @@ export interface AiMultimodalGirdi {
   prompt: string;
   gorselBase64?: string;
   mimeType?: string;
+  /**
+   * Kısa denetim çağrıları için düşünme (reasoning) kapalı istenir. Yalnız
+   * destekleyen sağlayıcılar uygular (OpenAI uyumlu özel adresler, ör. EVREN
+   * qwen3: düşünmeyle 60 sn'yi aşan çağrı kapalıyken 1–6 sn, 2026-10-21).
+   */
+  dusunmeKapali?: boolean;
 }
 
 /** AI-05: modele sunulan araç; `girdiSemasi` JSON Schema (sağlayıcılar arası ortak alt küme). */

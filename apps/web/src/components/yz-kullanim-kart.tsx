@@ -17,7 +17,7 @@ interface Kullanim {
   };
 }
 
-const OZELLIK_ADI: Record<string, string> = { asistan: "Asistan", tarama: "Tarama", ozet: "Özet yorumu", gorev: "Görev", ekstre: "Ekstre önerisi", hatirlatma: "Hatırlatma metni", ondenetim: "e-Belge ön denetimi" };
+const OZELLIK_ADI: Record<string, string> = { asistan: "Asistan", tarama: "Tarama", ozet: "Özet yorumu", gorev: "Görev", ekstre: "Ekstre önerisi", hatirlatma: "Hatırlatma metni", ondenetim: "e-Belge ön denetimi", gelendenetim: "Gelen alış denetimi" };
 
 /** AI-15: günlük model çağrısı sınırı ve son 30 günün kullanımı. */
 export function YzKullanimKart() {

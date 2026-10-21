@@ -1,11 +1,11 @@
 "use client";
 
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
 import { BirimSecimi } from "@/components/birim-secimi";
 import { GelenFiyatAnalizi } from "@/components/gelen-fiyat-analizi";
-import { OnDenetimPaneli, type OnDenetimMetinleri } from "@/components/on-denetim-paneli";
+import { OnDenetimPaneli, type AiDenetimSonucu, type OnDenetimMetinleri } from "@/components/on-denetim-paneli";
 import { birimCoz, onDenetimAnahtari, varyantAdiEsit, varyantliAdAyir, type OnDenetimBulgusu } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import {
@@ -240,6 +240,9 @@ export default function GelenKutusuSayfasi() {
   const [denetimOnay, setDenetimOnay] = useState(false);
   const [denetimGerekce, setDenetimGerekce] = useState("");
   const [yalnizUyarili, setYalnizUyarili] = useState(false);
+  // AI-72: açılışta kendiliğinden sorulur; sonuç belgeyle saklanır.
+  const [aiDenetim, setAiDenetim] = useState<AiDenetimSonucu | "yukleniyor" | null>(null);
+  const acikBelge = useRef<string | null>(null);
 
   const listeYukle = useCallback(async () => {
     try {
@@ -275,8 +278,10 @@ export default function GelenKutusuSayfasi() {
     setYeniKartSira(null);
     setDenetimOnay(false);
     setDenetimGerekce("");
+    setAiDenetim(null);
     try {
       const d = await api<GelenDetay>(`/ebelge/gelen/${id}`);
+      acikBelge.current = d.id;
       setDetay(d);
       setDenetim(d.onDenetim ?? null);
       // Otomatik eşleşenler baştan seçili gelir; kullanıcı değiştirebilir.
@@ -294,6 +299,7 @@ export default function GelenKutusuSayfasi() {
           : null;
       }
       setEslesme(baslangic);
+      if (d.durum === "beklemede" && d.faturaTipi !== "satis_iade") void aiSor(d.id, baslangic, false);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge detayı alınamadı");
     }
@@ -371,6 +377,19 @@ export default function GelenKutusuSayfasi() {
       setDenetim(await api<GelenDenetim>(`/ebelge/gelen/${detay.id}/denetim`, { method: "POST", body: JSON.stringify({ satirEslesmeleri: denetimEslesmeleri }) }));
       setDenetimOnay(false);
     } catch (h) { setHata(h instanceof Error ? h.message : "Kural susturulamadı"); }
+  }
+
+  /** AI-72: ekran beklemez; belge değiştiyse geç gelen yanıt atılır. */
+  async function aiSor(id: string, secim: Record<number, StokSecenek | null>, yeniden: boolean) {
+    setAiDenetim("yukleniyor");
+    const satirEslesmeleri = Object.entries(secim).flatMap(([sira, e]) =>
+      e && (!e.varyantlar?.length || e.varyantId) ? [{ siraNo: Number(sira), stokId: e.id, varyantId: e.varyantId ?? null }] : []);
+    try {
+      const sonuc = await api<AiDenetimSonucu>(`/ebelge/gelen/${id}/ai`, { method: "POST", body: JSON.stringify({ satirEslesmeleri, yeniden }) });
+      if (acikBelge.current === id) setAiDenetim(sonuc);
+    } catch (h) {
+      if (acikBelge.current === id) setAiDenetim({ durum: "hata", mesaj: h instanceof Error ? h.message : "Yapay zekâ kontrolü yapılamadı.", bulgular: [] });
+    }
   }
 
   function retGerekcesineEkle(mesaj: string) {
@@ -744,6 +763,7 @@ export default function GelenKutusuSayfasi() {
           <>
             <Button
               onClick={() => {
+                acikBelge.current = null;
                 setDetay(null);
                 setHata("");
                 setBasari("");
@@ -910,6 +930,8 @@ export default function GelenKutusuSayfasi() {
             metin={GELEN_DENETIM_METINLERI}
             onSustur={denetim.cariId ? (kod) => void denetimSustur(kod) : undefined}
             onRetGerekcesine={detay.yanitGerekiyor && !detay.yanit ? retGerekcesineEkle : undefined}
+            ai={aiDenetim ?? undefined}
+            onYenidenSor={aiDenetim && aiDenetim !== "yukleniyor" ? () => void aiSor(detay.id, eslesme, true) : undefined}
           />
         </div>
       )}

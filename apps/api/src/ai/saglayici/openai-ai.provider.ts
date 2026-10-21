@@ -58,14 +58,22 @@ export class OpenAiAiProvider implements IAiProvider {
     messages.push({ role: "user", content: userContent });
 
     const endpoint = `${this.baseUrl}/chat/completions`;
-    const veri = await saglayiciIstegi("OpenAI", endpoint, {
-        Authorization: `Bearer ${this.apiKey}`,
-      }, {
-        model: this.model,
-        messages,
-        response_format: { type: "json_object" },
-        temperature: 0.1,
-      }, { dnsDogrula: this.dnsDogrula });
+    const govde = { model: this.model, messages, response_format: { type: "json_object" }, temperature: 0.1 };
+    const istek = (ek: Record<string, unknown>) => saglayiciIstegi("OpenAI", endpoint, { Authorization: `Bearer ${this.apiKey}` }, { ...govde, ...ek }, { dnsDogrula: this.dnsDogrula });
+    // OpenAI'nin kendisi bilinmeyen parametreyi reddeder; yalnız uyumlu özel adreslerde
+    // (vLLM/qwen3 sohbet şablonu) istenir, adres reddederse parametresiz yeniden denenir.
+    const dusunmeKapat = girdi.dusunmeKapali && this.dnsDogrula && !/\/\/api\.openai\.com\//.test(endpoint);
+    let veri: any;
+    if (dusunmeKapat) {
+      try {
+        veri = await istek({ chat_template_kwargs: { enable_thinking: false } });
+      } catch (hata) {
+        if (!(hata instanceof Error && hata.message.includes("(HTTP 400)"))) throw hata;
+        veri = await istek({});
+      }
+    } else {
+      veri = await istek({});
+    }
     this.kullanimiAl(veri);
     const hamMetin = veri.choices?.[0]?.message?.content;
     if (!hamMetin) {

@@ -51,6 +51,11 @@ export const ON_DENETIM_KODLARI = [
   "GELEN_ALICI_BILGISI",
   "GELEN_VADE_KISA",
   "GELEN_VADE_YOK",
+  // AI-72: gelen alış faturasında yapay zekâ; onay istemez.
+  "GELEN_AI_KOD_UYUMU",
+  "GELEN_AI_URUN_ESLESMESI",
+  "GELEN_AI_NOT_CELISKISI",
+  "GELEN_AI_MIKTAR_BIRIM",
 ] as const;
 
 export type OnDenetimKodu = (typeof ON_DENETIM_KODLARI)[number];
@@ -95,6 +100,10 @@ export const ON_DENETIM_KURAL_ADLARI: Record<OnDenetimKodu, string> = {
   GELEN_ALICI_BILGISI: "Gelen: firma bilgilerimiz farklı",
   GELEN_VADE_KISA: "Gelen: vade karttakinden kısa",
   GELEN_VADE_YOK: "Gelen: belgede vade yok",
+  GELEN_AI_KOD_UYUMU: "Gelen, yapay zekâ: satır ve vergi kodu uyumu",
+  GELEN_AI_URUN_ESLESMESI: "Gelen, yapay zekâ: yanlış ürün eşleşmesi",
+  GELEN_AI_NOT_CELISKISI: "Gelen, yapay zekâ: notta çelişki",
+  GELEN_AI_MIKTAR_BIRIM: "Gelen, yapay zekâ: miktar/birim mantıksız",
 };
 
 /** EBLG-140: ret ve gönderim hatası nedeni sınıfları. */

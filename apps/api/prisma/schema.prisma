@@ -3279,6 +3279,8 @@ model GelenEbelge {
   denetimAt          DateTime? @map("denetim_at")
   /// EBLG-147: belgedeki IBAN'lar (boşluksuz büyük harf); kayıtta XML'den yazılır.
   odemeHesaplari     String[]  @map("odeme_hesaplari")
+  /// AI-72: yapay zekâ kontrolünün son başarılı sonucu {imza, sonuc}; imza satır eşleştirmesidir.
+  aiDenetim          Json?     @map("ai_denetim")
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
 

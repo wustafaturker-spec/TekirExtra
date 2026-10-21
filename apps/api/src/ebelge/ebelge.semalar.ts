@@ -8,6 +8,14 @@ export const gelenFiyatAnaliziSemasi = z.object({
 }).strict().refine((g) => new Set(g.satirEslesmeleri.map((s) => s.siraNo)).size === g.satirEslesmeleri.length,
   "Aynı satır birden fazla eşleştirilemez");
 
+/** AI-72: yapay zekâ kontrolü; eşleşmeyen satırlar listede olmayabilir, `yeniden` saklanan sonucu atlar. */
+export const gelenAiDenetimSemasi = z.object({
+  satirEslesmeleri: z.array(z.object({
+    siraNo: z.number().int().min(1), stokId: z.string().uuid(), varyantId: z.string().uuid().nullish(),
+  }).strict()).max(500),
+  yeniden: z.boolean().optional(),
+}).strict();
+
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
 /**
  * EBLG-141/150: uyarıları gördüm onayı. `anahtarlar` onaylanan uyarıların

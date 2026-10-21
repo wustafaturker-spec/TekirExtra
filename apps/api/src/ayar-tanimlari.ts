@@ -122,8 +122,10 @@ registerModulAyar(
     onDenetimYapayZeka: z.boolean(),
     /** EBLG-145: gelen alış faturasında fiyatın geçmiş alışlardan sapma eşiği (yüzde). */
     gelenFiyatYuzde: z.number().min(1).max(1000),
+    /** AI-72: gelen alış faturasında yapay zekâ kontrolü (kiracının AI ayarı ve onayına da tabidir). */
+    gelenDenetimYapayZeka: z.boolean(),
   }),
-  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, onDenetimFiyatYuzde: 25, onDenetimKurYuzde: 3, onDenetimYapayZeka: true, gelenFiyatYuzde: 25 },
+  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, onDenetimFiyatYuzde: 25, onDenetimKurYuzde: 3, onDenetimYapayZeka: true, gelenFiyatYuzde: 25, gelenDenetimYapayZeka: true },
 );
 
 registerModulAyar(

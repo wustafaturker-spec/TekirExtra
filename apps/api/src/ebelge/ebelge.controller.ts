@@ -20,7 +20,8 @@ import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { OnDenetimAiService } from "./on-denetim-ai.service";
-import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
+import { GelenDenetimAiService } from "./gelen-denetim-ai.service";
+import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenAiDenetimSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -32,6 +33,7 @@ export class EbelgeController {
     private readonly gorunumService: EbelgeGorunumService,
     private readonly uygulamalarService: EbelgeUygulamalariService,
     @Optional() private readonly onDenetimAiService?: OnDenetimAiService,
+    @Optional() private readonly gelenDenetimAiService?: GelenDenetimAiService,
   ) {}
 
   /**
@@ -352,6 +354,17 @@ export class EbelgeController {
     const denetim = await this.ebelgeService.gelenDenetimSakla(id, sonuc.data.satirEslesmeleri);
     if (!denetim) throw new BadRequestException("Belge denetlenemedi");
     return denetim;
+  }
+
+  /** AI-72: gelen alış faturasında yapay zekâ kontrolü; ekran beklemez, sonuç onay istemez. */
+  @EbelgeUygulamasi("efatura")
+  @Post("gelen/:id/ai")
+  @Roller("muhasebe")
+  async gelenAiDenetim(@Param("id", new ParseUUIDPipe()) id: string, @Body() govde: unknown) {
+    if (!this.gelenDenetimAiService) throw new BadRequestException("Yapay zekâ kontrolü kullanılamıyor");
+    const sonuc = gelenAiDenetimSemasi.safeParse(govde ?? {});
+    if (!sonuc.success) throw new BadRequestException("Geçersiz satır eşleştirmesi");
+    return this.gelenDenetimAiService.denetle(id, sonuc.data.satirEslesmeleri, sonuc.data.yeniden === true);
   }
 
   @EbelgeUygulamasi("efatura")

@@ -42,6 +42,9 @@ export interface AiDenetimSonucu {
   durum: "tamam" | "kapali" | "zaman_asimi" | "hata";
   mesaj?: string;
   bulgular: OnDenetimBulgusu[];
+  /** AI-72: saklanan sonuç döndü (model çağrılmadı) ve üretildiği an. */
+  onbellek?: boolean;
+  zaman?: string;
 }
 
 function BulguSatiri({ b, onSustur, onRetGerekcesine, metin = GIDEN_METINLERI }: {
@@ -84,18 +87,27 @@ function BulguSatiri({ b, onSustur, onRetGerekcesine, metin = GIDEN_METINLERI }:
 }
 
 /** AI-71: yapay zekâ kontrolü kendi bölümünde; yüklenirken sihirbaz beklemez. */
-function AiBolumu({ ai, onSustur }: { ai: AiDenetimSonucu | "yukleniyor"; onSustur?: (kod: OnDenetimBulgusu["kod"]) => void }) {
+function AiBolumu({ ai, onSustur, onYenidenSor, metin }: {
+  ai: AiDenetimSonucu | "yukleniyor";
+  onSustur?: (kod: OnDenetimBulgusu["kod"]) => void;
+  onYenidenSor?: () => void;
+  metin?: OnDenetimMetinleri;
+}) {
   if (ai === "yukleniyor") return <p className="subtle" style={{ margin: "0.5rem 0 0" }}>Yapay zekâ kontrolü sürüyor… Beklemeden devam edebilirsiniz.</p>;
   const durumNotu = ai.durum === "tamam" ? null : ai.mesaj;
+  const onbellekNotu = ai.onbellek && ai.zaman ? ` · ${new Date(ai.zaman).toLocaleString("tr-TR")} tarihli sonuç` : "";
+  const yenidenSor = onYenidenSor && (
+    <>{" · "}<button type="button" className="btn-link" onClick={onYenidenSor}>Yeniden sor</button></>
+  );
   if (!ai.bulgular.length) {
-    return <p className="subtle" style={{ margin: "0.5rem 0 0" }}>{durumNotu ?? "Yapay zekâ kontrolü: dikkat edilecek bir şey bulunmadı."}</p>;
+    return <p className="subtle" style={{ margin: "0.5rem 0 0" }}>{durumNotu ?? "Yapay zekâ kontrolü: dikkat edilecek bir şey bulunmadı."}{onbellekNotu}{yenidenSor}</p>;
   }
   return (
     <div style={{ marginTop: "0.6rem" }}>
       <strong className="on-denetim__baslik">Yapay zekâ kontrolü</strong>
-      <span className="subtle"> · öneri niteliğindedir, onay istemez{durumNotu ? ` · ${durumNotu}` : ""}</span>
+      <span className="subtle"> · öneri niteliğindedir, onay istemez{durumNotu ? ` · ${durumNotu}` : ""}{onbellekNotu}</span>{yenidenSor}
       <ul className="stack" style={{ margin: 0, paddingLeft: "1.1rem" }}>
-        {ai.bulgular.map((b, i) => <BulguSatiri key={`ai-${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} />)}
+        {ai.bulgular.map((b, i) => <BulguSatiri key={`ai-${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} metin={metin} />)}
       </ul>
     </div>
   );
@@ -106,6 +118,7 @@ export function OnDenetimPaneli({
   susturulan = 0,
   onSustur,
   onRetGerekcesine,
+  onYenidenSor,
   ai,
   metin = GIDEN_METINLERI,
 }: {
@@ -116,6 +129,8 @@ export function OnDenetimPaneli({
   onSustur?: (kod: OnDenetimBulgusu["kod"]) => void;
   /** EBLG-150: ticari faturada bulgu metnini ret gerekçesine ekle. */
   onRetGerekcesine?: (mesaj: string) => void;
+  /** AI-72: saklanan yapay zekâ sonucunu atlayıp yeniden sor. */
+  onYenidenSor?: () => void;
   metin?: OnDenetimMetinleri;
 }) {
   if (!bulgular) return null;
@@ -131,7 +146,7 @@ export function OnDenetimPaneli({
     return (
       <section aria-label={metin.baslik} className={`on-denetim${aiUyarisi ? "" : " is-bilgi"}`}>
         <span>{metin.temiz}{susturmaNotu}</span>
-        {ai && <AiBolumu ai={ai} onSustur={onSustur} />}
+        {ai && <AiBolumu ai={ai} onSustur={onSustur} onYenidenSor={onYenidenSor} metin={metin} />}
       </section>
     );
   }
@@ -144,7 +159,7 @@ export function OnDenetimPaneli({
       <ul className="stack" style={{ margin: 0, paddingLeft: "1.1rem" }}>
         {[...uyarilar, ...bilgiler].map((b, i) => <BulguSatiri key={`${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} onRetGerekcesine={onRetGerekcesine} metin={metin} />)}
       </ul>
-      {ai && <AiBolumu ai={ai} onSustur={onSustur} />}
+      {ai && <AiBolumu ai={ai} onSustur={onSustur} onYenidenSor={onYenidenSor} metin={metin} />}
     </section>
   );
 }
