@@ -6398,7 +6398,7 @@ model TenantAiGorev {
   tenantId      String    @map("tenant_id") @db.Uuid
   ad            String    @map("ad")
   tetikleyici   String    @map("tetikleyici") // "ZAMANLANMIS", "VADE_GECIKMESI", "KASA_KRITIK"
-  /// AI-23: "ASISTAN" (talimat dil modeline gider) | "NAKIT_TAHSILAT" (deterministik analiz, model yok).
+  /// AI-23/AI-83: "ASISTAN" (talimat dil modeline gider) | "NAKIT_TAHSILAT" (deterministik analiz, model yok) | "BRIFING" (günlük brifing).
   tur           String    @default("ASISTAN") @map("tur")
   zamanlamaCron String?   @map("zamanlama_cron") // Örn: "09:00" veya "0 9 * * *"
   gorevTalimati String    @map("gorev_talimati") @db.Text

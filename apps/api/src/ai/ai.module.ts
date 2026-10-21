@@ -1,4 +1,5 @@
 import { Module, forwardRef } from "@nestjs/common";
+import { AiOnayOzetiController } from "./onay/ai-onay-ozeti.controller";
 import { SohbetEkController } from "./ajan/sohbet-ek.controller";
 import { EklerModule } from "../ekler/ekler.module";
 import { BildirimlerModule } from "../bildirimler/bildirimler.module";
@@ -34,7 +35,7 @@ import { TeklifTalebiService } from "./teklif-talebi/teklif-talebi.service";
 
 @Module({
   imports: [forwardRef(() => BildirimlerModule), EklerModule],
-  controllers: [AiController, AiAjanController, SohbetEkController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController],
+  controllers: [AiController, AiAjanController, SohbetEkController, AiOnayOzetiController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController],
   providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService],
   exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService],
 })

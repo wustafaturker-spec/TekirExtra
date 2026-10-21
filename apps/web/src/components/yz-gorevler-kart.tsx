@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, Modal, Select, Tarih } from "@/components/ui";
 
 type Tetikleyici = "ZAMANLANMIS" | "VADE_GECIKMESI" | "KASA_KRITIK";
-type Tur = "ASISTAN" | "NAKIT_TAHSILAT";
+type Tur = "ASISTAN" | "NAKIT_TAHSILAT" | "BRIFING";
 interface Gorev {
   id: string; ad: string; tur: Tur; tetikleyici: Tetikleyici; saat: string; gunler: number[]; esikTutar: number | null;
   gorevTalimati: string; aktif: boolean; sahip: string | null; sonCalisma: string | null; sonSonuc: string | null;
@@ -15,6 +15,7 @@ interface Gorev {
 const TUR_ADI: Record<Tur, string> = {
   ASISTAN: "Asistana talimat",
   NAKIT_TAHSILAT: "Nakit ve tahsilat analizi",
+  BRIFING: "Günlük brifing",
 };
 
 const GUNLER = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
@@ -122,7 +123,13 @@ export function YzGorevlerKart() {
           <div className="stack">
             <Field label="Görev adı"><Input value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} placeholder="Ör. Sabah tahsilat özeti" /></Field>
             <Field label="Görev türü">
-              <Select value={form.tur} onChange={(e) => setForm({ ...form, tur: e.target.value as Tur })}>
+              <Select value={form.tur} onChange={(e) => {
+                const tur = e.target.value as Tur;
+                // AI-83: brifing varsayılanı iş günleri 08:30.
+                setForm(tur === "BRIFING" && form.tur !== "BRIFING"
+                  ? { ...form, tur, tetikleyici: "ZAMANLANMIS", saat: "08:30", gunler: [1, 2, 3, 4, 5], ad: form.ad.trim() ? form.ad : "Günlük brifing" }
+                  : { ...form, tur });
+              }}>
                 {(Object.keys(TUR_ADI) as Tur[]).map((t) => <option key={t} value={t}>{TUR_ADI[t]}</option>)}
               </Select>
             </Field>
@@ -146,6 +153,8 @@ export function YzGorevlerKart() {
               <Field label="Talimat">
                 <textarea className="textarea" maxLength={2000} rows={4} value={form.talimat} onChange={(e) => setForm({ ...form, talimat: e.target.value })} placeholder="Ör. Bugün aranması gereken ilk 5 cariyi ve vadesi geçen toplam alacağı özetle." />
               </Field>
+            ) : form.tur === "BRIFING" ? (
+              <p className="muted">Vadesi gelen ve geçen alacak/borçlar, 7 günlük nakit, onayınızı bekleyen talepler, uyarılı ve yanıt süresi dolmak üzere olan gelen e-Fatura/e-İrsaliyeler, açık düzeltmeler ve kritik stok ekrandaki hesapla okunur; rolünüzün göremediği bölüm brifinge girmez. Yapay zekâ yalnız bugünün önceliklerini yazar (ekonomik model, sayıları kaynaktan alır). Sonuç bildirim olarak gelir; e-posta bildirim tercihinize göre gider.</p>
             ) : (
               <p className="muted">30 günlük nakit akışı tahmini, vadesi geçen alacaklar ve tahsilat öncelikleri ekrandaki hesapla okunur; dil modeli kullanılmaz.</p>
             )}

@@ -22,6 +22,7 @@ import { DuzeltmelerController } from "../../../duzeltmeler/duzeltmeler.controll
 import { BildirimlerController } from "../../../bildirimler/bildirimler.controller";
 import { DonemKapatmaController } from "../../../donem-kapatma/donem-kapatma.controller";
 import { SohbetEkController } from "../sohbet-ek.controller";
+import { AiOnayOzetiController } from "../../onay/ai-onay-ozeti.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -135,6 +136,10 @@ export const UC = {
   bildirimListe: uc(BildirimlerController, "listele", "GET /bildirimler"),
   // Kontroller dönemi kapatmaz ama sonuçlarını kaydeder; denetim kaydına düşsün diye POST.
   donemKontrol: uc(DonemKapatmaController, "kontrol", "POST /donem-kapatma/kontroller"),
+
+  // AI-83: günlük brifing kaynakları.
+  aiOnayOzeti: uc(AiOnayOzetiController, "ozet", "GET /ai/onay-ozeti"),
+  stokKritik: uc(StokController, "kritikOzeti", "GET /stok/kritik-ozeti"),
 
   // AI-36: e-posta teklif talebinden açılan taslak fırsata bağlanır.
   crmTeklifBagla: uc(CrmBelgeController, "bagla", "POST /crm/firsatlar/:firsatId/belgeler"),

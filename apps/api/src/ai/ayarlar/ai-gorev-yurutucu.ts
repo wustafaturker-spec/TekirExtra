@@ -12,6 +12,8 @@ import { trSimdi, type TrSimdi } from "../ai-zaman";
 import { AiIcgoruService } from "../icgoru/ai-icgoru.service";
 import { AnalizYapilamadi, icgoruMetni } from "../icgoru/nakit-tahsilat-analizi";
 import { AiSinirHatasi } from "../saglayici/ai-butce";
+import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
+import { brifingMetni, brifingOncelikleri, brifingOnemi, brifingTamMetni, brifingVerisiTopla } from "../icgoru/gunluk-brifing";
 
 export { trSimdi, type TrSimdi };
 
@@ -69,9 +71,25 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     let sinir = false;
     let onem: "bilgi" | "uyari" | "kritik" = "bilgi";
     const nakitTahsilat = gorev.tur === "NAKIT_TAHSILAT";
+    const brifing = gorev.tur === "BRIFING";
     if (!sahip) {
       metin = "Çalışmadı: görev sahibi kullanıcı yok ya da etkin değil.";
       basarili = false;
+    } else if (brifing) {
+      // AI-83: bölümler sahibin rolüyle uçlardan okunur; model yalnız öncelik yazar (ekonomik, sayılar kaynaktan).
+      try {
+        const sonuc = await baglamlaCalistir({ tenantId, userId: sahip.id, rol: sahip.rol as Rol }, async () => {
+          const veri = await brifingVerisiTopla((uc, arg) => this.uc.cagir(uc, arg), trSimdi().gun);
+          const duz = brifingMetni(veri);
+          const saglayici = await kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "ozet" }).then((x) => x.saglayici).catch(() => null);
+          return { metin: brifingTamMetni(duz, await brifingOncelikleri(saglayici, duz)), onem: brifingOnemi(veri) };
+        });
+        metin = sonuc.metin;
+        onem = sonuc.onem;
+      } catch (hata) {
+        metin = `Çalışmadı: ${hata instanceof Error ? hata.message : String(hata)}`;
+        basarili = false;
+      }
     } else if (nakitTahsilat) {
       // AI-23: deterministik analiz; model, AI-14 onayı ve AI-15 sayacı devreye girmez.
       try {
@@ -96,9 +114,9 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     if (secenek.bildir && sahip && basarili) {
       await baglamlaCalistir({ tenantId, userId: sahip.id, rol: sahip.rol as Rol }, () =>
         this.bildirimler.uret({
-          tur: "yapay_zeka", onem, baslik: `Görev: ${gorev.ad}`, aciklama: metin.slice(0, 1500),
+          tur: "yapay_zeka", onem, baslik: brifing ? gorev.ad : `Görev: ${gorev.ad}`, aciklama: metin.slice(0, 1500),
           birlesimAnahtari: `yapay_zeka:gorev:${gorev.id}:${trSimdi().gun}`, kaynakTur: "ai_gorev", kaynakRef: gorev.id,
-          hedefYol: nakitTahsilat ? "/panel/nakit-akisi" : "/panel/ayarlar/yapay-zeka", roller: [], kullaniciIdler: [sahip.id],
+          hedefYol: nakitTahsilat ? "/panel/nakit-akisi" : brifing ? "/panel/bildirimler" : "/panel/ayarlar/yapay-zeka", roller: [], kullaniciIdler: [sahip.id],
         }),
       ).catch((h: unknown) => this.logger.warn(`Görev bildirimi üretilemedi: ${String(h)}`));
     }

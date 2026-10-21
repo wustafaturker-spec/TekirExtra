@@ -4,6 +4,7 @@ import { onDenetimAnahtari, type OnDenetimBulgusu } from "@tekirextra/shared";
 import { adres, arac, BUGUN, cagir, kisalt, para, sec, tarih, uuid, type AracBaglami } from "./arac";
 import { UC } from "./uclar";
 import { ublOzeti } from "../ubl-ozeti";
+import { brifingMetni, brifingVerisiTopla } from "../../icgoru/gunluk-brifing";
 
 /** Sohbet ekindeki XML UBL e-Fatura değilse talep açılmaz. */
 function ublOzetiOku(xml: string) {
@@ -440,6 +441,19 @@ export const MODUL_ARACLARI = [
     uc: UC.nakitPozisyon,
     async calistir(b) {
       return { ...kucuk(await cagir(b, UC.nakitPozisyon, []), 30), adres: "/panel/nakit-akisi" };
+    },
+  }),
+
+  // ─── AI-83: günlük brifing ──────────────────────────────────────────────
+  arac({
+    ad: "gunluk_brifing",
+    aciklama: "Bugün dikkat edilecekler: vadesi geçen alacak/borç, 7 günlük nakit, onay bekleyen talepler, uyarılı ve yanıt süresi dolmak üzere olan gelen e-Fatura/e-İrsaliyeler, açık düzeltmeler, kritik stok. 'Bugün ne yapmalıyım', 'dikkat etmem gerekenler' sorularında kullan; rakamları aynen aktar.",
+    sinif: "okuma",
+    girdi: z.object({}),
+    uc: UC.vadesiGecenler,
+    async calistir(b) {
+      const veri = await brifingVerisiTopla((uc, arg) => cagir(b, uc, arg), BUGUN());
+      return { metin: brifingMetni(veri), veri };
     },
   }),
 

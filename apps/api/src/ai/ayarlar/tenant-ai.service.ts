@@ -37,7 +37,7 @@ export interface TenantAiAyariGirdi {
 const gorevAlanlari = z.object({
   ad: z.string().trim().min(2).max(100),
   /** AI-23: NAKIT_TAHSILAT deterministik analizdir, talimat almaz. */
-  tur: z.enum(["ASISTAN", "NAKIT_TAHSILAT"]),
+  tur: z.enum(["ASISTAN", "NAKIT_TAHSILAT", "BRIFING"]),
   tetikleyici: z.enum(["ZAMANLANMIS", "VADE_GECIKMESI", "KASA_KRITIK"]),
   saat: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Saat SS:DD biçiminde olmalıdır"),
   gunler: z.array(z.number().int().min(1).max(7)).max(7),
@@ -49,7 +49,7 @@ type GorevKurali = { tur?: string; tetikleyici?: string; esikTutar?: number | nu
 const gorevKurallari = <T extends z.ZodType<GorevKurali>>(sema: T) =>
   sema
     .refine((g) => g.tetikleyici !== "KASA_KRITIK" || (g.esikTutar ?? 0) > 0, { message: "Kasa kritik görevinde eşik tutarı zorunludur", path: ["esikTutar"] })
-    .refine((g) => g.tur === "NAKIT_TAHSILAT" || (g.gorevTalimati ?? "").length >= 5, { message: "Görev talimatı en az 5 karakter olmalıdır", path: ["gorevTalimati"] });
+    .refine((g) => g.tur === "NAKIT_TAHSILAT" || g.tur === "BRIFING" || (g.gorevTalimati ?? "").length >= 5, { message: "Görev talimatı en az 5 karakter olmalıdır", path: ["gorevTalimati"] });
 const gorevTamSemasi = gorevKurallari(gorevAlanlari);
 /** Oluşturma: sahibi oluşturan kullanıcıdır; tür asistan, saat 09:00, her gün, etkin varsayılır. */
 export const gorevSemasi = gorevKurallari(gorevAlanlari.partial({ tur: true, saat: true, gunler: true, esikTutar: true, gorevTalimati: true, aktif: true }));
