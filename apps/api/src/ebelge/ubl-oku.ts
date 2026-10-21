@@ -65,6 +65,13 @@ export interface UblToplamlar {
   /** EBLG-116: özel matrah kodu (KDV alt toplamının istisna kodu) ve oranı. */
   ozelMatrahKodu?: string;
   ozelMatrahOrani?: number;
+  /**
+   * Standart dışı ayrık yazım (2026-10-21, OZF2026000000004): özel matrah
+   * kodlu alt toplam %0 / 0 KDV ile KDV'siz bedeli (ör. külçe altın) taşır,
+   * KDV'nin hesaplandığı tutar kodsuz tek bir alt toplamdadır. Özel matrah
+   * ve oran o alt toplamdan okunur; onay ekranında açıklanır.
+   */
+  ozelMatrahAyrik?: { kodsuzMatrah: number; kodluMatrah: number };
   /** EBLG-115/120: başlıktaki KDV dışı vergiler (tevkifat 9015 hariç). */
   digerVergiler: UblVergi[];
   /**
@@ -402,6 +409,7 @@ export function faturaUblOku(xml: string): UblFatura {
       iskontoToplami: sayi(parasal?.AllowanceTotalAmount),
       matrah,
       ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrah: sayi(kdvBasligi.TaxableAmount) } : {}),
+      ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" ? ayrikOzelMatrah(fatura.TaxTotal) : {}),
       kdv: kdvToplam,
       genelToplam: genelToplam || matrah + kdvToplam,
       ...(kdvAltToplamlari(fatura.TaxTotal).length ? { kdvMatrahi: kdvAltToplamlari(fatura.TaxTotal).reduce((t, a) => t + sayi(a.TaxableAmount), 0) } : {}),
@@ -419,6 +427,7 @@ export function faturaUblOku(xml: string): UblFatura {
       belgeIskontosu: dizi(fatura.AllowanceCharge).filter((a) => metin(a.ChargeIndicator).toLowerCase() !== "true").reduce((t, a) => t + sayi(a.Amount), 0),
       belgeArtirimi: dizi(fatura.AllowanceCharge).filter((a) => metin(a.ChargeIndicator).toLowerCase() === "true").reduce((t, a) => t + sayi(a.Amount), 0),
       ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrahKodu: metin(yol(kdvBasligi, "TaxCategory", "TaxExemptionReasonCode")) || undefined, ozelMatrahOrani: kdvOraniOku(kdvBasligi) } : {}),
+      ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" ? ayrikOzelMatrahOrani(fatura.TaxTotal) : {}),
       digerVergiler: digerVergiler(fatura.TaxTotal),
       kdvIcindeTevkifat: dizi(yol(fatura.TaxTotal, "TaxSubtotal"))
         .filter((a) => metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode")) === "9015")
@@ -450,6 +459,30 @@ const tlMetin = (kurusDeger: number) => (kurusDeger / 100).toFixed(2);
 /** Oran yazılmış mı? Sıfır oran da geçerli bir oran olduğu için değere değil varlığa bakılır. */
 function oranYazili(taxSubtotal: Dugum): boolean {
   return metin(taxSubtotal.Percent) !== "" || metin(yol(taxSubtotal, "TaxCategory", "Percent")) !== "";
+}
+
+/**
+ * Özel matrahın ayrık yazımı: kodlu tek alt toplam KDV'sizse ve kodsuz tek
+ * KDV'li alt toplam varsa özel matrah odur. Koşul tutmazsa boş döner ve
+ * standart okuma (kodlu alt toplam) geçerli kalır.
+ */
+function ayrikOzelMatrahAltlari(taxTotal: unknown) {
+  const altlar = kdvAltToplamlari(taxTotal);
+  const kodlu = altlar.filter((a) => metin(yol(a, "TaxCategory", "TaxExemptionReasonCode")));
+  const kodsuz = altlar.filter((a) => !metin(yol(a, "TaxCategory", "TaxExemptionReasonCode")));
+  if (kodlu.length !== 1 || kodsuz.length !== 1) return undefined;
+  if (sayi(kodlu[0].TaxAmount) !== 0 || !(sayi(kodsuz[0].TaxAmount) > 0) || !(kdvOraniOku(kodsuz[0]) > 0)) return undefined;
+  return { kodlu: kodlu[0], kodsuz: kodsuz[0] };
+}
+
+function ayrikOzelMatrah(taxTotal: unknown): Pick<UblToplamlar, "ozelMatrah" | "ozelMatrahAyrik"> {
+  const a = ayrikOzelMatrahAltlari(taxTotal);
+  return a ? { ozelMatrah: sayi(a.kodsuz.TaxableAmount), ozelMatrahAyrik: { kodsuzMatrah: sayi(a.kodsuz.TaxableAmount), kodluMatrah: sayi(a.kodlu.TaxableAmount) } } : {};
+}
+
+function ayrikOzelMatrahOrani(taxTotal: unknown): Pick<UblToplamlar, "ozelMatrahOrani"> {
+  const a = ayrikOzelMatrahAltlari(taxTotal);
+  return a ? { ozelMatrahOrani: kdvOraniOku(a.kodsuz) } : {};
 }
 
 function kdvAltToplamlari(taxTotal: unknown): Dugum[] {

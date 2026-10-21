@@ -225,6 +225,9 @@ export function tutarDenetimi(ubl: UblFatura, hesap: FaturaHesaplaSonuc, ihracKa
   if (t.kdvIcindeTevkifat > 0 && t.tevkifat === 0) {
     aciklamalar.push(`Belgedeki ${tl(t.kdvIcindeTevkifat)} tevkifat (9015) standart tevkifat alanına değil KDV toplamının içine yazılmış; sistem bunu tevkifat olarak okuyamadığı için ödenecek tutar tutmuyor. Gönderenden belgeyi düzeltmesini isteyin ya da faturayı elle girin.`);
   }
+  if (t.ozelMatrahAyrik) {
+    aciklamalar.push(`Belge özel matrahı standart dışı yazmış: ${t.ozelMatrahKodu ?? "özel matrah"} kodlu alt toplam ${tl(t.ozelMatrahAyrik.kodluMatrah)} KDV'siz bedeli %0 ile taşıyor, KDV'nin hesaplandığı ${tl(t.ozelMatrahAyrik.kodsuzMatrah)} ayrı alt toplamda. Özel matrah ${tl(t.ozelMatrahAyrik.kodsuzMatrah)}, oran %${t.ozelMatrahOrani} olarak alındı.`);
+  }
   if (belgeStopaj) aciklamalar.push(`Belgede ${tl(belgeStopaj)} stopaj var; ödenecek tutardan düşülür, muhasebede 360'a alacak yazılır.`);
   if (Math.abs(t.kdv - t.kdvSaf) > tolerans) aciklamalar.push(`Üstteki KDV kartı belgenin vergi toplamıdır (${tl(t.kdv)}); tablodaki KDV yalnız KDV alt toplamlarıdır (${tl(t.kdvSaf)}).`);
   return { tolerans, satirlar, asanlar, gecerli: asanlar.length === 0, aciklamalar };
