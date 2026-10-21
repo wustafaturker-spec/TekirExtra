@@ -21,6 +21,7 @@ import { ButceController } from "../../../butce/butce.controller";
 import { DuzeltmelerController } from "../../../duzeltmeler/duzeltmeler.controller";
 import { BildirimlerController } from "../../../bildirimler/bildirimler.controller";
 import { DonemKapatmaController } from "../../../donem-kapatma/donem-kapatma.controller";
+import { SohbetEkController } from "../sohbet-ek.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -91,6 +92,9 @@ export const UC = {
   gelenEfaturaDenetim: uc(EbelgeController, "gelenDenetim", "POST /ebelge/gelen/:id/denetim"),
   gelenEfaturaIsle: uc(EbelgeController, "gelenOnayla", "POST /ebelge/gelen/:id/onayla"),
   gelenEfaturaYanit: uc(EbelgeController, "gelenYanit", "POST /ebelge/gelen/:id/yanit"),
+  // AI-79: sohbete eklenen UBL XML'in gelen kutusuna yüklenmesi.
+  sohbetEkiXml: uc(SohbetEkController, "xml", "GET /ai/ajan/ek/:id/xml"),
+  gelenXmlYukle: uc(EbelgeController, "gelenXmlYukle", "POST /ebelge/gelen/xml-yukle"),
   gelenEirsaliyeListe: uc(EirsaliyeController, "gelenListele", "GET /ebelge/irsaliye/gelen"),
   gelenEirsaliyeGetir: uc(EirsaliyeController, "gelenDetay", "GET /ebelge/irsaliye/gelen/:id"),
   gelenEirsaliyeYanit: uc(EirsaliyeController, "gelenYanit", "POST /ebelge/irsaliye/gelen/:id/yanit"),

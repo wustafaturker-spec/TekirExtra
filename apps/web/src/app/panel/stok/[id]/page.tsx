@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
@@ -354,6 +355,8 @@ export default function StokDetaySayfasi() {
   const router = useRouter();
 
   const [detay, setDetay] = useState<StokDetay | null>(null);
+  // AI-78: açık stok kartı asistan bağlamı olur.
+  useEkranKaydi(detay ? { tur: "stok", id: detay.id, etiket: detay.ad } : null);
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
   const [hareketOzeti, setHareketOzeti] = useState<HareketOzeti | null>(null);
   const [hareketImleci, setHareketImleci] = useState<string | null>(null);

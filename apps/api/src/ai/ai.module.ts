@@ -1,4 +1,6 @@
 import { Module, forwardRef } from "@nestjs/common";
+import { SohbetEkController } from "./ajan/sohbet-ek.controller";
+import { EklerModule } from "../ekler/ekler.module";
 import { BildirimlerModule } from "../bildirimler/bildirimler.module";
 import { AiController } from "./ai.controller";
 import { AiService } from "./ai.service";
@@ -31,8 +33,8 @@ import { TeklifTalebiService } from "./teklif-talebi/teklif-talebi.service";
 // MCP (AI-09) kullanıcı başına erişim anahtarıyla çalışır; araçlar asistanla ortak.
 
 @Module({
-  imports: [forwardRef(() => BildirimlerModule)],
-  controllers: [AiController, AiAjanController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController],
+  imports: [forwardRef(() => BildirimlerModule), EklerModule],
+  controllers: [AiController, AiAjanController, SohbetEkController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController],
   providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService],
   exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService],
 })

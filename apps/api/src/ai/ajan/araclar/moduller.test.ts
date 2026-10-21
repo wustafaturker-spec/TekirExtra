@@ -100,3 +100,23 @@ describe("AI-73…77 araç kuralları", () => {
     expect(kisalt({ a: [1, 2] }).kisaltildi).toBe(false);
   });
 });
+
+describe("AI-79 XML yükleme aracı", () => {
+  const ubl = `<?xml version="1.0"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cbc:ID>ABC1</cbc:ID><cbc:IssueDate>2026-10-20</cbc:IssueDate><cac:AccountingSupplierParty><cac:Party><cac:PartyName><cbc:Name>Kaya</cbc:Name></cac:PartyName></cac:Party></cac:AccountingSupplierParty><cac:LegalMonetaryTotal><cbc:PayableAmount>120</cbc:PayableAmount></cac:LegalMonetaryTotal><cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity>1</cbc:InvoicedQuantity><cac:Item><cbc:Name>Vana</cbc:Name></cac:Item></cac:InvoiceLine></Invoice>`;
+
+  it("özet UBL'den, işlem gelen kutusuna XML ile yükler", async () => {
+    const yukle = vi.fn(async () => ({ id: "g1", belgeNo: "ABC1", gonderenUnvan: "Kaya" }));
+    const { b } = baglam({ xml: () => ({ dosyaAdi: "f.xml", xml: ubl }), gelenXmlYukle: yukle });
+    const a = bul("gelen_efatura_xml_yukle");
+    expect(await a.ozetle!(b, { ekId: "e1" })).toContain("e-Fatura ABC1 · Kaya");
+    const r: any = await a.calistir(b, { ekId: "e1" });
+    expect(yukle).toHaveBeenCalledWith({ xml: ubl });
+    expect(r.adres).toBe("/panel/fatura/gelen-kutusu?ac=g1");
+  });
+
+  it("UBL olmayan XML için talep açılmaz", async () => {
+    const { b } = baglam({ xml: () => ({ dosyaAdi: "f.xml", xml: "<a/>" }) });
+    await expect(bul("gelen_efatura_xml_yukle").ozetle!(b, { ekId: "e1" })).rejects.toThrow("UBL e-Fatura değil");
+  });
+});
+

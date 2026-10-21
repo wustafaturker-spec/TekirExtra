@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { asistaniAc } from "@/lib/asistan-baglami";
+import { asistaniAc, useEkranKaydi } from "@/lib/asistan-baglami";
 import { mutlakSapmaMetni, sapmaMetni, type IsabetOlcusu } from "@/lib/tahmin-isabeti";
 import { Badge, Button, Card, Para, Stat, StatGrid } from "@/components/ui";
 
@@ -62,6 +62,8 @@ interface DurumOzeti {
  * yalnız AI kullanılabilirken görünür.
  */
 export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId: string; cariUnvan: string; yenile?: unknown; onSekme: (sekme: CariDurumSekmesi) => void }) {
+  // AI-78: açık cari asistan bağlamı olur.
+  useEkranKaydi({ tur: "cari", id: cariId, etiket: cariUnvan });
   const [durum, setDurum] = useState<CariDurumu | null>(null);
   const [hata, setHata] = useState(false);
   const [ozetlenebilir, setOzetlenebilir] = useState(false);
@@ -115,7 +117,7 @@ export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId
             <>
               <Button size="sm" variant="ghost" type="button" onClick={ozetle} disabled={ozetleniyor}>{ozetleniyor ? "Özetleniyor…" : ozet ? "Yeniden özetle" : "Özetle"}</Button>
               {/* CARI-48: asistan bu carinin kimliğiyle açılır; yetki ve onay kuralları aynen. */}
-              <Button size="sm" variant="ghost" type="button" onClick={() => asistaniAc({ cari: { id: cariId, unvan: cariUnvan } })}>Asistana sor</Button>
+              <Button size="sm" variant="ghost" type="button" onClick={() => asistaniAc({ tur: "cari", id: cariId, etiket: cariUnvan })}>Asistana sor</Button>
             </>
           )}
         </div>

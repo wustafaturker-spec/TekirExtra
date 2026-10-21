@@ -3,6 +3,14 @@ import { z } from "zod";
 import { onDenetimAnahtari, type OnDenetimBulgusu } from "@tekirextra/shared";
 import { adres, arac, BUGUN, cagir, kisalt, para, sec, tarih, uuid, type AracBaglami } from "./arac";
 import { UC } from "./uclar";
+import { ublOzeti } from "../ubl-ozeti";
+
+/** Sohbet ekindeki XML UBL e-Fatura değilse talep açılmaz. */
+function ublOzetiOku(xml: string) {
+  const u = ublOzeti(xml);
+  if (!u) throw new BadRequestException("Ek geçerli bir UBL e-Fatura değil");
+  return u;
+}
 
 /*
  * AI-73…AI-77 (Asistan Genişletme, A grubu): gelen e-Belge kutusu, satın
@@ -141,6 +149,27 @@ export const MODUL_ARACLARI = [
     async calistir(b, g) {
       if (g.yanit === "ret" && !g.gerekce?.trim()) throw new BadRequestException("Ret yanıtı için gerekçe zorunludur");
       return kisalt(await cagir(b, UC.gelenEfaturaYanit, [g.gelenId, { yanit: g.yanit, gerekce: g.gerekce ?? null }], g.gelenId), 5).veri;
+    },
+  }),
+  arac({
+    ad: "gelen_efatura_xml_yukle",
+    aciklama: "Kullanıcının sohbete eklediği UBL XML e-Faturayı gelen kutusuna ekler (alıcı VKN firmanınki olmalı; faturaya işlemez). ekId SOHBET EKLERİ listesinden. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ ekId: uuid("Sohbet eki kimliği") }),
+    uc: UC.gelenXmlYukle,
+    async ozetle(b, g) {
+      const { dosyaAdi, xml } = await cagir(b, UC.sohbetEkiXml, [g.ekId]);
+      const u = ublOzetiOku(xml);
+      return `Gelen kutusuna eklenecek: ${dosyaAdi} · e-Fatura ${u.belgeNo} · ${u.gonderen} (VKN ${u.gonderenVkn}) · ${para(u.genelToplam, u.doviz)} · alıcı VKN ${u.aliciVkn}`;
+    },
+    async hedefDurumu(b, g) {
+      const { xml } = await cagir(b, UC.sohbetEkiXml, [g.ekId]);
+      return ublOzetiOku(xml);
+    },
+    async calistir(b, g) {
+      const { xml } = await cagir(b, UC.sohbetEkiXml, [g.ekId]);
+      const k = await cagir(b, UC.gelenXmlYukle, [{ xml }]);
+      return { ...sec(k, ["id", "belgeNo", "gonderenUnvan", "tarih", "durum"]), adres: adres.gelenEfatura(k.id), not: "Gelen kutusuna eklendi; faturaya işlemek için gelen_efatura_getir ile kontrol edin." };
     },
   }),
   arac({

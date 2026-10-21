@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ihtiyacGirdisiOku, ihtiyacKaniti, ihtiyacSorgusu, ihtiyactanTalep, type IhtiyacGirdisi, type IhtiyacSonucu } from "@/lib/ihtiyac-talep";
 import { AramaSecici } from "@/components/arama-secici";
@@ -110,6 +111,8 @@ export default function SatinAlmaTalepleriSayfasi() {
   const [kapsam, setKapsam] = useState<Kapsam>("benim");
   const [liste, setListe] = useState<TalepSatiri[]>([]);
   const [detay, setDetay] = useState<TalepDetay | null>(null);
+  // AI-78: açık satın alma talebi asistan bağlamı olur.
+  useEkranKaydi(detay ? { tur: "satin_alma_talebi", id: detay.id, etiket: detay.no } : null);
   const aktarimSirasi = useRef(0);
   const [aktarim, setAktarim] = useState<{ girdi: IhtiyacGirdisi; sonuc: IhtiyacSonucu } | null>(null);
   const [form, setForm] = useState<TalepFormu | null>(null);

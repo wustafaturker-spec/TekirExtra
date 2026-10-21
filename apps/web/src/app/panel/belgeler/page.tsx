@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
@@ -308,6 +309,8 @@ export default function BelgelerSayfasi() {
   const ozgunSevkZamaniRef = useRef<{ yerel: string; iso: string } | null>(null);
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
+  // AI-78: açık belge asistan bağlamı olur.
+  useEkranKaydi(detay ? { tur: "belge", id: detay.id, etiket: detay.no ?? "Taslak belge" } : null);
   /** FTR-34: açık teklifin sürümleri; tek sürümde gösterilmez. */
   const [surumler, setSurumler] = useState<{ id: string; noMetni: string | null; revizyonNo: number; durum: string; tarih: string; genelToplam: string; dovizCinsi: string }[]>([]);
   useEffect(() => {

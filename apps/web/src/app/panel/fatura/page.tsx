@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
@@ -488,6 +489,8 @@ export default function FaturaSayfasi() {
   const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null);
   /** Satırdan açılan fatura; eylem çubuğu ve salt okunur kararı buna bakar. */
   const [acikFatura, setAcikFatura] = useState<FaturaDetay | null>(null);
+  // AI-78: açık fatura asistan bağlamı olur.
+  useEkranKaydi(acikFatura ? { tur: "fatura", id: acikFatura.id, etiket: acikFatura.no ?? "Taslak fatura" } : null);
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);

@@ -5,6 +5,7 @@ import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
 import { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
 import type { AiAracliYanit } from "../saglayici/ai-provider.interface";
 import { AJAN_ARACLARI, aracTanimi } from "./araclar";
+import { ublOzeti } from "./ubl-ozeti";
 import { AiAjanService } from "./ai-ajan.service";
 import { AracYurutucu } from "./arac-yurutucu";
 import { finansOlgulari } from "./finans-aciklama";
@@ -681,5 +682,84 @@ describe("ekran bağlamı (CARI-48)", () => {
     const k = kurBaglamli(() => ({}));
     await expect(k.calistir("x")).rejects.toThrow("UUID");
     expect(k.ekranUc.cagir).not.toHaveBeenCalled();
+  });
+  function kurKayitli(yanitlar: Record<string, () => unknown>) {
+    const k = kur([{ metin: "Bakıyorum.", aracCagrilari: [] }]);
+    const ekranUc = { cagir: vi.fn(async (u: { yol: string }) => { const f = yanitlar[u.yol]; if (!f) throw new Error(`beklenmeyen ${u.yol}`); return f(); }) };
+    const service = new AiAjanService(
+      { tenantIslem: vi.fn((_t: string, fn: (t: typeof k.tx) => unknown) => fn(k.tx)) } as never,
+      new AracYurutucu(k.uc as never, k.onay as never),
+      ekranUc as never,
+    );
+    service.saglayiciBul = async () => ({ saglayici: k.saglayici, ozelTalimatlar: null });
+    const calistir = (kayit: { tur: any; id: string }) => istekBaglami.run({ deger: { ...KIMLIK, rol: "muhasebe" as never } }, () => service.mesajiIsle("Bu faturayı kontrol et", undefined, { kayit }));
+    return { ...k, ekranUc, calistir };
+  }
+
+  it("AI-78: fatura ekranı kendi ucundan okunur, yanıtta rozet adı döner", async () => {
+    const k = kurKayitli({ "GET /fatura/:id": () => ({ id: CARI_ID, no: "FTR2026000000012", tip: "satis", durum: "kesin", genelToplam: "1200.00", dovizCinsi: "TRY", cari: { unvan: "Kaya" } }) });
+    const y = await k.calistir({ tur: "fatura", id: CARI_ID });
+    const sistem = k.saglayici.girdiler[0].sistemRol as string;
+    expect(sistem).toContain("aşağıdaki fatura açıkken");
+    expect(sistem).toContain(`- fatura: FTR2026000000012 | tip=satis | durum=kesin | cari=Kaya | tutar=1200.00 TRY | id=${CARI_ID}`);
+    expect(y.ekranKaydi).toEqual({ tur: "fatura", id: CARI_ID, etiket: "FTR2026000000012" });
+  });
+
+  it("AI-78: rapor kimliği katalog kodudur; katalogda yoksa reddedilir", async () => {
+    const k = kurKayitli({ "GET /raporlar": () => [{ kod: "satis_ozet", ad: "Satış özeti" }] });
+    await expect(k.calistir({ tur: "rapor", id: "satis_ozet" })).resolves.toMatchObject({ ekranKaydi: { etiket: "Satış özeti" } });
+    await expect(k.calistir({ tur: "rapor", id: "yok" })).rejects.toThrow("Rapor bulunamadı");
+    await expect(k.calistir({ tur: "rapor", id: "x y" })).rejects.toThrow("UUID");
+  });
+
+  it("AI-78: bilinmeyen tür ve geçersiz kimlik modele gitmeden reddedilir", async () => {
+    const k = kurKayitli({});
+    await expect(k.calistir({ tur: "personel", id: CARI_ID })).rejects.toThrow("tanınmıyor");
+    await expect(k.calistir({ tur: "fatura", id: "1" })).rejects.toThrow("UUID");
+    expect(k.saglayici.girdiler).toHaveLength(0);
+  });
+});
+
+const UBL = `<?xml version="1.0" encoding="UTF-8"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+<cbc:ProfileID>TEMELFATURA</cbc:ProfileID><cbc:ID>ABC2026000000001</cbc:ID><cbc:UUID>u1</cbc:UUID><cbc:IssueDate>2026-10-20</cbc:IssueDate><cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode><cbc:DocumentCurrencyCode>TRY</cbc:DocumentCurrencyCode>
+<cac:AccountingSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">1234567801</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>Kaya Makina</cbc:Name></cac:PartyName></cac:Party></cac:AccountingSupplierParty>
+<cac:AccountingCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">1234567802</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>Alıcı</cbc:Name></cac:PartyName></cac:Party></cac:AccountingCustomerParty>
+<cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="TRY">100</cbc:LineExtensionAmount><cbc:PayableAmount currencyID="TRY">120</cbc:PayableAmount></cac:LegalMonetaryTotal>
+<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="TRY">100</cbc:LineExtensionAmount><cac:Item><cbc:Name>Vana</cbc:Name></cac:Item><cac:Price><cbc:PriceAmount currencyID="TRY">100</cbc:PriceAmount></cac:Price></cac:InvoiceLine></Invoice>`;
+
+describe("sohbet ekleri (AI-79)", () => {
+  it("UBL özeti e-Fatura alanlarını çıkarır, başka XML'de null döner", () => {
+    expect(ublOzeti(UBL)).toMatchObject({ belgeNo: "ABC2026000000001", gonderen: "Kaya Makina", gonderenVkn: "1234567801", aliciVkn: "1234567802", genelToplam: "120.00", doviz: "TRY" });
+    expect(ublOzeti("<a>merhaba</a>")).toBeNull();
+  });
+
+  function kurEkli(ekler: Record<string, { sahipTur: string; dosyaAdi: string; mimeTip: string; icerik: string }>) {
+    const k = kur([{ metin: "Ekte bir e-Fatura var.", aracCagrilari: [] }]);
+    const ekServis = { indir: vi.fn(async (id: string) => { const e = ekler[id]; if (!e) throw new Error("Ek bulunamadı"); return { ek: { id, ...e }, icerik: Buffer.from(e.icerik) }; }) };
+    const service = new AiAjanService(
+      { tenantIslem: vi.fn((_t: string, fn: (t: typeof k.tx) => unknown) => fn(k.tx)) } as never,
+      new AracYurutucu(k.uc as never, k.onay as never),
+      undefined,
+      ekServis as never,
+    );
+    service.saglayiciBul = async () => ({ saglayici: k.saglayici, ozelTalimatlar: null });
+    const calistir = (ekIdleri: string[]) => istekBaglami.run({ deger: { ...KIMLIK, rol: "muhasebe" as never } }, () => service.mesajiIsle("Bu faturayı yükle", undefined, undefined, ekIdleri));
+    return { ...k, ekServis, calistir };
+  }
+
+  it("mesaja bağlanan UBL eki modele özetiyle ve ekId ile tanıtılır", async () => {
+    const k = kurEkli({ [CARI_ID]: { sahipTur: "ai_sohbet", dosyaAdi: "fatura.xml", mimeTip: "application/xml", icerik: UBL } });
+    await k.calistir([CARI_ID]);
+    const sistem = k.saglayici.girdiler[0].sistemRol as string;
+    expect(sistem).toContain("SOHBET EKLERİ");
+    expect(sistem).toContain(`- fatura.xml | UBL e-Fatura | belge=ABC2026000000001 | tarih=2026-10-20 | tip=SATIS | gönderen=Kaya Makina (VKN 1234567801) | alıcı VKN=1234567802 | toplam=120.00 TRY | ekId=${CARI_ID}`);
+  });
+
+  it("başka sahipli ek, geçersiz kimlik ve 5'ten fazla ek modele gitmeden reddedilir", async () => {
+    const k = kurEkli({ [CARI_ID]: { sahipTur: "fatura", dosyaAdi: "x.pdf", mimeTip: "application/pdf", icerik: "%PDF" } });
+    await expect(k.calistir([CARI_ID])).rejects.toThrow("bu sohbete ait değil");
+    await expect(k.calistir(["x"])).rejects.toThrow("geçerli ek");
+    await expect(k.calistir(Array(6).fill(CARI_ID))).rejects.toThrow("En çok 5");
+    expect(k.saglayici.girdiler).toHaveLength(0);
   });
 });

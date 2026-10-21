@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
@@ -204,6 +205,8 @@ export default function GelenKutusuSayfasi() {
     "beklemede",
   );
   const [detay, setDetay] = useState<GelenDetay | null>(null);
+  // AI-78: açık gelen e-Fatura asistan bağlamı olur.
+  useEkranKaydi(detay ? { tur: "gelen_efatura", id: detay.id, etiket: detay.belgeNo } : null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islemde, setIslemde] = useState<string | null>(null);

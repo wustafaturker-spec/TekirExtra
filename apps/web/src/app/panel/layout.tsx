@@ -10,7 +10,7 @@ import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
 import { AsistanPenceresi } from "@/components/asistan-penceresi";
-import { ASISTAN_AC_OLAYI, type AsistanBaglami } from "@/lib/asistan-baglami";
+import { ASISTAN_AC_OLAYI, ekranKaydi, type AsistanBaglami } from "@/lib/asistan-baglami";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings, Sparkles } from "lucide-react";
 
@@ -87,11 +87,11 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [ayarlarAcik, setAyarlarAcik] = useState(false);
   const [paletAcik, setPaletAcik] = useState(false);
   const [aiAsistanAcik, setAiAsistanAcik] = useState(false);
-  // CARI-48: ekrandan açılınca o ekranın kaydı (ör. cari kartı) sohbete bağlanır.
+  // CARI-48/AI-78: ekrandan açılınca o ekranın açık kaydı (cari, fatura, gelen belge…) sohbete bağlanır.
   const [aiBaglam, setAiBaglam] = useState<AsistanBaglami | null>(null);
-  const asistaniGenelAc = () => { setAiBaglam(null); setAiAsistanAcik(true); };
+  const asistaniGenelAc = () => { setAiBaglam(ekranKaydi()); setAiAsistanAcik(true); };
   useEffect(() => {
-    const asistaniAc = (e: Event) => { setAiBaglam((e as CustomEvent<AsistanBaglami | undefined>).detail ?? null); setAiAsistanAcik(true); };
+    const asistaniAc = (e: Event) => { setAiBaglam((e as CustomEvent<AsistanBaglami | undefined>).detail ?? ekranKaydi()); setAiAsistanAcik(true); };
     window.addEventListener(ASISTAN_AC_OLAYI, asistaniAc);
     return () => window.removeEventListener(ASISTAN_AC_OLAYI, asistaniAc);
   }, []);

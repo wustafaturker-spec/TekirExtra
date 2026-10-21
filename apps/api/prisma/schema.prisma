@@ -4080,6 +4080,8 @@ enum EkSahipTur {
   cek_senet
   /// FTR-42: ticari belgelerin imza alanına basılan kaşe/imza görseli.
   firma_kase
+  /// AI-79: asistan sohbetine eklenen dosya; sahip ajan oturumudur, yalnız sohbet sahibi okur.
+  ai_sohbet
 }
 
 enum PersonelBelgeTuru {

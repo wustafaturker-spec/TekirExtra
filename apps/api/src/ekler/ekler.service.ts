@@ -29,6 +29,14 @@ export class EklerService {
     private readonly depo: DepoService,
   ) {}
 
+  /** AI-79: sohbet eki başka kullanıcıya (yöneticiye de) açılmaz. */
+  private async sohbetEkiYetkisiDogrula(sahipTur: EkSahipTur, sahipId: string): Promise<void> {
+    if (sahipTur !== "ai_sohbet") return;
+    const { tenantId, userId } = aktifBaglam();
+    const oturum = await this.prisma.tenantIslem(tenantId, (tx) => tx.ajanOturumu.findFirst({ where: { id: sahipId, userId }, select: { id: true } }));
+    if (!oturum) throw new NotFoundException("Ek bulunamadı");
+  }
+
   private personelBelgesiYetkisiDogrula(sahipTur: EkSahipTur): void {
     const { rol } = aktifBaglam();
     if (sahipTur === "personel" && rol !== "muhasebe" && rol !== "yonetici") {
@@ -56,6 +64,8 @@ export class EklerService {
       personel: () => tx.personel.findUnique({ where: { id: sahipId } }),
       satin_alma_teklif: () => tx.satinAlmaTeklifi.findUnique({ where: { id: sahipId } }),
       cek_senet: () => tx.cekSenet.findUnique({ where: { id: sahipId } }),
+      // AI-79: sohbet eki yalnız kendi sohbetine bağlanır.
+      ai_sohbet: () => tx.ajanOturumu.findFirst({ where: { id: sahipId, userId: aktifBaglam().userId } }),
     }[sahipTur];
     if (!(await sorgu())) {
       throw new NotFoundException("Ekin bağlanacağı kayıt bulunamadı");
@@ -67,7 +77,7 @@ export class EklerService {
       throw new BadRequestException("Dosya 10 MB sınırını aşıyor");
     }
     // Çek/senet görüntüsü yalnız görüntü ya da PDF olabilir; saklanan MIME içerikten gelir.
-    const mime = await dosyaIceriginiDogrula(dosya, sahipTur === "cek_senet" ? "goruntu" : "belge");
+    const mime = await dosyaIceriginiDogrula(dosya, sahipTur === "cek_senet" ? "goruntu" : sahipTur === "ai_sohbet" ? "sohbet" : "belge");
     const { tenantId, userId } = aktifBaglam();
     const guvenliAd = dosya.originalname.replace(/[^\w.\-çğıöşüÇĞİÖŞÜ ]/g, "_");
     const depoAnahtari = `${tenantId}/${sahipTur}/${sahipId}/${randomUUID()}-${guvenliAd}`;
@@ -118,6 +128,7 @@ export class EklerService {
     );
     if (!ek) throw new NotFoundException("Ek bulunamadı");
     this.personelBelgesiYetkisiDogrula(ek.sahipTur);
+    await this.sohbetEkiYetkisiDogrula(ek.sahipTur, ek.sahipId);
     const icerik = await this.depo.indir(ek.depoAnahtari);
     return { ek, icerik };
   }

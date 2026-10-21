@@ -6,7 +6,7 @@ import { Alert, Badge, Button, Input } from "@/components/ui";
 import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
-import type { AsistanBaglami } from "@/lib/asistan-baglami";
+import { EKRAN_ONERILERI, EKRAN_TURU_ADI, type AsistanBaglami } from "@/lib/asistan-baglami";
 
 /** AI-04: kullanıcının onayını bekleyen (ya da karara bağlanmış) yapay zekâ işlemi. */
 export interface OnayTalebi {
@@ -54,6 +54,14 @@ interface AjanYaniti {
   araclar: Array<{ ad: string; sinif: string; basarili: boolean }>;
   secimler?: Secim[];
   asistanKapali?: boolean;
+}
+
+/** AI-79: sohbete yüklenen ek; XML e-Fatura ise sunucunun çıkardığı özet. */
+interface SohbetEki {
+  ekId: string;
+  dosyaAdi: string;
+  mime: string;
+  ubl?: { belgeNo: string; gonderen: string; genelToplam: string; doviz: string } | null;
 }
 
 interface OcrTaslagi {
@@ -197,11 +205,14 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
   const dosyaGirdisiRef = useRef<HTMLInputElement>(null);
   const [dosyaYukleniyor, setDosyaYukleniyor] = useState(false);
   const [ocrTaslagi, setOcrTaslagi] = useState<OcrTaslagi | null>(null);
+  // AI-79: bir sonraki mesaja bağlanacak sohbet ekleri (şimdilik UBL XML).
+  const [bekleyenEkler, setBekleyenEkler] = useState<SohbetEki[]>([]);
 
   const sonRef = useRef<HTMLDivElement>(null);
   // CARI-48: bağlamlı ilk mesaj, başka konuşmanın geçmişiyle karışmasın diye yeni sohbette başlar.
-  const baglamSohbeti = useRef<{ cariId: string; sohbetId: string | null } | null>(null);
-  const baglamBagli = !!baglam && baglamSohbeti.current?.cariId === baglam.cari.id && baglamSohbeti.current.sohbetId === aktifSohbetId;
+  const baglamSohbeti = useRef<{ anahtar: string; sohbetId: string | null } | null>(null);
+  const baglamAnahtari = baglam ? `${baglam.tur}:${baglam.id}` : "";
+  const baglamBagli = !!baglam && baglamSohbeti.current?.anahtar === baglamAnahtari && baglamSohbeti.current.sohbetId === aktifSohbetId;
 
   useEffect(() => {
     let iptal = false;
@@ -280,9 +291,12 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
     try {
       if (baglam && !baglamBagli && mesajlar.length > 0) await yeniSohbet();
       setMesajlar((m) => [...m, { anahtar: yeniAnahtar(), rol: "user", icerik: metin, talepIdleri: [], secimler: [] }]);
-      const y = await api<AjanYaniti>("/ai/ajan/mesaj", { method: "POST", body: JSON.stringify({ mesaj: metin, requestId: crypto.randomUUID(), ...(baglam ? { baglam: { cariId: baglam.cari.id } } : {}) }) });
+      // Yanıt beklerken eklenen dosya bu mesaja girmez; yalnız gönderilenler kaldırılır.
+      const gonderilenEkler = bekleyenEkler.map((e) => e.ekId);
+      const y = await api<AjanYaniti>("/ai/ajan/mesaj", { method: "POST", body: JSON.stringify({ mesaj: metin, requestId: crypto.randomUUID(), ...(baglam ? { baglam: { kayit: { tur: baglam.tur, id: baglam.id } } } : {}), ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}) }) });
       if (y.asistanKapali) setKapali(y.cevap);
-      if (baglam) baglamSohbeti.current = { cariId: baglam.cari.id, sohbetId: y.oturumId ?? null };
+      setBekleyenEkler((o) => o.filter((e) => !gonderilenEkler.includes(e.ekId)));
+      if (baglam) baglamSohbeti.current = { anahtar: baglamAnahtari, sohbetId: y.oturumId ?? null };
       if (y.oturumId) {
         setAktifSohbetId(y.oturumId);
         setSohbetler(await api<SohbetOzeti[]>("/ai/ajan/sohbetler"));
@@ -377,17 +391,38 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    if (file.size > 6 * 1024 * 1024) {
-      setHata("Dosya en fazla 6 MB olabilir.");
+    if (file.size > 10 * 1024 * 1024) {
+      setHata("Dosya en fazla 10 MB olabilir.");
       return;
     }
-    if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
-      setHata("Yalnız JPEG, PNG, WebP veya PDF dosyası yükleyebilirsiniz.");
+    const xml = /\.xml$/i.test(file.name) || file.type.includes("xml");
+    if (!xml && !["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
+      setHata("Yalnız JPEG, PNG, WebP, PDF ya da UBL XML e-Fatura yükleyebilirsiniz.");
       return;
     }
     setDosyaYukleniyor(true);
     setHata(null);
-    setBilgi(`${file.name} yükleniyor ve ayrıştırılıyor…`);
+    setBilgi(`${file.name} yükleniyor ve güvenlik denetiminden geçiyor…`);
+    // AI-79: dosya önce sohbete ek olarak saklanır (içerik türü ve virüs denetimi sunucuda).
+    let ek: SohbetEki;
+    try {
+      const form = new FormData();
+      form.append("dosya", file);
+      ek = await api<SohbetEki>("/ai/ajan/ek", { method: "POST", body: form });
+    } catch (yuklemeHatasi) {
+      setBilgi(null);
+      setHata(`Dosya yüklenemedi: ${hataMesaji(yuklemeHatasi)}`);
+      setDosyaYukleniyor(false);
+      return;
+    }
+    if (xml) {
+      setBekleyenEkler((onceki) => [...onceki.filter((x) => x.ekId !== ek.ekId), ek].slice(-5));
+      if (!girdi.trim()) setGirdi(ek.ubl ? "Bu e-Faturayı gelen kutusuna ekle ve kontrol et" : "Bu dosyaya bak");
+      setBilgi(ek.ubl ? null : `${file.name} bir UBL e-Fatura olarak okunamadı; asistan yalnız dosya adını görür.`);
+      setDosyaYukleniyor(false);
+      return;
+    }
+    setBilgi(`${file.name} ayrıştırılıyor…`);
 
     try {
       const reader = new FileReader();
@@ -604,7 +639,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       <input
         ref={dosyaGirdisiRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept="image/*,application/pdf,.xml,text/xml,application/xml"
         capture="environment"
         style={{ display: "none" }}
         onChange={dosyaSecildi}
@@ -613,10 +648,28 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       {baglam && (
         <div className="asistan__baglam">
           <span>
-            Bu sohbette cari: <strong>{baglam.cari.unvan}</strong>
+            Bu sohbette {EKRAN_TURU_ADI[baglam.tur]}: <strong>{baglam.etiket}</strong>
             {!baglamBagli && mesajlar.length > 0 && " · ilk mesajınız yeni sohbette başlar"}
           </span>
           {onBaglamKaldir && <button type="button" className="btn-link" onClick={onBaglamKaldir}>Bağlamı kaldır</button>}
+        </div>
+      )}
+      {bekleyenEkler.length > 0 && (
+        <div className="asistan__oneriler" aria-label="Mesaja eklenecek dosyalar">
+          {bekleyenEkler.map((e) => (
+            <span className="asistan__ek" key={e.ekId}>
+              📎 {e.dosyaAdi}{e.ubl ? ` · e-Fatura ${e.ubl.belgeNo} · ${e.ubl.gonderen} · ${e.ubl.genelToplam} ${e.ubl.doviz}` : ""}
+              <button type="button" className="btn-link" aria-label={`${e.dosyaAdi} ekini kaldır`} onClick={() => setBekleyenEkler((o) => o.filter((x) => x.ekId !== e.ekId))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {/* AI-80: ekrana göre hazır öneriler; tıklanınca metin kutuya gelir, kullanıcı düzenleyip gönderir. */}
+      {!girdi && !gonderiliyor && !ocrTaslagi && (
+        <div className="asistan__oneriler" aria-label="Önerilen sorular">
+          {EKRAN_ONERILERI[baglam?.tur ?? "genel"].map((o) => (
+            <button type="button" className="asistan__oneri" key={o} onClick={() => setGirdi(o)}>{o}</button>
+          ))}
         </div>
       )}
       <form

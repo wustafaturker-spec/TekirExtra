@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc } from "@/lib/api";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
@@ -27,7 +28,9 @@ function sureMetni(g:Gelen){ const s=yanitSuresi(g); return s.gecti?"Süresi dol
 export default function GelenEirsaliyeler() {
   const [liste,setListe]=useState<Gelen[]>([]); const [arama,setArama]=useState(""); const [durum,setDurum]=useState("");
   const [baslangic,setBaslangic]=useState(""); const [bitis,setBitis]=useState(""); const [sayfa,setSayfa]=useState(1);
-  const [detay,setDetay]=useState<Detay|null>(null); const [detayYukleniyor,setDetayYukleniyor]=useState(false);
+  const [detay,setDetay]=useState<Detay|null>(null);
+  // AI-78: açık gelen e-İrsaliye asistan bağlamı olur.
+  useEkranKaydi(detay ? { tur: "gelen_eirsaliye", id: detay.id, etiket: detay.belgeNo } : null); const [detayYukleniyor,setDetayYukleniyor]=useState(false);
   const [yanit,setYanit]=useState<{belge:Gelen;tur:"kabul"|"ret"}|null>(null); const [gerekce,setGerekce]=useState("");
   const [listeYukleniyor,setListeYukleniyor]=useState(true); const [senkronize,setSenkronize]=useState(false); const [yanitlanıyor,setYanitlaniyor]=useState(false);
   const [isle,setIsle]=useState<string|null>(null); const [hata,setHata]=useState(""); const [basari,setBasari]=useState(""); const [sonKontrol,setSonKontrol]=useState<string|null>(null);

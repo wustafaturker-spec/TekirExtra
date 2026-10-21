@@ -1,5 +1,6 @@
 "use client";
 
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bugunTR } from "@tekirextra/shared";
 import { api, apiDosyaIndir, tokenAl, tumSayfalariAl } from "@/lib/api";
@@ -252,6 +253,9 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   const [gruplama, setGruplama] = useState("");
   const [siralama, setSiralama] = useState<Siralama | null>(null);
   const [sonuc, setSonuc] = useState<(RaporSonucu & { zaman: Date; girdi: FiltreDegerleri; gruplama: string }) | null>(null);
+  // AI-78: çalıştırılmış rapor asistan bağlamı olur.
+  const seciliRapor = raporlar.find((r) => r.kod === secilenKod);
+  useEkranKaydi(sonuc && seciliRapor ? { tur: "rapor", id: seciliRapor.kod, etiket: seciliRapor.ad } : null);
   const [eksikler, setEksikler] = useState<string[]>([]);
   const [gorunumler, setGorunumler] = useState<Gorunum[]>([]);
   const [gorunumPenceresi, setGorunumPenceresi] = useState(false);

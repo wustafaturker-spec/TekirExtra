@@ -4492,6 +4492,10 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .asistan__bos { display: flex; flex-direction: column; gap: .4rem; color: var(--text-muted); font-size: .88rem; padding: .5rem; }
 .asistan__bos strong { color: var(--text); }
 /* CARI-48: sohbetin bağlı olduğu ekran kaydı. */
+.asistan__oneriler { display: flex; flex-wrap: wrap; gap: .4rem; }
+.asistan__oneri { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; text-align: left; }
+.asistan__ek { display: inline-flex; align-items: center; gap: .4rem; border: 1px dashed var(--accent); background: var(--accent-soft); border-radius: var(--radius-sm); padding: .25rem .6rem; font-size: .8rem; color: var(--text); }
+.asistan__oneri:hover, .asistan__oneri:focus-visible { border-color: var(--accent); background: var(--accent-soft); outline: none; }
 .asistan__baglam { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .4rem .7rem; font-size: .82rem; color: var(--text-muted); background: var(--accent-soft); border-radius: var(--radius-sm); }
 .asistan__mesaj { display: flex; flex-direction: column; gap: .4rem; max-width: 85%; }
 .asistan__mesaj--kullanici { align-self: flex-end; align-items: flex-end; }
