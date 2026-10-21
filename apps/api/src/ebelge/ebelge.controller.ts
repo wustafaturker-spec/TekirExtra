@@ -86,9 +86,9 @@ export class EbelgeController {
     const { wizard, secim } = await this.sihirbazSeciminiKaydet(faturaId, govde);
     // EBLG-141: ön denetim uyarıları kullanıcı onayı olmadan kuyruğa girmez.
     const bulgular = "onDenetim" in wizard && wizard.onDenetim ? wizard.onDenetim.bulgular : [];
-    const karar = await this.ebelgeService.onDenetimOnayiDenetle(faturaId, bulgular, secim.onDenetimOnayi);
+    const karar = await this.ebelgeService.onDenetimOnayiDenetle({ faturaId }, bulgular, secim.onDenetimOnayi);
     const sonuc = await this.kuyrukService.kuyrugaEkle(faturaId);
-    if (karar) await this.ebelgeService.onDenetimKarariYaz(faturaId, karar);
+    if (karar) await this.ebelgeService.onDenetimKarariYaz({ faturaId }, karar);
     return sonuc;
   }
 
@@ -340,6 +340,18 @@ export class EbelgeController {
     const sonuc = gelenFiyatAnaliziSemasi.safeParse(govde);
     if (!sonuc.success) throw new BadRequestException("Geçersiz fiyat analizi eşleştirmesi (en çok 100 satır)");
     return this.ebelgeService.gelenFiyatAnalizi(id, sonuc.data.satirEslesmeleri);
+  }
+
+  /** EBLG-144: kullanıcının eşleştirmesiyle gelen alış denetimi (eşleşme değişince ekran yeniden sorar). */
+  @EbelgeUygulamasi("efatura")
+  @Post("gelen/:id/denetim")
+  @Roller("muhasebe")
+  async gelenDenetim(@Param("id", new ParseUUIDPipe()) id: string, @Body() govde: unknown) {
+    const sonuc = gelenFiyatAnaliziSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException("Geçersiz satır eşleştirmesi (en çok 100 satır)");
+    const denetim = await this.ebelgeService.gelenDenetimSakla(id, sonuc.data.satirEslesmeleri);
+    if (!denetim) throw new BadRequestException("Belge denetlenemedi");
+    return denetim;
   }
 
   @EbelgeUygulamasi("efatura")

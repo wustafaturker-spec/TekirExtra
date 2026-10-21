@@ -33,6 +33,24 @@ export const ON_DENETIM_KODLARI = [
   "AI_KOD_UYUMU",
   "AI_KISISEL_VERI",
   "AI_RET_NEDENI",
+  // EBLG-144…149: gelen alış denetçisi (gelen-denetim.ts).
+  "GELEN_FIYAT_SAPMA",
+  "GELEN_FIYAT_KAT_HATASI",
+  "GELEN_SIPARIS_FIYATI",
+  "GELEN_URUN_ESLESMEDI",
+  "GELEN_FIYAT_GECMISI_YOK",
+  "GELEN_MUKERRER",
+  "GELEN_IBAN_DEGISTI",
+  "GELEN_IBAN_GECERSIZ",
+  "GELEN_IBAN_ILK",
+  "GELEN_KDV_KARTTAN_FARKLI",
+  "GELEN_KDV_GECMISTEN_FARKLI",
+  "GELEN_TEVKIFAT_ALISKANLIK",
+  "GELEN_TEVKIFAT_ALT_SINIR",
+  "GELEN_TEVKIFAT_OLABILIR",
+  "GELEN_ALICI_BILGISI",
+  "GELEN_VADE_KISA",
+  "GELEN_VADE_YOK",
 ] as const;
 
 export type OnDenetimKodu = (typeof ON_DENETIM_KODLARI)[number];
@@ -60,6 +78,23 @@ export const ON_DENETIM_KURAL_ADLARI: Record<OnDenetimKodu, string> = {
   AI_KOD_UYUMU: "Yapay zekâ: satır ve vergi kodu uyumu",
   AI_KISISEL_VERI: "Açıklamada kişisel veri",
   AI_RET_NEDENI: "Yapay zekâ: ret nedeni",
+  GELEN_FIYAT_SAPMA: "Gelen: fiyat sapması",
+  GELEN_FIYAT_KAT_HATASI: "Gelen: fiyatta 10/100/1000 kat farkı",
+  GELEN_SIPARIS_FIYATI: "Gelen: sipariş fiyatından farklı",
+  GELEN_URUN_ESLESMEDI: "Gelen: ürün eşleşmedi",
+  GELEN_FIYAT_GECMISI_YOK: "Gelen: fiyat geçmişi yok",
+  GELEN_MUKERRER: "Gelen: mükerrer fatura şüphesi",
+  GELEN_IBAN_DEGISTI: "Gelen: ödeme hesabı değişmiş",
+  GELEN_IBAN_GECERSIZ: "Gelen: geçersiz IBAN",
+  GELEN_IBAN_ILK: "Gelen: ilk belgede ödeme hesabı",
+  GELEN_KDV_KARTTAN_FARKLI: "Gelen: KDV ürün kartından farklı",
+  GELEN_KDV_GECMISTEN_FARKLI: "Gelen: KDV son alışlardan farklı",
+  GELEN_TEVKIFAT_ALISKANLIK: "Gelen: tevkifat alışkanlıktan farklı",
+  GELEN_TEVKIFAT_ALT_SINIR: "Gelen: alt sınırın altında tevkifat",
+  GELEN_TEVKIFAT_OLABILIR: "Gelen: tevkifat kapsamında olabilir",
+  GELEN_ALICI_BILGISI: "Gelen: firma bilgilerimiz farklı",
+  GELEN_VADE_KISA: "Gelen: vade karttakinden kısa",
+  GELEN_VADE_YOK: "Gelen: belgede vade yok",
 };
 
 /** EBLG-140: ret ve gönderim hatası nedeni sınıfları. */
@@ -126,7 +161,7 @@ export interface OnDenetimBulgusu {
   /** 1'den başlayan satır sırası; belge düzeyindeki bulguda yok. */
   satir?: number;
   /** Düzeltmenin yapılacağı ya da karşılaştırılan kayıt. */
-  baglanti?: { tur: "cari" | "stok" | "fatura"; id: string; etiket?: string };
+  baglanti?: { tur: "cari" | "stok" | "fatura" | "belge" | "gelen"; id: string; etiket?: string };
 }
 
 /** Geçmiş bir satıştaki birim net fiyat (belge dövizinde, satırın biriminde). */
@@ -262,12 +297,12 @@ export function ortanca(degerler: number[]): number | null {
   return d.length % 2 ? d[orta] : (d[orta - 1] + d[orta]) / 2;
 }
 
-/** Oran 10, 100 ya da 1000'in (ya da tersinin) ±%2 yakınındaysa o kat; değilse null. */
-export function onKati(oran: number): number | null {
+/** Oran 10, 100 ya da 1000'in (ya da tersinin) ±tolerans (varsayılan %2) yakınındaysa o kat; değilse null. */
+export function onKati(oran: number, tolerans = 0.02): number | null {
   if (!Number.isFinite(oran) || oran <= 0) return null;
   for (const kat of [10, 100, 1000]) {
     for (const hedef of [kat, 1 / kat]) {
-      if (Math.abs(oran / hedef - 1) <= 0.02) return hedef > 1 ? kat : -kat;
+      if (Math.abs(oran / hedef - 1) <= tolerans) return hedef > 1 ? kat : -kat;
     }
   }
   return null;

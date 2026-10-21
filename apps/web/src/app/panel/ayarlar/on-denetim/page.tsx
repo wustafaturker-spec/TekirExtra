@@ -26,6 +26,8 @@ interface Olcum {
   once: { gonderilen: number; sorunlu: number; oran: number | null };
   sonra: { gonderilen: number; sorunlu: number; oran: number | null };
   kurallar: { kod: string; kural: string; gecilen: number; sonradanSorunlu: number }[];
+  /** EBLG-150: gelen alış denetimi. */
+  gelen?: { denetlenen: number; uyarili: number; uyariylaIslenen: number; kurallar: { kod: string; kural: string; gecilen: number }[] };
 }
 
 const oranMetni = (oran: number | null) => (oran === null ? "—" : `%${oran.toLocaleString("tr-TR")}`);
@@ -54,7 +56,7 @@ export default function OnDenetimSayfasi() {
   return <div className="production-page">
     <PageHeader
       title="e-Belge Ön Denetimi"
-      subtitle="Gönderim sihirbazı belgeyi göndermeden önce fiyat, vergi, cari ve mükerrer kontrolleri yapar. Burada cari başına susturduğunuz kurallar listelenir."
+      subtitle="Gönderim sihirbazı belgeyi göndermeden önce, gelen kutusu alış faturasını işlemeden önce fiyat, vergi, cari ve mükerrer kontrolleri yapar. Burada cari başına susturduğunuz kurallar listelenir."
     />
     <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
     {olcum && <Card title="Etkisi: son 6 ay" pad={false}>
@@ -82,6 +84,18 @@ export default function OnDenetimSayfasi() {
         Sihirbazda gösterilip gönderimden önce düzeltilen bulgular kaydedilmez; burada yalnız onaylanarak geçilen uyarılar sayılır.
       </p>
     </Card>}
+    {olcum?.gelen && <Card title="Gelen alış denetimi: son 6 ay" pad={false}>
+      <p className="muted" style={{ padding: "0.8rem 1.25rem 0", margin: 0 }}>
+        Denetlenen {olcum.gelen.denetlenen} gelen e-Faturanın {olcum.gelen.uyarili} tanesinde uyarı çıktı; {olcum.gelen.uyariylaIslenen} belge uyarı onaylanarak faturaya işlendi.
+      </p>
+      <TableWrap>
+        <thead><tr><th>Kural</th><th>Onaylanarak geçilen</th></tr></thead>
+        <tbody>
+          {olcum.gelen.kurallar.map((k) => <tr key={k.kod}><td>{k.kural}</td><td>{k.gecilen}</td></tr>)}
+          {!olcum.gelen.kurallar.length && <tr><td colSpan={2}>Bu dönemde uyarı onaylanarak işlenmiş gelen belge yok.</td></tr>}
+        </tbody>
+      </TableWrap>
+    </Card>}
     <Card title={`Susturulan kurallar (${kayitlar.length})`} pad={false}>
       <TableWrap>
         <thead><tr><th>Cari</th><th>Kural</th><th>Susturan</th><th>Tarih</th><th /></tr></thead>
@@ -93,12 +107,12 @@ export default function OnDenetimSayfasi() {
             <td>{new Date(s.zaman).toLocaleDateString("tr-TR")}</td>
             <td><Button size="sm" disabled={islem === s.id} onClick={() => void kaldir(s)}>Yeniden göster</Button></td>
           </tr>)}
-          {!kayitlar.length && <tr><td colSpan={5}>Susturulan kural yok. Sihirbazdaki bir bulguda &quot;Bu cari için gösterme&quot; ile eklenir.</td></tr>}
+          {!kayitlar.length && <tr><td colSpan={5}>Susturulan kural yok. Sihirbazdaki bir bulguda &quot;Bu cari için gösterme&quot;, gelen kutusunda &quot;Bu tedarikçi için gösterme&quot; ile eklenir.</td></tr>}
         </tbody>
       </TableWrap>
     </Card>
     <p className="muted">
-      Fiyat sapması (varsayılan %25) ve kur sapması (varsayılan %3) eşikleri <Link href="/panel/ayarlar/moduller">Modül Ayarları › e-Belge</Link> bölümünden değiştirilir.
+      Fiyat sapması (varsayılan %25, gelen alış için ayrı), kur sapması (varsayılan %3) eşikleri <Link href="/panel/ayarlar/moduller">Modül Ayarları › e-Belge</Link> bölümünden değiştirilir.
     </p>
   </div>;
 }

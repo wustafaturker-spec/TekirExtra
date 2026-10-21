@@ -51,3 +51,4 @@ export * from "./kredi";
 export * from "./donemsel-degerler";
 export * from "./rapor-grafik";
 export * from "./on-denetim";
+export * from "./gelen-denetim";

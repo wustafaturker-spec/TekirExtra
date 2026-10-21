@@ -94,7 +94,7 @@ describe("EbelgeController.gonder", () => {
     ebelge.onDenetimOnayiDenetle.mockRejectedValue(new BadRequestException("Ön denetimde onaylanmamış 1 uyarı var"));
 
     await expect(controller.gonder("f1", {})).rejects.toThrow(/onaylanmamış/);
-    expect(ebelge.onDenetimOnayiDenetle).toHaveBeenCalledWith("f1", bulgular, undefined);
+    expect(ebelge.onDenetimOnayiDenetle).toHaveBeenCalledWith({ faturaId: "f1" }, bulgular, undefined);
     expect(kuyruk.kuyrugaEkle).not.toHaveBeenCalled();
   });
 
@@ -105,8 +105,8 @@ describe("EbelgeController.gonder", () => {
     ebelge.onDenetimOnayiDenetle.mockResolvedValue(karar);
 
     await controller.gonder("f1", { onDenetimOnayi: { anahtarlar: ["FIYAT_SAPMA:1"] } });
-    expect(ebelge.onDenetimOnayiDenetle).toHaveBeenCalledWith("f1", bulgular, { anahtarlar: ["FIYAT_SAPMA:1"] });
-    expect(ebelge.onDenetimKarariYaz).toHaveBeenCalledWith("f1", karar);
+    expect(ebelge.onDenetimOnayiDenetle).toHaveBeenCalledWith({ faturaId: "f1" }, bulgular, { anahtarlar: ["FIYAT_SAPMA:1"] });
+    expect(ebelge.onDenetimKarariYaz).toHaveBeenCalledWith({ faturaId: "f1" }, karar);
     expect(kuyruk.kuyrugaEkle.mock.invocationCallOrder[0]).toBeLessThan(ebelge.onDenetimKarariYaz.mock.invocationCallOrder[0]);
   });
 });

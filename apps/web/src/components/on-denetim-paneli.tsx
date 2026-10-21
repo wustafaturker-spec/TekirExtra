@@ -9,13 +9,33 @@ import { api } from "@/lib/api";
  * engelleri kendi yerlerinde kalır. Bağlantılar yeni sekmede açılır ki
  * sihirbazda girilen bilgiler kaybolmasın.
  */
-function baglantiAdresi(b: NonNullable<OnDenetimBulgusu["baglanti"]>): string {
+function baglantiAdresi(b: NonNullable<OnDenetimBulgusu["baglanti"]>, faturaYonu: "satis" | "alis"): string {
   if (b.tur === "cari") return `/panel/cari/${b.id}`;
   if (b.tur === "stok") return `/panel/stok/${b.id}`;
-  return `/panel/fatura?yon=satis&ac=${b.id}`;
+  if (b.tur === "belge") return `/panel/belgeler?yon=alis&tur=siparis&odak=${b.id}`;
+  if (b.tur === "gelen") return `/panel/fatura/gelen-kutusu?ac=${b.id}`;
+  return `/panel/fatura?yon=${faturaYonu}&ac=${b.id}`;
 }
 
-const BAGLANTI_ADI = { cari: "Cari kartı", stok: "Ürün kartı", fatura: "Faturayı aç" } as const;
+const BAGLANTI_ADI = { cari: "Cari kartı", stok: "Ürün kartı", fatura: "Faturayı aç", belge: "Siparişi aç", gelen: "Gelen belgeyi aç" } as const;
+
+/** Panelin hangi yönde kullanıldığına göre metinler (EBLG-144: gelen alış denetimi). */
+export interface OnDenetimMetinleri {
+  baslik: string;
+  altMetin: string;
+  temiz: string;
+  /** "cari" / "tedarikçi": susturma düğmesi ve notu. */
+  taraf: string;
+  faturaYonu: "satis" | "alis";
+}
+
+const GIDEN_METINLERI: OnDenetimMetinleri = {
+  baslik: "Ön denetim",
+  altMetin: "Belgeyi durdurmaz; uyarılar gönderim adımında onayınızı ister.",
+  temiz: "Ön denetim: fiyat, vergi, cari ve mükerrer kontrollerinde dikkat edilecek bir şey bulunmadı.",
+  taraf: "cari",
+  faturaYonu: "satis",
+};
 
 /** AI-71: sunucunun yapay zekâ kontrolü yanıtı; bulgular onay istemez. */
 export interface AiDenetimSonucu {
@@ -24,7 +44,12 @@ export interface AiDenetimSonucu {
   bulgular: OnDenetimBulgusu[];
 }
 
-function BulguSatiri({ b, onSustur }: { b: OnDenetimBulgusu; onSustur?: (kod: OnDenetimBulgusu["kod"]) => void }) {
+function BulguSatiri({ b, onSustur, onRetGerekcesine, metin = GIDEN_METINLERI }: {
+  b: OnDenetimBulgusu;
+  onSustur?: (kod: OnDenetimBulgusu["kod"]) => void;
+  onRetGerekcesine?: (mesaj: string) => void;
+  metin?: OnDenetimMetinleri;
+}) {
   return (
     <li className={b.duzey === "bilgi" ? "on-denetim__bilgi" : undefined}>
       {b.duzey === "bilgi" && <span>Bilgi · </span>}
@@ -33,7 +58,7 @@ function BulguSatiri({ b, onSustur }: { b: OnDenetimBulgusu; onSustur?: (kod: On
       {b.baglanti && (
         <>
           {" "}
-          <a className="btn-link" href={baglantiAdresi(b.baglanti)} target="_blank" rel="noreferrer">
+          <a className="btn-link" href={baglantiAdresi(b.baglanti, metin.faturaYonu)} target="_blank" rel="noreferrer">
             {b.baglanti.tur === "fatura" ? `${b.baglanti.etiket ?? ""} ${BAGLANTI_ADI.fatura}`.trim() : BAGLANTI_ADI[b.baglanti.tur]}
           </a>
         </>
@@ -41,8 +66,16 @@ function BulguSatiri({ b, onSustur }: { b: OnDenetimBulgusu; onSustur?: (kod: On
       {onSustur && (
         <>
           {" · "}
-          <button type="button" className="btn-link" onClick={() => onSustur(b.kod)} title="Bu kural bu cari için ön denetimde bir daha gösterilmez">
-            Bu cari için gösterme
+          <button type="button" className="btn-link" onClick={() => onSustur(b.kod)} title={`Bu kural bu ${metin.taraf} için bir daha gösterilmez`}>
+            Bu {metin.taraf} için gösterme
+          </button>
+        </>
+      )}
+      {onRetGerekcesine && b.duzey === "uyari" && (
+        <>
+          {" · "}
+          <button type="button" className="btn-link" onClick={() => onRetGerekcesine(b.mesaj)} title="Bulgunun metni ticari fatura ret gerekçesine eklenir; ret kararı sizindir">
+            Ret gerekçesine ekle
           </button>
         </>
       )}
@@ -72,39 +105,44 @@ export function OnDenetimPaneli({
   bulgular,
   susturulan = 0,
   onSustur,
+  onRetGerekcesine,
   ai,
+  metin = GIDEN_METINLERI,
 }: {
   bulgular: OnDenetimBulgusu[] | undefined;
   susturulan?: number;
   ai?: AiDenetimSonucu | "yukleniyor";
   /** EBLG-141: kuralı bu cari için bir daha gösterme. */
   onSustur?: (kod: OnDenetimBulgusu["kod"]) => void;
+  /** EBLG-150: ticari faturada bulgu metnini ret gerekçesine ekle. */
+  onRetGerekcesine?: (mesaj: string) => void;
+  metin?: OnDenetimMetinleri;
 }) {
   if (!bulgular) return null;
   const uyarilar = bulgular.filter((b) => b.duzey === "uyari");
   const bilgiler = bulgular.filter((b) => b.duzey === "bilgi");
   const susturmaNotu = susturulan > 0 && (
     <span className="subtle">
-      {" "}Bu cari için susturulmuş {susturulan} bulgu gösterilmiyor (<a className="btn-link" href="/panel/ayarlar/on-denetim" target="_blank" rel="noreferrer">susturmalar</a>).
+      {" "}Bu {metin.taraf} için susturulmuş {susturulan} bulgu gösterilmiyor (<a className="btn-link" href="/panel/ayarlar/on-denetim" target="_blank" rel="noreferrer">susturmalar</a>).
     </span>
   );
   const aiUyarisi = ai && ai !== "yukleniyor" && ai.bulgular.some((b) => b.duzey === "uyari");
   if (!bulgular.length) {
     return (
-      <section aria-label="Ön denetim" className={`on-denetim${aiUyarisi ? "" : " is-bilgi"}`}>
-        <span>Ön denetim: fiyat, vergi, cari ve mükerrer kontrollerinde dikkat edilecek bir şey bulunmadı.{susturmaNotu}</span>
+      <section aria-label={metin.baslik} className={`on-denetim${aiUyarisi ? "" : " is-bilgi"}`}>
+        <span>{metin.temiz}{susturmaNotu}</span>
         {ai && <AiBolumu ai={ai} onSustur={onSustur} />}
       </section>
     );
   }
   return (
-    <section aria-label="Ön denetim" className={`on-denetim${uyarilar.length || aiUyarisi ? "" : " is-bilgi"}`}>
+    <section aria-label={metin.baslik} className={`on-denetim${uyarilar.length || aiUyarisi ? "" : " is-bilgi"}`}>
       <strong className="on-denetim__baslik">
-        Ön denetim: {uyarilar.length ? `${uyarilar.length} uyarı` : ""}{uyarilar.length && bilgiler.length ? ", " : ""}{bilgiler.length ? `${bilgiler.length} bilgi` : ""}
+        {metin.baslik}: {uyarilar.length ? `${uyarilar.length} uyarı` : ""}{uyarilar.length && bilgiler.length ? ", " : ""}{bilgiler.length ? `${bilgiler.length} bilgi` : ""}
       </strong>
-      <p className="subtle">Belgeyi durdurmaz; uyarılar gönderim adımında onayınızı ister.{susturmaNotu}</p>
+      <p className="subtle">{metin.altMetin}{susturmaNotu}</p>
       <ul className="stack" style={{ margin: 0, paddingLeft: "1.1rem" }}>
-        {[...uyarilar, ...bilgiler].map((b, i) => <BulguSatiri key={`${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} />)}
+        {[...uyarilar, ...bilgiler].map((b, i) => <BulguSatiri key={`${b.kod}-${b.satir ?? 0}-${i}`} b={b} onSustur={onSustur} onRetGerekcesine={onRetGerekcesine} metin={metin} />)}
       </ul>
       {ai && <AiBolumu ai={ai} onSustur={onSustur} />}
     </section>

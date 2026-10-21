@@ -9,6 +9,17 @@ export const gelenFiyatAnaliziSemasi = z.object({
   "Aynı satır birden fazla eşleştirilemez");
 
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
+/**
+ * EBLG-141/150: uyarıları gördüm onayı. `anahtarlar` onaylanan uyarıların
+ * kural:satır anahtarlarıdır; sunucu o anki uyarılarla karşılaştırır.
+ */
+const onDenetimOnaySemasi = z
+  .object({
+    anahtarlar: z.array(z.string().max(80)).max(500),
+    gerekce: z.string().trim().max(300, "Gerekçe en çok 300 karakter olabilir").optional(),
+  })
+  .optional();
+
 export const gelenOnaySemasi = z.object({
   satirEslesmeleri: z
     .array(
@@ -20,6 +31,7 @@ export const gelenOnaySemasi = z.object({
     )
     .min(1, "En az bir satır eşleştirmesi gerekli"),
   yeniCariOnay: z.boolean().optional(),
+  onDenetimOnayi: onDenetimOnaySemasi,
 });
 
 /** EBLG-06: ticari faturaya kabul/ret yanıtı. */
@@ -35,16 +47,7 @@ export const gelenYanitSemasi = z
 
 /** EBLG-26/53: sihirbazda seçilen e-Arşiv teslim şekli ve ihracat alanları; boşsa faturadaki kalır. */
 export const ebelgeGonderSemasi = z.object({
-  /**
-   * EBLG-141: ön denetim uyarılarını gördüm onayı. `anahtarlar` onaylanan
-   * uyarıların kural:satır anahtarlarıdır; sunucu o anki uyarılarla karşılaştırır.
-   */
-  onDenetimOnayi: z
-    .object({
-      anahtarlar: z.array(z.string().max(80)).max(500),
-      gerekce: z.string().trim().max(300, "Gerekçe en çok 300 karakter olabilir").optional(),
-    })
-    .optional(),
+  onDenetimOnayi: onDenetimOnaySemasi,
   /**
    * EBLG-76: sevkiyatın nasıl belgelendiği. `irsaliye` seçilen e-İrsaliyelere
    * bağlanır, `fatura_once` sonra kesilecek irsaliyeyi bekler,

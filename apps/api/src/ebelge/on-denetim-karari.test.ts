@@ -8,8 +8,8 @@ vi.mock("../core/istek-baglami", () => ({
 }));
 
 /** EBLG-141: uyarı onayı; önceki karar yeniden gönderimi kapsar. */
-function servis(oncekiKararlar: { bulgular: unknown }[] = []) {
-  const tx = { onDenetimKarari: { findMany: vi.fn(async () => oncekiKararlar) } };
+function servis(oncekiKararlar: { bulgular: unknown }[] = [], sorgular: unknown[] = []) {
+  const tx = { onDenetimKarari: { findMany: vi.fn(async (q: unknown) => { sorgular.push(q); return oncekiKararlar; }) } };
   const prisma = { tenantIslem: vi.fn(async (_t: string, fn: (tx: unknown) => unknown) => fn(tx)) } as any;
   return new EbelgeService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
 }
@@ -19,23 +19,23 @@ const bilgi: OnDenetimBulgusu = { kod: "KUR_BULUNAMADI", duzey: "bilgi", mesaj: 
 
 describe("ön denetim onayı (EBLG-141)", () => {
   it("uyarı yoksa onay istemez, bilgi onay gerektirmez", async () => {
-    await expect(servis().onDenetimOnayiDenetle("f1", [bilgi])).resolves.toBeNull();
+    await expect(servis().onDenetimOnayiDenetle({ faturaId: "f1" }, [bilgi])).resolves.toBeNull();
   });
 
   it("onaysız uyarıyla gönderimi durdurur", async () => {
-    await expect(servis().onDenetimOnayiDenetle("f1", [uyari("FIYAT_SAPMA", 2)])).rejects.toThrow(/onaylanmamış 1 uyarı/);
+    await expect(servis().onDenetimOnayiDenetle({ faturaId: "f1" }, [uyari("FIYAT_SAPMA", 2)])).rejects.toThrow(/onaylanmamış 1 uyarı/);
   });
 
   it("onaydan sonra çıkan yeni uyarı yeniden onay ister", async () => {
     await expect(
-      servis().onDenetimOnayiDenetle("f1", [uyari("FIYAT_SAPMA", 2), uyari("MUKERRER_SUPHESI")], { anahtarlar: ["FIYAT_SAPMA:2"] }),
+      servis().onDenetimOnayiDenetle({ faturaId: "f1" }, [uyari("FIYAT_SAPMA", 2), uyari("MUKERRER_SUPHESI")], { anahtarlar: ["FIYAT_SAPMA:2"] }),
     ).rejects.toThrow(/MUKERRER_SUPHESI mesajı/);
     // Aynı kural başka satırda da ayrı onaydır.
-    await expect(servis().onDenetimOnayiDenetle("f1", [uyari("FIYAT_SAPMA", 3)], { anahtarlar: ["FIYAT_SAPMA:2"] })).rejects.toThrow();
+    await expect(servis().onDenetimOnayiDenetle({ faturaId: "f1" }, [uyari("FIYAT_SAPMA", 3)], { anahtarlar: ["FIYAT_SAPMA:2"] })).rejects.toThrow();
   });
 
   it("onaylanan uyarılar ve gerekçe kaydedilecek kararı oluşturur", async () => {
-    const karar = await servis().onDenetimOnayiDenetle("f1", [uyari("FIYAT_SAPMA", 2), uyari("MUKERRER_SUPHESI"), bilgi], {
+    const karar = await servis().onDenetimOnayiDenetle({ faturaId: "f1" }, [uyari("FIYAT_SAPMA", 2), uyari("MUKERRER_SUPHESI"), bilgi], {
       anahtarlar: ["FIYAT_SAPMA:2", "MUKERRER_SUPHESI:0"],
       gerekce: "  kampanya fiyatı ",
     });
@@ -50,8 +50,16 @@ describe("ön denetim onayı (EBLG-141)", () => {
 
   it("yeniden gönderimde önceki karar aynı uyarıları kapsar, yeni kayıt açılmaz", async () => {
     const onceki = [{ bulgular: [{ kod: "FIYAT_SAPMA", satir: 2, mesaj: "x" }, { kod: "MUKERRER_SUPHESI", satir: null, mesaj: "y" }] }];
-    await expect(servis(onceki).onDenetimOnayiDenetle("f1", [uyari("FIYAT_SAPMA", 2), uyari("MUKERRER_SUPHESI")])).resolves.toBeNull();
-    await expect(servis(onceki).onDenetimOnayiDenetle("f1", [uyari("KUR_SAPMA")])).rejects.toThrow();
+    await expect(servis(onceki).onDenetimOnayiDenetle({ faturaId: "f1" }, [uyari("FIYAT_SAPMA", 2), uyari("MUKERRER_SUPHESI")])).resolves.toBeNull();
+    await expect(servis(onceki).onDenetimOnayiDenetle({ faturaId: "f1" }, [uyari("KUR_SAPMA")])).rejects.toThrow();
+  });
+
+  it("EBLG-150: gelen belgede önceki karar belgeye göre aranır, mesaj işlemeyi anlatır", async () => {
+    const sorgular: unknown[] = [];
+    await expect(servis([], sorgular).onDenetimOnayiDenetle({ gelenEbelgeId: "g1" }, [uyari("GELEN_IBAN_DEGISTI")])).rejects.toThrow(/Gelen alış denetiminde onaylanmamış 1 uyarı/);
+    expect(sorgular[0]).toEqual({ where: { tenantId: "t1", gelenEbelgeId: "g1" }, select: { bulgular: true } });
+    const onceki = [{ bulgular: [{ kod: "GELEN_IBAN_DEGISTI", satir: null, mesaj: "x" }] }];
+    await expect(servis(onceki).onDenetimOnayiDenetle({ gelenEbelgeId: "g1" }, [uyari("GELEN_IBAN_DEGISTI")])).resolves.toBeNull();
   });
 });
 
@@ -70,12 +78,16 @@ describe("ön denetim ölçümü (EBLG-143)", () => {
       kayit("f", "2026-10-23T09:00:00Z", "hata"), // gönderilmemiş sayılmaz
     ];
     const kararlar = [
-      { faturaId: "e", bulgular: [{ kod: "FIYAT_SAPMA" }, { kod: "MUKERRER_SUPHESI" }] },
-      { faturaId: "d", bulgular: [{ kod: "FIYAT_SAPMA" }] },
+      { faturaId: "e", gelenEbelgeId: null, bulgular: [{ kod: "FIYAT_SAPMA" }, { kod: "MUKERRER_SUPHESI" }] },
+      { faturaId: "d", gelenEbelgeId: null, bulgular: [{ kod: "FIYAT_SAPMA" }] },
+      // EBLG-150: gelen yönün kararı gidenin sayılarına karışmaz.
+      { faturaId: null, gelenEbelgeId: "g1", bulgular: [{ kod: "GELEN_IBAN_DEGISTI" }, { kod: "GELEN_FIYAT_SAPMA" }] },
+      { faturaId: null, gelenEbelgeId: "g2", bulgular: [{ kod: "GELEN_FIYAT_SAPMA" }] },
     ];
     const tx = {
       ebelgeKayit: { findMany: vi.fn(async () => kayitlar) },
       onDenetimKarari: { findMany: vi.fn(async () => kararlar) },
+      gelenEbelge: { findMany: vi.fn(async () => [{ denetimUyariSayisi: 2 }, { denetimUyariSayisi: 0 }, { denetimUyariSayisi: 1 }]) },
     };
     const prisma = { tenantIslem: vi.fn(async (_t: string, fn: (tx: unknown) => unknown) => fn(tx)) } as any;
     const servis = new EbelgeService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
@@ -92,5 +104,12 @@ describe("ön denetim ölçümü (EBLG-143)", () => {
       { kod: "FIYAT_SAPMA", kural: "Fiyat sapması", gecilen: 2, sonradanSorunlu: 1 },
       { kod: "MUKERRER_SUPHESI", kural: "Mükerrer fatura şüphesi", gecilen: 1, sonradanSorunlu: 1 },
     ]);
+    expect(o.gelen).toEqual({
+      denetlenen: 3, uyarili: 2, uyariylaIslenen: 2,
+      kurallar: [
+        { kod: "GELEN_FIYAT_SAPMA", kural: "Gelen: fiyat sapması", gecilen: 2 },
+        { kod: "GELEN_IBAN_DEGISTI", kural: "Gelen: ödeme hesabı değişmiş", gecilen: 1 },
+      ],
+    });
   });
 });

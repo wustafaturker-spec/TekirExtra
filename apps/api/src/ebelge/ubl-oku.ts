@@ -74,6 +74,8 @@ export interface UblToplamlar {
   kdvIcindeTevkifat: number;
 }
 
+export interface UblTaraf { vknTckn: string; unvan: string; vergiDairesi?: string; il?: string }
+
 export interface UblFatura {
   uuid: string;
   belgeNo: string;
@@ -102,8 +104,10 @@ export interface UblFatura {
   dovizCinsi: string;
   /** Dövizli belgede 1 döviz = kaç TL (`PricingExchangeRate`); TRY belgede yok. */
   kur?: number;
-  gonderen: { vknTckn: string; unvan: string; vergiDairesi?: string };
-  alici: { vknTckn: string; unvan: string };
+  gonderen: UblTaraf;
+  alici: UblTaraf;
+  /** EBLG-147: ödeme hesapları (`PaymentMeans/PayeeFinancialAccount/ID`), boşluksuz büyük harf. */
+  odemeHesaplari: string[];
   toplamlar: UblToplamlar;
   satirlar: UblSatir[];
 }
@@ -220,7 +224,7 @@ function vknBul(party: unknown): string {
   return kimlikler.length > 0 ? metin(kimlikler[0].ID) : "";
 }
 
-function partyOku(party: unknown): { vknTckn: string; unvan: string; vergiDairesi?: string } {
+function partyOku(party: unknown): UblTaraf {
   const vknTckn = vknBul(party);
   // Tüzel kişide PartyName, gerçek kişide Person/FirstName+FamilyName dolu olur.
   const unvan =
@@ -229,7 +233,8 @@ function partyOku(party: unknown): { vknTckn: string; unvan: string; vergiDaires
       .filter(Boolean)
       .join(" ");
   const vergiDairesi = metin(yol(party, "PartyTaxScheme", "TaxScheme", "Name"));
-  return { vknTckn, unvan, vergiDairesi: vergiDairesi || undefined };
+  const il = metin(yol(party, "PostalAddress", "CityName"));
+  return { vknTckn, unvan, vergiDairesi: vergiDairesi || undefined, il: il || undefined };
 }
 
 /** TaxSubtotal içindeki KDV oranı: TaxSubtotal/Percent ya da TaxCategory/Percent. */
@@ -389,6 +394,9 @@ export function faturaUblOku(xml: string): UblFatura {
     kur: kurOku(fatura),
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),
     alici: partyOku(yol(fatura, "AccountingCustomerParty", "Party")),
+    odemeHesaplari: [...new Set(dizi(fatura.PaymentMeans)
+      .map((o) => metin(yol(o, "PayeeFinancialAccount", "ID")).replace(/\s+/g, "").toLocaleUpperCase("tr-TR"))
+      .filter(Boolean))],
     toplamlar: {
       satirToplami,
       iskontoToplami: sayi(parasal?.AllowanceTotalAmount),

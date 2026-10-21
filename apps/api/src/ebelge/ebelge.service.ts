@@ -30,7 +30,7 @@ import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
-import { gelenFaturaGirdisi, gelenFaturaHesabi, tutarDenetimi, type GelenSatirEslesmesi } from "./gelen-fatura";
+import { gelenFaturaGirdisi, gelenFaturaHesabi, gelenFaturaTipi, tutarDenetimi, type GelenSatirEslesmesi } from "./gelen-fatura";
 import { belgeKodTablosu, firmaTevkifatTablosu } from "../fatura/tevkifat-tablosu";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { adSoyadCoz } from "../cari/ad-soyad";
@@ -49,12 +49,19 @@ import { internetSatisOzeti } from "./internet-satis-bilgisi";
 import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 import { onDenetimCalistir } from "./on-denetim";
+import { gelenDenetimCalistir } from "./gelen-denetim";
 import { ON_DENETIM_KURAL_ADLARI, onDenetimAnahtari, type OnDenetimBulgusu } from "@tekirextra/shared";
 
 /** EBLG-143: ön denetimin canlıya alındığı gün; ölçümde öncesi/sonrası ayrımı. */
 export const ON_DENETIM_BASLANGIC = "2026-10-20";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
+/** EBLG-144: her çekimde denetimi tamamlanan eski bekleyen belge sayısı. */
+const GELEN_DENETIM_TAMAMLAMA = 50;
+
+/** EBLG-141/150: ön denetim kararının bağlandığı kayıt — giden fatura ya da gelen belge. */
+export type OnDenetimHedefi = { faturaId: string } | { gelenEbelgeId: string };
+
 export type EslesmeKaynagi =
   | "alici_urun_kodu"
   | "barkod"
@@ -158,9 +165,9 @@ function gelenDenetle(ubl: UblFatura, tablolar: { tevkifat: readonly TevkifatKod
 function gelenOzeti(xml: string) {
   try {
     const ubl = faturaUblOku(xml);
-    return { satirSayisi: ubl.satirlar.length, genelToplam: ubl.toplamlar.genelToplam.toFixed(2), dovizCinsi: ubl.dovizCinsi, okunabilir: true };
+    return { satirSayisi: ubl.satirlar.length, genelToplam: ubl.toplamlar.genelToplam.toFixed(2), dovizCinsi: ubl.dovizCinsi, okunabilir: true, odemeHesaplari: ubl.odemeHesaplari };
   } catch {
-    return { satirSayisi: 0, genelToplam: null, dovizCinsi: null, okunabilir: false };
+    return { satirSayisi: 0, genelToplam: null, dovizCinsi: null, okunabilir: false, odemeHesaplari: [] };
   }
 }
 
@@ -1547,6 +1554,7 @@ export class EbelgeService {
     }
 
     let yeniBelgeSayisi = 0;
+    const yeniIdler: string[] = [];
 
     for (const b of belgeler) {
       // Profil bilgisi kabul/ret düğmesini belirlediği için çekimde okunur;
@@ -1565,8 +1573,8 @@ export class EbelgeService {
         }),
       );
 
-      await this.prisma.tenantIslem(tenantId, async (tx) => {
-        await tx.gelenEbelge.upsert({
+      const kaydedilen = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const k = await tx.gelenEbelge.upsert({
           where: { tenantId_uuid: { tenantId, uuid: b.uuid } },
           create: {
             tenantId,
@@ -1586,10 +1594,32 @@ export class EbelgeService {
         // EBLG-34: belge portalda ya da başka bir yerde yanıtlanmışsa karar
         // yanıtı olmayan kayda yazılır; yerel kararın üzerine yazılmaz.
         if (b.yanit) await this.yanitBenimse(tx, tenantId, b.uuid, b.yanit);
+        return k;
       });
 
-      if (!oncesi) yeniBelgeSayisi += 1;
+      if (!oncesi) {
+        yeniBelgeSayisi += 1;
+        yeniIdler.push(kaydedilen.id);
+      }
     }
+
+    // EBLG-144: yeni belgelerin kural denetimi (liste rozeti); hata çekimi düşürmez.
+    // Özellikten önce gelmiş, henüz denetlenmemiş bekleyen belgeler her çekimde
+    // en yeniden 50'şer tamamlanır (belge başına ~0,2 sn).
+    let eskiler: { id: string }[] = [];
+    try {
+      eskiler = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.gelenEbelge.findMany({
+          where: { durum: "beklemede", denetimAt: null, okunabilir: true, id: { notIn: yeniIdler } },
+          orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+          take: GELEN_DENETIM_TAMAMLAMA,
+          select: { id: true },
+        }),
+      );
+    } catch (hata) {
+      this.logger.warn(JSON.stringify({ event: "gelen_denetim_tamamlanamadi", hata: hata instanceof Error ? hata.message : String(hata) }));
+    }
+    for (const id of [...yeniIdler, ...eskiler.map((e) => e.id)]) await this.gelenDenetimSakla(id);
 
     const islenenYanit = await this.aliciYanitlariniIsle(tenantId, yanitlar);
 
@@ -1734,6 +1764,7 @@ export class EbelgeService {
         update: { xmlIcerik, profilId: ubl.profilId, ...gelenOzeti(xmlIcerik) },
       }),
     );
+    await this.gelenDenetimSakla(kayit.id);
 
     return {
       id: kayit.id,
@@ -1766,7 +1797,7 @@ export class EbelgeService {
         select: {
           id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, profilId: true,
           durum: true, yanit: true, yanitGerekce: true, faturaId: true,
-          satirSayisi: true, genelToplam: true, dovizCinsi: true, okunabilir: true,
+          satirSayisi: true, genelToplam: true, dovizCinsi: true, okunabilir: true, denetimUyariSayisi: true,
           fatura: { select: { id: true, no: true, durum: true } },
         },
       });
@@ -1802,6 +1833,8 @@ export class EbelgeService {
         genelToplam: k.genelToplam ? k.genelToplam.toFixed(2) : null,
         dovizCinsi: k.dovizCinsi ?? "TRY",
         okunabilir: k.okunabilir ?? false,
+        /** EBLG-144: son kural denetimindeki uyarı sayısı; null = henüz denetlenmedi. */
+        denetimUyari: k.denetimUyariSayisi,
       };
     });
   }
@@ -1904,6 +1937,10 @@ export class EbelgeService {
     const cari = secilenCari ? { id: secilenCari.id, kod: secilenCari.kod, unvan: secilenCari.unvan, karaListe: secilenCari.karaListe } : null;
 
     const satirlar = await this.eslesmeOner(tenantId, ubl.satirlar, cari?.id ?? null);
+    // EBLG-144: geçmiş değişmiş olabilir; açılışta önerilen eşleşmelerle yeniden hesaplanır.
+    const aliDenetimi = await this.gelenDenetimSakla(id, satirlar
+      .filter((x) => x.onerilenStokId)
+      .map((x) => ({ siraNo: x.siraNo, stokId: x.onerilenStokId as string, varyantId: x.onerilenVaryantId })));
 
     // SAT-13: faturada adı geçen irsaliyelerin bizdeki karşılığı (işlerken bağlanır).
     const irsaliyeEslesmesi = await this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -1952,6 +1989,8 @@ export class EbelgeService {
         genelToplam: ubl.toplamlar.genelToplam.toFixed(2),
       },
       satirlar,
+      /** EBLG-144…149: gelen alış denetçisi; hesaplanamadıysa null. */
+      onDenetim: aliDenetimi,
       xmlIcerik: kayit.xmlIcerik,
     };
   }
@@ -1963,7 +2002,11 @@ export class EbelgeService {
    */
   async gelenOnayla(
     id: string,
-    girdi: { satirEslesmeleri: { siraNo: number; stokId: string; varyantId?: string | null }[]; yeniCariOnay?: boolean },
+    girdi: {
+      satirEslesmeleri: { siraNo: number; stokId: string; varyantId?: string | null }[];
+      yeniCariOnay?: boolean;
+      onDenetimOnayi?: { anahtarlar: string[]; gerekce?: string };
+    },
   ) {
     const { tenantId } = aktifBaglam();
 
@@ -2025,6 +2068,10 @@ export class EbelgeService {
       );
     }
     const tip = belgeGirdisi.tip;
+
+    // EBLG-150: kural uyarıları kullanıcının eşleştirmesiyle yeniden hesaplanır ve onay ister.
+    const aliDenetimi = await this.gelenDenetimSakla(id, girdi.satirEslesmeleri);
+    const onDenetimKarari = await this.onDenetimOnayiDenetle({ gelenEbelgeId: id }, aliDenetimi?.bulgular ?? [], girdi.onDenetimOnayi);
 
     const { cari: mevcutCari, uyari: cariUyarisi } = await this.prisma.tenantIslem(tenantId, (tx) =>
       gonderenCariSec(tx, tenantId, kayit.gonderenVkn, tip === "satis_iade" ? "musteri" : "tedarikci"),
@@ -2107,6 +2154,7 @@ export class EbelgeService {
       await this.faturaService.sil(fatura.id).catch(() => undefined);
       throw hata;
     }
+    if (onDenetimKarari) await this.onDenetimKarariYaz({ gelenEbelgeId: id }, onDenetimKarari);
 
     // STK-23: bağlanan satırın satıcı kodu (varyant ya da kart düzeyinde) öğrenilir; hata faturayı geri almaz.
     // İade belgesindeki kod müşterinindir, satıcı kodu değildir.
@@ -2649,15 +2697,16 @@ export class EbelgeService {
    * kararı döner; onay gerekmiyorsa null.
    */
   async onDenetimOnayiDenetle(
-    faturaId: string,
+    hedef: OnDenetimHedefi,
     bulgular: OnDenetimBulgusu[],
     onay?: { anahtarlar: string[]; gerekce?: string },
   ): Promise<{ bulgular: { kod: string; satir: number | null; mesaj: string }[]; gerekce: string | null } | null> {
     const uyarilar = bulgular.filter((b) => b.duzey === "uyari");
     if (!uyarilar.length) return null;
     const { tenantId } = aktifBaglam();
+    // Gelen belgede önceki karar: taslağı iptal edilip yeniden işlenen belge.
     const onceki = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.onDenetimKarari.findMany({ where: { tenantId, faturaId }, select: { bulgular: true } }));
+      tx.onDenetimKarari.findMany({ where: { tenantId, ...hedef }, select: { bulgular: true } }));
     const onaylanan = new Set([
       ...(onay?.anahtarlar ?? []),
       ...onceki.flatMap((k) => (k.bulgular as { kod: string; satir: number | null }[]).map((b) => onDenetimAnahtari({ kod: b.kod as OnDenetimBulgusu["kod"], satir: b.satir ?? undefined }))),
@@ -2665,7 +2714,9 @@ export class EbelgeService {
     const eksik = uyarilar.filter((b) => !onaylanan.has(onDenetimAnahtari(b)));
     if (eksik.length) {
       throw new BadRequestException(
-        `Ön denetimde onaylanmamış ${eksik.length} uyarı var; e-Belge sihirbazında uyarıları görüp "Uyarıları gördüm" ile gönderin. ${eksik.map((b) => b.mesaj).join(" ")}`,
+        "gelenEbelgeId" in hedef
+          ? `Gelen alış denetiminde onaylanmamış ${eksik.length} uyarı var; uyarıları görüp "Uyarıları gördüm" ile işleyin. ${eksik.map((b) => b.mesaj).join(" ")}`
+          : `Ön denetimde onaylanmamış ${eksik.length} uyarı var; e-Belge sihirbazında uyarıları görüp "Uyarıları gördüm" ile gönderin. ${eksik.map((b) => b.mesaj).join(" ")}`,
       );
     }
     // Uyarıların hepsi önceki kararlardaysa (yeniden gönderim) yeni kayıt açılmaz.
@@ -2676,10 +2727,65 @@ export class EbelgeService {
     };
   }
 
-  async onDenetimKarariYaz(faturaId: string, karar: { bulgular: { kod: string; satir: number | null; mesaj: string }[]; gerekce: string | null }) {
+  async onDenetimKarariYaz(hedef: OnDenetimHedefi, karar: { bulgular: { kod: string; satir: number | null; mesaj: string }[]; gerekce: string | null }) {
     const { tenantId, userId } = aktifBaglam();
     await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.onDenetimKarari.create({ data: { tenantId, faturaId, userId: userId ?? null, bulgular: karar.bulgular, gerekce: karar.gerekce } }));
+      tx.onDenetimKarari.create({ data: { tenantId, ...hedef, userId: userId ?? null, bulgular: karar.bulgular, gerekce: karar.gerekce } }));
+  }
+
+  // ─── GELEN ALIŞ DENETÇİSİ (EBLG-144…150) ──────────────────────────────
+
+  /**
+   * Gelen belgenin kural denetimi; sonuç belgeyle saklanır (liste rozeti).
+   * Eşleştirme verilmezse satırlar `stokKartiBul` önerisiyle eşlenir. Belge
+   * okunamazsa ya da denetim düşerse null döner: denetçi işlemeyi kendisi
+   * engellemez, engeller EBLG-115 kapısındadır.
+   */
+  async gelenDenetimSakla(
+    id: string,
+    eslesmeler?: { siraNo: number; stokId: string; varyantId?: string | null }[],
+  ): Promise<{ bulgular: OnDenetimBulgusu[]; susturulan: number; cariId: string | null } | null> {
+    const { tenantId } = aktifBaglam();
+    try {
+      const ayar = this.ayarlar ? await this.ayarlar.getir("ebelge") : {};
+      const satinAlma = this.ayarlar ? await this.ayarlar.getir("satin_alma") : {};
+      return await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const kayit = await tx.gelenEbelge.findUnique({ where: { id }, select: { id: true, gonderenVkn: true, faturaId: true, xmlIcerik: true } });
+        if (!kayit) return null;
+        let ubl: UblFatura;
+        try { ubl = faturaUblOku(kayit.xmlIcerik); } catch { return null; }
+        const tip = gelenFaturaTipi(ubl);
+        const { cari } = await gonderenCariSec(tx, tenantId, kayit.gonderenVkn, tip === "satis_iade" ? "musteri" : "tedarikci");
+        const harita = new Map<number, { stokId: string; varyantId?: string | null }>();
+        if (eslesmeler) {
+          for (const e of eslesmeler) harita.set(e.siraNo, e);
+        } else {
+          for (const s of ubl.satirlar) {
+            const { stokId, varyantId } = await stokKartiBul(tx, tenantId, s, cari?.id ?? null);
+            if (stokId) harita.set(s.siraNo, { stokId, varyantId });
+          }
+        }
+        const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { sifreliConfig: true } });
+        const testOrtami = baglanti ? Boolean((JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).testOrtami) : false;
+        const sonuc = await gelenDenetimCalistir(tx, tenantId, kayit, ubl, (sira) => harita.get(sira), {
+          fiyatYuzde: Number(ayar.gelenFiyatYuzde ?? 25),
+          siparisToleransYuzde: Number(satinAlma.fiyatToleransYuzde ?? 1),
+          testOrtami,
+        });
+        await tx.gelenEbelge.update({
+          where: { id },
+          data: {
+            denetimBulgulari: sonuc.bulgular as unknown as Prisma.InputJsonValue,
+            denetimUyariSayisi: sonuc.bulgular.filter((b) => b.duzey === "uyari").length,
+            denetimAt: new Date(),
+          },
+        });
+        return { ...sonuc, cariId: cari?.id ?? null };
+      }, { timeout: 30_000 });
+    } catch (hata) {
+      this.logger.warn(JSON.stringify({ event: "gelen_denetim_hesaplanamadi", gelenEbelgeId: id, hata: hata instanceof Error ? hata.message : String(hata) }));
+      return null;
+    }
   }
 
   /** Fatura detayında: kim, ne zaman, hangi uyarıları geçti. */
@@ -2715,13 +2821,20 @@ export class EbelgeService {
     // Ay sınırı İstanbul saatine göre; UTC ayın başından 3 saat önce başlatılır.
     const baslangic = new Date(baslangicAyi.getTime() - 3 * 3_600_000);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [kayitlar, kararlar] = await Promise.all([
+      const [kayitlar, tumKararlar, gelenBelgeler] = await Promise.all([
         tx.ebelgeKayit.findMany({
           where: { tenantId, createdAt: { gte: baslangic } },
           select: { faturaId: true, createdAt: true, durum: true, aliciYaniti: true, fatura: { select: { durum: true } } },
         }),
-        tx.onDenetimKarari.findMany({ where: { tenantId, createdAt: { gte: baslangic } }, select: { faturaId: true, bulgular: true } }),
+        tx.onDenetimKarari.findMany({ where: { tenantId, createdAt: { gte: baslangic } }, select: { faturaId: true, gelenEbelgeId: true, bulgular: true } }),
+        // EBLG-150: gelen yön; belge sayısı denetlenmiş belgelerden.
+        tx.gelenEbelge.findMany({ where: { tenantId, createdAt: { gte: baslangic }, denetimAt: { not: null } }, select: { denetimUyariSayisi: true } }),
       ]);
+      const kararlar = tumKararlar.flatMap((k) => (k.faturaId ? [{ faturaId: k.faturaId, bulgular: k.bulgular }] : []));
+      const gelenKurallar = new Map<string, number>();
+      for (const k of tumKararlar.filter((x) => x.gelenEbelgeId)) {
+        for (const b of k.bulgular as { kod: string }[]) gelenKurallar.set(b.kod, (gelenKurallar.get(b.kod) ?? 0) + 1);
+      }
       const sorunlu = (k: (typeof kayitlar)[number]) => k.durum === "ret" || k.durum === "iptal" || k.aliciYaniti === "ret" || k.fatura.durum === "iptal";
       const gonderilmis = kayitlar.filter((k) => k.durum !== "kuyrukta" && k.durum !== "hata");
       const kararli = new Set(kararlar.map((k) => k.faturaId));
@@ -2762,6 +2875,14 @@ export class EbelgeService {
         kurallar: [...kurallar.entries()]
           .map(([kod, v]) => ({ kod, kural: ON_DENETIM_KURAL_ADLARI[kod as OnDenetimBulgusu["kod"]] ?? kod, ...v }))
           .sort((a, b) => b.gecilen - a.gecilen),
+        gelen: {
+          denetlenen: gelenBelgeler.length,
+          uyarili: gelenBelgeler.filter((g) => (g.denetimUyariSayisi ?? 0) > 0).length,
+          uyariylaIslenen: new Set(tumKararlar.map((k) => k.gelenEbelgeId).filter(Boolean)).size,
+          kurallar: [...gelenKurallar.entries()]
+            .map(([kod, gecilen]) => ({ kod, kural: ON_DENETIM_KURAL_ADLARI[kod as OnDenetimBulgusu["kod"]] ?? kod, gecilen }))
+            .sort((a, b) => b.gecilen - a.gecilen),
+        },
       };
     });
   }

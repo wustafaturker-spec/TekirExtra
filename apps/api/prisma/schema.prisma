@@ -3273,10 +3273,17 @@ model GelenEbelge {
   genelToplam   Decimal?          @map("genel_toplam") @db.Decimal(18, 2)
   dovizCinsi    String?           @map("doviz_cinsi")
   okunabilir    Boolean?
+  /// EBLG-144: gelen alış denetçisinin son sonucu (OnDenetimBulgusu[]); NULL: hesaplanmadı.
+  denetimBulgulari   Json?     @map("denetim_bulgulari")
+  denetimUyariSayisi Int?      @map("denetim_uyari_sayisi")
+  denetimAt          DateTime? @map("denetim_at")
+  /// EBLG-147: belgedeki IBAN'lar (boşluksuz büyük harf); kayıtta XML'den yazılır.
+  odemeHesaplari     String[]  @map("odeme_hesaplari")
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
 
   fatura Fatura? @relation(fields: [faturaId], references: [id])
+  onDenetimKararlari OnDenetimKarari[]
 
   @@unique([tenantId, uuid])
   @@index([tenantId, durum])
@@ -6500,7 +6507,9 @@ model OdemeSozuHatirlatma {
 model OnDenetimKarari {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
-  faturaId  String   @map("fatura_id") @db.Uuid
+  /// Giden: gönderilen fatura; gelen (EBLG-150): işlenen gelen belge. İkisinden yalnız biri dolu.
+  faturaId  String?  @map("fatura_id") @db.Uuid
+  gelenEbelgeId String? @map("gelen_ebelge_id") @db.Uuid
   userId    String?  @map("user_id") @db.Uuid
   /// Geçilen uyarılar: [{kod, satir, mesaj}]
   bulgular  Json
@@ -6508,8 +6517,10 @@ model OnDenetimKarari {
   createdAt DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  gelenEbelge GelenEbelge? @relation(fields: [gelenEbelgeId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, faturaId])
+  @@index([tenantId, gelenEbelgeId])
   @@index([tenantId, createdAt])
   @@map("on_denetim_kararlari")
 }

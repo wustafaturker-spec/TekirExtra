@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
 import { BirimSecimi } from "@/components/birim-secimi";
 import { GelenFiyatAnalizi } from "@/components/gelen-fiyat-analizi";
-import { birimCoz, varyantAdiEsit, varyantliAdAyir } from "@tekirextra/shared";
+import { OnDenetimPaneli, type OnDenetimMetinleri } from "@/components/on-denetim-paneli";
+import { birimCoz, onDenetimAnahtari, varyantAdiEsit, varyantliAdAyir, type OnDenetimBulgusu } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import {
   Alert,
@@ -40,7 +41,20 @@ interface GelenOzet {
   genelToplam: string | null;
   dovizCinsi: string;
   okunabilir: boolean;
+  /** EBLG-144: son kural denetimindeki uyarı sayısı; null = henüz denetlenmedi. */
+  denetimUyari: number | null;
 }
+
+/** EBLG-144…149: gelen alış denetçisinin sonucu. */
+interface GelenDenetim { bulgular: OnDenetimBulgusu[]; susturulan: number; cariId: string | null }
+
+const GELEN_DENETIM_METINLERI: OnDenetimMetinleri = {
+  baslik: "Gelen alış denetimi",
+  altMetin: "Belge aktarılabilir ama büyük olasılıkla yanlış ya da şüpheli olabilir; uyarılar faturaya işlerken onayınızı ister.",
+  temiz: "Gelen alış denetimi: fiyat, mükerrer, ödeme hesabı, vergi ve vade kontrollerinde dikkat edilecek bir şey bulunmadı.",
+  taraf: "tedarikçi",
+  faturaYonu: "alis",
+};
 
 interface OnerilenStok {
   id: string;
@@ -133,6 +147,8 @@ interface GelenDetay {
   tutarDenetimi?: TutarDenetimi;
   /** EBLG-115…119: işlemeyi durduran nedenler (kur yok, tanınmayan kod…). */
   engeller?: string[];
+  /** EBLG-144: açılıştaki önerilen eşleşmelerle gelen alış denetimi; hesaplanamadıysa null. */
+  onDenetim?: GelenDenetim | null;
 }
 
 interface TutarFarki { alan: string; ad: string; belge: number; sistem: number; fark: number }
@@ -219,6 +235,11 @@ export default function GelenKutusuSayfasi() {
   const [yeniCariOnay, setYeniCariOnay] = useState(false);
   /** SAT-13: son işlemede irsaliyelerin bağlanma sonucu (uyarılar dahil). */
   const [irsaliyeSonucu, setIrsaliyeSonucu] = useState<string[]>([]);
+  // EBLG-150: gelen alış denetimi; eşleştirme değişince yeniden sorulur.
+  const [denetim, setDenetim] = useState<GelenDenetim | null>(null);
+  const [denetimOnay, setDenetimOnay] = useState(false);
+  const [denetimGerekce, setDenetimGerekce] = useState("");
+  const [yalnizUyarili, setYalnizUyarili] = useState(false);
 
   const listeYukle = useCallback(async () => {
     try {
@@ -236,9 +257,10 @@ export default function GelenKutusuSayfasi() {
 
   const gorunenListe = useMemo(() => {
     const sorgu = arama.trim().toLocaleLowerCase("tr-TR");
-    if (!sorgu) return liste;
-    return liste.filter((g) => `${g.belgeNo} ${g.gonderenUnvan} ${g.gonderenVkn}`.toLocaleLowerCase("tr-TR").includes(sorgu));
-  }, [arama, liste]);
+    const uyarili = yalnizUyarili ? liste.filter((g) => (g.denetimUyari ?? 0) > 0) : liste;
+    if (!sorgu) return uyarili;
+    return uyarili.filter((g) => `${g.belgeNo} ${g.gonderenUnvan} ${g.gonderenVkn}`.toLocaleLowerCase("tr-TR").includes(sorgu));
+  }, [arama, liste, yalnizUyarili]);
   const bekleyenSayisi = liste.filter((g) => g.durum === "beklemede").length;
   const toplamTutar = liste.reduce((toplam, g) => toplam + Number(g.genelToplam ?? 0), 0);
 
@@ -251,9 +273,12 @@ export default function GelenKutusuSayfasi() {
     setYeniCariOnay(false);
     setSeciciSira(null);
     setYeniKartSira(null);
+    setDenetimOnay(false);
+    setDenetimGerekce("");
     try {
       const d = await api<GelenDetay>(`/ebelge/gelen/${id}`);
       setDetay(d);
+      setDenetim(d.onDenetim ?? null);
       // Otomatik eşleşenler baştan seçili gelir; kullanıcı değiştirebilir.
       const baslangic: Record<number, StokSecenek | null> = {};
       for (const s of d.satirlar) {
@@ -302,6 +327,56 @@ export default function GelenKutusuSayfasi() {
     }) : []),
     [detay, eslesme],
   );
+
+  // Bulgulardaki "Gelen belgeyi aç" bağlantısı (?ac=id).
+  useEffect(() => {
+    if (!tokenAl()) return;
+    const ac = new URLSearchParams(window.location.search).get("ac");
+    if (ac) void detayAc(ac);
+  }, [detayAc]);
+
+  // EBLG-144: kullanıcının eşleştirmesiyle denetim yeniden hesaplanır (fiyat ve KDV ürün kartına bağlıdır).
+  const denetimEslesmeleri = useMemo(() => (detay ? detay.satirlar.flatMap((s) => {
+    const e = eslesme[s.siraNo];
+    return e && (!e.varyantlar?.length || e.varyantId) ? [{ siraNo: s.siraNo, stokId: e.id, varyantId: e.varyantId ?? null }] : [];
+  }) : []), [detay, eslesme]);
+  const denetimAnahtari = JSON.stringify(denetimEslesmeleri);
+  useEffect(() => {
+    if (!detay || detay.durum !== "beklemede" || !denetimEslesmeleri.length) return;
+    let iptal = false;
+    const zamanlayici = setTimeout(() => {
+      void api<GelenDenetim>(`/ebelge/gelen/${detay.id}/denetim`, { method: "POST", body: JSON.stringify({ satirEslesmeleri: denetimEslesmeleri }) })
+        .then((d) => {
+          if (iptal) return;
+          setDenetim((onceki) => {
+            const anahtarlar = (x: GelenDenetim | null) => (x?.bulgular ?? []).filter((b) => b.duzey === "uyari").map(onDenetimAnahtari).sort().join("|");
+            // Uyarılar değiştiyse önceki onay geçmez.
+            if (anahtarlar(onceki) !== anahtarlar(d)) setDenetimOnay(false);
+            return d;
+          });
+        })
+        .catch(() => undefined);
+    }, 500);
+    return () => { iptal = true; clearTimeout(zamanlayici); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- anahtar eşleşmelerin içeriğini izler
+  }, [detay?.id, detay?.durum, denetimAnahtari]);
+
+  const denetimUyarilari = denetim?.bulgular.filter((b) => b.duzey === "uyari") ?? [];
+
+  async function denetimSustur(kod: OnDenetimBulgusu["kod"]) {
+    if (!detay || !denetim?.cariId) return;
+    setHata("");
+    try {
+      await api("/ebelge/on-denetim/susturmalar", { method: "POST", body: JSON.stringify({ cariId: denetim.cariId, kod }) });
+      setDenetim(await api<GelenDenetim>(`/ebelge/gelen/${detay.id}/denetim`, { method: "POST", body: JSON.stringify({ satirEslesmeleri: denetimEslesmeleri }) }));
+      setDenetimOnay(false);
+    } catch (h) { setHata(h instanceof Error ? h.message : "Kural susturulamadı"); }
+  }
+
+  function retGerekcesineEkle(mesaj: string) {
+    setRetAcik(true);
+    setRetGerekce((g) => (g.includes(mesaj) ? g : [g.trim(), mesaj].filter(Boolean).join(" ")).slice(0, 500));
+  }
 
   /* ─── Eylemler ─────────────────────────────────────────────────────────── */
 
@@ -420,6 +495,9 @@ export default function GelenKutusuSayfasi() {
               varyantId: eslesme[sa.siraNo]?.varyantId ?? null,
             })),
             yeniCariOnay,
+            ...(denetimUyarilari.length && denetimOnay
+              ? { onDenetimOnayi: { anahtarlar: denetimUyarilari.map(onDenetimAnahtari), gerekce: denetimGerekce.trim() || undefined } }
+              : {}),
           }),
         },
       );
@@ -603,6 +681,9 @@ export default function GelenKutusuSayfasi() {
           <div className="archive-filter__grid incoming-filter-grid">
             <Field label="Durum"><Select value={suzgec} onChange={(e) => setSuzgec(e.target.value as typeof suzgec)}><option value="beklemede">Onay bekleyen</option><option value="islendi">İşlenmiş</option><option value="reddedildi">Reddedilen</option><option value="hepsi">Tümü</option></Select></Field>
             <Field label="Belge ara"><Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Belge no, VKN veya gönderen…" /></Field>
+            <label className="row-tight" style={{ alignSelf: "end", fontSize: "0.875rem" }}>
+              <input type="checkbox" checked={yalnizUyarili} onChange={(e) => setYalnizUyarili(e.target.checked)} /> Yalnız denetim uyarısı olanlar
+            </label>
             <div className="incoming-filter-hint"><span>Görüntülenen kayıt</span><strong>{gorunenListe.length}</strong></div>
           </div>
         </Card>
@@ -636,7 +717,7 @@ export default function GelenKutusuSayfasi() {
                     <td>{profilRozet(g.profilId)}</td>
                     <td><strong>{g.satirSayisi}</strong><small>ürün kalemi</small></td>
                     <td><strong className="archive-amount">{g.genelToplam ? para(g.genelToplam, g.dovizCinsi) : "—"}</strong><small>fatura toplamı</small></td>
-                    <td><div className="archive-status">{durumRozet(g.durum)}{g.yanit&&<b>{g.yanit === "kabul" ? "KABUL" : "RET"}</b>}</div>{!g.okunabilir&&<small className="muted">XML okunamadı</small>}</td>
+                    <td><div className="archive-status">{durumRozet(g.durum)}{g.yanit&&<b>{g.yanit === "kabul" ? "KABUL" : "RET"}</b>}{g.durum === "beklemede" && (g.denetimUyari ?? 0) > 0 && <Badge variant="warning">{g.denetimUyari} UYARI</Badge>}</div>{!g.okunabilir&&<small className="muted">XML okunamadı</small>}</td>
                   </tr>
                 ))
               )}
@@ -820,6 +901,18 @@ export default function GelenKutusuSayfasi() {
           const e = eslesme[s.siraNo];
           return e && (!e.varyantlar?.length || e.varyantId) ? [{ siraNo: s.siraNo, stokId: e.id, varyantId: e.varyantId ?? null }] : [];
         })} />}
+
+      {islenebilir && denetim && (
+        <div style={{ marginTop: "1.25rem" }}>
+          <OnDenetimPaneli
+            bulgular={denetim.bulgular}
+            susturulan={denetim.susturulan}
+            metin={GELEN_DENETIM_METINLERI}
+            onSustur={denetim.cariId ? (kod) => void denetimSustur(kod) : undefined}
+            onRetGerekcesine={detay.yanitGerekiyor && !detay.yanit ? retGerekcesineEkle : undefined}
+          />
+        </div>
+      )}
 
       <Card style={{ marginTop: "1.25rem" }} pad={false}>
         <div style={{ padding: "1.25rem 1.25rem 0" }}>
@@ -1131,6 +1224,17 @@ export default function GelenKutusuSayfasi() {
             </Alert>
           </div>
         )}
+        {islenebilir && denetimUyarilari.length > 0 && (
+          <div className="on-denetim stack" style={{ margin: "0.8rem 1.25rem 0" }}>
+            <label>
+              <input type="checkbox" checked={denetimOnay} onChange={(e) => setDenetimOnay(e.target.checked)} />{" "}
+              Gelen alış denetimindeki {denetimUyarilari.length} uyarıyı gördüm, yine de faturaya işle
+            </label>
+            <Field label="Gerekçe (isteğe bağlı)">
+              <Input value={denetimGerekce} maxLength={300} placeholder="Ör. fiyat artışı tedarikçiyle teyit edildi" onChange={(e) => setDenetimGerekce(e.target.value)} />
+            </Field>
+          </div>
+        )}
         <div className="between" style={{ padding: "1rem 1.25rem" }}>
           <span className="muted" style={{ fontSize: "0.9rem" }}>
             {detay.durum === "islendi"
@@ -1155,7 +1259,7 @@ export default function GelenKutusuSayfasi() {
             <Button
               variant="primary"
               onClick={() => void faturayaIsle()}
-              disabled={!islenebilir || kapiKapali || eksikSatirlar.length > 0 || islemde !== null}
+              disabled={!islenebilir || kapiKapali || eksikSatirlar.length > 0 || islemde !== null || (denetimUyarilari.length > 0 && !denetimOnay)}
             >
               {islemde === "onayla" ? "İşleniyor..." : "Faturaya İşle"}
             </Button>
