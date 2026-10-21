@@ -38,7 +38,9 @@ export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hat
  * dek yalnız Ollama'da geçerliydi; EVREN gibi yavaş ana modeller için tüm
  * sağlayıcılara açıldı.
  */
-export function ozellikModeli(ayar: Pick<TenantAiAyari, "modelAdi" | "ekonomikModelAdi" | "gucluModelAdi">, ozellik: AiOzelligi): string | null {
+export function ozellikModeli(ayar: Pick<TenantAiAyari, "modelAdi" | "ekonomikModelAdi" | "gucluModelAdi"> & { gucluSaglayici?: string | null }, ozellik: AiOzelligi): string | null {
+  // AI-81: ayrı güçlü sağlayıcı tanımlıysa güçlü model ona aittir; diğer işler ana modelde kalır.
+  if (ayar.gucluSaglayici) return (EKONOMIK_OZELLIKLER.includes(ozellik) ? ayar.ekonomikModelAdi?.trim() : null) || ayar.modelAdi || null;
   return (EKONOMIK_OZELLIKLER.includes(ozellik) ? ayar.ekonomikModelAdi : ayar.gucluModelAdi)?.trim() || ayar.modelAdi || null;
 }
 
@@ -46,9 +48,13 @@ export function ozellikModeli(ayar: Pick<TenantAiAyari, "modelAdi" | "ekonomikMo
 export const onayModelleri = (deger: string | null | undefined) => new Set((deger ?? "").split(",").map((m) => m.trim()).filter(Boolean));
 
 /** Ayarın kullanabileceği bütün modeller; onay hepsini kapsamalıdır. */
-export function ayarModelleri(ayar: Pick<TenantAiAyari, "ekonomikModelAdi" | "gucluModelAdi">, anaModel: string | null | undefined): string[] {
-  return [...new Set([anaModel, ayar.ekonomikModelAdi?.trim(), ayar.gucluModelAdi?.trim()].filter((m): m is string => Boolean(m)))];
+export function ayarModelleri(ayar: Pick<TenantAiAyari, "ekonomikModelAdi" | "gucluModelAdi"> & { gucluSaglayici?: string | null }, anaModel: string | null | undefined): string[] {
+  // AI-81: ayrı güçlü sağlayıcının modeli ana onaya girmez; onun onayı ayrıdır.
+  return [...new Set([anaModel, ayar.ekonomikModelAdi?.trim(), ayar.gucluSaglayici ? null : ayar.gucluModelAdi?.trim()].filter((m): m is string => Boolean(m)))];
 }
+
+export const GUCLU_ONAY_YOK_MESAJI =
+  "Derin analiz için güçlü sağlayıcıya veri aktarımı onayı yok. Yönetici Ayarlar → Yapay Zeka → Güçlü sağlayıcı bölümünden onay verebilir.";
 
 /** AI-14: verinin yurt dışına çıktığı sağlayıcılar (platform anahtarıyla da). */
 const DIS_SAGLAYICILAR: AiProviderTuru[] = ["gemini", "openai", "anthropic"];
@@ -129,8 +135,8 @@ async function cagriSay(prisma: PrismaService, tenantId: string, ozellik: AiOzel
 export async function kiraciSaglayicisi(
   prisma: PrismaService,
   tenantId: string,
-  secenek: { ozellik: AiOzelligi; varsayilan?: () => IAiProvider },
-): Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null }> {
+  secenek: { ozellik: AiOzelligi; varsayilan?: () => IAiProvider; /** AI-81: "Derin analiz": güçlü sağlayıcı tanımlıysa ona gider. */ derin?: boolean },
+): Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null; derin?: boolean }> {
   const ayar = await prisma.tenantIslem(tenantId, async (tx) => {
     const kayit = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
     if (kayit?.apiKey && !kayit.apiKey.startsWith("enc:")) {
@@ -138,6 +144,7 @@ export async function kiraciSaglayicisi(
     }
     return kayit;
   });
+  if (secenek.derin && ayar?.gucluSaglayici) return gucluSaglayicisi(prisma, tenantId, ayar, secenek.ozellik);
   const yonlendirilmisModel = ayar ? ozellikModeli(ayar, secenek.ozellik) : undefined;
   const temel = ayar
     ? AiProviderFactory.uret({ ...ayardanYapilandirma(ayar), ...(yonlendirilmisModel ? { modelAdi: yonlendirilmisModel } : {}) })
@@ -156,6 +163,26 @@ export async function kiraciSaglayicisi(
   // AI-31: kiracı kendi anahtarını girmemişse dış sağlayıcı çağrısını platform öder.
   const platformAnahtari = !ayar?.apiKey?.trim() && DIS_SAGLAYICILAR.includes(temel.saglayiciAdi);
   const butce = await prisma.tenantIslem(tenantId, (tx) => kiraciButceKurali(tx, tenantId, ayar, platformAnahtari));
+  return { saglayici: sayacliSar(prisma, tenantId, secenek.ozellik, temel, sinir, butce), ozelTalimatlar };
+}
+
+/** AI-81: güçlü sağlayıcı; kendi anahtarı, onayı ve fiyatı; günlük sınır ve aylık bütçe ortaktır. */
+async function gucluSaglayicisi(prisma: PrismaService, tenantId: string, ayar: TenantAiAyari, ozellik: AiOzelligi): Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null; derin: boolean }> {
+  const ozelTalimatlar = ayar.ozelTalimatlar ?? null;
+  if (ayar.ozelliklerEtkin === false) return { saglayici: new TanimsizAiProvider("Yapay zekâ özellikleri bu firma için yönetici tarafından kapatıldı."), ozelTalimatlar, derin: true };
+  const temel = AiProviderFactory.uret({ saglayici: ayar.gucluSaglayici, apiKey: hassasCoz(ayar.gucluApiKey), modelAdi: ayar.gucluModelAdi, baseUrl: ayar.gucluBaseUrl });
+  const onayGecerli = Boolean(ayar.gucluOnayAt && ayar.gucluOnaySaglayici === temel.saglayiciAdi
+    && Boolean(temel.modelAdi) && onayModelleri(ayar.gucluOnayModel).has(temel.modelAdi!) && ayar.gucluOnayPolitika === AI_AKTARIM_POLITIKA_SURUMU);
+  if (DIS_SAGLAYICILAR.includes(temel.saglayiciAdi) && !onayGecerli) return { saglayici: new TanimsizAiProvider(GUCLU_ONAY_YOK_MESAJI), ozelTalimatlar, derin: true };
+  if (temel.saglayiciAdi === "tanimsiz") return { saglayici: temel, ozelTalimatlar, derin: true };
+  const butce = await prisma.tenantIslem(tenantId, (tx) => kiraciButceKurali(tx, tenantId, {
+    girisTokenMilyonUsd: ayar.gucluGirisTokenMilyonUsd, cikisTokenMilyonUsd: ayar.gucluCikisTokenMilyonUsd, aylikMaliyetButcesiUsd: ayar.aylikMaliyetButcesiUsd,
+  }, false));
+  return { saglayici: sayacliSar(prisma, tenantId, ozellik, temel, ayar.gunlukCagriSiniri ?? VARSAYILAN_GUNLUK_SINIR, butce), ozelTalimatlar, derin: true };
+}
+
+/** Çağrı sayacı, sınır/bütçe denetimi ve çağrı izi; iki sağlayıcı kolu da bundan geçer. */
+function sayacliSar(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, temel: IAiProvider, sinir: number, butce: ButceKurali): IAiProvider {
   const izle: Izleyici = async (islem, baslangic, kullanim, hata, tahmin) => {
     const userId = baglamAl()?.userId;
     if (!userId) return;
@@ -163,12 +190,12 @@ export async function kiraciSaglayicisi(
     // Başarısız çağrıda yalnız sağlayıcının bildirdiği token ücretlenir; tahmin yapılmaz.
     const maliyet = maliyetHesapla(butce.fiyat, kullanim, tahmin ?? null);
     await prisma.tenantIslem(tenantId, (tx) => tx.aiCagriIz.create({ data: {
-      tenantId, userId, ozellik: secenek.ozellik, saglayici: temel.saglayiciAdi,
+      tenantId, userId, ozellik, saglayici: temel.saglayiciAdi,
       model: temel.modelAdi ?? null, islem, sureMs: Math.max(0, Date.now() - baslangic), basarili: !hata, hataSinifi,
       girisToken: maliyet.girisToken, cikisToken: maliyet.cikisToken, maliyetUsd: maliyet.maliyetUsd, maliyetTahmini: maliyet.tahmini,
     } })).catch(() => undefined);
   };
-  return { saglayici: new SayacliSaglayici(temel, () => cagriSay(prisma, tenantId, secenek.ozellik, sinir, butce), izle), ozelTalimatlar };
+  return new SayacliSaglayici(temel, () => cagriSay(prisma, tenantId, ozellik, sinir, butce), izle);
 }
 
 export const VARSAYILAN_GUNLUK_SINIR = 1000;

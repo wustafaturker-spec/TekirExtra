@@ -6351,6 +6351,19 @@ model TenantAiAyari {
   modelAdi                String?   @map("model_adi")
   ekonomikModelAdi        String?   @map("ekonomik_model_adi") @db.VarChar(120)
   gucluModelAdi           String?   @map("guclu_model_adi") @db.VarChar(120)
+  /// AI-81: isteğe bağlı güçlü sağlayıcı ("Derin analiz"); null = yok, gucluModelAdi ana sağlayıcının modelidir.
+  gucluSaglayici          String?   @map("guclu_saglayici")
+  /// AI-81: güçlü sağlayıcının şifreli anahtarı (enc:).
+  gucluApiKey             String?   @map("guclu_api_key")
+  gucluBaseUrl            String?   @map("guclu_base_url")
+  gucluGirisTokenMilyonUsd Decimal? @map("guclu_giris_token_milyon_usd") @db.Decimal(12, 6)
+  gucluCikisTokenMilyonUsd Decimal? @map("guclu_cikis_token_milyon_usd") @db.Decimal(12, 6)
+  /// AI-81: güçlü sağlayıcının ayrı yurt dışı aktarım onayı.
+  gucluOnayAt             DateTime? @map("guclu_onay_at")
+  gucluOnayUserId         String?   @map("guclu_onay_user_id") @db.Uuid
+  gucluOnaySaglayici      String?   @map("guclu_onay_saglayici")
+  gucluOnayModel          String?   @map("guclu_onay_model")
+  gucluOnayPolitika       String?   @map("guclu_onay_politika")
   baseUrl                 String?   @map("base_url")
   ozelTalimatlar          String?   @map("ozel_talimatlar") @db.Text // "Şunları asla yapma", "Şu durumlarda dikkatli ol"
   guvenlikKurallari       Json?     @map("guvenlik_kurallari")

@@ -284,3 +284,42 @@ describe("özellik modeli ve onay kapsamı", () => {
     expect(onayModelleri(null).size).toBe(0);
   });
 });
+
+describe("güçlü sağlayıcı ve Derin analiz (AI-81)", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+  const sahte = (saglayiciAdi: string, modelAdi: string) => {
+    const p = new MockAiProvider();
+    Object.defineProperty(p, "saglayiciAdi", { value: saglayiciAdi });
+    Object.defineProperty(p, "modelAdi", { value: modelAdi });
+    return p;
+  };
+  const ANA = { saglayici: "openai", modelAdi: "deepseek", ekonomikModelAdi: "qwen", apiKey: null, yurtDisiOnayAt: new Date(), yurtDisiOnaySaglayici: "openai", yurtDisiOnayModel: "deepseek, qwen", yurtDisiOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU };
+  const GUCLU = { gucluSaglayici: "anthropic", gucluModelAdi: "claude-sonnet-5-5", gucluApiKey: null, gucluBaseUrl: null };
+
+  it("derin istenince güçlü sağlayıcının kendi onayı aranır; yoksa çağrı yapılmaz", async () => {
+    const uret = vi.spyOn(AiProviderFactory, "uret").mockImplementation((y: any) => sahte(y?.saglayici ?? "openai", y?.modelAdi ?? "x"));
+    const { prisma } = kur({ ...ANA, ...GUCLU });
+    const r = await olarak(() => kiraciSaglayicisi(prisma as never, TENANT, { ozellik: "asistan", derin: true }));
+    expect(r.saglayici.saglayiciAdi).toBe("tanimsiz");
+    await expect(r.saglayici.metinUret({ prompt: "x" })).rejects.toThrow(/Derin analiz için güçlü sağlayıcıya/);
+    expect(uret).toHaveBeenCalledWith(expect.objectContaining({ saglayici: "anthropic", modelAdi: "claude-sonnet-5-5" }));
+  });
+
+  it("güçlü onayı varsa derin mesaj güçlü modele, normal mesaj ana modele gider", async () => {
+    vi.spyOn(AiProviderFactory, "uret").mockImplementation((y: any) => sahte(y?.saglayici ?? "openai", y?.modelAdi ?? "x"));
+    const onayli = { ...ANA, ...GUCLU, gucluOnayAt: new Date(), gucluOnaySaglayici: "anthropic", gucluOnayModel: "claude-sonnet-5-5", gucluOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU };
+    const derin = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "asistan", derin: true }));
+    expect([derin.saglayici.saglayiciAdi, derin.saglayici.modelAdi, derin.derin]).toEqual(["anthropic", "claude-sonnet-5-5", true]);
+    const normal = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "asistan" }));
+    // Güçlü model ayrı sağlayıcıya ait: asistan ana modelde kalır, ana onay güçlü modeli kapsamak zorunda değildir.
+    expect([normal.saglayici.saglayiciAdi, normal.saglayici.modelAdi, normal.derin]).toEqual(["openai", "deepseek", undefined]);
+    const ekonomik = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "ondenetim" }));
+    expect(ekonomik.saglayici.modelAdi).toBe("qwen");
+  });
+
+  it("güçlü sağlayıcı yoksa derin istek ana sağlayıcıyla yanıtlanır", async () => {
+    vi.spyOn(AiProviderFactory, "uret").mockImplementation((y: any) => sahte(y?.saglayici ?? "openai", y?.modelAdi ?? "x"));
+    const r = await olarak(() => kiraciSaglayicisi(kur(ANA).prisma as never, TENANT, { ozellik: "asistan", derin: true }));
+    expect([r.saglayici.saglayiciAdi, r.derin]).toEqual(["openai", undefined]);
+  });
+});

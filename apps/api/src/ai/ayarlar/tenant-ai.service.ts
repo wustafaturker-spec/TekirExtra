@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from "@nestjs/common";
+import type { TenantAiAyari } from "@prisma/client";
 import { z } from "zod";
 import { AiGorevYurutucu } from "./ai-gorev-yurutucu";
 import { PrismaService } from "../../core/prisma.service";
@@ -103,13 +104,100 @@ export class TenantAiService {
     // Onay ana, ekonomik ve güçlü modelin hepsini kapsamalı; yeni model eklenince yeniden istenir.
     const onaylilar = onayModelleri(ayar.yurtDisiOnayModel);
     const onayGecerli = Boolean(ayar.yurtDisiOnayAt && ayar.yurtDisiOnaySaglayici === etkin.saglayiciAdi && ayarModelleri(ayar, etkin.modelAdi).every((m) => onaylilar.has(m)) && ayar.yurtDisiOnayPolitika === AI_AKTARIM_POLITIKA_SURUMU);
+    const { gucluApiKey: _gucluApiKey, ...acikAyar } = ayar;
     return {
-      ...ayar,
+      ...acikAyar,
       // AI-11: yalnız son 4 karakter görünür.
       apiKey: apiAnahtariMaskele(ayar.apiKey),
       hasApiKey: Boolean(ayar.apiKey),
+      guclu: this.gucluDurumu(ayar),
       yurtDisiOnay: onayGecerli ? { tarih: ayar.yurtDisiOnayAt, onaylayan: onaylayan?.adSoyad ?? null, saglayici: ayar.yurtDisiOnaySaglayici, model: ayar.yurtDisiOnayModel, politikaSurumu: ayar.yurtDisiOnayPolitika } : null,
     };
+  }
+
+  /** AI-81: güçlü sağlayıcının ekrana giden durumu (anahtar maskeli, onay geçerli mi). */
+  private gucluDurumu(ayar: TenantAiAyari) {
+    if (!ayar.gucluSaglayici) return null;
+    const etkin = AiProviderFactory.uret({ saglayici: ayar.gucluSaglayici, apiKey: hassasCoz(ayar.gucluApiKey), modelAdi: ayar.gucluModelAdi, baseUrl: ayar.gucluBaseUrl });
+    const onayGecerli = Boolean(ayar.gucluOnayAt && ayar.gucluOnaySaglayici === etkin.saglayiciAdi && etkin.modelAdi && onayModelleri(ayar.gucluOnayModel).has(etkin.modelAdi) && ayar.gucluOnayPolitika === AI_AKTARIM_POLITIKA_SURUMU);
+    return {
+      saglayici: ayar.gucluSaglayici, modelAdi: ayar.gucluModelAdi, baseUrl: ayar.gucluBaseUrl,
+      apiKey: apiAnahtariMaskele(ayar.gucluApiKey), hasApiKey: Boolean(ayar.gucluApiKey),
+      girisTokenMilyonUsd: ayar.gucluGirisTokenMilyonUsd?.toNumber() ?? null, cikisTokenMilyonUsd: ayar.gucluCikisTokenMilyonUsd?.toNumber() ?? null,
+      dis: ["gemini", "openai", "anthropic"].includes(etkin.saglayiciAdi),
+      onay: onayGecerli ? { tarih: ayar.gucluOnayAt, model: ayar.gucluOnayModel, politikaSurumu: ayar.gucluOnayPolitika } : null,
+    };
+  }
+
+  /**
+   * AI-81: güçlü sağlayıcıyı kaydeder (saglayici null → kaldırır). Kendi
+   * anahtarı zorunludur (yerel Ollama hariç); sağlayıcı ya da model değişince
+   * güçlü sağlayıcının onayı düşer.
+   */
+  async gucluKaydet(tenantId: string, girdi: { saglayici?: string | null; apiKey?: string | null; modelAdi?: string | null; baseUrl?: string | null; girisTokenMilyonUsd?: number | null; cikisTokenMilyonUsd?: number | null }) {
+    const saglayici = girdi.saglayici?.trim() || null;
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
+      if (!mevcut) throw new BadRequestException("Önce ana yapay zekâ sağlayıcısını kaydedin.");
+      if (!saglayici) {
+        await tx.tenantAiAyari.update({ where: { tenantId }, data: {
+          gucluSaglayici: null, gucluApiKey: null, gucluBaseUrl: null, gucluModelAdi: null, gucluGirisTokenMilyonUsd: null, gucluCikisTokenMilyonUsd: null,
+          gucluOnayAt: null, gucluOnayUserId: null, gucluOnaySaglayici: null, gucluOnayModel: null, gucluOnayPolitika: null,
+        } });
+        return { guclu: null };
+      }
+      if (!["anthropic", "openai", "gemini", "ollama"].includes(saglayici)) throw new BadRequestException("Güçlü sağlayıcı anthropic, openai, gemini ya da ollama olabilir.");
+      const model = girdi.modelAdi?.trim() || null;
+      if (!model || model.length > 120 || /[\r\n]/.test(model)) throw new BadRequestException("Güçlü sağlayıcının model adı gerekli (en çok 120 karakter).");
+      const adres = girdi.baseUrl?.trim() || null;
+      if (adres) { const hata = kiraciAdresiHatasi(adres); if (hata) throw new BadRequestException(`Güçlü sağlayıcı adresi: ${hata}`); }
+      for (const [alan, deger] of [["Giriş token fiyatı", girdi.girisTokenMilyonUsd], ["Çıkış token fiyatı", girdi.cikisTokenMilyonUsd]] as const) {
+        if (deger !== undefined && deger !== null && (!Number.isFinite(deger) || deger < 0 || deger > 1_000_000)) throw new BadRequestException(`${alan} 0 ile 1.000.000 USD arasında olmalıdır.`);
+      }
+      let anahtar: string | null = mevcut.gucluApiKey;
+      if (girdi.apiKey !== undefined && !(girdi.apiKey && maskeliMi(girdi.apiKey))) anahtar = apiAnahtariSifrele(girdi.apiKey);
+      if (!anahtar && saglayici !== "ollama") throw new BadRequestException("Güçlü sağlayıcı kendi API anahtarıyla çalışır; anahtarı girin.");
+      const giris = girdi.girisTokenMilyonUsd !== undefined ? girdi.girisTokenMilyonUsd : mevcut.gucluGirisTokenMilyonUsd?.toNumber() ?? null;
+      const cikis = girdi.cikisTokenMilyonUsd !== undefined ? girdi.cikisTokenMilyonUsd : mevcut.gucluCikisTokenMilyonUsd?.toNumber() ?? null;
+      // Ortak aylık bütçe ölçülebilsin: bütçe varsa güçlü sağlayıcının fiyatı da gerekir.
+      if (mevcut.aylikMaliyetButcesiUsd !== null && (giris === null || cikis === null)) throw new BadRequestException("Aylık bütçe tanımlı; güçlü sağlayıcının giriş ve çıkış token fiyatlarını da girin.");
+      const onayDustu = mevcut.gucluOnayAt && (mevcut.gucluSaglayici !== saglayici || mevcut.gucluModelAdi !== model || (mevcut.gucluBaseUrl ?? null) !== adres);
+      if (onayDustu) await tx.aiVeriAktarimOnayi.create({ data: { tenantId, userId: aktifBaglam().userId, olay: "gecersiz_kildi", saglayici: `guclu:${mevcut.gucluOnaySaglayici ?? mevcut.gucluSaglayici}`, model: mevcut.gucluOnayModel, politikaSurumu: mevcut.gucluOnayPolitika ?? "legacy" } });
+      const kayit = await tx.tenantAiAyari.update({ where: { tenantId }, data: {
+        gucluSaglayici: saglayici, gucluModelAdi: model, gucluBaseUrl: adres, gucluApiKey: anahtar, gucluGirisTokenMilyonUsd: giris, gucluCikisTokenMilyonUsd: cikis,
+        ...(onayDustu ? { gucluOnayAt: null, gucluOnayUserId: null, gucluOnaySaglayici: null, gucluOnayModel: null, gucluOnayPolitika: null } : {}),
+      } });
+      return { guclu: this.gucluDurumu(kayit) };
+    });
+  }
+
+  /** AI-81: güçlü sağlayıcının bağlantı testi (kayıtlı anahtarla). */
+  async gucluTestEt(tenantId: string) {
+    const ayar = await this.prisma.tenantIslem(tenantId, (tx) => tx.tenantAiAyari.findUnique({ where: { tenantId } }));
+    if (!ayar?.gucluSaglayici) throw new BadRequestException("Güçlü sağlayıcı tanımlı değil.");
+    try {
+      const provider = AiProviderFactory.uret({ saglayici: ayar.gucluSaglayici, apiKey: hassasCoz(ayar.gucluApiKey), modelAdi: ayar.gucluModelAdi, baseUrl: ayar.gucluBaseUrl });
+      const yanit = await provider.metinUret({ prompt: "TekirExtra ERP sistem testi: 'BAĞLANTI_BAŞARILI' yaz." });
+      return { basarili: true, saglayici: provider.saglayiciAdi, model: provider.modelAdi, yanit: yanit.trim().slice(0, 200) };
+    } catch (hata) {
+      return { basarili: false, mesaj: hata instanceof Error ? hata.message : "Bağlantı kurulamadı" };
+    }
+  }
+
+  /** AI-81: güçlü sağlayıcının ayrı yurt dışı aktarım onayı (ana onaydan bağımsız). */
+  async gucluOnay(tenantId: string, onay: boolean, politikaSurumu?: string) {
+    if (onay && politikaSurumu !== AI_AKTARIM_POLITIKA_SURUMU) throw new BadRequestException("Aktarım onayı metni güncel değil. Ekranı yenileyip tekrar okuyun.");
+    const { userId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const ayar = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
+      if (!ayar?.gucluSaglayici) throw new BadRequestException("Güçlü sağlayıcı tanımlı değil.");
+      const etkin = AiProviderFactory.uret({ saglayici: ayar.gucluSaglayici, apiKey: hassasCoz(ayar.gucluApiKey), modelAdi: ayar.gucluModelAdi, baseUrl: ayar.gucluBaseUrl });
+      await tx.aiVeriAktarimOnayi.create({ data: { tenantId, userId, olay: onay ? "onaylandi" : "geri_alindi", saglayici: `guclu:${etkin.saglayiciAdi}`, model: etkin.modelAdi ?? null, politikaSurumu: AI_AKTARIM_POLITIKA_SURUMU } });
+      const kayit = await tx.tenantAiAyari.update({ where: { tenantId }, data: onay
+        ? { gucluOnayAt: new Date(), gucluOnayUserId: userId, gucluOnaySaglayici: etkin.saglayiciAdi, gucluOnayModel: etkin.modelAdi ?? null, gucluOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU }
+        : { gucluOnayAt: null, gucluOnayUserId: null, gucluOnaySaglayici: null, gucluOnayModel: null, gucluOnayPolitika: null } });
+      return { guclu: this.gucluDurumu(kayit) };
+    });
   }
 
   /**
@@ -139,8 +227,9 @@ export class TenantAiService {
       const yeniModel = girdi.modelAdi !== undefined ? (girdi.modelAdi || null) : (mevcut?.modelAdi ?? null);
       const yeniEkonomik = girdi.ekonomikModelAdi !== undefined ? girdi.ekonomikModelAdi?.trim() || null : (mevcut?.ekonomikModelAdi ?? null);
       const yeniGuclu = girdi.gucluModelAdi !== undefined ? girdi.gucluModelAdi?.trim() || null : (mevcut?.gucluModelAdi ?? null);
+      // AI-81: ayrı güçlü sağlayıcının modeli ana onayı etkilemez; ana formdan da değiştirilmez.
       const onayDegisti = Boolean(mevcut?.yurtDisiOnayAt && (mevcut.saglayici !== yeniSaglayici || mevcut.modelAdi !== yeniModel
-        || (mevcut.ekonomikModelAdi ?? null) !== yeniEkonomik || (mevcut.gucluModelAdi ?? null) !== yeniGuclu));
+        || (mevcut.ekonomikModelAdi ?? null) !== yeniEkonomik || (!mevcut.gucluSaglayici && (mevcut.gucluModelAdi ?? null) !== yeniGuclu)));
       if (onayDegisti) await tx.aiVeriAktarimOnayi.create({ data: { tenantId, userId: aktifBaglam().userId, olay: "gecersiz_kildi", saglayici: mevcut!.yurtDisiOnaySaglayici ?? mevcut!.saglayici, model: mevcut!.yurtDisiOnayModel ?? mevcut!.modelAdi, politikaSurumu: mevcut!.yurtDisiOnayPolitika ?? "legacy" } });
       const girisFiyati = girdi.girisTokenMilyonUsd !== undefined ? girdi.girisTokenMilyonUsd : mevcut?.girisTokenMilyonUsd?.toNumber() ?? null;
       const cikisFiyati = girdi.cikisTokenMilyonUsd !== undefined ? girdi.cikisTokenMilyonUsd : mevcut?.cikisTokenMilyonUsd?.toNumber() ?? null;
@@ -189,7 +278,8 @@ export class TenantAiService {
           ...(yeniApiKey !== undefined ? { apiKey: yeniApiKey || null } : {}),
           modelAdi: girdi.modelAdi !== undefined ? girdi.modelAdi || null : undefined,
           ekonomikModelAdi: girdi.ekonomikModelAdi !== undefined ? girdi.ekonomikModelAdi?.trim() || null : undefined,
-          gucluModelAdi: girdi.gucluModelAdi !== undefined ? girdi.gucluModelAdi?.trim() || null : undefined,
+          // AI-81: ayrı güçlü sağlayıcı varken model alanı onun bölümünden yazılır.
+          gucluModelAdi: girdi.gucluModelAdi !== undefined && !mevcut?.gucluSaglayici ? girdi.gucluModelAdi?.trim() || null : undefined,
           baseUrl: girdi.baseUrl !== undefined ? girdi.baseUrl || null : undefined,
           ozelTalimatlar: girdi.ozelTalimatlar !== undefined ? girdi.ozelTalimatlar || null : undefined,
           guvenlikKurallari: girdi.guvenlikKurallari !== undefined ? (girdi.guvenlikKurallari as any) || null : undefined,

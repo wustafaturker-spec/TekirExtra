@@ -8,6 +8,7 @@ import { YzKullanimKart } from "@/components/yz-kullanim-kart";
 import { YzKaliteKart } from "@/components/yz-kalite-kart";
 import { YzTahminIsabetiKart } from "@/components/yz-tahmin-isabeti-kart";
 import { YzGorevlerKart } from "@/components/yz-gorevler-kart";
+import { YzGucluSaglayiciKart } from "@/components/yz-guclu-saglayici-kart";
 import { Sparkles, Shield, Clock, CheckCircle2, AlertTriangle, Play, Trash2, Plus, RefreshCw, Key, Server, Cpu } from "lucide-react";
 
 interface AiAyari {
@@ -17,6 +18,8 @@ interface AiAyari {
   modelAdi: string | null;
   ekonomikModelAdi?: string | null;
   gucluModelAdi?: string | null;
+  /** AI-81: ayrı güçlü sağlayıcı tanımlıysa güçlü model onun kartında yönetilir. */
+  guclu?: { saglayici: string; modelAdi: string | null } | null;
   baseUrl: string | null;
   ozelTalimatlar: string | null;
   ozelliklerEtkin: boolean;
@@ -37,6 +40,7 @@ export default function YapayZekaAyarlariSayfasi() {
   const [modelAdi, setModelAdi] = useState("");
   const [ekonomikModelAdi, setEkonomikModelAdi] = useState("");
   const [gucluModelAdi, setGucluModelAdi] = useState("");
+  const [ayriGuclu, setAyriGuclu] = useState<AiAyari["guclu"]>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [ozelTalimatlar, setOzelTalimatlar] = useState("");
   const [ozelliklerEtkin, setOzelliklerEtkin] = useState(true);
@@ -52,6 +56,7 @@ export default function YapayZekaAyarlariSayfasi() {
       setModelAdi(ayarData.modelAdi || "");
       setEkonomikModelAdi(ayarData.ekonomikModelAdi || "");
       setGucluModelAdi(ayarData.gucluModelAdi || "");
+      setAyriGuclu(ayarData.guclu ?? null);
       setBaseUrl(ayarData.baseUrl || "");
       setOzelTalimatlar(ayarData.ozelTalimatlar || "");
       setOzelliklerEtkin(ayarData.ozelliklerEtkin !== false);
@@ -134,6 +139,8 @@ export default function YapayZekaAyarlariSayfasi() {
         <YzKullanimKart />
         <YzKaliteKart />
         <YzTahminIsabetiKart />
+        {/* AI-81 */}
+        <YzGucluSaglayiciKart />
 
         {/* KART 1: AI Sağlayıcı ve Model Entegrasyonu (BYOK) */}
         <Card>
@@ -247,7 +254,9 @@ export default function YapayZekaAyarlariSayfasi() {
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Güçlü model (asistan/tarama/teklif/ekstre)</label>
-                  <Input maxLength={120} placeholder={saglayici === "ollama" ? "qwen2.5:14b" : "boşsa ana model"} value={gucluModelAdi} onChange={(e) => setGucluModelAdi(e.target.value)} />
+                  {ayriGuclu
+                    ? <p className="muted" style={{ margin: 0, fontSize: 13 }}>Ayrı güçlü sağlayıcı tanımlı ({ayriGuclu.modelAdi}); asistan ana modelle çalışır, Derin analiz o sağlayıcıya gider. Aşağıdaki “Güçlü sağlayıcı” kartından yönetilir.</p>
+                    : <Input maxLength={120} placeholder={saglayici === "ollama" ? "qwen2.5:14b" : "boşsa ana model"} value={gucluModelAdi} onChange={(e) => setGucluModelAdi(e.target.value)} />}
                 </div>
               </div>
             </div>

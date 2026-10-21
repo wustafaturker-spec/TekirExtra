@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { api } from "@/lib/api";
+import { api, apiAkis } from "@/lib/api";
 import { Alert, Badge, Button, Input } from "@/components/ui";
 import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
@@ -34,6 +34,8 @@ interface Mesaj {
   icerik: string;
   talepIdleri: string[];
   secimler: Secim[];
+  /** AI-81: derin analizle üretildiyse model etiketi ya da not. */
+  modelNotu?: string;
 }
 
 interface Secim {
@@ -54,6 +56,7 @@ interface AjanYaniti {
   araclar: Array<{ ad: string; sinif: string; basarili: boolean }>;
   secimler?: Secim[];
   asistanKapali?: boolean;
+  model?: { saglayici: string; model: string | null; derin: boolean; not?: string };
 }
 
 /** AI-79: sohbete yüklenen ek; XML e-Fatura ise sunucunun çıkardığı özet. */
@@ -207,6 +210,11 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
   const [ocrTaslagi, setOcrTaslagi] = useState<OcrTaslagi | null>(null);
   // AI-79: bir sonraki mesaja bağlanacak sohbet ekleri (şimdilik UBL XML).
   const [bekleyenEkler, setBekleyenEkler] = useState<SohbetEki[]>([]);
+  // AI-81: yalnız bir sonraki mesaj için güçlü sağlayıcı.
+  const [derin, setDerin] = useState(false);
+  // AI-82: yanıt hazırlanırken canlı araç adımları; Durdur bağlantıyı keser.
+  const [adimlar, setAdimlar] = useState<{ ad: string; etiket: string; durum: "basladi" | "bitti" | "hata" }[]>([]);
+  const durdurucu = useRef<AbortController | null>(null);
 
   const sonRef = useRef<HTMLDivElement>(null);
   // CARI-48: bağlamlı ilk mesaj, başka konuşmanın geçmişiyle karışmasın diye yeni sohbette başlar.
@@ -293,7 +301,16 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       setMesajlar((m) => [...m, { anahtar: yeniAnahtar(), rol: "user", icerik: metin, talepIdleri: [], secimler: [] }]);
       // Yanıt beklerken eklenen dosya bu mesaja girmez; yalnız gönderilenler kaldırılır.
       const gonderilenEkler = bekleyenEkler.map((e) => e.ekId);
-      const y = await api<AjanYaniti>("/ai/ajan/mesaj", { method: "POST", body: JSON.stringify({ mesaj: metin, requestId: crypto.randomUUID(), ...(baglam ? { baglam: { kayit: { tur: baglam.tur, id: baglam.id } } } : {}), ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}) }) });
+      setAdimlar([]);
+      const durdur = new AbortController();
+      durdurucu.current = durdur;
+      const y = await apiAkis<AjanYaniti>("/ai/ajan/mesaj-akis", { mesaj: metin, requestId: crypto.randomUUID(), ...(baglam ? { baglam: { kayit: { tur: baglam.tur, id: baglam.id } } } : {}), ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}), ...(derin ? { derin: true } : {}) },
+        (olay, veri) => {
+          const e = veri as { tur?: string; ad?: string; etiket?: string; durum?: "basladi" | "bitti" | "hata" };
+          if (olay !== "adim" || e?.tur !== "arac" || !e.ad || !e.etiket || !e.durum) return;
+          setAdimlar((o) => (e.durum === "basladi" ? [...o, { ad: e.ad!, etiket: e.etiket!, durum: "basladi" }] : o.map((a, i) => (i === o.map((x) => x.ad).lastIndexOf(e.ad!) ? { ...a, durum: e.durum! } : a))));
+        }, durdur.signal);
+      setDerin(false);
       if (y.asistanKapali) setKapali(y.cevap);
       setBekleyenEkler((o) => o.filter((e) => !gonderilenEkler.includes(e.ekId)));
       if (baglam) baglamSohbeti.current = { anahtar: baglamAnahtari, sohbetId: y.oturumId ?? null };
@@ -304,12 +321,19 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       setTalepler((t) => ({ ...t, ...Object.fromEntries(y.onayTalepleri.map((x) => [x.id, x])) }));
       setMesajlar((m) => [
         ...m,
-        { anahtar: yeniAnahtar(), id: y.mesajId, rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi },
+        { anahtar: yeniAnahtar(), id: y.mesajId, rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi,
+          ...(y.model?.not ? { modelNotu: y.model.not } : y.model?.derin ? { modelNotu: `Derin analiz · ${y.model.model ?? y.model.saglayici}` } : {}) },
       ]);
       if (y.onayTalepleri.length) onTalepDegisti?.();
     } catch (e) {
-      setHata(hataMesaji(e));
+      // AI-82: kullanıcı durdurduysa sunucu döngüyü bir sonraki turda keser; kayıt geçmişte kalır.
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setMesajlar((m) => [...m, { anahtar: yeniAnahtar(), rol: "assistant", icerik: "Yanıt durduruldu.", talepIdleri: [], secimler: [] }]);
+        onTalepDegisti?.();
+      } else setHata(hataMesaji(e));
     } finally {
+      durdurucu.current = null;
+      setAdimlar([]);
       setGonderiliyor(false);
     }
   }
@@ -557,6 +581,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
             <div className="asistan__balon">
               {baglantili(m.icerik)}
               {m.rol === "assistant" && <YzFinansKaynaklari kaynaklar={m.kaynaklar} kisaltildi={m.kaynaklarKisaltildi} />}
+              {m.rol === "assistant" && m.modelNotu && <div className="asistan__model-notu">{m.modelNotu}</div>}
               {m.rol === "assistant" && <YzGeriBildirim mesajId={m.id} deger={m.geriBildirim} not={m.geriBildirimNotu} />}
               {m.rol === "assistant" && (
                 <div style={{ marginTop: "0.35rem", display: "flex", justifyContent: "flex-end" }}>
@@ -598,7 +623,14 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
         ))}
         {gonderiliyor && (
           <div className="asistan__mesaj asistan__mesaj--asistan">
-            <div className="asistan__balon asistan__balon--bekliyor">Çalışıyor…</div>
+            <div className="asistan__balon asistan__balon--bekliyor">
+              {adimlar.length ? (
+                <ul className="asistan__adimlar">
+                  {adimlar.map((a, i) => <li key={`${a.ad}-${i}`} className={`is-${a.durum}`}>{a.durum === "basladi" ? "⏳" : a.durum === "bitti" ? "✓" : "✗"} {a.etiket}{a.durum === "basladi" ? "…" : ""}</li>)}
+                </ul>
+              ) : "Çalışıyor…"}
+              <button type="button" className="btn-link" onClick={() => durdurucu.current?.abort()}>Durdur</button>
+            </div>
           </div>
         )}
         <div ref={sonRef} />
@@ -717,6 +749,17 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
           placeholder={dinleniyor ? "Konuşun, dinleniyor…" : "Talimatınızı yazın veya mikrofona konuşun…"}
           value={girdi}
         />
+        <button
+          type="button"
+          className={`btn ${derin ? "btn--primary" : "btn--ghost"}`}
+          aria-pressed={derin}
+          disabled={gonderiliyor}
+          onClick={() => setDerin((d) => !d)}
+          title="Bu mesajı güçlü sağlayıcıya gönder (Ayarlar › Yapay Zeka › Güçlü sağlayıcı). Daha yavaş ve daha pahalı olabilir."
+          style={{ padding: "0 0.6rem", whiteSpace: "nowrap" }}
+        >
+          Derin analiz
+        </button>
         <Button disabled={gonderiliyor || !girdi.trim()} type="submit" variant="primary">
           Gönder
         </Button>

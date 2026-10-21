@@ -6,7 +6,7 @@ import { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
 import type { AiAracliYanit } from "../saglayici/ai-provider.interface";
 import { AJAN_ARACLARI, aracTanimi } from "./araclar";
 import { ublOzeti } from "./ubl-ozeti";
-import { AiAjanService } from "./ai-ajan.service";
+import { aracEtiketi, AiAjanService } from "./ai-ajan.service";
 import { AracYurutucu } from "./arac-yurutucu";
 import { finansOlgulari } from "./finans-aciklama";
 import { AiBosYanitHatasi } from '../saglayici/ai-bos-yanit';
@@ -761,5 +761,37 @@ describe("sohbet ekleri (AI-79)", () => {
     await expect(k.calistir(["x"])).rejects.toThrow("geçerli ek");
     await expect(k.calistir(Array(6).fill(CARI_ID))).rejects.toThrow("En çok 5");
     expect(k.saglayici.girdiler).toHaveLength(0);
+  });
+});
+
+describe("akışlı yanıt (AI-82)", () => {
+  it("model turları ve araç adımları olay olarak akar; metin denetimden sonra gelir", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "cari_ara", girdi: { arama: "Kaya" } }] },
+      { metin: "Kaya Makina bulundu.", aracCagrilari: [] },
+    ], { ucSonucu: () => ({ kayitlar: [] }) });
+    const olaylar: unknown[] = [];
+    const y = await istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle("Kaya'yı bul", undefined, undefined, [], { olay: (e) => olaylar.push(e) }));
+    expect(olaylar).toEqual([
+      { tur: "dusunuyor", adim: 1 },
+      { tur: "arac", ad: "cari_ara", etiket: "Cari aranıyor", durum: "basladi" },
+      { tur: "arac", ad: "cari_ara", etiket: "Cari aranıyor", durum: "bitti" },
+      { tur: "dusunuyor", adim: 2 },
+    ]);
+    expect(y.cevap).toContain("Kaya Makina bulundu.");
+  });
+
+  it("durdurulmuş istekte modele gidilmez", async () => {
+    const k = kur([{ metin: "olmamalı", aracCagrilari: [] }]);
+    const durdur = new AbortController();
+    durdur.abort();
+    const y = await istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle("Rapor", undefined, undefined, [], { sinyal: durdur.signal }));
+    expect(y.cevap).toBe("Yanıt durduruldu.");
+    expect(k.saglayici.girdiler).toHaveLength(0);
+  });
+
+  it("araç etiketi tanımsız araçta addan türetilir", () => {
+    expect(aracEtiketi("satin_alma_talep_ara")).toBe("satin alma talep aranıyor");
+    expect(aracEtiketi("kredi_kartlari")).toBe("Kredi kartlari hazırlanıyor");
   });
 });

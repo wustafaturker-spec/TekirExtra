@@ -27,6 +27,25 @@ export class TenantAiController {
     return this.service.baglantiTestEt(tenantId, girdi);
   }
 
+  /** AI-81: güçlü sağlayıcı ("Derin analiz"); saglayici null → kaldırır. */
+  @Put("ayarlar/guclu")
+  async gucluKaydet(@Body() girdi: { saglayici?: string | null; apiKey?: string | null; modelAdi?: string | null; baseUrl?: string | null; girisTokenMilyonUsd?: number | null; cikisTokenMilyonUsd?: number | null }) {
+    const { tenantId } = aktifBaglam();
+    return this.service.gucluKaydet(tenantId, girdi ?? {});
+  }
+
+  @Post("ayarlar/guclu/test-et")
+  async gucluTestEt() {
+    const { tenantId } = aktifBaglam();
+    return this.service.gucluTestEt(tenantId);
+  }
+
+  @Post("ayarlar/guclu/onay")
+  async gucluOnay(@Body() govde: { onay?: unknown; politikaSurumu?: unknown }) {
+    const { tenantId } = aktifBaglam();
+    return this.service.gucluOnay(tenantId, govde?.onay === true, typeof govde?.politikaSurumu === "string" ? govde.politikaSurumu : undefined);
+  }
+
   /** AI-14: yurt dışı aktarım onayı ver / geri al. */
   @Post("ayarlar/yurt-disi-onay")
   async yurtDisiOnay(@Body() govde: { onay?: unknown; politikaSurumu?: unknown }) {

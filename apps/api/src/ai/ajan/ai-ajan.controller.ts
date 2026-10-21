@@ -1,7 +1,10 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpException, Param, Post, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { YuklenenDosya } from "../../ekler/ekler.service";
-import { AiAjanService, type EkranTuru } from "./ai-ajan.service";
+import { AiAjanService, type AkisOlayi, type EkranTuru } from "./ai-ajan.service";
+
+type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown } }; ekler?: unknown; derin?: unknown };
 
 /**
  * AI-05: panel asistanı. Kimlik ve rol yalnız oturumdan gelir. Dış kanal
@@ -12,7 +15,35 @@ export class AiAjanController {
   constructor(private readonly ajanService: AiAjanService) {}
 
   @Post("mesaj")
-  mesaj(@Body() body: { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown } }; ekler?: unknown }) {
+  mesaj(@Body() body: MesajGovdesi) {
+    return this.isle(body);
+  }
+
+  /**
+   * AI-82: akışlı yanıt (SSE). Araç adımları `adim` olayıyla canlı akar; yanıt
+   * denetimden geçince `son` olayıyla tek parça gelir. İstemci bağlantıyı
+   * kapatırsa döngü bir sonraki turda durur.
+   */
+  @Post("mesaj-akis")
+  async mesajAkis(@Body() body: MesajGovdesi, @Res() res: Response) {
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    const yaz = (olay: string, veri: unknown) => { if (!res.writableEnded) res.write(`event: ${olay}\ndata: ${JSON.stringify(veri)}\n\n`); };
+    const durdur = new AbortController();
+    res.on("close", () => { if (!res.writableEnded) durdur.abort(); });
+    try {
+      yaz("son", await this.isle(body, { olay: (e: AkisOlayi) => yaz("adim", e), sinyal: durdur.signal }));
+    } catch (hata) {
+      yaz("hata", { mesaj: hata instanceof HttpException ? hata.message : "Asistan yanıt veremedi.", durum: hata instanceof HttpException ? hata.getStatus() : 500 });
+    } finally {
+      res.end();
+    }
+  }
+
+  private isle(body: MesajGovdesi, akis: { olay?: (e: AkisOlayi) => void; sinyal?: AbortSignal } = {}) {
     const cariId = body?.baglam?.cariId;
     const kayit = body?.baglam?.kayit;
     return this.ajanService.mesajiIsle(
@@ -24,6 +55,8 @@ export class AiAjanController {
         : typeof cariId === "string" ? { cariId } : undefined,
       // AI-79: mesaja bağlanan sohbet ekleri; sahiplik sunucuda doğrulanır.
       Array.isArray(body?.ekler) ? body.ekler.filter((x): x is string => typeof x === "string") : [],
+      // AI-81: "Derin analiz" seçimi; AI-82: akış olayları ve durdurma.
+      { derin: body?.derin === true, ...akis },
     );
   }
 

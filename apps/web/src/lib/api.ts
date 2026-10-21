@@ -78,9 +78,54 @@ async function istekYap(yol: string, secenekler: RequestInit, token: string | nu
       credentials: "include",
       headers: basliklar,
     });
-  } catch {
+  } catch (hata) {
+    // AI-82: kullanıcının durdurması bağlantı hatası değildir.
+    if (secenekler.signal?.aborted) throw hata;
     throw new ApiHata("Sunucuya bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.", 0);
   }
+}
+
+/**
+ * AI-82: SSE ile POST. `adim` olayları `onOlay`'a gider; `son` olayının verisi
+ * döner, `hata` olayı ApiHata olarak fırlatılır. Durdurmada fetch AbortError
+ * fırlatır. Idempotency anahtarı eklenmez (tekrarı sunucu requestId ile ayıklar).
+ */
+export async function apiAkis<T>(yol: string, govde: unknown, onOlay: (olay: string, veri: unknown) => void, sinyal?: AbortSignal): Promise<T> {
+  const secenek: RequestInit = { method: "POST", body: JSON.stringify(govde), signal: sinyal, headers: { Accept: "text/event-stream" } };
+  let yanit = await istekYap(yol, secenek, tokenAl());
+  if (yanit.status === 401) {
+    const yeniToken = await accessTokenYenile();
+    if (!yeniToken) return giriseYonlendir();
+    yanit = await istekYap(yol, secenek, yeniToken);
+    if (yanit.status === 401) return giriseYonlendir();
+  }
+  if (!yanit.ok || !yanit.body) {
+    const g = (await yanit.json().catch(() => ({}))) as { message?: unknown };
+    throw new ApiHata(typeof g.message === "string" ? g.message : `İstek başarısız (${yanit.status})`, yanit.status);
+  }
+  const okuyucu = yanit.body.getReader();
+  const cozucu = new TextDecoder();
+  let tampon = "";
+  for (;;) {
+    const { value, done } = await okuyucu.read();
+    if (done) break;
+    tampon += cozucu.decode(value, { stream: true });
+    let sinir: number;
+    while ((sinir = tampon.indexOf("\n\n")) >= 0) {
+      const parca = tampon.slice(0, sinir);
+      tampon = tampon.slice(sinir + 2);
+      const olay = /^event: (.*)$/m.exec(parca)?.[1] ?? "message";
+      const veriMetni = parca.split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6)).join("\n");
+      const veri = veriMetni ? JSON.parse(veriMetni) : null;
+      if (olay === "son") return veri as T;
+      if (olay === "hata") {
+        const h = veri as { mesaj?: string; durum?: number } | null;
+        throw new ApiHata(h?.mesaj ?? "Asistan yanıt veremedi.", h?.durum ?? 500);
+      }
+      onOlay(olay, veri);
+    }
+  }
+  throw new ApiHata("Yanıt tamamlanmadan bağlantı kapandı.", 0);
 }
 
 async function idempotencyBilgisi(method: string, yol: string, body: BodyInit | null | undefined): Promise<{ anahtar: string; saklamaAnahtari: string | null }> {

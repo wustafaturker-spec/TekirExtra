@@ -21,6 +21,32 @@ import { UC } from "./araclar/uclar";
 import { EklerService, type YuklenenDosya } from "../../ekler/ekler.service";
 import { ublOzeti } from "./ubl-ozeti";
 
+/**
+ * AI-82: akışlı yanıtın olayları. Yanıt metni yanıt denetiminden (uydurma
+ * işlem iddiası) geçmeden gösterilemeyeceği için token token akmaz; araç
+ * adımları canlı akar, metin denetimden sonra tek parça gelir.
+ */
+export type AkisOlayi =
+  | { tur: "dusunuyor"; adim: number }
+  | { tur: "arac"; ad: string; etiket: string; durum: "basladi" | "bitti" | "hata" };
+
+const ARAC_ETIKETI: Record<string, string> = {
+  cari_ara: "Cari aranıyor", cari_getir: "Cari kartı okunuyor", stok_ara: "Stok aranıyor", stok_getir: "Stok kartı okunuyor",
+  fatura_ara: "Faturalar aranıyor", fatura_getir: "Fatura okunuyor", belge_ara: "Belgeler aranıyor", belge_getir: "Belge okunuyor",
+  rapor_katalogu: "Rapor kataloğu okunuyor", rapor_calistir: "Rapor çalışıyor", finansal_ozet: "Finansal özet hesaplanıyor",
+  vadesi_gecen_alacaklar: "Vadesi geçen alacaklar okunuyor", gunluk_brifing: "Günlük brifing hazırlanıyor",
+  gelen_efatura_ara: "Gelen e-Faturalar aranıyor", gelen_efatura_getir: "Gelen e-Fatura okunuyor", gelen_eposta_ara: "Gelen e-postalar aranıyor",
+};
+
+/** Kullanıcıya gösterilen araç adımı; tanımsızsa araç adından türetilir. */
+export function aracEtiketi(ad: string): string {
+  if (ARAC_ETIKETI[ad]) return ARAC_ETIKETI[ad];
+  const sade = ad.replace(/_/g, " ");
+  if (/_(ara|listele)$/.test(ad)) return `${sade.replace(/ (ara|listele)$/, "")} aranıyor`;
+  if (/_getir$/.test(ad)) return `${sade.replace(/ getir$/, "")} okunuyor`;
+  return `${sade.charAt(0).toLocaleUpperCase("tr-TR")}${sade.slice(1)} hazırlanıyor`;
+}
+
 /** AI-79: bir mesaja en çok bu kadar sohbet eki bağlanır. */
 const EN_COK_EK = 5;
 
@@ -67,6 +93,8 @@ export interface AjanYaniti {
   araclar: CalisanArac[];
   secimler?: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>;
   asistanKapali?: boolean;
+  /** AI-81: yanıtı üreten sağlayıcı/model; derin analiz istendi ama güçlü sağlayıcı yoksa not. */
+  model?: { saglayici: string; model: string | null; derin: boolean; not?: string };
   /** AI-78: bu mesajda kullanılan ekran kaydı (rozet adı için). */
   ekranKaydi?: { tur: EkranTuru; id: string; etiket: string };
 }
@@ -236,8 +264,8 @@ function durumBaglami(durumlar: DogrulanmisDurum[]): string {
 export class AiAjanService {
   private readonly logger = new Logger(AiAjanService.name);
   /** Testlerde sağlayıcıyı değiştirmek için. */
-  saglayiciBul: (tenantId: string) => Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null }> = (tenantId) =>
-    kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "asistan" });
+  saglayiciBul: (tenantId: string, derin?: boolean) => Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null; derin?: boolean }> = (tenantId, derin) =>
+    kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "asistan", derin });
 
   constructor(
     private readonly prisma: PrismaService,
@@ -277,7 +305,7 @@ export class AiAjanService {
     };
   }
 
-  async mesajiIsle(mesaj: string, requestId?: string, ekran?: EkranBaglami, ekIdleri: string[] = []): Promise<AjanYaniti> {
+  async mesajiIsle(mesaj: string, requestId?: string, ekran?: EkranBaglami, ekIdleri: string[] = [], secenek: { derin?: boolean; olay?: (e: AkisOlayi) => void; sinyal?: AbortSignal } = {}): Promise<AjanYaniti> {
     const { tenantId, userId, rol } = aktifBaglam();
     const metin = (mesaj ?? "").trim();
     if (!metin) throw new BadRequestException("Lütfen bir talimat yazın.");
@@ -292,9 +320,12 @@ export class AiAjanService {
       if (!gecerli) throw new BadRequestException("Ekran kaydı kimliği geçerli bir UUID olmalıdır.");
     }
 
-    const { saglayici, ozelTalimatlar } = await this.saglayiciBul(tenantId);
+    // AI-81: "Derin analiz" mesajı güçlü sağlayıcıya; tanımlı değilse ana modelle yanıtlanır ve söylenir.
+    const { saglayici, ozelTalimatlar, derin } = await this.saglayiciBul(tenantId, secenek.derin === true);
+    const modelBilgisi = { saglayici: saglayici.saglayiciAdi, model: saglayici.modelAdi ?? null, derin: derin === true, ...(secenek.derin && !derin ? { not: "Güçlü sağlayıcı tanımlı değil; ana modelle yanıtlandı." } : {}) };
     if (saglayici.saglayiciAdi === "tanimsiz") {
       return {
+        model: modelBilgisi,
         oturumId: null,
         cevap: `Asistan kapalı: ${(saglayici as TanimsizAiProvider).mesaj}`,
         onayTalepleri: [],
@@ -340,10 +371,12 @@ export class AiAjanService {
         baglamMetni: [metin, ekranKaydi, ekler.kimlikler, ...gecmis.mesajlar.map((m) => ("metin" in m ? m.metin : ""))].join(" "),
         kullaniciTalebi: metin,
         oturumId: oturum.id,
+        olay: secenek.olay,
+        sinyal: secenek.sinyal,
       });
       let cevap = hamCevap;
       if (talepler.length && !/onay/i.test(cevap)) cevap += "\n\nİşlem onayınıza sunuldu; aşağıdaki düğmeyle onaylayabilirsiniz.";
-      const yanit: AjanYaniti = { oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}) };
+      const yanit: AjanYaniti = { model: modelBilgisi, oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}) };
 
       await this.prisma.tenantIslem(tenantId, async (tx) => {
         if (!ayrilanId) await tx.ajanMesajGecmisi.create({ data: { oturumId: oturum.id, rol: "user", icerik: metin } });
@@ -423,6 +456,9 @@ export class AiAjanService {
     baglamMetni: string;
     kullaniciTalebi: string;
     oturumId: string | null;
+    /** AI-82: canlı adım olayları ve kullanıcının durdurması. */
+    olay?: (e: AkisOlayi) => void;
+    sinyal?: AbortSignal;
   }): Promise<{ cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama }> {
     const aracHaritasi = new Map(g.izinli.map((a) => [a.ad, a]));
     const tanimlar = g.izinli.map(aracTanimi);
@@ -441,6 +477,14 @@ export class AiAjanService {
     const acikYazmaIstegi = /\b(oluştur|olustur|hazırla|hazirla|kaydet|gönder|gonder|onayla|iptal|dönüştür|donustur|güncelle|guncelle)\b/i.test(g.kullaniciTalebi);
 
     for (let tur = 0; tur < EN_COK_TUR && cevap === null; tur++) {
+      // AI-82: durdurma turlar arasında uygulanır; süren model çağrısı yarıda kesilmez.
+      if (g.sinyal?.aborted) {
+        cevap = talepler.length
+          ? "Yanıt durduruldu. Durdurulana kadar açılan onay talepleri onayınızı bekliyor."
+          : "Yanıt durduruldu.";
+        break;
+      }
+      g.olay?.({ tur: "dusunuyor", adim: tur + 1 });
       const istek = { sistemRol: g.sistemRol + finansOlguTalimati(kaynaklar), mesajlar, araclar: tanimlar };
       let yanit: AiAracliYanit;
       try {
@@ -510,7 +554,9 @@ export class AiAjanService {
           });
           continue;
         }
+        g.olay?.({ tur: "arac", ad: cagri.ad, etiket: aracEtiketi(cagri.ad), durum: "basladi" });
         const sonuc = await this.yurutucu.yurut(cagri, aracHaritasi, { kaynak: "asistan", oturumId: g.oturumId });
+        g.olay?.({ tur: "arac", ad: cagri.ad, etiket: aracEtiketi(cagri.ad), durum: sonuc.hata ? "hata" : "bitti" });
         calisanlar.push({ ad: cagri.ad, sinif: aracHaritasi.get(cagri.ad)?.sinif ?? "bilinmiyor", basarili: !sonuc.hata });
         if (sonuc.talep) talepler.push(sonuc.talep);
         if (sonuc.secim) secimler.push(sonuc.secim);
