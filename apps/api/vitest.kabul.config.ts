@@ -11,6 +11,7 @@ export default defineConfig({
     include: ["test/**/*.kabul.test.ts"],
     // Commit gerektiren yarışlar yalnız kendi geçici PostgreSQL runner'ında çalışır.
     exclude: ["test/crm-belge.kabul.test.ts", "test/maliyet-yaris.kabul.test.ts", "test/odeme-sozu.kabul.test.ts", "test/tahsilat-takibi.kabul.test.ts",
+      "test/odeme-sozu-hatirlatma.kabul.test.ts", "test/ihtiyac.kabul.test.ts", "test/crm-http.kabul.test.ts",
       // Kendi betiğiyle (geçici konteyner / aday dist) koşanlar: scripts/ai-guvenlik-kabul.mjs, scripts/f01-yaris-kabul.mjs --f02-yayin.
       "test/ai-guvenlik.kabul.test.ts", "test/f02-yayin.kabul.test.ts"],
     testTimeout: 120_000,
