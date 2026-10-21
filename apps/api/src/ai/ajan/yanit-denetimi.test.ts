@@ -35,4 +35,13 @@ describe("yanıt denetimi (AI-05)", () => {
     expect(uydurmaNedeni("Teklif oluşturamadım: stok bulunamadı.", BOS)).toBeNull();
     expect(uydurmaNedeni("Taslağı onaylamak isterseniz onayınıza sunabilirim.", { ...BOS, aracCiktilari: ["{}"] })).toBeNull();
   });
+
+  it("AI-74: onay bekleyen kayıt listelenince 'onayınızı bekleyen' iş durumu sayılır", () => {
+    const tur = { ...BOS, aracCiktilari: ['{"veri":[{"no":"SAT-1","durum":"onay_bekliyor"}]}'] };
+    expect(uydurmaNedeni("Onayınızı bekleyen 1 satın alma talebi var: SAT-1.", tur)).toBeNull();
+    // Kaynakta onay bekleyen kayıt yoksa eski kural geçerli.
+    expect(uydurmaNedeni("Onayınızı bekleyen 1 satın alma talebi var.", { ...BOS, aracCiktilari: ['{"veri":[]}'] })).toMatch(/onay talebi açılmadığı/);
+    // Aynı yanıtta başka bir onay iddiası varsa yine yakalanır.
+    expect(uydurmaNedeni("Onayınızı bekleyen talep var; onay talebi açıldı.", tur)).toMatch(/onay talebi açılmadığı/);
+  });
 });

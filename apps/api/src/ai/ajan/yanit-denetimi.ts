@@ -12,6 +12,10 @@ const PANEL_YOLU = /\/panel\/[^\s)\]"'`,*]+/g;
 // Canlıda görülen: "Teklifin iptali için onayınız gerekiyor. Onayladığınızda teklif iptal edilecek." (talep yok)
 // Yalnız olmuş gibi söylenen iddialar; "onayınıza sunabilirim" gibi teklif cümleleri değil.
 const ONAY_IDDIASI = /onay(ınıza|a) sunul(du|muş|muştur)|onayınızı bekl|onayınız gerek|onayladığınızda|onay talebi (açıldı|oluşturuldu)|düğmeyle onaylayabilirsiniz/iu;
+// AI-74: "onayınızı bekleyen talepler" bir iş durumudur (satın alma, ödeme talimatı);
+// araç sonucunda onay bekleyen kayıt varsa bu söz uydurma onay talebi sayılmaz.
+const ONAY_BEKLEYEN_KAYIT = /onay_bekliyor|"onaybekleyen|"onaydabekleyen/i;
+const ONAY_BEKLEME = /onayınızı bekl/iu;
 const GELECEK_ISLEM = /(?<!\p{L})(oluşturulacak|gönderilecek|iptal edilecek|kesinleştirilecek|kaydedilecek|güncellenecek|onaylanacak)(?!\p{L})/iu;
 const ISLEM_IDDIASI = /(?<!\p{L})(oluşturuldu|oluşturdum|hazırlandı|hazırladım|kaydedildi|kaydettim|gönderildi|gönderdim|onaylandı|onayladım|kesinleştirildi|kesinleştirdim|iptal edildi|iptal ettim|güncellendi|güncelledim|açıldı|açtım)(?!\p{L})/iu;
 
@@ -31,7 +35,8 @@ export function uydurmaNedeni(cevap: string, tur: TurOzeti): string | null {
   if (yabanciKimlik) return `yanıttaki ${yabanciKimlik} kimliği hiçbir araç sonucunda yok`;
   const yabanciYol = (cevap.match(PANEL_YOLU) ?? []).map((y) => y.replace(/[.:;]+$/, "")).find((y) => !kaynak.includes(y.toLowerCase()));
   if (yabanciYol) return `yanıttaki ${yabanciYol} adresi hiçbir araç sonucunda yok`;
-  if (tur.talepSayisi === 0 && (ONAY_IDDIASI.test(cevap) || GELECEK_ISLEM.test(cevap))) {
+  const onayIddiasi = ONAY_IDDIASI.test(cevap) && !(ONAY_BEKLEME.test(cevap) && ONAY_BEKLEYEN_KAYIT.test(kaynak) && !ONAY_IDDIASI.test(cevap.replace(new RegExp(ONAY_BEKLEME.source, "giu"), "")));
+  if (tur.talepSayisi === 0 && (onayIddiasi || GELECEK_ISLEM.test(cevap))) {
     return "onay talebi açılmadığı hâlde işlemin onaya sunulduğu ya da yapılacağı söylendi";
   }
   if (tur.aracCiktilari.length === 0 && ISLEM_IDDIASI.test(cevap)) return "hiçbir araç çalışmadığı hâlde işlem yapıldığı söylendi";

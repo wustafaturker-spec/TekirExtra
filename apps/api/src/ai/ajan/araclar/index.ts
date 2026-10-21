@@ -5,11 +5,12 @@ import type { AjanAraci } from "./arac";
 import { OKUMA_ARACLARI } from "./okuma";
 import { ONAYLI_ARACLAR } from "./onayli";
 import { TASLAK_ARACLARI } from "./taslak";
+import { MODUL_ARACLARI } from "./moduller";
 
 export type { AjanAraci, AracBaglami, AracSinifi } from "./arac";
 
 /** AI-06: ilk araç seti. Silme aracı bilerek yoktur (AI-03). */
-export const AJAN_ARACLARI: AjanAraci[] = [...OKUMA_ARACLARI, ...TASLAK_ARACLARI, ...ONAYLI_ARACLAR];
+export const AJAN_ARACLARI: AjanAraci[] = [...OKUMA_ARACLARI, ...TASLAK_ARACLARI, ...ONAYLI_ARACLAR, ...MODUL_ARACLARI];
 
 const ARAC_HARITASI = new Map(AJAN_ARACLARI.map((a) => [a.ad, a]));
 

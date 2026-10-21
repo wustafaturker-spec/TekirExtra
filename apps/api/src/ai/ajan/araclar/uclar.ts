@@ -12,6 +12,15 @@ import { StokController } from "../../../stok/stok.controller";
 import { VadeHatirlatmaController } from "../../../cari/vade-hatirlatma.controller";
 import { GelenEpostaController } from "../../../tenant/gelen-eposta.controller";
 import { CrmBelgeController } from "../../../crm/crm-belge.controller";
+import { EirsaliyeController } from "../../../ebelge/eirsaliye.controller";
+import { SatinAlmaController } from "../../../satin-alma/satin-alma.controller";
+import { KrediController } from "../../../kasa-banka/kredi.controller";
+import { KrediKartiController } from "../../../kasa-banka/kredi-karti.controller";
+import { OdemeTalimatiController } from "../../../kasa-banka/odeme-talimati.controller";
+import { ButceController } from "../../../butce/butce.controller";
+import { DuzeltmelerController } from "../../../duzeltmeler/duzeltmeler.controller";
+import { BildirimlerController } from "../../../bildirimler/bildirimler.controller";
+import { DonemKapatmaController } from "../../../donem-kapatma/donem-kapatma.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -75,6 +84,53 @@ export const UC = {
   gelenEpostaEkOcr: uc(GelenEpostaController, "ekOcrCikar", "POST /eposta/gelen/:id/ekler/:ekId/ocr"),
   gelenEpostaDurum: uc(GelenEpostaController, "durumGuncelle", "PATCH /eposta/gelen/:id/durum"),
   gelenEpostaOkundu: uc(GelenEpostaController, "okunduGuncelle", "PATCH /eposta/gelen/:id/okundu"),
+
+  // AI-73: gelen e-Fatura / e-İrsaliye kutusu.
+  gelenEfaturaListe: uc(EbelgeController, "gelenListele", "GET /ebelge/gelen"),
+  gelenEfaturaGetir: uc(EbelgeController, "gelenGetir", "GET /ebelge/gelen/:id"),
+  gelenEfaturaDenetim: uc(EbelgeController, "gelenDenetim", "POST /ebelge/gelen/:id/denetim"),
+  gelenEfaturaIsle: uc(EbelgeController, "gelenOnayla", "POST /ebelge/gelen/:id/onayla"),
+  gelenEfaturaYanit: uc(EbelgeController, "gelenYanit", "POST /ebelge/gelen/:id/yanit"),
+  gelenEirsaliyeListe: uc(EirsaliyeController, "gelenListele", "GET /ebelge/irsaliye/gelen"),
+  gelenEirsaliyeGetir: uc(EirsaliyeController, "gelenDetay", "GET /ebelge/irsaliye/gelen/:id"),
+  gelenEirsaliyeYanit: uc(EirsaliyeController, "gelenYanit", "POST /ebelge/irsaliye/gelen/:id/yanit"),
+
+  // AI-74: satın alma talepleri.
+  satinAlmaSecenekler: uc(SatinAlmaController, "secenekler", "GET /satin-alma/secenekler"),
+  satinAlmaListe: uc(SatinAlmaController, "listele", "GET /satin-alma/talepler"),
+  satinAlmaGetir: uc(SatinAlmaController, "getir", "GET /satin-alma/talepler/:id"),
+  satinAlmaOlustur: uc(SatinAlmaController, "olustur", "POST /satin-alma/talepler"),
+  satinAlmaTeklifEkle: uc(SatinAlmaController, "teklifEkle", "POST /satin-alma/talepler/:id/teklifler"),
+  satinAlmaOnayaSun: uc(SatinAlmaController, "gonder", "POST /satin-alma/talepler/:id/gonder"),
+  satinAlmaOnayla: uc(SatinAlmaController, "onayla", "POST /satin-alma/talepler/:id/onayla"),
+  satinAlmaReddet: uc(SatinAlmaController, "reddet", "POST /satin-alma/talepler/:id/reddet"),
+  satinAlmaTeklifSec: uc(SatinAlmaController, "teklifSec", "POST /satin-alma/teklifler/:teklifId/sec"),
+  satinAlmaSiparis: uc(SatinAlmaController, "siparisOlustur", "POST /satin-alma/talepler/:id/siparis"),
+
+  // AI-75: çek/senet, kredi, kredi kartı, ödeme talimatı (yalnız okuma).
+  cekSenetListe: uc(KasaBankaController, "cekSenetListele", "GET /kasa-banka/cek-senet"),
+  cekSenetOzet: uc(KasaBankaController, "cekSenetOzet", "GET /kasa-banka/cek-senet-ozet"),
+  cekSenetVade: uc(KasaBankaController, "cekSenetVadeAnalizi", "GET /kasa-banka/cek-senet-vade-analizi"),
+  krediListe: uc(KrediController, "listele", "GET /kasa-banka/krediler"),
+  krediGetir: uc(KrediController, "getir", "GET /kasa-banka/krediler/:id"),
+  krediKartiListe: uc(KrediKartiController, "listele", "GET /kasa-banka/kredi-kartlari"),
+  krediKartiEkstreler: uc(KrediKartiController, "ekstreler", "GET /kasa-banka/kredi-kartlari/:id/ekstreler"),
+  odemeTalimatlari: uc(OdemeTalimatiController, "listele", "GET /kasa-banka/odeme-talimatlari"),
+
+  // AI-76: bütçe ve nakit.
+  butceKarsilastirma: uc(ButceController, "karsilastirma", "GET /butce/:yil/karsilastirma"),
+  nakitPozisyon: uc(NakitAkisiController, "pozisyon", "GET /nakit-akisi/pozisyon"),
+
+  // AI-77: Düzeltme Merkezi, bildirimler, dönem kapatma kontrolleri.
+  duzeltmeListe: uc(DuzeltmelerController, "listele", "GET /duzeltmeler"),
+  duzeltmeOzet: uc(DuzeltmelerController, "ozet", "GET /duzeltmeler/ozet"),
+  duzeltmeGetir: uc(DuzeltmelerController, "getir", "GET /duzeltmeler/:id"),
+  duzeltmeAta: uc(DuzeltmelerController, "ata", "PATCH /duzeltmeler/:id/ata"),
+  duzeltmeDurum: uc(DuzeltmelerController, "durumDegistir", "PATCH /duzeltmeler/:id/durum"),
+  bildirimOzet: uc(BildirimlerController, "ozet", "GET /bildirimler/ozet"),
+  bildirimListe: uc(BildirimlerController, "listele", "GET /bildirimler"),
+  // Kontroller dönemi kapatmaz ama sonuçlarını kaydeder; denetim kaydına düşsün diye POST.
+  donemKontrol: uc(DonemKapatmaController, "kontrol", "POST /donem-kapatma/kontroller"),
 
   // AI-36: e-posta teklif talebinden açılan taslak fırsata bağlanır.
   crmTeklifBagla: uc(CrmBelgeController, "bagla", "POST /crm/firsatlar/:firsatId/belgeler"),

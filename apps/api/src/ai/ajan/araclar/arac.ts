@@ -87,6 +87,32 @@ export function sec<T extends Record<string, any>>(nesne: T | null | undefined, 
   return Object.fromEntries(alanlar.filter((a) => nesne[a] !== undefined).map((a) => [a, nesne[a]]));
 }
 
+const AGIR_ALAN = /xml|base64|gorsel|pdf|html|imza|icerik$/i;
+
+/**
+ * AI-73…77: şekli araçta sabitlenmemiş uç çıktısını modele küçültür: ağır
+ * alanlar (XML, görsel, PDF) atılır, diziler `dizi` öğeyle kesilir. Kesilen
+ * dizi varsa `kisaltildi` true döner; araç bunu modele not olarak iletir.
+ */
+export function kisalt(deger: unknown, dizi = 20, derinlik = 5): { veri: unknown; kisaltildi: boolean } {
+  let kisaltildi = false;
+  const gez = (d: unknown, kat: number): unknown => {
+    if (d === null || typeof d !== "object") return d;
+    if (d instanceof Date) return d.toISOString();
+    if (kat <= 0) return Array.isArray(d) ? `[${d.length} öğe]` : "{…}";
+    if (Array.isArray(d)) {
+      if (d.length > dizi) kisaltildi = true;
+      return d.slice(0, dizi).map((x) => gez(x, kat - 1));
+    }
+    // Prisma Decimal ve benzeri sayı nesneleri metne çevrilir.
+    if (typeof (d as { toFixed?: unknown }).toFixed === "function" && typeof (d as { toString?: unknown }).toString === "function" && !(d as object).constructor?.name?.startsWith("Object")) {
+      return String(d);
+    }
+    return Object.fromEntries(Object.entries(d as Record<string, unknown>).filter(([k]) => !AGIR_ALAN.test(k)).map(([k, v]) => [k, gez(v, kat - 1)]));
+  };
+  return { veri: JSON.parse(JSON.stringify(gez(deger, derinlik))), kisaltildi };
+}
+
 export const uuid = (aciklama: string) => z.string().uuid().describe(aciklama);
 export const tarih = (aciklama: string) => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG olmalıdır").describe(aciklama);
 export const sayiMetni = (aciklama: string) =>
@@ -101,6 +127,10 @@ export const adres = {
   stok: (id: string) => `/panel/stok/${id}`,
   masraf: () => "/panel/masraflar",
   eposta: () => "/panel/eposta",
+  gelenEfatura: (id: string) => `/panel/fatura/gelen-kutusu?ac=${id}`,
+  gelenEirsaliye: () => "/panel/ebelge/irsaliye-gelen",
+  satinAlma: (id: string) => `/panel/satin-alma/talepler?talep=${id}`,
+  duzeltme: () => "/panel/islemler",
 };
 
 export function para(deger: unknown, doviz = "TRY"): string {
