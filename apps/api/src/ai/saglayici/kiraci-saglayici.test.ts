@@ -280,6 +280,7 @@ describe("özellik modeli ve onay kapsamı", () => {
     expect(ozellikModeli(ayar, "teklif")).toBe("deepseek-v4.1-flash");
     // 2026-10-22: asistan da ekonomik modelde (EVREN deepseek 4–22 sn, qwen 0,5–2 sn).
     expect(ozellikModeli(ayar, "asistan")).toBe("gemma-4-31b");
+    expect(ozellikModeli(ayar, "ekstre")).toBe("gemma-4-31b");
     expect(ozellikModeli({ modelAdi: null, ekonomikModelAdi: null, gucluModelAdi: null }, "asistan")).toBeNull();
     expect(ayarModelleri(ayar, "deepseek-v4.1-flash")).toEqual(["deepseek-v4.1-flash", "gemma-4-31b"]);
     expect([...onayModelleri("deepseek-v4.1-flash, gemma-4-31b")]).toEqual(["deepseek-v4.1-flash", "gemma-4-31b"]);

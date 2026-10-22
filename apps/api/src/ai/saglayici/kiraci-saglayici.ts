@@ -35,7 +35,8 @@ export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "h
  * model 0,5–2 sn'de üretiyor ve araç seçimleri aynı çıktı; "Derin analiz" ve
  * finans açıklaması düzeltmesi ana modelde kalır (`anaModel`, `derin`).
  */
-export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim", "asistan"];
+// "ekstre" 2026-10-22: ekstre satırından yalnız karşı taraf adı çıkarılır (kısa iş), kullanıcı ekranda bekler.
+export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim", "asistan", "ekstre"];
 
 /**
  * Özelliğin modeli: ekonomik işte ekonomik, diğerlerinde güçlü model; boş
