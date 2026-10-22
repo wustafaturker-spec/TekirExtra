@@ -304,7 +304,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       setAdimlar([]);
       const durdur = new AbortController();
       durdurucu.current = durdur;
-      const y = await apiAkis<AjanYaniti>("/ai/ajan/mesaj-akis", { mesaj: metin, requestId: crypto.randomUUID(), ...(baglam ? { baglam: { kayit: { tur: baglam.tur, id: baglam.id } } } : {}), ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}), ...(derin ? { derin: true } : {}) },
+      const y = await apiAkis<AjanYaniti>("/ai/ajan/mesaj-akis", { mesaj: metin, requestId: crypto.randomUUID(), baglam: { ...(baglam ? { kayit: { tur: baglam.tur, id: baglam.id } } : {}), sayfa: window.location.pathname }, ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}), ...(derin ? { derin: true } : {}) },
         (olay, veri) => {
           const e = veri as { tur?: string; ad?: string; etiket?: string; durum?: "basladi" | "bitti" | "hata" };
           if (olay !== "adim" || e?.tur !== "arac" || !e.ad || !e.etiket || !e.durum) return;

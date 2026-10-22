@@ -10,6 +10,7 @@ import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
 import type { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
 import type { OnayTalebiGorunumu } from "../onay/ai-onay.service";
 import { aracTanimi, type AjanAraci } from "./araclar";
+import { ARAC_GRUPLARI, GRUP_ACMA_ARACI, aracGrubu, grupAcmaTanimi, gruplariSec, type AracGrubu } from "./araclar/gruplar";
 import { AracYurutucu } from "./arac-yurutucu";
 import { BUGUN } from "./araclar/arac";
 import { DUZELTME_ISTEMI, GUVENLI_YANIT, uydurmaNedeni } from "./yanit-denetimi";
@@ -54,6 +55,8 @@ const EN_COK_EK = 5;
 
 /** Bir kullanıcı mesajında en çok bu kadar model turu (araç → sonuç → model). */
 const EN_COK_TUR = 8;
+/** AI-84: araç listesi daraltıldığında modele kapalı grubu açabileceği söylenir. */
+const GRUP_TALIMATI = `\n- Araç listesi işe göre daraltılmıştır. İstenen iş için uygun araç listede yoksa “yapamam” demeden önce \`${GRUP_ACMA_ARACI}\` ile ilgili grubu aç.`;
 const GECMIS_MESAJ = 24;
 const MESAJ_SINIRI = 4_000;
 const BOS_YANIT_DENEMESI = 2;
@@ -173,6 +176,8 @@ export interface EkranBaglami {
   /** Eski biçim (CARI-48); `kayit: { tur: "cari" }` ile aynı. */
   cariId?: string;
   kayit?: { tur: EkranTuru; id: string };
+  /** AI-84: asistanın açıldığı panel sayfası; yalnız araç grubu seçimine girer. */
+  sayfa?: string;
 }
 
 /** Okunan ekran kaydı: modele gidecek kısa tanım. */
@@ -364,9 +369,10 @@ export class AiAjanService {
       const izinli = this.yurutucu.izinliAraclar(rol);
       const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama } = await this.dongu({
         saglayici,
-        sistemRol: sistemTalimati(kullanici.adSoyad, rol, ozelTalimatlar) + durumBaglami(gecmis.durumlar) + ekranMetni + ekler.metin,
+        sistemRol: sistemTalimati(kullanici.adSoyad, rol, ozelTalimatlar) + GRUP_TALIMATI + durumBaglami(gecmis.durumlar) + ekranMetni + ekler.metin,
         mesajlar: [...gecmis.mesajlar, { rol: "kullanici", metin }],
         izinli,
+        gruplar: gruplariSec({ mesaj: metin, ekranTuru: ekranKaydiIstegi?.tur, sayfa: ekran?.sayfa, gecmisAraclar: gecmis.araclar }),
         // Ekran kaydının kimliği yanıtta geçebilir; uydurma denetimi onu bilinen kaynak sayar.
         baglamMetni: [metin, ekranKaydi, ekler.kimlikler, ...gecmis.mesajlar.map((m) => ("metin" in m ? m.metin : ""))].join(" "),
         kullaniciTalebi: metin,
@@ -456,12 +462,22 @@ export class AiAjanService {
     baglamMetni: string;
     kullaniciTalebi: string;
     oturumId: string | null;
+    /** AI-84: modele sunulan araç grupları; yoksa izinli araçların hepsi sunulur. */
+    gruplar?: Set<AracGrubu>;
     /** AI-82: canlı adım olayları ve kullanıcının durdurması. */
     olay?: (e: AkisOlayi) => void;
     sinyal?: AbortSignal;
   }): Promise<{ cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama }> {
     const aracHaritasi = new Map(g.izinli.map((a) => [a.ad, a]));
-    const tanimlar = g.izinli.map(aracTanimi);
+    // AI-84: süzgeç yalnız modele sunulan listeyi daraltır; yürütme rolün izinli araçlarıyla sınırlı kalır.
+    const gruplar = g.gruplar;
+    const tanimlariKur = () => {
+      if (!gruplar) return g.izinli.map(aracTanimi);
+      const sunulan = g.izinli.filter((a) => { const grup = aracGrubu(a.ad); return !grup || gruplar.has(grup); });
+      const kapali = [...new Set(g.izinli.map((a) => aracGrubu(a.ad)).filter((x): x is AracGrubu => !!x && !gruplar.has(x)))];
+      return [...sunulan.map(aracTanimi), ...(kapali.length ? [grupAcmaTanimi(kapali)] : [])];
+    };
+    let tanimlar = tanimlariKur();
     const mesajlar = g.mesajlar;
     const calisanlar: CalisanArac[] = [];
     const talepler: OnayTalebiGorunumu[] = [];
@@ -545,6 +561,17 @@ export class AiAjanService {
       }
       mesajlar.push({ rol: "asistan", metin: yanit.metin, aracCagrilari: yanit.aracCagrilari, ham: yanit.ham });
       for (const cagri of yanit.aracCagrilari) {
+        if (cagri.ad === GRUP_ACMA_ARACI && gruplar) {
+          const istenen = Array.isArray(cagri.girdi?.gruplar) ? cagri.girdi.gruplar.filter((x): x is AracGrubu => typeof x === "string" && x in ARAC_GRUPLARI) : [];
+          istenen.forEach((x) => gruplar.add(x));
+          tanimlar = tanimlariKur();
+          const acilan = g.izinli.filter((a) => istenen.includes(aracGrubu(a.ad) as AracGrubu)).map((a) => a.ad);
+          mesajlar.push({
+            rol: "arac_sonucu", cagriId: cagri.id, ad: cagri.ad, hata: !acilan.length,
+            icerik: acilan.length ? `Açılan araçlar: ${acilan.join(", ")}. Şimdi gerekeni çağır.` : "Hata: geçerli bir grup adı verilmedi ya da bu gruplarda rolünün kullanabileceği araç yok.",
+          });
+          continue;
+        }
         const secilenArac = aracHaritasi.get(cagri.ad);
         if (hariciIcerikOkundu && secilenArac && secilenArac.sinif !== "okuma" && !acikYazmaIstegi) {
           calisanlar.push({ ad: cagri.ad, sinif: secilenArac.sinif, basarili: false });
@@ -673,7 +700,7 @@ export class AiAjanService {
   }
 
   /** Önceki turların metinleri ve ham araç çıktısı içermeyen doğrulanmış kısa kayıt bağlamı. */
-  private async gecmisOku(tenantId: string, oturumId: string): Promise<{ mesajlar: AiSohbetMesaji[]; durumlar: DogrulanmisDurum[] }> {
+  private async gecmisOku(tenantId: string, oturumId: string): Promise<{ mesajlar: AiSohbetMesaji[]; durumlar: DogrulanmisDurum[]; araclar: string[] }> {
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ajanMesajGecmisi.findMany({
         where: {
@@ -709,6 +736,11 @@ export class AiAjanService {
       if (!Array.isArray(deger)) return [];
       return deger.filter((x): x is DogrulanmisDurum => !!x && typeof x === "object" && typeof (x as DogrulanmisDurum).id === "string" && UUID.test((x as DogrulanmisDurum).id) && typeof (x as DogrulanmisDurum).gorunen === "string");
     });
-    return { mesajlar: sonuc, durumlar: [...new Map(durumlar.map((x) => [`${x.tur}:${x.id}`, x])).values()].slice(-12) };
+    // AI-84: sohbette kullanılmış araçların grupları sonraki mesajlarda da sunulur.
+    const araclar = sirali.flatMap((k) => {
+      const deger = (k.aracCagrisi as { araclar?: unknown } | null)?.araclar;
+      return Array.isArray(deger) ? deger.map((x) => (x as { ad?: unknown })?.ad).filter((x): x is string => typeof x === "string") : [];
+    });
+    return { mesajlar: sonuc, durumlar: [...new Map(durumlar.map((x) => [`${x.tur}:${x.id}`, x])).values()].slice(-12), araclar: [...new Set(araclar)] };
   }
 }

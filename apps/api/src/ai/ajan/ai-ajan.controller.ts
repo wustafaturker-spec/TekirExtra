@@ -2,9 +2,10 @@ import { BadRequestException, Body, Controller, Get, HttpException, Param, Post,
 import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { YuklenenDosya } from "../../ekler/ekler.service";
-import { AiAjanService, type AkisOlayi, type EkranTuru } from "./ai-ajan.service";
+import { AiAjanService, type AkisOlayi, type EkranBaglami, type EkranTuru } from "./ai-ajan.service";
+import { SAYFA_YOLU } from "./araclar/gruplar";
 
-type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown } }; ekler?: unknown; derin?: unknown };
+type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown }; sayfa?: unknown }; ekler?: unknown; derin?: unknown };
 
 /**
  * AI-05: panel asistanı. Kimlik ve rol yalnız oturumdan gelir. Dış kanal
@@ -49,13 +50,19 @@ export class AiAjanController {
   private isle(body: MesajGovdesi, akis: { olay?: (e: AkisOlayi) => void; sinyal?: AbortSignal } = {}) {
     const cariId = body?.baglam?.cariId;
     const kayit = body?.baglam?.kayit;
+    const sayfa = body?.baglam?.sayfa;
+    const ekran: EkranBaglami = {
+      // CARI-48/AI-78: panelden açılan asistan; kayıt sunucuda ekran ucundan doğrulanır.
+      ...(kayit && typeof kayit.tur === "string" && typeof kayit.id === "string"
+        ? { kayit: { tur: kayit.tur as EkranTuru, id: kayit.id } }
+        : typeof cariId === "string" ? { cariId } : {}),
+      // AI-84: yalnız araç grubu seçimine girer; biçime uymayan yol yok sayılır.
+      ...(typeof sayfa === "string" && SAYFA_YOLU.test(sayfa) ? { sayfa } : {}),
+    };
     return this.ajanService.mesajiIsle(
       typeof body?.mesaj === "string" ? body.mesaj : "",
       typeof body?.requestId === "string" ? body.requestId : undefined,
-      // CARI-48/AI-78: panelden açılan asistan; kayıt sunucuda ekran ucundan doğrulanır.
-      kayit && typeof kayit.tur === "string" && typeof kayit.id === "string"
-        ? { kayit: { tur: kayit.tur as EkranTuru, id: kayit.id } }
-        : typeof cariId === "string" ? { cariId } : undefined,
+      ekran,
       // AI-79: mesaja bağlanan sohbet ekleri; sahiplik sunucuda doğrulanır.
       Array.isArray(body?.ekler) ? body.ekler.filter((x): x is string => typeof x === "string") : [],
       // AI-81: "Derin analiz" seçimi; AI-82: akış olayları ve durdurma.

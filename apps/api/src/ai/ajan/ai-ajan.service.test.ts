@@ -795,3 +795,56 @@ describe("akışlı yanıt (AI-82)", () => {
     expect(aracEtiketi("kredi_kartlari")).toBe("Kredi kartlari hazırlanıyor");
   });
 });
+
+describe("araç süzgeci (AI-84)", () => {
+  const adlar = (k: ReturnType<typeof kur>, i: number) => k.saglayici.girdiler[i].araclar!.map((a) => a.ad);
+
+  it("bağlamsız mesajda çekirdek araçlar ve grup açma aracı sunulur", async () => {
+    const k = kur([{ metin: "Merhaba, nasıl yardımcı olabilirim?", aracCagrilari: [] }]);
+    await k.calistir("Merhaba", "yonetici");
+    const sunulan = adlar(k, 0);
+    expect(sunulan).toContain("cari_ara");
+    expect(sunulan).toContain("arac_gruplarini_ac");
+    expect(sunulan).not.toContain("gelen_efatura_ara");
+    expect(sunulan.length).toBeLessThan(AJAN_ARACLARI.length / 2);
+    expect(k.saglayici.girdiler[0].sistemRol).toContain("arac_gruplarini_ac");
+  });
+
+  it("model kapalı grubu açınca sonraki adımda o grubun araçları sunulur", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "arac_gruplarini_ac", girdi: { gruplar: ["denetim", "uydurma"] } }] },
+      { metin: "", aracCagrilari: [{ id: "c2", ad: "duzeltme_kayitlari", girdi: {} }] },
+      { metin: "Açık düzeltme kaydı yok.", aracCagrilari: [] },
+    ], { ucSonucu: () => ({ kayitlar: [] }) });
+    const y = await k.calistir("Neler bekliyor?", "yonetici");
+    expect(adlar(k, 0)).not.toContain("duzeltme_kayitlari");
+    expect(adlar(k, 1)).toContain("duzeltme_kayitlari");
+    const sonuc = k.saglayici.girdiler[1].mesajlar.find((m) => m.rol === "arac_sonucu" && m.ad === "arac_gruplarini_ac");
+    expect(sonuc).toMatchObject({ hata: false });
+    expect(y.araclar.map((a) => a.ad)).toEqual(["duzeltme_kayitlari"]);
+    expect(y.cevap).toBe("Açık düzeltme kaydı yok.");
+  });
+
+  it("rolün göremediği grup açılamaz", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "arac_gruplarini_ac", girdi: { gruplar: ["denetim"] } }] },
+      { metin: "Bu işlem için yetkiniz yok.", aracCagrilari: [] },
+    ], { yetkiliMi: (yol) => !/duzeltme|donem/.test(yol) });
+    await k.calistir("Bekleyenleri göster", "satis");
+    const ac = k.saglayici.girdiler[0].araclar!.find((a) => a.ad === "arac_gruplarini_ac")!;
+    expect(JSON.stringify(ac.girdiSemasi)).not.toContain("denetim");
+    expect(adlar(k, 1)).not.toContain("duzeltme_kayitlari");
+    const sonuc = k.saglayici.girdiler[1].mesajlar.find((m) => m.rol === "arac_sonucu" && m.ad === "arac_gruplarini_ac");
+    expect(sonuc).toMatchObject({ hata: true });
+  });
+
+  it("sohbette kullanılmış aracın grubu sonraki mesajda da sunulur", async () => {
+    const k = kur([{ metin: "Tamam.", aracCagrilari: [] }]);
+    k.tx.ajanMesajGecmisi.findMany.mockResolvedValue([
+      { rol: "assistant", icerik: "Gelen faturalar listelendi.", aracCagrisi: { araclar: [{ ad: "gelen_efatura_ara", sinif: "okuma", basarili: true }] }, createdAt: new Date(2) },
+      { rol: "user", icerik: "Faturaları göster", aracCagrisi: null, createdAt: new Date(1) },
+    ]);
+    await k.calistir("ilkini aç", "yonetici");
+    expect(adlar(k, 0)).toContain("gelen_efatura_getir");
+  });
+});
