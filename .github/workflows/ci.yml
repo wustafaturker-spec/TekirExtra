@@ -65,11 +65,9 @@ jobs:
           ALLOW_MOCK_ENTEGRATIONS: "true"
         run: pnpm --filter @tekirextra/api test:kabul
 
-      # Geçici olarak uyarı: e2e paketi CI'ın derleme adımında kaldığı haftalarda bakımsız kaldı (2026-10-18);
-      # onarılınca continue-on-error kaldırılacak. Süre sınırı, düşen testlerin yeniden denemeleri işi saatlerce sürdürmesin diye.
+      # Süre sınırı, düşen testlerin yeniden denemeleri işi saatlerce sürdürmesin diye.
       - name: Kritik web akışları
         id: e2e
-        continue-on-error: true
         timeout-minutes: 30
         env:
           # Derlenmiş uygulamada rota koruması sır ister; testler aynı sırla oturum çerezi üretir.
@@ -78,7 +76,7 @@ jobs:
 
       # Düşen testlerin izi ve ekran görüntüsü farkları (beklenen/gerçek/fark) incelenebilsin.
       - name: E2E sonuçlarını bırak
-        if: steps.e2e.outcome == 'failure'
+        if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-sonuclari
