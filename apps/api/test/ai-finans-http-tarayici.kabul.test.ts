@@ -153,6 +153,8 @@ it('HTTP JWT/rol + Chromium: aynı rapor, model hatasında kaynak kartı, geçmi
           yurutucu.izinliAraclar = rol => AJAN_ARACLARI.filter(t => t.ad === 'gelir_gider' && t.sinif === 'okuma' && uc.yetkiliMi(t.uc, rol));
           const ajan = new AiAjanService(prisma as never, yurutucu);
           ajan.saglayiciBul = async () => ({ saglayici: provider(), ozelTalimatlar: null });
+          // AI-92: finans açıklamasının JSON düzeltmesi ana model sağlayıcısından istenir.
+          ajan.duzeltmeSaglayicisiBul = async () => provider();
           return ajan;
         } },
       ] })(TestModule);
