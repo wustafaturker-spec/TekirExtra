@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
-import { krediPlaniHesapla, vknGecerliMi } from "@tekirextra/shared";
+import { krediPlaniHesapla, onDenetimAnahtari, type OnDenetimBulgusu, vknGecerliMi } from "@tekirextra/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -588,10 +588,14 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
     expect(gelen.durum).toBe("beklemede");
 
     // Onay ekranı satırları stok kartıyla eşleştirmeyi zorunlu kılar
-    const detay = await istek<{ satirlar: Array<{ siraNo: number }> }>(`/ebelge/gelen/${gelen.id}`, {
-      jeton,
-    });
+    const detay = await istek<{ satirlar: Array<{ siraNo: number }>; onDenetim: { bulgular: OnDenetimBulgusu[] } | null }>(
+      `/ebelge/gelen/${gelen.id}`,
+      { jeton },
+    );
     expect(detay.durum, JSON.stringify(detay.veri)).toBe(200);
+    // EBLG-150: mock belgedeki alıcı unvanı test firmasınınkiyle aynı değil; kullanıcı uyarıyı görüp onaylar.
+    const uyarilar = (detay.veri.onDenetim?.bulgular ?? []).filter((b) => b.duzey === "uyari");
+    expect(uyarilar.map((b) => b.kod)).toContain("GELEN_ALICI_BILGISI");
 
     const onay = await istek<{ faturaId: string }>(`/ebelge/gelen/${gelen.id}/onayla`, {
       method: "POST",
@@ -599,6 +603,7 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
       body: {
         yeniCariOnay: true,
         satirEslesmeleri: detay.veri.satirlar.map((s) => ({ siraNo: s.siraNo, stokId })),
+        onDenetimOnayi: { anahtarlar: uyarilar.map(onDenetimAnahtari) },
       },
     });
     expect(onay.durum, JSON.stringify(onay.veri)).toBe(201);
