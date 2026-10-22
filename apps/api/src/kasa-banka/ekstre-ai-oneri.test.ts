@@ -40,6 +40,12 @@ describe("ekstre cari önerisi sırası (KSB-17)", () => {
     expect(r.cari).toBeNull();
   });
 
+  it("açıklamadan ad çıktıysa cari bulunamasa da bunu bildirir (yapay zekâ boşuna çağrılmaz)", async () => {
+    const tx = bosTx({ cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([cari("m1", "MELEK TÜRKER"), cari("m2", "MELEK TÜRKER")]) } });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "MAAŞ - Gönderen: DEMO LTD , Alıcı: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: false, mutlak: D(100), doviz: "TRY" });
+    expect(r).toMatchObject({ cari: null, adAdayiVar: true });
+  });
+
   it("ad bulunamazsa eski sıraya (IBAN) düşer", async () => {
     const tx = bosTx({ cariBankaHesap: { findFirst: vi.fn().mockResolvedValue({ cari: cari("iban", "BAŞKA FİRMA") }) } });
     const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen:TANINMAYAN AD", karsiIban: "TR00", karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });
@@ -61,7 +67,7 @@ describe("ekstre cari önerisi (AI-19)", () => {
     const tek = bosTx({ fatura: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([f("c1", 1000, 400), f("c2", 700)]) } });
     expect(await kur(tek).cariOner(tek, "t", { aciklama: "HAVALE", karsiIban: null, karsiUnvan: null }, tutar)).toMatchObject({ kaynak: "tutar", cari: { id: "c1" } });
     const iki = bosTx({ fatura: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([f("c1", 600), f("c2", 600)]) } });
-    expect(await kur(iki).cariOner(iki, "t", { aciklama: "HAVALE", karsiIban: null, karsiUnvan: null }, tutar)).toEqual({ cari: null, kaynak: null });
+    expect(await kur(iki).cariOner(iki, "t", { aciklama: "HAVALE", karsiIban: null, karsiUnvan: null }, tutar)).toEqual({ cari: null, kaynak: null, adAdayiVar: false });
   });
 
   it("dil modeli yalnız açıklama ve karşı unvanı görür; tek aday çıkarsa öneri, belirsizse yok", async () => {

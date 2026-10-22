@@ -65,7 +65,8 @@ export class EkstreEslestirmeService {
     const mutlak = satir.tutar.abs();
     const doviz = satir.bankaHesap.dovizCinsi;
     const sonuc = await this.temelOneriler(tenantId, satir, giris, mutlak, doviz);
-    if (sonuc.onerilenCari || sonuc.kural) return sonuc;
+    // Açıklamadan ad çıktıysa ama cari belirsizse (ör. aynı unvanlı iki kart) model de aynı adı bulur; çağrılmaz.
+    if (sonuc.onerilenCari || sonuc.kural || sonuc.adAdayiVar) return sonuc;
     // AI-19: kurallar cari bulamadıysa dil modeli açıklamadan karşı tarafı çıkarır.
     // Çağrı veritabanı işleminin dışında yapılır; hata ya da onay yoksa öneri yalnız atlanır.
     const ai = await this.yapayZekaCariOnerisi(tenantId, satir).catch(() => null);
@@ -84,8 +85,8 @@ export class EkstreEslestirmeService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kurallar = await tx.ekstreKurali.findMany({ where: { aktif: true } });
       const kural = kuralBul(kurallar, satir);
-      const { cari, kaynak, gerekce } = kural?.cariId
-        ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const, gerekce: undefined }
+      const { cari, kaynak, gerekce, adAdayiVar } = kural?.cariId
+        ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const, gerekce: undefined, adAdayiVar: false }
         : await this.cariOner(tx, tenantId, satir, { giris, mutlak, doviz });
 
       const [faturalar, mevcutFisler, cekler, kartlar, kasalar, bankalar, masrafKategorileri, gelirKategorileri] = await Promise.all([
@@ -113,6 +114,7 @@ export class EkstreEslestirmeService {
         onerilenCari: cari,
         cariEslesmeKaynagi: cari ? kaynak : null,
         ...(cari && gerekce ? { cariGerekcesi: gerekce } : {}),
+        adAdayiVar: Boolean(adAdayiVar),
         faturalar,
         mevcutFisler,
         cekler: cekler
@@ -510,15 +512,17 @@ export class EkstreEslestirmeService {
     tenantId: string,
     satir: { aciklama: string; karsiIban: string | null; karsiUnvan: string | null },
     tutar?: { giris: boolean; mutlak: Prisma.Decimal; doviz: DovizCinsi },
-  ): Promise<{ cari: { id: string; kod: string; unvan: string } | null; kaynak: CariEslesmeKaynagi; gerekce?: string }> {
+  ): Promise<{ cari: { id: string; kod: string; unvan: string } | null; kaynak: CariEslesmeKaynagi; gerekce?: string; adAdayiVar?: boolean }> {
     const sec = { id: true, kod: true, unvan: true } as const;
     // KSB-17: bankalar karşı tarafı çoğu kez yalnız açıklamaya yazar (IBAN/unvan sütunu boş).
     // Firmanın kendi adı son ekstre satırlarından öğrenilir ki gönderen/alıcıdaki kendi adı aday olmasın.
+    let adAdayiVar = false;
     if (tutar) {
       const sonSatirlar = await tx.bankaEkstreSatir.findMany({ where: { tenantId }, orderBy: { tarih: "desc" }, take: 300, select: { aciklama: true, tutar: true } });
       const kendiAdlari = kendiAdlariniBul(sonSatirlar.map((x) => ({ aciklama: x.aciklama, giris: !x.tutar.isNegative() })));
       const adaylar = karsiTarafAdaylari(satir.aciklama, satir.karsiUnvan, tutar.giris, kendiAdlari);
       if (adaylar.length) {
+        adAdayiVar = true;
         const bulunan = cariyiAdlaBul(adaylar, await tx.cariHesap.findMany({ where: { tenantId, aktif: true }, select: sec }));
         if (bulunan) return { cari: bulunan.cari, kaynak: "aciklama", gerekce: `Açıklamadaki ${bulunan.kaynak}: “${bulunan.ad}” (benzerlik %${Math.round(bulunan.puan * 100)}).` };
       }
@@ -563,7 +567,7 @@ export class EkstreEslestirmeService {
       const tutanlar = new Map(adaylar.filter((f) => faturaOdemeDurumu(f).kalan.equals(tutar.mutlak)).map((f) => [f.cari.id, f.cari]));
       if (tutanlar.size === 1) return { cari: [...tutanlar.values()][0], kaynak: "tutar" as CariEslesmeKaynagi };
     }
-    return { cari: null, kaynak: null as CariEslesmeKaynagi };
+    return { cari: null, kaynak: null as CariEslesmeKaynagi, adAdayiVar };
   }
 
   /**
@@ -577,6 +581,8 @@ export class EkstreEslestirmeService {
       {
         sistemRol: "Banka ekstresi satırının açıklamasından ödemeyi yapan/alan karşı tarafın (firma ya da kişi) adını çıkarırsın. Banka adı, işlem türü (EFT, HAVALE, FAST), referans ve tutarı ad sayma. Emin değilsen null ver.",
         prompt: `Açıklama: ${satir.aciklama}\nKarşı unvan: ${satir.karsiUnvan ?? "-"}\nJSON: {"karsiTarafAdi": string | null, "gerekce": string}`,
+        // Kısa çıkarım; qwen düşünmeyle 60 sn'yi aşabiliyor (kullanıcı ekranda bekliyor).
+        dusunmeKapali: true,
       },
       zod.object({ karsiTarafAdi: zod.string().nullable(), gerekce: zod.string().default("") }),
     );
