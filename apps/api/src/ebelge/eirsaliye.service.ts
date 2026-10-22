@@ -56,6 +56,25 @@ export function eirsaliyeSorguKosulu(tenantId: string, simdi: number, yanitGunSa
   };
 }
 
+/**
+ * EBLG-151: entegratör gönderilmiş irsaliyeyi tanımıyorsa (404) ve gönderimden
+ * bu süre geçmişse kayıt sonsuza dek `kuyrukta` kalmaz. Yeni gönderim NES'te
+ * kısa süre görünmeyebildiği için hemen karar verilmez.
+ */
+export const ENTEGRATORDE_YOK_ESIGI_MS = 2 * 86_400_000;
+
+/** EBLG-151: 404 ile bulunamayan eski irsaliyenin yazılacak durumu; değilse null. */
+export function entegratordeYokVerisi(hata: unknown, olusturma: Date, simdi: number): Prisma.EirsaliyeKayitUpdateInput | null {
+  const durumKodu = (hata as { durum?: unknown } | null)?.durum;
+  if (durumKodu !== 404 || simdi - olusturma.getTime() < ENTEGRATORDE_YOK_ESIGI_MS) return null;
+  // Kalıcı hata: `geciciHata` false olduğu için otomatik yeniden gönderilmez (EBLG-94);
+  // belge entegratörde başka kimlikle duruyorsa ikinci irsaliye çıkmasın, karar kullanıcınındır.
+  return {
+    durum: "hata", geciciHata: false, entegratorDurumu: null, sonDurumSorguAt: new Date(simdi),
+    hataMesaji: "Entegratör bu irsaliyeyi bulamadı (404); gönderimden 2 günden uzun süre geçti. Entegratör portalında irsaliye numarasıyla arayın; orada yoksa yeniden gönderin.",
+  };
+}
+
 /** EBLG-94: geçici hatayla düşen gönderim en çok bu kadar, bu aralıkla kendiliğinden yeniden denenir. */
 export const EIRSALIYE_AZAMI_YENIDEN_DENEME = 3;
 const EIRSALIYE_YENIDEN_DENEME_ARALIK_MS = Number(process.env.EIRSALIYE_YENIDEN_DENEME_ARALIK_MS || 15 * 60 * 1_000);
@@ -392,7 +411,8 @@ export class EirsaliyeService {
    * EBLG-36: bekleyen giden e-İrsaliyelerin durumunu sorgular. NES'te toplu
    * durum ucu yoktur; irsaliye başına bir çağrı yapılır, her birinin ardından
    * `sonDurumSorguAt` yazılır ki aynı irsaliye aralığı dolmadan yeniden sorulmasın.
-   * Çağrısı başarısız olan irsaliyeye dokunulmaz, sonraki turda yeniden denenir.
+   * Çağrısı başarısız olan irsaliyeye dokunulmaz, sonraki turda yeniden denenir;
+   * yalnız entegratörün uzun süredir tanımadığı (404) irsaliye kalıcı hataya çekilir (EBLG-151).
    */
   async durumlariTopluSorgula(): Promise<{ sorgulanan: number; guncellenen: number; atlanan: number }> {
     const { tenantId } = aktifBaglam();
@@ -405,7 +425,7 @@ export class EirsaliyeService {
       const yanitGunSayisi = Number(ayarlar.eirsaliyeYanitGunSayisi ?? 10);
       const kayitlar = await tx.eirsaliyeKayit.findMany({
         where: eirsaliyeSorguKosulu(tenantId, Date.now(), yanitGunSayisi),
-        select: { id: true, entegratorRef: true },
+        select: { id: true, entegratorRef: true, createdAt: true },
         orderBy: { sonDurumSorguAt: { sort: "asc", nulls: "first" } },
         take: 100,
       });
@@ -421,6 +441,13 @@ export class EirsaliyeService {
         await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) }));
         guncellenen += 1;
       } catch (hata) {
+        const yok = entegratordeYokVerisi(hata, kayit.createdAt, Date.now());
+        if (yok) {
+          await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: yok }));
+          guncellenen += 1;
+          this.logger.warn(JSON.stringify({ event: "eirsaliye_entegratorde_yok", tenantId, kayitId: kayit.id }));
+          continue;
+        }
         atlanan += 1;
         this.logger.warn(JSON.stringify({ event: "eirsaliye_durum_sorgusu_atlandi", tenantId, kayitId: kayit.id, hata: hata instanceof Error ? hata.message : String(hata) }));
       }

@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../core/istek-baglami";
-import { EirsaliyeService, eirsaliyeSorguKosulu, eirsaliyeYenidenDenemeKosulu } from "./eirsaliye.service";
+import { EirsaliyeService, eirsaliyeSorguKosulu, eirsaliyeYenidenDenemeKosulu, entegratordeYokVerisi } from "./eirsaliye.service";
 
 /**
  * Üretilen DespatchAdvice'ın yapısı. Aşağıdaki kuralların hepsi NES test
@@ -558,6 +558,25 @@ describe("e-İrsaliye otomatik yeniden deneme (EBLG-94)", () => {
     expect(gonder).toHaveBeenNthCalledWith(1, "b1", { otomatik: true });
     expect(sonuc).toEqual({ denenen: 2, basarili: 1, basarisiz: 1 });
     expect(update).toHaveBeenCalledWith({ where: { id: "k2" }, data: { yenidenDenemeSayisi: { increment: 1 }, hataMesaji: "Cari VKN/TCKN bilgisi eksik" } });
+  });
+});
+
+describe("entegratörde bulunmayan irsaliye (EBLG-151)", () => {
+  const simdi = Date.parse("2026-10-22T17:00:00Z");
+  const nes = (durum: number) => Object.assign(new Error(`NES ${durum}`), { durum });
+
+  it("iki günden eski gönderim 404 alırsa kalıcı hataya çekilir; otomatik yeniden gönderilmez", () => {
+    const veri = entegratordeYokVerisi(nes(404), new Date("2026-09-24T18:50:44Z"), simdi);
+    expect(veri).toMatchObject({ durum: "hata", geciciHata: false, entegratorDurumu: null });
+    expect(veri?.hataMesaji).toContain("bulamadı (404)");
+    // Kalıcı hata yeniden deneme koşuluna (geciciHata: true) girmez.
+    expect(eirsaliyeYenidenDenemeKosulu("t1", simdi)).toMatchObject({ geciciHata: true });
+  });
+
+  it("yeni gönderimde ya da başka hatada kayda dokunulmaz", () => {
+    expect(entegratordeYokVerisi(nes(404), new Date(simdi - 60 * 60 * 1000), simdi)).toBeNull();
+    expect(entegratordeYokVerisi(nes(500), new Date("2026-09-24T18:50:44Z"), simdi)).toBeNull();
+    expect(entegratordeYokVerisi(new Error("fetch failed"), new Date("2026-09-24T18:50:44Z"), simdi)).toBeNull();
   });
 });
 
