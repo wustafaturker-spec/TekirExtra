@@ -38,16 +38,17 @@ describe("AI-87 personel gizliliği", () => {
     expect(kart).toContain("Can Ak");
   });
 
-  it("maliyet raporu kişi satırı vermez; küçük departman tutarı ayrıca görünmez", () => {
+  it("maliyet raporu kişi satırı vermez; tek küçük departman varsa çıkarmayla bulunmasın diye kırılım verilmez", () => {
     const s = (departman: string, brut: number) => ({ departman, brutUcret: brut, netUcret: brut * 0.7, isverenMaliyeti: brut * 1.2 });
     const r = maliyetToplamlari([s("Üretim", 100), s("Üretim", 200), s("Üretim", 300), s("Muhasebe", 1000)]) as any;
     expect(r.toplam).toMatchObject({ kisiSayisi: 4, toplamBrut: "1600.00" });
-    expect(r.departmanlar).toEqual([expect.objectContaining({ departman: "Üretim", kisiSayisi: 3, toplamBrut: "600.00", kisiBasiOrtalamaMaliyet: "240.00" })]);
-    expect(JSON.stringify(r)).not.toContain("1000");
-    expect(r.not).toContain("1 küçük departman");
+    expect(r.departmanlar).toEqual([]);
+    expect(JSON.stringify(r)).not.toMatch(/"1000|"600|Muhasebe/);
+    const tam = maliyetToplamlari([s("Üretim", 100), s("Üretim", 200), s("Üretim", 300), s("Satış", 10), s("Satış", 20), s("Satış", 30)]) as any;
+    expect(tam.departmanlar).toEqual([expect.objectContaining({ departman: "Üretim", kisiSayisi: 3, toplamBrut: "600.00", kisiBasiOrtalamaMaliyet: "240.00" }), expect.objectContaining({ departman: "Satış", kisiSayisi: 3 })]);
   });
 
-  it("birden çok küçük departman en az üç kişiyse 'Diğer' olarak birleşir; üç kişiden az bordroda tutar yok", () => {
+  it("küçük departmanlar birlikte en az üç kişiyse 'Diğer' olarak birleşir; üç kişiden az bordroda tutar yok", () => {
     const s = (departman: string) => ({ departman, brutUcret: 100, netUcret: 70, isverenMaliyeti: 120 });
     const r = maliyetToplamlari([s("A"), s("A"), s("A"), s("B"), s("C"), s("C")]) as any;
     expect(r.departmanlar.map((d: any) => d.departman)).toEqual(["A", "Diğer (küçük departmanlar)"]);
@@ -79,10 +80,11 @@ describe("AI-87 personel gizliliği", () => {
     expect(await bul("avans_ozeti").calistir(uc.b, {})).toMatchObject({ acikAvansSayisi: 3, toplamKalan: "1500.00" });
   });
 
-  it("personel özeti küçük departmanın ücret yükünü vermez", async () => {
+  it("personel özeti küçük departmanın ücret yükünü ne doğrudan ne çıkarmayla verir", async () => {
     const { b } = baglam({ ozet: () => ({ donem: { yil: 2026, ay: 10 }, toplamPersonel: 5, aktifPersonel: 5, durumlar: [], aylikSozlesmeYuku: "₺1", departmanlar: [{ ad: "Üretim", adet: 4, ucretYuku: "₺4", isverenMaliyeti: "₺5" }, { ad: "Muhasebe", adet: 1, ucretYuku: "₺9", isverenMaliyeti: "₺10" }], bordro: { acikAdet: 0 }, avans: { acikAdet: 0 }, izin: { bekleyen: 1 }, belgeler: { suresiDolmus: [], yaklasan: [] } }) });
     const r = await bul("personel_ozeti").calistir(b, {}) as any;
-    expect(r.departmanlar).toEqual([{ ad: "Üretim", adet: 4, isverenMaliyeti: "₺5" }, { ad: "Muhasebe", adet: 1 }]);
+    // Tek kişilik departman toplamdan çıkarılarak bulunmasın diye hiçbir departmana tutar yazılmaz.
+    expect(r.departmanlar).toEqual([{ ad: "Üretim", adet: 4 }, { ad: "Muhasebe", adet: 1 }]);
     expect(JSON.stringify(r)).not.toContain("ucretYuku");
     expect(JSON.stringify(r)).not.toContain("aylikSozlesmeYuku");
   });

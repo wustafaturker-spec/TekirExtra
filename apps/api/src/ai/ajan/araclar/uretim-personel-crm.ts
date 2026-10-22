@@ -381,15 +381,14 @@ export function maliyetToplamlari(satirlar: Array<{ departman: string; brutUcret
   const satir = (ad: string, g: { kisi: number; brut: number; net: number; maliyet: number }) => ({
     departman: ad, kisiSayisi: g.kisi, toplamBrut: g.brut.toFixed(2), toplamNet: g.net.toFixed(2), isverenMaliyeti: g.maliyet.toFixed(2), kisiBasiOrtalamaMaliyet: (g.maliyet / g.kisi).toFixed(2),
   });
-  const departmanlar = [...gruplar.entries()].filter(([, g]) => g.kisi >= EN_AZ_KISI).map(([ad, g]) => satir(ad, g));
-  // Tek küçük departman "Diğer" diye birleşse bile o departmanın toplamıdır; yalnız birden çok küçük grup birleşince gösterilir.
-  const digerGoster = diger.kisi >= EN_AZ_KISI && kucukler.length > 1;
   const toplam = satirlar.reduce((t, s) => ({ kisi: t.kisi + 1, brut: t.brut + s.brutUcret, net: t.net + s.netUcret, maliyet: t.maliyet + s.isverenMaliyeti }), { kisi: 0, brut: 0, net: 0, maliyet: 0 });
-  return {
-    toplam: satir("Toplam", toplam),
-    departmanlar: [...departmanlar, ...(digerGoster ? [satir("Diğer (küçük departmanlar)", diger)] : [])],
-    ...(kucukler.length && !digerGoster ? { not: `${kucukler.length} küçük departmanın tutarı kişi ücretini ele vermemek için ayrıca verilmedi (toplama dahil).` } : {}),
-  };
+  // Küçük departmanlar toplamdan çıkarılarak bulunabilir (canlıda model bu çıkarmayı yaptı);
+  // birlikte de üç kişiden azsalar kırılım hiç verilmez.
+  if (kucukler.length && diger.kisi < EN_AZ_KISI) {
+    return { toplam: satir("Toplam", toplam), departmanlar: [], not: "Departman kırılımı verilmedi: küçük departmanların tutarı toplamdan çıkarılarak kişi ücretini ele verirdi." };
+  }
+  const departmanlar = [...gruplar.entries()].filter(([, g]) => g.kisi >= EN_AZ_KISI).map(([ad, g]) => satir(ad, g));
+  return { toplam: satir("Toplam", toplam), departmanlar: [...departmanlar, ...(kucukler.length ? [satir("Diğer (küçük departmanlar)", diger)] : [])] };
 }
 
 const izinTanimi = async (b: AracBaglami, id: string) => {
@@ -435,10 +434,13 @@ export const PERSONEL_ARACLARI = [
     async calistir(b) {
       const o = await cagir(b, UC.personelOzet, []);
       const tutarVer = (o.aktifPersonel ?? 0) >= EN_AZ_KISI;
+      // Küçük departmanların kişi toplamı da üçten azsa tutarları toplamdan çıkarılarak bulunur; o zaman hiçbir departmana tutar yazılmaz.
+      const kucukKisi = (o.departmanlar ?? []).filter((d: any) => d.adet < EN_AZ_KISI).reduce((t: number, d: any) => t + d.adet, 0);
+      const departmanTutari = tutarVer && (kucukKisi === 0 || kucukKisi >= EN_AZ_KISI);
       return {
         donem: o.donem, toplamPersonel: o.toplamPersonel, aktifPersonel: o.aktifPersonel, durumlar: o.durumlar,
         // Küçük departmanın ücret toplamı kişi ücretidir; yalnız kişi sayısı verilir.
-        departmanlar: (o.departmanlar ?? []).map((d: any) => (tutarVer && d.adet >= EN_AZ_KISI ? sec(d, ["ad", "adet", "isverenMaliyeti"]) : sec(d, ["ad", "adet"]))),
+        departmanlar: (o.departmanlar ?? []).map((d: any) => (departmanTutari && d.adet >= EN_AZ_KISI ? sec(d, ["ad", "adet", "isverenMaliyeti"]) : sec(d, ["ad", "adet"]))),
         ...(tutarVer ? { bordro: sec(o.bordro, ["acikAdet", "acikTutar", "donemIsverenMaliyeti", "donemTesvikTasarrufu", "trend"]), avans: o.avans } : { not: `Aktif personel ${EN_AZ_KISI}'ten az; tutarlar verilmez.` }),
         izin: o.izin,
         belgeler: { suresiDolmus: Array.isArray(o.belgeler?.suresiDolmus) ? o.belgeler.suresiDolmus.length : o.belgeler?.suresiDolmus, yaklasan: Array.isArray(o.belgeler?.yaklasan) ? o.belgeler.yaklasan.length : o.belgeler?.yaklasan },
