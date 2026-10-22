@@ -34,6 +34,12 @@ describe("ekstre cari önerisi sırası (KSB-17)", () => {
     expect(tx.cariBankaHesap.findFirst).not.toHaveBeenCalled();
   });
 
+  it("aynı unvanlı iki cari kartı varsa unvandan öneri yapılmaz", async () => {
+    const tx = bosTx({ cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([cari("m1", "MELEK TÜRKER"), cari("m2", "MELEK TÜRKER")]) } });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "MAAŞ - Gönderen: DEMO LTD , Alıcı: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: false, mutlak: D(100), doviz: "TRY" });
+    expect(r.cari).toBeNull();
+  });
+
   it("ad bulunamazsa eski sıraya (IBAN) düşer", async () => {
     const tx = bosTx({ cariBankaHesap: { findFirst: vi.fn().mockResolvedValue({ cari: cari("iban", "BAŞKA FİRMA") }) } });
     const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen:TANINMAYAN AD", karsiIban: "TR00", karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });

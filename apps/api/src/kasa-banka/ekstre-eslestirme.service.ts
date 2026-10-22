@@ -538,11 +538,16 @@ export class EkstreEslestirmeService {
     // ASCII'ye indirgenir (bankalar aksansız yazıyor); en uzun eşleşen unvan kazanır.
     const metin = metniNormalle(`${satir.aciklama} ${satir.karsiUnvan ?? ""}`);
     let enIyi: { id: string; kod: string; unvan: string } | null = null;
+    let esUnvanli = false;
     for (const c of await tx.cariHesap.findMany({ where: { tenantId, aktif: true }, select: sec })) {
       const unvan = metniNormalle(c.unvan);
-      if (unvan.length >= 4 && metin.includes(unvan) && unvan.length > (enIyi ? metniNormalle(enIyi.unvan).length : 0)) enIyi = c;
+      if (unvan.length < 4 || !metin.includes(unvan)) continue;
+      const enIyiUnvan = enIyi ? metniNormalle(enIyi.unvan) : "";
+      if (unvan === enIyiUnvan) esUnvanli = true;
+      else if (unvan.length > enIyiUnvan.length) { enIyi = c; esUnvanli = false; }
     }
-    if (enIyi) return { cari: enIyi, kaynak: "unvan" as CariEslesmeKaynagi };
+    // Aynı unvanlı iki kart varsa (mükerrer cari) hangisi olduğu bilinemez; rastgele seçilmez.
+    if (enIyi && !esUnvanli) return { cari: enIyi, kaynak: "unvan" as CariEslesmeKaynagi };
     // AI-19: açıklamada GİB biçimli fatura numarası (3 harf + 13 rakam) geçiyorsa o faturanın carisi.
     for (const no of `${satir.aciklama} ${satir.karsiUnvan ?? ""}`.toUpperCase().match(/\b[A-Z0-9]{3}20\d{11}\b/g) ?? []) {
       const f = await tx.fatura.findFirst({ where: { tenantId, no, durum: "kesin" }, select: { cari: { select: sec } } });
