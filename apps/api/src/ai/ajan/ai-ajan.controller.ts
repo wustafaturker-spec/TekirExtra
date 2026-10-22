@@ -37,7 +37,10 @@ export class AiAjanController {
     try {
       yaz("son", await this.isle(body, { olay: (e: AkisOlayi) => yaz("adim", e), sinyal: durdur.signal }));
     } catch (hata) {
-      yaz("hata", { mesaj: hata instanceof HttpException ? hata.message : "Asistan yanıt veremedi.", durum: hata instanceof HttpException ? hata.getStatus() : 500 });
+      // Tanı kodu (ör. AI_BOS_YANIT_STOP) akışsız uçtaki gibi istemciye ulaşır.
+      const govde = hata instanceof HttpException ? hata.getResponse() : null;
+      const hataKodu = govde && typeof govde === "object" && typeof (govde as { hataKodu?: unknown }).hataKodu === "string" ? (govde as { hataKodu: string }).hataKodu : undefined;
+      yaz("hata", { mesaj: hata instanceof HttpException ? hata.message : "Asistan yanıt veremedi.", durum: hata instanceof HttpException ? hata.getStatus() : 500, ...(hataKodu ? { hataKodu } : {}) });
     } finally {
       res.end();
     }

@@ -9,7 +9,7 @@ import { Module } from '@nestjs/common';
 import { ModuleRef, NestFactory, Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaClient, type Prisma } from '@prisma/client';
-import { chromium, type Browser } from 'playwright';
+import { chromium, type Browser, type Response as PwResponse } from 'playwright';
 import { afterAll, expect, it } from 'vitest';
 import { AuthGuard } from '../src/auth/auth.guard';
 import { RollerGuard } from '../src/auth/roller.guard';
@@ -41,6 +41,18 @@ const runtime = artefakt ? {
   ...yukle('ai/ajan/arac-yurutucu.js'), ...yukle('ai/ajan/uc-cagirici.js'), ...yukle('ai/ajan/araclar/index.js'),
   ...yukle('ai/saglayici/ai-bos-yanit.js'),
 } : { AuthGuard, RollerGuard, baglamAl, bosTutucuylaCalistir, RaporService, RaporController, AiAjanService, AiAjanController, AracYurutucu, UcCagirici, AJAN_ARACLARI, AiBosYanitHatasi };
+
+/** AI-82: asistan yanıtı SSE akışıdır; istenen olayın verisini döner. */
+async function sseSonucu(yanit: PwResponse, beklenen: 'son' | 'hata') {
+  expect(yanit.status()).toBe(200);
+  const olaylar = (await yanit.text()).split('\n\n').filter(Boolean).map(parca => ({
+    olay: /^event: (.*)$/m.exec(parca)?.[1],
+    veri: parca.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6)).join('\n'),
+  }));
+  const son = olaylar.at(-1);
+  expect(son?.olay, JSON.stringify(olaylar)).toBe(beklenen);
+  return JSON.parse(son!.veri);
+}
 
 async function bosPort() {
   const s = createServer();
@@ -184,7 +196,7 @@ it('HTTP JWT/rol + Chromium: aynı rapor, model hatasında kaynak kartı, geçmi
         await page.getByRole('textbox', { name: 'Asistana mesaj' }).fill('Bu dönemin net kârını göster');
         const cevapPromise = page.waitForResponse(r => r.url().includes('/ai/ajan/mesaj') && r.request().method() === 'POST');
         await page.getByRole('button', { name: 'Gönder', exact: true }).click();
-        const cevap = await (await cevapPromise).json();
+        const cevap = await sseSonucu(await cevapPromise, 'son');
         expect(cevap.finansAciklama.durum).toBe('dogrulandi');
         expect(cevap.finansAciklama.duzeltmeDurumu).toBe('dogrulandi');
         expect(jsonDuzeltmeSayisi).toBe(1);
@@ -198,7 +210,7 @@ it('HTTP JWT/rol + Chromium: aynı rapor, model hatasında kaynak kartı, geçmi
         await page.getByRole('textbox', { name: 'Asistana mesaj' }).fill('Tekrar göster');
         const hataPromise = page.waitForResponse(r => r.url().includes('/ai/ajan/mesaj') && r.request().method() === 'POST');
         await page.getByRole('button', { name: 'Gönder', exact: true }).click();
-        const hata = await (await hataPromise).json();
+        const hata = await sseSonucu(await hataPromise, 'son');
         expect(hata.finansAciklama.neden).toBe('model_hatasi');
         await page.getByText('AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.', { exact: false }).waitFor();
         await page.locator('details').filter({ has: page.getByText('Kaynak verileri (1)', { exact: true }) }).last().locator('summary').click();
@@ -211,9 +223,10 @@ it('HTTP JWT/rol + Chromium: aynı rapor, model hatasında kaynak kartı, geçmi
         await page.getByRole('textbox', { name: 'Asistana mesaj' }).fill('Merhaba');
         const bosPromise = page.waitForResponse(r => r.url().includes('/ai/ajan/mesaj') && r.request().method() === 'POST');
         await page.getByRole('button', { name: 'Gönder', exact: true }).click();
-        const bosHttp = await bosPromise;
-        expect(bosHttp.status()).toBe(503);
-        expect((await bosHttp.json()).hataKodu).toBe('AI_BOS_YANIT_STOP');
+        // AI-82: akışlı uç HTTP 200 açar; hata `hata` olayında durum ve tanı koduyla gelir.
+        const bosHata = await sseSonucu(await bosPromise, 'hata');
+        expect(bosHata.durum).toBe(503);
+        expect(bosHata.hataKodu).toBe('AI_BOS_YANIT_STOP');
         expect(bosDeneme).toBe(3);
         await page.getByText('Gemini kullanılabilir yanıt üretmedi. Tanı kodu: AI_BOS_YANIT_STOP.', { exact: true }).waitFor();
         expect(await page.getByText('Kaynak verileri (1)', { exact: true }).count()).toBe(2);
