@@ -108,6 +108,8 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
   const gosterilecekKurlar = [...new Set([fiyatDovizi, fiyat?.kaynakDoviz, belgeDovizi].filter((d): d is string => Boolean(d) && d !== "TRY"))];
   if (!gosterilecekKurlar.length) gosterilecekKurlar.push("USD", "EUR");
   useEffect(() => { if (acik) void kurlariYukle(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [acik, belgeTarihi]);
+  // Kurlar fiyattan sonra gelirse çevrilemeyen fiyat ve önerisi kurla yeniden istenir.
+  useEffect(() => { if (kurDurumu === "hazir" && fiyat && !fiyat.cevrilebilir) void fiyatGetir(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [kurDurumu]);
   useEffect(() => {
     if (!acik) return;
     setStokId(baslangicStokId ?? ""); setVaryantId(baslangicVaryantId ?? ""); setMiktar("1"); setFiyat(null); setHata("");
@@ -125,13 +127,15 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
       setVaryantlar(liste);
       const gecerli = liste.some((v) => v.id === varyantId) ? varyantId : "";
       setVaryantId(gecerli);
-      void fiyatGetir("1", gecerli, fiyatListesiId);
-    }).catch(() => { setVaryantlar([]); void fiyatGetir("1", "", fiyatListesiId); });
+      void fiyatGetir(undefined, gecerli, fiyatListesiId);
+    }).catch(() => { setVaryantlar([]); void fiyatGetir(undefined, "", fiyatListesiId); });
     // Yeni ürün seçildiğinde o ürünün başlangıç fiyatı yüklenir.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stokId]);
 
-  async function fiyatGetir(kaynakKur = urunKuru, seciliVaryant = varyantId, seciliListe = fiyatListesiId, seciliMiktar = miktar) {
+  // Kur bilinmeden ürün kuru gönderilmez: "1" gönderilince 0,57 USD'lik fiyat önerisi 0,57 TL sayılıyordu.
+  // Fiyat başka dövizdeyse ikinci istek TCMB kuruyla (ya da kullanıcının yazdığı kurla) yapılır.
+  async function fiyatGetir(kaynakKur?: string, seciliVaryant = varyantId, seciliListe = fiyatListesiId, seciliMiktar = miktar) {
     if (!stokId) return;
     const p = new URLSearchParams({ tip, dovizCinsi: belgeDovizi, belgeKuru: belgeDovizi === "TRY" ? "1" : belgeKuru || "1" });
     if (cariId) p.set("cariId", cariId);
@@ -141,9 +145,11 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
     if (seciliMiktar) p.set("miktar", seciliMiktar);
     try {
       const t = await api<Tavsiye>(`/stok/${stokId}/tavsiye-fiyat?${p}`);
+      const tcmbKuru = tcmbKurlari[t.kaynakDoviz];
+      if (!kaynakKur && !t.cevrilebilir && tcmbKuru) return fiyatGetir(String(tcmbKuru), seciliVaryant, seciliListe, seciliMiktar);
       // Tavsiye fiyat ana birim başınadır; seçili ek birime ölçeklenir.
       setFiyat(t); setBirimFiyat(String(Number((t.kaynakFiyat * birimKatsayisi(seciliStok, birim)).toFixed(4)))); setFiyatDovizi(t.kaynakDoviz); setIskonto(String(t.iskontoOrani));
-      if (t.kaynakDoviz === "TRY") setUrunKuru("1");
+      setUrunKuru(t.kaynakDoviz === "TRY" ? "1" : kaynakKur ?? String(tcmbKuru ?? urunKuru));
       setHata(t.cevrilebilir ? "" : `${t.kaynakDoviz} fiyatını ${belgeDovizi} para birimine çevirmek için ürün kurunu girin.`);
     } catch (e) { setHata(e instanceof Error ? e.message : "Fiyat alınamadı"); }
   }
@@ -188,7 +194,13 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
             <div className="fiyat-onerisi__ust">
               <span>Fiyat önerisi: <strong>{fiyat.fiyatOnerisi.onerilenFiyat.toFixed(2)} {fiyat.fiyatOnerisi.paraBirimi}</strong> <small>(müşteri grubu, vade ve miktar kuralı)</small></span>
               {/* Önerilen fiyat iskontolar düşülmüş net fiyattır; satıra ayrıca iskonto yazılmaz. */}
-              <Button size="sm" type="button" onClick={() => { setBirimFiyat(String(fiyat.fiyatOnerisi!.onerilenFiyat)); setIskonto("0"); }}>Öneriyi uygula</Button>
+              <Button size="sm" type="button" onClick={() => {
+                // Öneri belge dövizinde ve ana birim başınadır; alan ise fiyat dövizinde ve seçili birimde.
+                // Toplamdaki çevrimin (belgeyeCevrilmisFiyat) tersiyle yazılır ki satır tutarı öneriye eşit olsun.
+                const kaynakKur = tcmbKurlari[fiyatDovizi]; const hedefKur = belgeDovizi === "TRY" ? 1 : Number(belgeKuru);
+                const deger = kaynakKur && hedefKur ? fiyat.fiyatOnerisi!.onerilenFiyat * hedefKur / kaynakKur : fiyat.fiyatOnerisi!.onerilenFiyat;
+                setBirimFiyat(String(Number((deger * birimKatsayisi(seciliStok, birim)).toFixed(4)))); setIskonto("0");
+              }}>Öneriyi uygula</Button>
             </div>
             <div className="fiyat-onerisi__ayrinti">
               {fiyat.fiyatOnerisi.altSinirFiyat !== null && <span>Taban: {fiyat.fiyatOnerisi.altSinirFiyat.toFixed(2)}</span>}
@@ -204,10 +216,10 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
         {kurDurumu === "hazir" && <div className="product-picker__rates">{gosterilecekKurlar.map((d) => <span key={d}>{d} alış <strong>{tcmbKurlari[d]?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span>)}<small>{kurTarihi}</small></div>}
         <div className="product-picker__grid">
           <Field label="Miktar" htmlFor={miktarId}><div className="document-line-qty"><Input id={miktarId} autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /><SatirBirimi stok={seciliStok} value={birim} onChange={birimDegistir} /></div></Field>
-          {varyantlar.length > 0 && <Field label="Varyant"><Select required value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(urunKuru, e.target.value, fiyatListesiId); }}><option value="">Varyant seçin</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
-          <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => { setFiyatListesiId(e.target.value); void fiyatGetir(urunKuru, varyantId, e.target.value); }}><option value="">Cari / ürün varsayılanı</option>{listeler.map((l) => <option value={l.id} key={l.id}>{l.ad} ({l.dovizCinsi})</option>)}</Select></Field>
+          {varyantlar.length > 0 && <Field label="Varyant"><Select required value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(undefined, e.target.value, fiyatListesiId); }}><option value="">Varyant seçin</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
+          <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => { setFiyatListesiId(e.target.value); void fiyatGetir(undefined, varyantId, e.target.value); }}><option value="">Cari / ürün varsayılanı</option>{listeler.map((l) => <option value={l.id} key={l.id}>{l.ad} ({l.dovizCinsi})</option>)}</Select></Field>
           <Field label="Fiyat para birimi"><Select value={fiyatDovizi} onChange={(e) => fiyatDoviziDegistir(e.target.value)}><DovizSecenekleri /></Select></Field>
-          <Field label={`Ürün kuru (${fiyatDovizi} → TRY)`}><Input type="number" min="0.000001" step="0.000001" disabled={fiyatDovizi === "TRY"} value={fiyatDovizi === "TRY" ? "1" : String(tcmbKurlari[fiyatDovizi] ?? urunKuru)} onChange={(e) => { setUrunKuru(e.target.value); setTcmbKurlari((k) => ({ ...k, [fiyatDovizi]: Number(e.target.value) })); }} /></Field>
+          <Field label={`Ürün kuru (${fiyatDovizi} → TRY)`}><Input type="number" min="0.000001" step="0.000001" disabled={fiyatDovizi === "TRY"} value={fiyatDovizi === "TRY" ? "1" : String(tcmbKurlari[fiyatDovizi] ?? urunKuru)} onChange={(e) => { setUrunKuru(e.target.value); setTcmbKurlari((k) => ({ ...k, [fiyatDovizi]: Number(e.target.value) })); }} onBlur={() => { if (fiyat?.fiyatOnerisi && fiyatDovizi !== "TRY" && fiyatDovizi === fiyat.kaynakDoviz) void fiyatGetir(urunKuru); }} /></Field>
           <Field label={`Belge kuru (${belgeDovizi} → TRY)`}><Input readOnly value={belgeDovizi === "TRY" ? "1" : belgeKuru} /></Field>
           <Field label="Birim fiyat" htmlFor={fiyatId}><div className="row"><Input id={fiyatId} type="number" min="0" step="any" value={birimFiyat} onChange={(e) => setBirimFiyat(e.target.value)} /><strong>{fiyatDovizi}</strong></div></Field>
           <Field label="KDV (%)"><Input type="number" min="0" max="100" value={kdv} onChange={(e) => setKdv(e.target.value)} /></Field>
