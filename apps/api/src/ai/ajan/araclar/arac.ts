@@ -131,6 +131,11 @@ export const adres = {
   gelenEirsaliye: () => "/panel/ebelge/irsaliye-gelen",
   satinAlma: (id: string) => `/panel/satin-alma/talepler?talep=${id}`,
   duzeltme: () => "/panel/islemler",
+  crmFirsat: (id: string) => `/panel/crm/${id}`,
+  uretimEmri: (id: string) => `/panel/uretim/emirler/${id}`,
+  personel: (id: string) => `/panel/personel/${id}`,
+  izinler: () => "/panel/personel/izinler",
+  bilgiTalepleri: () => "/panel/personel/bilgi-talepleri",
 };
 
 export function para(deger: unknown, doviz = "TRY"): string {

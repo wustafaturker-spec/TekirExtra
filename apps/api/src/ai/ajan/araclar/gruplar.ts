@@ -17,6 +17,9 @@ export const ARAC_GRUPLARI = {
   gelen_ebelge: "Gelen e-Fatura ve e-İrsaliye: arama, okuma, faturaya işleme, kabul/ret yanıtı, XML yükleme.",
   satin_alma: "Satın alma talepleri: oluşturma, teklif ekleme/seçme, onay/ret, siparişe dönüştürme.",
   denetim: "Düzeltme Merkezi kayıtları, atama ve durum; dönem kapatma kontrolleri.",
+  uretim: "Üretim emirleri (arama, ayrıntı, taslak, planlama, malzeme ayırma, kapatma, iptal), reçete, kapasite, kalite, üretim maliyeti.",
+  personel: "Personel kadrosu, izin talepleri ve bakiyesi, avans özeti, bilgi talepleri, toplu personel maliyeti; izin ve bilgi talebi onay/ret.",
+  crm: "CRM satış fırsatları: arama, ayrıntı, yeni fırsat, fırsattan teklif, güncelleme ve aşama değişikliği.",
 } as const;
 
 export type AracGrubu = keyof typeof ARAC_GRUPLARI;
@@ -31,6 +34,9 @@ export const GRUP_ARACLARI: Record<AracGrubu, string[]> = {
   gelen_ebelge: ["gelen_efatura_ara", "gelen_efatura_getir", "gelen_efatura_isle", "gelen_efatura_yanit", "gelen_efatura_xml_yukle", "gelen_eirsaliye_ara", "gelen_eirsaliye_getir", "gelen_eirsaliye_yanit"],
   satin_alma: ["satin_alma_secenekleri", "satin_alma_talep_ara", "satin_alma_talep_getir", "satin_alma_talebi_olustur", "satin_alma_talebini_onaya_sun", "satin_alma_teklif_ekle", "satin_alma_talebini_onayla", "satin_alma_talebini_reddet", "satin_alma_teklif_sec", "satin_alma_siparise_donustur"],
   denetim: ["duzeltme_kayitlari", "duzeltme_ata", "duzeltme_durum_degistir", "donem_kapatma_kontrolleri"],
+  uretim: ["uretim_ozeti", "uretim_emri_ara", "uretim_emri_getir", "uretim_kapasite", "recete_getir", "kalite_kontrolleri", "uretim_maliyet_raporu", "uretim_emri_taslagi_olustur", "uretim_emrini_planla", "uretim_malzemesini_rezerve_et", "uretim_emrini_iptal_et", "uretim_emrini_kapat"],
+  personel: ["personel_ara", "personel_getir", "personel_ozeti", "personel_maliyet_raporu", "izin_talepleri", "izin_bakiyesi", "avans_ozeti", "bilgi_talepleri", "izin_talebini_onayla", "izin_talebini_reddet", "bilgi_talebini_onayla", "bilgi_talebini_reddet"],
+  crm: ["crm_firsat_ara", "crm_firsat_getir", "crm_firsat_olustur", "crm_firsattan_teklif", "crm_firsat_guncelle", "crm_firsat_asama_degistir"],
 };
 
 const ARACIN_GRUBU = new Map<string, AracGrubu>(
@@ -57,6 +63,9 @@ const SOZCUK_GRUPLARI: Array<[RegExp, AracGrubu[]]> = [
   [/gelen|alis faturasi|tedarikci faturasi|xml|ubl|kabul|\bret\b|\bred\b|reddet/, ["gelen_ebelge"]],
   [/satin ?al|tedarik|talep/, ["satin_alma"]],
   [/duzeltme|hata|donem|kapanis|kapat/, ["denetim"]],
+  [/uretim|imalat|emir|recete|kapasite|kalite|is merkezi|mamul/, ["uretim"]],
+  [/personel|calisan|izin|bordro|maas|avans|kadro|ise giris|isten|departman/, ["personel"]],
+  [/firsat|huni|lead|aday musteri|pazarlik|kazanil|kaybedil|crm/, ["crm"]],
 ];
 
 /** AI-78 ekran kaydı türü → grup. */
@@ -80,7 +89,7 @@ const SAYFA_GRUPLARI: Array<[string, AracGrubu[]]> = [
   ["/panel/satis", ["satis"]],
   ["/panel/cari", ["tahsilat", "kart"]],
   ["/panel/stok", ["kart", "satis"]],
-  ["/panel/crm", ["tahsilat"]],
+  ["/panel/crm", ["crm", "tahsilat"]],
   ["/panel/kasa-banka", ["finans"]],
   ["/panel/masraflar", ["finans"]],
   ["/panel/gelirler", ["finans"]],
@@ -92,6 +101,9 @@ const SAYFA_GRUPLARI: Array<[string, AracGrubu[]]> = [
   ["/panel/satin-alma", ["satin_alma"]],
   ["/panel/islemler", ["denetim"]],
   ["/panel/donem-kapatma", ["denetim", "finans"]],
+  ["/panel/uretim", ["uretim"]],
+  ["/panel/personel", ["personel"]],
+  ["/panel/self-servis", ["personel"]],
 ];
 
 export const SAYFA_YOLU = /^\/panel(\/[a-z0-9-]+){0,4}\/?$/;

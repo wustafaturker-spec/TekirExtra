@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, Logger, type Type } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, type CanActivate, type Type } from "@nestjs/common";
+import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { ModuleRef, Reflector } from "@nestjs/core";
 import type { EbelgeUygulamaKodu, Rol } from "@tekirextra/shared";
 import { ROLLER_ANAHTAR } from "../../auth/roller.decorator";
@@ -8,6 +9,14 @@ import { PrismaService } from "../../core/prisma.service";
 import { EbelgeUygulamalariService } from "../../ebelge/ebelge-uygulamalari.service";
 import { ebelgeUygulamasiDenetle } from "../../ebelge/ebelge-uygulamasi.guard";
 import { EBELGE_UYGULAMASI_ANAHTAR } from "../../ebelge/ebelge-uygulamasi.decorator";
+import { PersonelErisimGuard } from "../../personel/personel-erisim.guard";
+
+/**
+ * AI-87: HTTP isteği okumadan, yalnız istek bağlamıyla karar veren korumalar
+ * araç çağrısında da çalışır. Listede olmayan korumalı uç araçtan çağrılamaz;
+ * yeni bir koruma sessizce atlanmasın diye reddedilir.
+ */
+const ARACTA_CALISAN_KORUMALAR = new Set<unknown>([PersonelErisimGuard]);
 
 /** Bir aracın dayandığı ekran ucu: denetleyici sınıfı + metot adı. */
 export interface UcTanimi {
@@ -53,6 +62,18 @@ export class UcCagirici {
     return rolUcaYetkili(rol, gerekli);
   }
 
+  private readonly korumalar = new Map<unknown, Promise<CanActivate>>();
+
+  private async korumalariCalistir(uc: UcTanimi, handler: object): Promise<void> {
+    const siniflar = [...(this.reflector.get<unknown[]>(GUARDS_METADATA, uc.denetleyici) ?? []), ...(this.reflector.get<unknown[]>(GUARDS_METADATA, handler as never) ?? [])];
+    for (const sinif of siniflar) {
+      if (!ARACTA_CALISAN_KORUMALAR.has(sinif)) throw new ForbiddenException(`${uc.yol} asistan aracından çağrılamaz`);
+      if (!this.korumalar.has(sinif)) this.korumalar.set(sinif, this.moduleRef.create(sinif as Type<CanActivate>));
+      const koruma = await this.korumalar.get(sinif)!;
+      if (!(await koruma.canActivate(undefined as never))) throw new ForbiddenException("Bu işlem için yetkiniz yok");
+    }
+  }
+
   async cagir<T = unknown>(uc: UcTanimi, argumanlar: unknown[], iz?: CagriIzi): Promise<T> {
     const baglam = aktifBaglam();
     const handler = this.handler(uc);
@@ -62,6 +83,8 @@ export class UcCagirici {
     if (ebelge?.length) {
       await ebelgeUygulamasiDenetle(ebelge, this.moduleRef.get(EbelgeUygulamalariService, { strict: false }));
     }
+
+    await this.korumalariCalistir(uc, handler);
 
     const denetleyici = this.moduleRef.get(uc.denetleyici, { strict: false }) as Record<string, unknown>;
     const sonuc = (await handler.apply(denetleyici, argumanlar)) as T;

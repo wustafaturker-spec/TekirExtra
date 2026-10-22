@@ -23,6 +23,13 @@ import { BildirimlerController } from "../../../bildirimler/bildirimler.controll
 import { DonemKapatmaController } from "../../../donem-kapatma/donem-kapatma.controller";
 import { SohbetEkController } from "../sohbet-ek.controller";
 import { AiOnayOzetiController } from "../../onay/ai-onay-ozeti.controller";
+import { CrmFirsatController } from "../../../crm/crm-firsat.controller";
+import { UretimController } from "../../../uretim/uretim.controller";
+import { DepoController } from "../../../stok/depo.controller";
+import { PersonelController } from "../../../personel/personel.controller";
+import { PersonelRaporController } from "../../../personel/personel-rapor.controller";
+import { IzinController } from "../../../personel/izin.controller";
+import { SelfServisDavetController } from "../../../personel/self-servis.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -143,4 +150,44 @@ export const UC = {
 
   // AI-36: e-posta teklif talebinden açılan taslak fırsata bağlanır.
   crmTeklifBagla: uc(CrmBelgeController, "bagla", "POST /crm/firsatlar/:firsatId/belgeler"),
+
+  // AI-89…91: CRM fırsatları.
+  crmFirsatListe: uc(CrmFirsatController, "listele", "GET /crm/firsatlar"),
+  crmFirsatGetir: uc(CrmFirsatController, "getir", "GET /crm/firsatlar/:id"),
+  crmFirsatOlustur: uc(CrmFirsatController, "olustur", "POST /crm/firsatlar"),
+  crmFirsatGuncelle: uc(CrmFirsatController, "guncelle", "PUT /crm/firsatlar/:id"),
+  crmFirsatAsama: uc(CrmFirsatController, "asamaDegistir", "PATCH /crm/firsatlar/:id/asama"),
+  crmFirsatBelgeler: uc(CrmBelgeController, "listele", "GET /crm/firsatlar/:firsatId/belgeler"),
+  crmFirsattanTeklif: uc(CrmBelgeController, "teklifOlustur", "POST /crm/firsatlar/:firsatId/belgeler/teklif"),
+
+  // AI-85/86: üretim.
+  uretimOzet: uc(UretimController, "ozet", "GET /uretim/ozet"),
+  uretimEmirListe: uc(UretimController, "emirler", "GET /uretim/emirler"),
+  uretimEmirGetir: uc(UretimController, "emir", "GET /uretim/emirler/:id"),
+  uretimMalzemeUygunlugu: uc(UretimController, "malzemeUygunlugu", "GET /uretim/emirler/:id/malzeme-uygunlugu"),
+  uretimEmirMaliyet: uc(UretimController, "maliyet", "GET /uretim/emirler/:id/maliyet"),
+  uretimKapasite: uc(UretimController, "kapasite", "GET /uretim/kapasite"),
+  uretimRecete: uc(UretimController, "recete", "GET /uretim/receteler/:stokId"),
+  uretimKalite: uc(UretimController, "kaliteKontrolleri", "GET /uretim/kalite-kontrolleri"),
+  uretimMaliyetRaporu: uc(UretimController, "maliyetRaporu", "GET /uretim/maliyet-raporu"),
+  uretimEmirOlustur: uc(UretimController, "emirOlustur", "POST /uretim/emirler"),
+  uretimPlanla: uc(UretimController, "planla", "POST /uretim/emirler/:id/planla"),
+  uretimRezerve: uc(UretimController, "rezerveEt", "POST /uretim/emirler/:id/rezerve-et"),
+  uretimKapat: uc(UretimController, "kapat", "POST /uretim/emirler/:id/kapat"),
+  uretimIptal: uc(UretimController, "iptal", "POST /uretim/emirler/:id/iptal"),
+  depoListe: uc(DepoController, "listele", "GET /depo"),
+
+  // AI-87/88: personel (PersonelErisimGuard araçta da çalışır).
+  personelListe: uc(PersonelController, "listele", "GET /personel"),
+  personelGetir: uc(PersonelController, "getir", "GET /personel/:id"),
+  personelAvanslar: uc(PersonelController, "avansListele", "GET /personel/avanslar"),
+  personelOzet: uc(PersonelRaporController, "ozet", "GET /personel/raporlar/ozet"),
+  personelMaliyet: uc(PersonelRaporController, "maliyetRaporu", "GET /personel/raporlar/maliyet"),
+  izinListe: uc(IzinController, "listele", "GET /personel/izinler"),
+  izinBakiyeleri: uc(IzinController, "bakiyeler", "GET /personel/izinler/bakiyeler/:personelId"),
+  izinOnayla: uc(IzinController, "onayla", "POST /personel/izinler/:id/onayla"),
+  izinReddet: uc(IzinController, "reddet", "POST /personel/izinler/:id/reddet"),
+  bilgiTalepleri: uc(SelfServisDavetController, "bilgiTalepleri", "GET /personel/bilgi-talepleri"),
+  bilgiOnayla: uc(SelfServisDavetController, "bilgiOnayla", "POST /personel/bilgi-talepleri/:talepId/onayla"),
+  bilgiReddet: uc(SelfServisDavetController, "bilgiReddet", "POST /personel/bilgi-talepleri/:talepId/reddet"),
 };

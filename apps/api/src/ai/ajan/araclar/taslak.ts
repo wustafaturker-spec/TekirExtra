@@ -4,7 +4,7 @@ import { faturaKurTipi } from "@tekirextra/shared";
 import { adres, arac, BUGUN, cagir, sayiMetni, sec, tarih, uuid, type AracBaglami } from "./arac";
 import { UC } from "./uclar";
 
-const satirGirdisi = z.object({
+export const satirGirdisi = z.object({
   stokId: uuid("Stok kartı kimliği (stok_ara sonucundaki id)"),
   varyantId: uuid("Varyantlı üründe varyant kimliği (zorunlu)").optional(),
   miktar: sayiMetni("Miktar"),
@@ -14,10 +14,10 @@ const satirGirdisi = z.object({
 });
 type SatirGirdisi = z.infer<typeof satirGirdisi>;
 
-const dovizGirdisi = z.string().length(3).optional().describe("Belge dövizi (TRY, USD, EUR…); varsayılan TRY");
+export const dovizGirdisi = z.string().length(3).optional().describe("Belge dövizi (TRY, USD, EUR…); varsayılan TRY");
 
 /** Döviz kuru, ekranın kullandığı kur ucundan (kur tipi fatura kuralıyla). */
-async function kurBul(b: AracBaglami, doviz: string, gun: string, faturaTipi: string): Promise<string> {
+export async function kurBul(b: AracBaglami, doviz: string, gun: string, faturaTipi: string): Promise<string> {
   if (doviz === "TRY") return "1";
   const k = await cagir(b, UC.dovizKuru, [gun, faturaKurTipi(faturaTipi)]);
   const deger = k?.kurlar?.[doviz];
@@ -30,7 +30,7 @@ async function kurBul(b: AracBaglami, doviz: string, gun: string, faturaTipi: st
  * verilmemişse fiyat önerisi ucundan (fiyat listesi, döviz çevrimi).
  * KDV dışı vergiler gönderilmez; sunucu kart vergilerini uygular.
  */
-async function satirHazirla(
+export async function satirHazirla(
   b: AracBaglami,
   s: SatirGirdisi,
   ortam: { cariId: string; yon: string; doviz: string; kur: string; gun: string; faturaTipi: string },

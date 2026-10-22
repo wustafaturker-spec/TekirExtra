@@ -1,9 +1,10 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { describe, expect, it, vi } from "vitest";
 import { Roller } from "../../auth/roller.decorator";
 import { istekBaglami } from "../../core/istek-baglami";
 import { EbelgeUygulamasi } from "../../ebelge/ebelge-uygulamasi.decorator";
+import { PersonelErisimGuard } from "../../personel/personel-erisim.guard";
 import { UcCagirici } from "./uc-cagirici";
 
 class OrnekDenetleyici {
@@ -103,5 +104,40 @@ describe("uç çağırıcı Nest kapsayıcısında", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("uç korumaları araçta (AI-87)", () => {
+  class BilinmeyenKoruma { canActivate() { return true; } }
+  @UseGuards(PersonelErisimGuard)
+  class PersonelDenetleyici { async oku() { return { tamam: true }; } }
+  class KorumaliDenetleyici { @UseGuards(BilinmeyenKoruma) async oku() { return {}; } }
+
+  function korumaliKur(maasMuhasebeyeAcik: boolean) {
+    const denetleyiciler = new Map<unknown, object>([[PersonelDenetleyici, new PersonelDenetleyici()], [KorumaliDenetleyici, new KorumaliDenetleyici()]]);
+    const ayarlar = { getir: vi.fn().mockResolvedValue({ maasMuhasebeyeAcik }) };
+    const moduleRef = { get: vi.fn((tip: unknown) => denetleyiciler.get(tip)), create: vi.fn(async (tip: new (a: unknown) => unknown) => new tip(ayarlar)) };
+    const uc = new UcCagirici(moduleRef as never, new Reflector(), { tenantIslem: vi.fn() } as never);
+    const olarak = <T>(rol: string, fn: () => Promise<T>) => istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: rol as never } }, fn);
+    return { uc, olarak, moduleRef };
+  }
+  const PERSONEL_UCU = { denetleyici: PersonelDenetleyici, yontem: "oku", yol: "GET /personel" };
+
+  it("personel verisi muhasebeye kapalıysa araç da okuyamaz", async () => {
+    const { uc, olarak } = korumaliKur(false);
+    await expect(olarak("muhasebe", () => uc.cagir(PERSONEL_UCU, []))).rejects.toThrow(/muhasebe rolüne kapalı/);
+    expect(await olarak("ik", () => uc.cagir(PERSONEL_UCU, []))).toEqual({ tamam: true });
+  });
+
+  it("açıkken muhasebe okur; koruma bir kez oluşturulur", async () => {
+    const { uc, olarak, moduleRef } = korumaliKur(true);
+    await olarak("muhasebe", () => uc.cagir(PERSONEL_UCU, []));
+    await olarak("muhasebe", () => uc.cagir(PERSONEL_UCU, []));
+    expect(moduleRef.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("tanınmayan korumalı uç araçtan çağrılamaz", async () => {
+    const { uc, olarak } = korumaliKur(true);
+    await expect(olarak("yonetici", () => uc.cagir({ denetleyici: KorumaliDenetleyici, yontem: "oku", yol: "GET /korumali" }, []))).rejects.toThrow(/asistan aracından çağrılamaz/);
   });
 });

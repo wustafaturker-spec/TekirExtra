@@ -42,3 +42,11 @@ describe("araç grupları (AI-84)", () => {
     expect(t.aciklama).not.toContain("satis:");
   });
 });
+
+describe("araç uçları", () => {
+  it("her uç tanımı denetleyicide var olan bir metodu gösterir", async () => {
+    const { UC } = await import("./uclar");
+    const eksik = Object.entries(UC).filter(([, u]) => typeof (u.denetleyici.prototype as Record<string, unknown>)[u.yontem] !== "function").map(([ad, u]) => `${ad}: ${u.denetleyici.name}.${u.yontem}`);
+    expect(eksik).toEqual([]);
+  });
+});
