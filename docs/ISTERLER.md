@@ -1247,6 +1247,7 @@ CLI'ı ve `/intelligence` uçları) kaldırılır; analiz mevcut AI görev hatt�
 | AI-89 | ✅ **Asistan — CRM fırsat okuma** (2026-10-22 onaylandı): `crm` grubu; fırsat ara (aşamaya göre), fırsat getir (bağlı belgeleriyle). | Z |
 | AI-90 | ✅ **Asistan — CRM fırsat açma** (2026-10-22 onaylandı): yeni fırsat (cari, başlık, tahmini tutar, aşama, kapanış tarihi) ve fırsattan teklif taslağı (taslak sınıfı). | Z |
 | AI-91 | ✅ **Asistan — CRM fırsat değişikliği** (2026-10-22 onaylandı): fırsat güncelleme ve aşama değiştirme (kazanıldı/kaybedildi dahil) onay sınıfı; önizlemede eski/yeni değerler. AI-84 süzgecine `uretim`, `personel`, `crm` grupları sözcük ve sayfa eşlemeleriyle eklenir; MCP de bu araçları görür. | Z |
+| AI-92 | ✅ **Asistan ekonomik modelde** (2026-10-22; kullanıcı kararı): EVREN ölçümünde deepseek-v4.1-flash kısa yanıtı 4–22 sn (uçlarda 60 sn zaman aşımı), qwen3.8-flash-next 0,5–2 sn üretti; altı örnek soruda araç seçimleri aynıydı. Asistan `EKONOMIK_OZELLIKLER`e alındı: ekonomik model tanımlıysa araçlı sohbet onunla yapılır. "Derin analiz" ayrı güçlü sağlayıcı yoksa güçlü/ana modele, finans açıklamasının JSON düzeltmesi ana modele gider (`kiraciSaglayicisi` `derin`/`anaModel`). Ayarlar metni güncellendi. Düşünme kapatmanın etkisi yoktu (reasoning_tokens 0). | Z |
 
 ### 3.19 CRM Fırsat–Belge Bağları (CRM)
 

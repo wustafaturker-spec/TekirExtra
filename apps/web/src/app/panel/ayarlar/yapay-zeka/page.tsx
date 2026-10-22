@@ -245,17 +245,17 @@ export default function YapayZekaAyarlariSayfasi() {
             <div style={{ gridColumn: "1 / -1", padding: 14, border: "1px solid var(--border)", borderRadius: 10 }}>
               <strong style={{ fontSize: 13 }}>İş karmaşıklığına göre model yönlendirme</strong>
               <p className="muted" style={{ margin: "6px 0 12px", fontSize: 12 }}>
-                Özet, görev, hatırlatma ve e-Belge ön denetimi ekonomik modele; asistan, tarama, teklif ve ekstre işlemleri güçlü modele gider. Boş bırakılan alan ana model adını kullanır. Yavaş bir ana modelde kısa işler için hızlı bir model seçin (ör. EVREN&apos;de gemma-4-31b). Dış sağlayıcıda eklenen her model yurt dışı aktarım onayını yeniler.
+                Özet, görev, hatırlatma, e-Belge ön denetimi ve asistan sohbeti ekonomik modele; tarama, teklif, ekstre ve asistandaki “Derin analiz” güçlü modele gider; asistanın finans açıklaması düzeltmesi ana modelde yapılır. Boş bırakılan alan ana model adını kullanır. Yavaş bir ana modelde kısa işler için hızlı bir model seçin (ör. EVREN&apos;de gemma-4-31b). Dış sağlayıcıda eklenen her model yurt dışı aktarım onayını yeniler.
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
                 <div>
-                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Ekonomik model (özet/görev/hatırlatma/ön denetim)</label>
+                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Ekonomik model (asistan/özet/görev/hatırlatma/ön denetim)</label>
                   <Input maxLength={120} placeholder={saglayici === "ollama" ? "llama3.2:3b" : "boşsa ana model"} value={ekonomikModelAdi} onChange={(e) => setEkonomikModelAdi(e.target.value)} />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Güçlü model (asistan/tarama/teklif/ekstre)</label>
+                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Güçlü model (Derin analiz/tarama/teklif/ekstre)</label>
                   {ayriGuclu
-                    ? <p className="muted" style={{ margin: 0, fontSize: 13 }}>Ayrı güçlü sağlayıcı tanımlı ({ayriGuclu.modelAdi}); asistan ana modelle çalışır, Derin analiz o sağlayıcıya gider. Aşağıdaki “Güçlü sağlayıcı” kartından yönetilir.</p>
+                    ? <p className="muted" style={{ margin: 0, fontSize: 13 }}>Ayrı güçlü sağlayıcı tanımlı ({ayriGuclu.modelAdi}); asistan ekonomik modelle çalışır, Derin analiz o sağlayıcıya gider. Aşağıdaki “Güçlü sağlayıcı” kartından yönetilir.</p>
                     : <Input maxLength={120} placeholder={saglayici === "ollama" ? "qwen2.5:14b" : "boşsa ana model"} value={gucluModelAdi} onChange={(e) => setGucluModelAdi(e.target.value)} />}
                 </div>
               </div>

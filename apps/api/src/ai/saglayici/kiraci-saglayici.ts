@@ -29,8 +29,13 @@ export function ayardanYapilandirma(ayar: Pick<TenantAiAyari, "saglayici" | "api
 /** AI-15: sayaçta görünen özellik. */
 export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim" | "gelendenetim";
 
-/** Kısa, ucuz işler ekonomik modele gider; geri kalanlar güçlü modele. */
-export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim"];
+/**
+ * Kısa, ucuz işler ekonomik modele gider; geri kalanlar güçlü modele. Asistan
+ * 2026-10-22'de eklendi: EVREN deepseek kısa yanıtı 4–22 sn'de, qwen ekonomik
+ * model 0,5–2 sn'de üretiyor ve araç seçimleri aynı çıktı; "Derin analiz" ve
+ * finans açıklaması düzeltmesi ana modelde kalır (`anaModel`, `derin`).
+ */
+export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim", "asistan"];
 
 /**
  * Özelliğin modeli: ekonomik işte ekonomik, diğerlerinde güçlü model; boş
@@ -135,7 +140,14 @@ async function cagriSay(prisma: PrismaService, tenantId: string, ozellik: AiOzel
 export async function kiraciSaglayicisi(
   prisma: PrismaService,
   tenantId: string,
-  secenek: { ozellik: AiOzelligi; varsayilan?: () => IAiProvider; /** AI-81: "Derin analiz": güçlü sağlayıcı tanımlıysa ona gider. */ derin?: boolean },
+  secenek: {
+    ozellik: AiOzelligi;
+    varsayilan?: () => IAiProvider;
+    /** AI-81: "Derin analiz": güçlü sağlayıcı tanımlıysa ona, yoksa güçlü/ana modele gider. */
+    derin?: boolean;
+    /** Ekonomik yönlendirmeyi atlar; ekonomik özelliğin ana modelle yapılması gereken çağrısı için. */
+    anaModel?: boolean;
+  },
 ): Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null; derin?: boolean }> {
   const ayar = await prisma.tenantIslem(tenantId, async (tx) => {
     const kayit = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
@@ -145,7 +157,10 @@ export async function kiraciSaglayicisi(
     return kayit;
   });
   if (secenek.derin && ayar?.gucluSaglayici) return gucluSaglayicisi(prisma, tenantId, ayar, secenek.ozellik);
-  const yonlendirilmisModel = ayar ? ozellikModeli(ayar, secenek.ozellik) : undefined;
+  const yonlendirilmisModel = !ayar ? undefined
+    : secenek.derin ? ayar.gucluModelAdi?.trim() || ayar.modelAdi
+    : secenek.anaModel ? ayar.modelAdi
+    : ozellikModeli(ayar, secenek.ozellik);
   const temel = ayar
     ? AiProviderFactory.uret({ ...ayardanYapilandirma(ayar), ...(yonlendirilmisModel ? { modelAdi: yonlendirilmisModel } : {}) })
     : (secenek.varsayilan ?? (() => AiProviderFactory.uret()))();

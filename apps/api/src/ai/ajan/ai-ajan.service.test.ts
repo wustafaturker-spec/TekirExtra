@@ -36,6 +36,7 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
   const saglayici = new SenaryoAiProvider(yanitlar);
   const service = new AiAjanService(prisma as never, new AracYurutucu(uc as never, onay as never));
   service.saglayiciBul = async () => ({ saglayici, ozelTalimatlar: null });
+  service.duzeltmeSaglayicisiBul = async () => saglayici;
   const calistir = (mesaj: string, rol = "satis", requestId?: string) => istekBaglami.run({ deger: { ...KIMLIK, rol: rol as never } }, () => service.mesajiIsle(mesaj, requestId));
   return { service, tx, uc, onay, saglayici, calistir };
 }
@@ -61,6 +62,23 @@ describe("asistan araç döngüsü (AI-05)", () => {
     const kayit = k.tx.ajanMesajGecmisi.create.mock.calls.find(c => c[0].data.rol === 'assistant')![0].data;
     expect(kayit.aracCagrisi.finansAciklama.duzeltmeDurumu).toBe('dogrulandi');
     expect(JSON.stringify(kayit)).not.toContain('özel-reddedilen-model-yanıtı');
+  });
+  it('finans JSON düzeltmesi ana model sağlayıcısıyla yapılır; araçlı sohbet ekonomik modelde kalır', async () => {
+    const k = kur([
+      { metin: '', aracCagrilari: [{ id: 'c1', ad: 'finansal_ozet', girdi: {} }] },
+      { metin: 'serbest metin', aracCagrilari: [] },
+    ], { ucSonucu: () => ({ nakitVarliklar: '-12.00' }) });
+    const ana = new SenaryoAiProvider([]);
+    const duzelt = vi.spyOn(ana, 'yapilandirilmisUretim').mockImplementation(async (g, sema) => {
+      const olgular = JSON.parse(g.prompt.slice(g.prompt.lastIndexOf('\n') + 1));
+      return sema.parse({ olguIdleri: [olgular[0].id] });
+    });
+    const ekonomik = vi.spyOn(k.saglayici, 'yapilandirilmisUretim');
+    k.service.duzeltmeSaglayicisiBul = async () => ana;
+    const y = await k.calistir('Nakit durumum', 'yonetici');
+    expect(duzelt).toHaveBeenCalledTimes(1);
+    expect(ekonomik).not.toHaveBeenCalled();
+    expect(y.finansAciklama).toMatchObject({ durum: 'dogrulandi', duzeltmeDurumu: 'dogrulandi' });
   });
   it.each(['kaynak_disi', 'ek_alan', 'hata'])('JSON düzeltmesi başarısızsa kaynakları korur ve bir kez dener: %s', async (tur) => {
     const k = kur([

@@ -88,7 +88,7 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
     const basit = kur(yerelAyar);
     await olarak(() => kiraciSaglayicisi(basit.prisma as never, TENANT, { ozellik: "ozet" }));
     const karmasik = kur(yerelAyar);
-    await olarak(() => kiraciSaglayicisi(karmasik.prisma as never, TENANT, { ozellik: "asistan" }));
+    await olarak(() => kiraciSaglayicisi(karmasik.prisma as never, TENANT, { ozellik: "teklif" }));
     expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("hizli:3b");
     expect((uretimler[1] as { modelAdi: string }).modelAdi).toBe("derin:14b");
 
@@ -98,7 +98,7 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
       yurtDisiOnayAt: new Date(), yurtDisiOnaySaglayici: "openai", yurtDisiOnayModel: "gpt-onayli", yurtDisiOnayPolitika: AI_AKTARIM_POLITIKA_SURUMU,
     };
     const dis = kur(disAyar);
-    const onaysiz = await olarak(() => kiraciSaglayicisi(dis.prisma as never, TENANT, { ozellik: "asistan" }));
+    const onaysiz = await olarak(() => kiraciSaglayicisi(dis.prisma as never, TENANT, { ozellik: "teklif" }));
     // Güçlü model onayın kapsamında değil: çağrı hiç gitmez.
     expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("gpt-guclu");
     expect(onaysiz.saglayici.saglayiciAdi).toBe("tanimsiz");
@@ -277,7 +277,9 @@ describe("özellik modeli ve onay kapsamı", () => {
     const ayar = { modelAdi: "deepseek-v4.1-flash", ekonomikModelAdi: "gemma-4-31b", gucluModelAdi: " " };
     expect(ozellikModeli(ayar, "ondenetim")).toBe("gemma-4-31b");
     expect(ozellikModeli(ayar, "ozet")).toBe("gemma-4-31b");
-    expect(ozellikModeli(ayar, "asistan")).toBe("deepseek-v4.1-flash");
+    expect(ozellikModeli(ayar, "teklif")).toBe("deepseek-v4.1-flash");
+    // 2026-10-22: asistan da ekonomik modelde (EVREN deepseek 4–22 sn, qwen 0,5–2 sn).
+    expect(ozellikModeli(ayar, "asistan")).toBe("gemma-4-31b");
     expect(ozellikModeli({ modelAdi: null, ekonomikModelAdi: null, gucluModelAdi: null }, "asistan")).toBeNull();
     expect(ayarModelleri(ayar, "deepseek-v4.1-flash")).toEqual(["deepseek-v4.1-flash", "gemma-4-31b"]);
     expect([...onayModelleri("deepseek-v4.1-flash, gemma-4-31b")]).toEqual(["deepseek-v4.1-flash", "gemma-4-31b"]);
@@ -311,8 +313,10 @@ describe("güçlü sağlayıcı ve Derin analiz (AI-81)", () => {
     const derin = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "asistan", derin: true }));
     expect([derin.saglayici.saglayiciAdi, derin.saglayici.modelAdi, derin.derin]).toEqual(["anthropic", "claude-sonnet-5-5", true]);
     const normal = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "asistan" }));
-    // Güçlü model ayrı sağlayıcıya ait: asistan ana modelde kalır, ana onay güçlü modeli kapsamak zorunda değildir.
-    expect([normal.saglayici.saglayiciAdi, normal.saglayici.modelAdi, normal.derin]).toEqual(["openai", "deepseek", undefined]);
+    // Güçlü model ayrı sağlayıcıya ait; normal asistan mesajı ekonomik modelde, ana onay güçlü modeli kapsamak zorunda değildir.
+    expect([normal.saglayici.saglayiciAdi, normal.saglayici.modelAdi, normal.derin]).toEqual(["openai", "qwen", undefined]);
+    const ana = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "asistan", anaModel: true }));
+    expect(ana.saglayici.modelAdi).toBe("deepseek");
     const ekonomik = await olarak(() => kiraciSaglayicisi(kur(onayli).prisma as never, TENANT, { ozellik: "ondenetim" }));
     expect(ekonomik.saglayici.modelAdi).toBe("qwen");
   });
@@ -320,6 +324,7 @@ describe("güçlü sağlayıcı ve Derin analiz (AI-81)", () => {
   it("güçlü sağlayıcı yoksa derin istek ana sağlayıcıyla yanıtlanır", async () => {
     vi.spyOn(AiProviderFactory, "uret").mockImplementation((y: any) => sahte(y?.saglayici ?? "openai", y?.modelAdi ?? "x"));
     const r = await olarak(() => kiraciSaglayicisi(kur(ANA).prisma as never, TENANT, { ozellik: "asistan", derin: true }));
-    expect([r.saglayici.saglayiciAdi, r.derin]).toEqual(["openai", undefined]);
+    // Ekonomik modele değil, ana modele düşer.
+    expect([r.saglayici.saglayiciAdi, r.saglayici.modelAdi, r.derin]).toEqual(["openai", "deepseek", undefined]);
   });
 });

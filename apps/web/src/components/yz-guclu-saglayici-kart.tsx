@@ -15,7 +15,7 @@ interface Guclu {
 const SAGLAYICI_ADI: Record<string, string> = { anthropic: "Anthropic Claude", openai: "OpenAI uyumlu", gemini: "Google Gemini", ollama: "Yerel Ollama" };
 
 /**
- * AI-81: isteğe bağlı güçlü sağlayıcı. Asistan ana modelle çalışır; kullanıcı
+ * AI-81: isteğe bağlı güçlü sağlayıcı. Asistan ekonomik modelle çalışır (AI-92); kullanıcı
  * "Derin analiz" seçince o mesaj buraya gider. Kendi anahtarı, fiyatı ve yurt
  * dışı onayı vardır; aylık bütçe ve günlük sınır ana ayarla ortaktır.
  */
@@ -50,7 +50,7 @@ export function YzGucluSaglayiciKart() {
     formuDoldur(r.guclu);
     setBilgi(r.guclu?.dis && !r.guclu.onay ? "Kaydedildi. Derin analiz için aşağıdan veri aktarımı onayı verin." : "Kaydedildi.");
   });
-  const kaldir = () => islem(async () => { await api("/ai/ayarlar/guclu", { method: "PUT", body: JSON.stringify({ saglayici: null }) }); formuDoldur(null); setBilgi("Güçlü sağlayıcı kaldırıldı; asistan yalnız ana modeli kullanır."); });
+  const kaldir = () => islem(async () => { await api("/ai/ayarlar/guclu", { method: "PUT", body: JSON.stringify({ saglayici: null }) }); formuDoldur(null); setBilgi("Güçlü sağlayıcı kaldırıldı; Derin analiz ana modelle yapılır."); });
   const sina = () => islem(async () => {
     const r = await api<{ basarili: boolean; model?: string; yanit?: string; mesaj?: string }>("/ai/ayarlar/guclu/test-et", { method: "POST", body: "{}" });
     if (r.basarili) setBilgi(`Bağlantı başarılı (${r.model}): ${r.yanit}`); else setHata(`Bağlantı kurulamadı: ${r.mesaj}`);
@@ -64,7 +64,7 @@ export function YzGucluSaglayiciKart() {
     <Card title={<>Güçlü sağlayıcı — Derin analiz {yuklendi && (guclu ? (guclu.dis && !guclu.onay ? <Badge variant="warning">Onay yok</Badge> : <Badge variant="success">Hazır</Badge>) : <Badge>Tanımlı değil</Badge>)}</>}>
       <div className="stack">
         <p className="muted">
-          İsteğe bağlı. Asistan her zaman ana modelle çalışır; mesaj kutusundaki <strong>Derin analiz</strong> seçilirse yalnız o mesaj bu sağlayıcıya gider.
+          İsteğe bağlı. Asistan ekonomik modelle (yoksa ana modelle) çalışır; mesaj kutusundaki <strong>Derin analiz</strong> seçilirse yalnız o mesaj bu sağlayıcıya gider.
           Brifing ve kısa denetimler ekonomik modelde kalır. Bu sağlayıcının kendi anahtarı, token fiyatı ve veri aktarımı onayı vardır; aylık bütçe ve günlük çağrı sınırı ana ayarla ortaktır.
         </p>
         <div className="form-grid form-grid--2">
