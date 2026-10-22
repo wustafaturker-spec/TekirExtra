@@ -25,6 +25,7 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { kuralAnahtari, kuralBul, satirYonu } from "./ekstre-kural";
 import { metniNormalle } from "./ekstre-oku";
+import { cariyiAdlaBul, karsiTarafAdaylari, kendiAdlariniBul } from "./ekstre-karsi-taraf";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
 import { DovizIslemService } from "./doviz-islem.service";
 import { KasaBankaService } from "./kasa-banka.service";
@@ -38,7 +39,7 @@ import { kiraciSaglayicisi } from "../ai/saglayici/kiraci-saglayici";
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const GUN = 86_400_000;
 
-export type CariEslesmeKaynagi = "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
+export type CariEslesmeKaynagi = "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
 type EslestirGirdisi = z.infer<typeof ekstreEslestirSemasi>;
 
 @Injectable()
@@ -83,8 +84,8 @@ export class EkstreEslestirmeService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kurallar = await tx.ekstreKurali.findMany({ where: { aktif: true } });
       const kural = kuralBul(kurallar, satir);
-      const { cari, kaynak } = kural?.cariId
-        ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const }
+      const { cari, kaynak, gerekce } = kural?.cariId
+        ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const, gerekce: undefined }
         : await this.cariOner(tx, tenantId, satir, { giris, mutlak, doviz });
 
       const [faturalar, mevcutFisler, cekler, kartlar, kasalar, bankalar, masrafKategorileri, gelirKategorileri] = await Promise.all([
@@ -111,6 +112,7 @@ export class EkstreEslestirmeService {
         kural: kural && { ...kural, satirAnahtari: kuralAnahtari(`${satir.aciklama} ${satir.karsiUnvan ?? ""}`) },
         onerilenCari: cari,
         cariEslesmeKaynagi: cari ? kaynak : null,
+        ...(cari && gerekce ? { cariGerekcesi: gerekce } : {}),
         faturalar,
         mevcutFisler,
         cekler: cekler
@@ -499,14 +501,28 @@ export class EkstreEslestirmeService {
     else await tx.ekstreKurali.create({ data: { tenantId, bankaHesapId, anahtar, yon, ...veri, kullanimSayisi: 1, sonKullanim: new Date() } });
   }
 
-  /** Cari önerisi: karşı IBAN → açıklamadaki VKN → açıklamada geçen unvan. */
+  /**
+   * Cari önerisi: açıklamadaki karşı taraf adı (KSB-17) → karşı IBAN →
+   * açıklamadaki VKN → açıklamada geçen tam unvan → fatura no → tek tutan fatura.
+   */
   private async cariOner(
     tx: Prisma.TransactionClient,
     tenantId: string,
     satir: { aciklama: string; karsiIban: string | null; karsiUnvan: string | null },
     tutar?: { giris: boolean; mutlak: Prisma.Decimal; doviz: DovizCinsi },
-  ) {
+  ): Promise<{ cari: { id: string; kod: string; unvan: string } | null; kaynak: CariEslesmeKaynagi; gerekce?: string }> {
     const sec = { id: true, kod: true, unvan: true } as const;
+    // KSB-17: bankalar karşı tarafı çoğu kez yalnız açıklamaya yazar (IBAN/unvan sütunu boş).
+    // Firmanın kendi adı son ekstre satırlarından öğrenilir ki gönderen/alıcıdaki kendi adı aday olmasın.
+    if (tutar) {
+      const sonSatirlar = await tx.bankaEkstreSatir.findMany({ where: { tenantId }, orderBy: { tarih: "desc" }, take: 300, select: { aciklama: true, tutar: true } });
+      const kendiAdlari = kendiAdlariniBul(sonSatirlar.map((x) => ({ aciklama: x.aciklama, giris: !x.tutar.isNegative() })));
+      const adaylar = karsiTarafAdaylari(satir.aciklama, satir.karsiUnvan, tutar.giris, kendiAdlari);
+      if (adaylar.length) {
+        const bulunan = cariyiAdlaBul(adaylar, await tx.cariHesap.findMany({ where: { tenantId, aktif: true }, select: sec }));
+        if (bulunan) return { cari: bulunan.cari, kaynak: "aciklama", gerekce: `Açıklamadaki ${bulunan.kaynak}: “${bulunan.ad}” (benzerlik %${Math.round(bulunan.puan * 100)}).` };
+      }
+    }
     if (satir.karsiIban) {
       const iban = satir.karsiIban.replace(/\s/g, "").toUpperCase();
       const bankaKaydi = await tx.cariBankaHesap.findFirst({ where: { tenantId, iban }, select: { cari: { select: sec } } });

@@ -49,7 +49,7 @@ interface AcikFatura { id: string; no: string | null; tarih: string; vadeTarihi:
 interface Oneriler {
   kural: Kural | null;
   onerilenCari: { id: string; kod: string; unvan: string } | null;
-  cariEslesmeKaynagi: "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
+  cariEslesmeKaynagi: "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
   /** AI-19: yapay zekâ önerisinin gerekçesi. */
   cariGerekcesi?: string;
   faturalar: AcikFatura[];
@@ -82,7 +82,7 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
   doviz_islem: "Döviz alım/satımı",
 };
 
-const KAYNAK_ADI: Record<string, string> = { iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural", fatura_no: "Fatura no eşleşti", tutar: "Tutar tek faturayı tutuyor", yapay_zeka: "Yapay zekâ önerisi — kontrol edin" };
+const KAYNAK_ADI: Record<string, string> = { aciklama: "Açıklamadaki firma adı", iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural", fatura_no: "Fatura no eşleşti", tutar: "Tutar tek faturayı tutuyor", yapay_zeka: "Yapay zekâ önerisi — kontrol edin" };
 const yuvarla = (n: number) => Math.round(n * 100) / 100;
 
 /**

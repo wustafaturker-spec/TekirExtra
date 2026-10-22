@@ -16,7 +16,29 @@ const bosTx = (ek: Record<string, unknown> = {}) => ({
   cariBankaHesap: { findFirst: vi.fn().mockResolvedValue(null) },
   cariHesap: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   fatura: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+  // KSB-17: firmanın kendi adı son ekstre satırlarından öğrenilir.
+  bankaEkstreSatir: { findMany: vi.fn().mockResolvedValue([]) },
   ...ek,
+});
+
+describe("ekstre cari önerisi sırası (KSB-17)", () => {
+  it("açıklamadaki karşı taraf adı IBAN ve tutar ipuçlarından önce gelir; gerekçe yazılır", async () => {
+    const tx = bosTx({
+      cariBankaHesap: { findFirst: vi.fn().mockResolvedValue({ cari: cari("iban", "BAŞKA FİRMA") }) },
+      cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([cari("c1", "BERKAN İŞ GÜVENLİĞİ TEKSTİL SAN. TİC. LTD. ŞTİ."), cari("c2", "KAYA METAL")]) },
+    });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen:BERKAN İŞ GÜVENLİĞİ TEKSTİL SANAYİ TİCARET L", karsiIban: "TR00", karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });
+    expect(r.cari?.id).toBe("c1");
+    expect(r.kaynak).toBe("aciklama");
+    expect(r.gerekce).toContain("“gonderen” alanı");
+    expect(tx.cariBankaHesap.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("ad bulunamazsa eski sıraya (IBAN) düşer", async () => {
+    const tx = bosTx({ cariBankaHesap: { findFirst: vi.fn().mockResolvedValue({ cari: cari("iban", "BAŞKA FİRMA") }) } });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen:TANINMAYAN AD", karsiIban: "TR00", karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });
+    expect(r).toEqual({ cari: cari("iban", "BAŞKA FİRMA"), kaynak: "iban" });
+  });
 });
 
 describe("ekstre cari önerisi (AI-19)", () => {
