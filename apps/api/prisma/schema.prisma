@@ -966,6 +966,12 @@ model FaturaKapama {
   krediKartiHareketId String?  @map("kredi_karti_hareket_id") @db.Uuid
   cekSenetId          String?  @map("cek_senet_id") @db.Uuid
   iadeFaturaId        String?  @map("iade_fatura_id") @db.Uuid
+  /// KSB-20: farklı dövizli bağlamada ödemenin kendi dövizinde düşülen kısmı ve TL değeri; boşsa aynı döviz.
+  kaynakTutari        Decimal? @map("kaynak_tutari") @db.Decimal(15, 2)
+  kaynakTutariTry     Decimal? @map("kaynak_tutari_try") @db.Decimal(15, 2)
+  /// KSB-22: elle bağlamanın kur farkı (fişe bağlı tek faturalı ödemede kasa hareketindeki alanlar kullanılır).
+  kurFarkiFaturaId    String?  @map("kur_farki_fatura_id") @db.Uuid
+  kurFarkiKapandi     Boolean  @default(false) @map("kur_farki_kapandi")
   createdAt           DateTime @default(now()) @map("created_at")
 
   cari              CariHesap          @relation(fields: [cariId], references: [id], onDelete: Cascade)

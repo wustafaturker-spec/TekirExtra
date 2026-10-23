@@ -22,6 +22,8 @@ interface Aday {
   sonHatirlatma: string | null;
   siklikEngeli: boolean;
   itirazEngeli?: boolean;
+  /** KSB-23: faturaya bağlanmamış tahsilat (TL); vadesi geçmiş fatura bununla ödenmiş olabilir. */
+  baglanmamisTahsilatTry?: string | null;
   gonderimEngeli?: string | null;
 }
 interface Sonuc { cariId: string; kod: string; unvan: string; durum: "gonderildi" | "atlandi" | "hata"; mesaj: string }
@@ -43,6 +45,7 @@ export default function VadeHatirlatmaSayfasi() {
   const [kademe, setKademe] = useState<Kademe>("hatirlatma");
   const [not, setNot] = useState("");
   const [siklikSiniriniAs, setSiklikSiniriniAs] = useState(false);
+  const [baglanmamisOnayi, setBaglanmamisOnayi] = useState(false);
   const [onizleme, setOnizleme] = useState<Onizleme | null>(null);
   const [sonuclar, setSonuclar] = useState<Sonuc[] | null>(null);
   const [hata, setHata] = useState("");
@@ -54,7 +57,7 @@ export default function VadeHatirlatmaSayfasi() {
     try {
       const liste = await api<Aday[]>("/cari/vade-hatirlatma/adaylar");
       setAdaylar(liste);
-      setSecili(new Set(liste.filter((a) => a.eposta && !a.siklikEngeli && !a.itirazEngeli).map((a) => a.cariId)));
+      setSecili(new Set(liste.filter((a) => a.eposta && !a.siklikEngeli && !a.itirazEngeli && !a.baglanmamisTahsilatTry).map((a) => a.cariId)));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Liste yüklenemedi");
     }
@@ -89,7 +92,7 @@ export default function VadeHatirlatmaSayfasi() {
     try {
       const sonuc = await api<Sonuc[]>("/cari/vade-hatirlatma/gonder", {
         method: "POST",
-        body: JSON.stringify({ cariIdler: seciliAdaylar.map((a) => a.cariId), kademe, not: not || null, siklikSiniriniAs }),
+        body: JSON.stringify({ cariIdler: seciliAdaylar.map((a) => a.cariId), kademe, not: not || null, siklikSiniriniAs, baglanmamisOnayi }),
       });
       setSonuclar(sonuc);
       await yukle();
@@ -146,6 +149,9 @@ export default function VadeHatirlatmaSayfasi() {
             <small className="muted">{seciliAdaylar.length === 1 ? "Seçili cariye göre kişisel taslak; gönderim öncesi düzenleyebilirsiniz." : "Birden çok cari seçili: genel bir taslak yazılır."}</small>
           </div>
           <label className="check-row"><input type="checkbox" checked={siklikSiniriniAs} onChange={(e) => setSiklikSiniriniAs(e.target.checked)} /> Son 7 günde hatırlatma almış carilere de gönder</label>
+          {seciliAdaylar.some((a) => a.baglanmamisTahsilatTry) && (
+            <label className="check-row"><input type="checkbox" checked={baglanmamisOnayi} onChange={(e) => setBaglanmamisOnayi(e.target.checked)} /> Faturaya bağlanmamış tahsilatı olan carilere de gönder (ödenmiş faturaya hatırlatma gidebilir)</label>
+          )}
           <div className="vade-hatirlatma__gonder">
             <span>{seciliAdaylar.length} cari seçili · {para(seciliToplam)}</span>
             <Button variant="primary" disabled={!seciliAdaylar.length || islemde} onClick={() => void gonder()}>{islemde ? "Gönderiliyor…" : kademe === "ihtar" ? "İhtarı gönder" : "Hatırlatmayı gönder"}</Button>
@@ -186,6 +192,7 @@ export default function VadeHatirlatmaSayfasi() {
                   <a href={`/panel/cari/${a.cariId}`}><strong>{a.unvan}</strong></a> {riskler.get(a.cariId) && <RiskRozeti risk={riskler.get(a.cariId)!} />}
                   <div className="subtle">{a.kod} · {a.faturaSayisi} kalem{a.karaListe ? " · kara listede" : ""}{!a.aktif ? " · pasif" : ""}</div>
                   {a.itirazEngeli && <div><Badge variant="warning">Açık itiraz: gönderim durduruldu</Badge><small className="muted">{a.gonderimEngeli}</small></div>}
+                  {a.baglanmamisTahsilatTry && <div><Badge variant="warning">Bağlanmamış tahsilat {Number(a.baglanmamisTahsilatTry).toLocaleString("tr-TR", { maximumFractionDigits: 0 })} TL</Badge> <a href={`/panel/cari/${a.cariId}`}>Faturalara bağla</a></div>}
                 </td>
                 <td>{a.eposta ?? <Badge variant="warning">E-posta yok</Badge>}</td>
                 <td className="num money neg">

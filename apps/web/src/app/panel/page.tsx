@@ -16,7 +16,7 @@ interface CekSenet { id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"
 interface IsOgesi { href: string; baslik: string; aciklama: string; sayi: number; ton: "danger" | "warning" | "neutral"; }
 interface GunlukOzet { satis: { toplam: string; adet: number }; tahsilat: { toplam: string; adet: number }; }
 interface DovizKurlari { kurTarihi: string; oncekiIsGunuKullanildi?: boolean; kurlar: Record<string, number>; }
-interface VadesiGecenSatir { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: "satis" | "alis"; }
+interface VadesiGecenSatir { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: "satis" | "alis"; baglanmamisOdemeTry?: string | null; }
 interface VadesiGecenler { alacaklar: VadesiGecenSatir[]; borclar: VadesiGecenSatir[]; toplamAlacak: string; toplamBorc: string; }
 
 const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü", ik: "İK görünümü", calisan: "Çalışan görünümü" };
@@ -380,6 +380,8 @@ export default function PanelSayfasi() {
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: "13px", fontWeight: "800", color: grup.renk }}><Para basamak={0} deger={satir.kalanTry} /></div>
                       <div style={{ fontSize: "10px", color: "var(--danger)", fontWeight: "600" }}>{satir.gecikmeGun} gün gecikti</div>
+                      {/* KSB-23: carinin faturaya bağlanmamış ödemesi varsa fatura bununla ödenmiş olabilir. */}
+                      {satir.baglanmamisOdemeTry && <div style={{ fontSize: "10px", color: "var(--warning)", fontWeight: "600" }} title="Cari kartından ödemeyi faturalara bağlayın">⚠ Bağlanmamış ödeme: <Para basamak={0} deger={satir.baglanmamisOdemeTry} /></div>}
                     </div>
                   </Link>
                 ))}

@@ -20,6 +20,7 @@ import { girisMi, hesapEkstresiHesapla } from "./hesap-ekstresi";
 import { hesapEkstresiPdfHtml } from "./hesap-ekstresi-pdf";
 import { hesapEkstresiExcel } from "./hesap-ekstresi-excel";
 import { cariDenklestir, carileriDenklestir, elleKapamaYaz, kaynakKapamalariniCoz } from "../fatura/denklestirme";
+import { bagDuzeltmeleriniGeriAl, baglaTx, fisOku } from "./doviz-baglama.service";
 import { beklenenOdemeTipi, faturaKilitleVeKalaniGetir, faturaOdemeDurumu, mahsupAyir } from "../fatura/odeme-durumu";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
@@ -521,8 +522,10 @@ export class KasaBankaService {
         kapama = { dovizCinsi: fatura.dovizCinsi, karsilik, ...mahsupAyir(karsilik, fatura.kalan) };
       }
 
-      // KSB-16: birden çok faturaya elle dağıtım; tutarlar hesapla aynı dövizde ve her biri kalanı aşamaz.
+      // KSB-16: birden çok faturaya elle dağıtım; tutarlar hesabın dövizinde ve her biri kalanı aşamaz.
+      // KSB-20: farklı dövizli faturalar fiş açıldıktan sonra karşılıklarıyla bağlanır.
       const coklu: { faturaId: string; no: string | null; tutar: Prisma.Decimal }[] = [];
+      const caprazlar: { faturaId: string; tutar: string; karsilik: string | null }[] = [];
       if (girdi.faturalar?.length) {
         if (!cariId) throw new BadRequestException("Birden çok faturaya dağıtım için cari seçilmelidir");
         const dagitilan = girdi.faturalar.reduce((t, f) => t.add(D(f.tutar)), D(0));
@@ -534,7 +537,10 @@ export class KasaBankaService {
           if (fatura.durum !== "kesin") throw new BadRequestException(`${ad} kesinleşmemiş; yalnız kesinleşmiş faturaya ödeme bağlanır`);
           if (fatura.cariId !== cariId) throw new BadRequestException(`${ad} seçilen cariye ait değil`);
           if (beklenenOdemeTipi(fatura.tip) !== girdi.tip) throw new BadRequestException(`${ad} için ${beklenenOdemeTipi(fatura.tip) === "tahsilat" ? "tahsilat" : "tediye"} kaydı gereklidir`);
-          if (fatura.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException(`${ad} ${fatura.dovizCinsi} cinsinden; birden çok faturaya dağıtımda faturalar hesapla aynı dövizde olmalıdır`);
+          if (fatura.dovizCinsi !== girdi.dovizCinsi) {
+            caprazlar.push({ faturaId: fatura.id, tutar: secim.tutar, karsilik: secim.karsilik ?? null });
+            continue;
+          }
           const secilen = D(secim.tutar);
           if (secilen.gt(fatura.kalan)) throw new BadRequestException(`${ad} için yazılan ${secilen.toFixed(2)} ${girdi.dovizCinsi}, kalanı (${fatura.kalan.toFixed(2)}) aşıyor`);
           coklu.push({ faturaId: fatura.id, no: fatura.no, tutar: secilen });
@@ -591,11 +597,15 @@ export class KasaBankaService {
       // KSB-16: bağlanan kısım elle kapamadır; artanı ve bağlanmamış ödeme vadeye göre dağılır.
       if (kapama && girdi.faturaId && cariId) await elleKapamaYaz(tx, { tenantId, cariId, faturaId: girdi.faturaId, tutar: kapama.mahsup, kaynak: { kasaBankaHareketId: hareket.id } });
       for (const k of coklu) await elleKapamaYaz(tx, { tenantId, cariId: cariId!, faturaId: k.faturaId, tutar: k.tutar, kaynak: { kasaBankaHareketId: hareket.id } });
-      if (cariId) await cariDenklestir(tx, tenantId, cariId);
+      const caprazBaglar = caprazlar.length ? await baglaTx(tx, tenantId, await fisOku(tx, hareket.id), caprazlar) : [];
+      if (cariId && !caprazlar.length) await cariDenklestir(tx, tenantId, cariId);
 
       return {
         ...hareket,
-        faturaKapamalari: coklu.map((k) => ({ faturaId: k.faturaId, no: k.no, tutar: k.tutar.toFixed(2) })),
+        faturaKapamalari: [
+          ...coklu.map((k) => ({ faturaId: k.faturaId, no: k.no, tutar: k.tutar.toFixed(2) })),
+          ...caprazBaglar.map((k) => ({ faturaId: k.faturaId, no: k.no, tutar: k.tutar, karsilik: k.karsilik, dovizCinsi: k.dovizCinsi })),
+        ],
         faturaKapama: kapama && { dovizCinsi: kapama.dovizCinsi, karsilik: kapama.karsilik.toFixed(2), mahsup: kapama.mahsup.toFixed(2), avans: kapama.avans.toFixed(2) },
       };
     }
@@ -852,6 +862,8 @@ export class KasaBankaService {
     const goruntu = { neden, hareketler: bacaklar, cariHareketleri };
 
     if (!kapali) {
+      // KSB-24: fişin farklı dövizli fatura bağlamalarının cari düzeltmeleri de fişle gider.
+      await bagDuzeltmeleriniGeriAl(tx, tenantId, idler, { sil: true });
       await tx.cariHareket.deleteMany({ where: { id: { in: cariHareketleri.map((c) => c.id) } } });
       await tx.kasaBankaHareket.deleteMany({ where: { id: { in: idler } } });
       // "Mevcut fişle eşle" ile bağlanmış satırın son fişi gidince satır yeniden onaya düşer.
@@ -868,6 +880,7 @@ export class KasaBankaService {
     // Kapalı dönem: kayıt değişmez, bugün tarihli ters kayıt atılır.
     const bugun = bugunTR();
     await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt");
+    await bagDuzeltmeleriniGeriAl(tx, tenantId, idler, { tarih: bugun });
     const tersTip: Record<string, KasaBankaHareketTip> = { tahsilat: "tediye", tediye: "tahsilat", virman_gelis: "virman_gidis", virman_gidis: "virman_gelis" };
     const yeniIdler = new Map<string, string>();
     for (const bacak of bacaklar) {

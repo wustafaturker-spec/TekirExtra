@@ -76,10 +76,17 @@ export const kasaBankaHareketOlusturSemasi = z.object({
    */
   faturaKarsiligi: pozitifOndalik.optional().nullable(),
   /**
-   * KSB-16: ödemenin birden çok faturaya elle dağıtımı (fatura başına tutar,
-   * hesapla aynı dövizde). Seçilenler önce kapanır; artanı vadeye göre dağılır.
+   * KSB-16: ödemenin birden çok faturaya elle dağıtımı (fatura başına tutar
+   * hesabın dövizinde; başka dövizli faturada karşılıkla, KSB-20). Seçilenler
+   * önce kapanır; aynı dövizli artan vadeye göre dağılır.
    */
-  faturalar: z.array(z.object({ faturaId: z.string().uuid(), tutar: pozitifOndalik })).max(100).optional(),
+  faturalar: z.array(z.object({
+    faturaId: z.string().uuid(),
+    /** Hesabın dövizinde. */
+    tutar: pozitifOndalik,
+    /** KSB-20: fatura başka dövizdeyse bankanın uyguladığı karşılık (fatura dövizinde); boşsa fiş tarihinin kuru. */
+    karsilik: pozitifOndalik.optional().nullable(),
+  })).max(100).optional(),
   /** P1-9: fiş hesabı eksi bakiyeye düşürüyorsa kullanıcı uyarıyı onayladı. */
   eksiBakiyeOnay: z.boolean().optional(),
 }).refine((data) => [data.kasaId, data.bankaHesapId, data.posHesapId].filter(Boolean).length === 1, {

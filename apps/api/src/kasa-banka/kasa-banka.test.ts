@@ -3,6 +3,7 @@ import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { KasaBankaService } from "./kasa-banka.service";
 import { cariDenklestir, carileriDenklestir, elleKapamaYaz, kaynakKapamalariniCoz } from "../fatura/denklestirme";
+import { baglaTx } from "./doviz-baglama.service";
 
 // KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
 vi.mock("../fatura/denklestirme", async (orijinal) => ({
@@ -16,6 +17,12 @@ vi.mock("../fatura/denklestirme", async (orijinal) => ({
 
 
 // Mock the istek baglami (aktifBaglam)
+// KSB-19…24: bağlama çekirdeği kendi kabul testinde (test/doviz-baglama.kabul.test.ts) gerçek veritabanıyla denenir.
+vi.mock("./doviz-baglama.service", () => ({
+  bagDuzeltmeleriniGeriAl: vi.fn(),
+  fisOku: vi.fn(async (_tx: unknown, id: string) => ({ id })),
+  baglaTx: vi.fn(async (_tx: unknown, _t: string, _f: unknown, satirlar: Array<{ faturaId: string; tutar: string }>) => satirlar.map((s) => ({ faturaId: s.faturaId, no: null, tutar: s.tutar, karsilik: "1.00", dovizCinsi: "USD" }))),
+}));
 vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({
     tenantId: "t1-uuid",
@@ -332,11 +339,13 @@ describe("KasaBankaService fatura kapama (KSB-07)", () => {
       await expect(service.hareketEkle({ ...coklu, tutar: "100", faturalar: [{ faturaId: "fatura-1", tutar: "80" }, { faturaId: "fatura-2", tutar: "30" }] })).rejects.toThrow("ödeme tutarını aşamaz");
     });
 
-    it("faturanın kalanını aşan tutarı ve farklı dövizli faturayı reddeder", async () => {
+    it("faturanın kalanını aşan tutarı reddeder; farklı dövizli faturayı karşılıkla bağlamaya gönderir (KSB-20)", async () => {
       ikiFatura();
       await expect(service.hareketEkle({ ...coklu, tutar: "500", faturalar: [{ faturaId: "fatura-2", tutar: "250" }] })).rejects.toThrow("kalanı (200.00) aşıyor");
       ikiFatura({ dovizCinsi: "USD" });
-      await expect(service.hareketEkle({ ...coklu, tutar: "500", faturalar: [{ faturaId: "fatura-2", tutar: "10" }] })).rejects.toThrow("aynı dövizde");
+      const sonuc = await service.hareketEkle({ ...coklu, tutar: "500", faturalar: [{ faturaId: "fatura-2", tutar: "10", karsilik: "0.25" }] });
+      expect(vi.mocked(baglaTx).mock.calls.at(-1)?.[3]).toEqual([{ faturaId: "fatura-2", tutar: "10", karsilik: "0.25" }]);
+      expect(sonuc.faturaKapamalari).toEqual([{ faturaId: "fatura-2", no: null, tutar: "10", karsilik: "1.00", dovizCinsi: "USD" }]);
     });
   });
 

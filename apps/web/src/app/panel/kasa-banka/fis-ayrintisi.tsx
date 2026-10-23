@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { api, apiDosyaIndir } from "@/lib/api";
 import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
+import { FaturaBaglamaPenceresi } from "@/components/fatura-baglama";
 import { Alert, Badge, Button, ButtonLabel, EylemCubugu, Field, Para, Tarih } from "@/components/ui";
 
 export interface DefterHareketi {
@@ -144,6 +145,10 @@ export function FisAyrintisi({
   const hesap = hesapAnahtari(hareket);
   // Sunucu da aynı koşulları denetler; burada yalnız düğmenin gösterilip gösterilmeyeceği belirlenir.
   const acilisaCevrilebilir = baglam?.acilisaCevrilebilir ?? false;
+  // KSB-19: faturasız girilen (ya da artanı kalan) cari tahsilat/ödemesi sonradan faturalara bağlanır.
+  const [baglamaAcik, setBaglamaAcik] = useState(false);
+  const faturayaBaglanabilir = (hareket.tip === "tahsilat" || hareket.tip === "tediye") && Boolean(hareket.cari) && !hareket.fatura
+    && hareket.kaynakTur !== "ters_kayit" && !acilis && baglam !== null && !ters;
 
   async function acilisaCevir(e: React.FormEvent) {
     e.preventDefault();
@@ -161,6 +166,7 @@ export function FisAyrintisi({
 
   return (
     <div className="slip-detail">
+      {baglamaAcik && <FaturaBaglamaPenceresi hareketId={hareket.id} onKapat={() => setBaglamaAcik(false)} onBitti={(m) => { setBaglamaAcik(false); onGeriAlindi(m); }} />}
       <EylemCubugu etiket="Fiş eylemleri">
         {hareket.makbuzNo && (
           <Button size="sm" onClick={() => void apiDosyaIndir(`/kasa-banka/hareketler/${hareket.id}/makbuz`, `makbuz-${hareket.makbuzNo}.pdf`)}>
@@ -172,6 +178,7 @@ export function FisAyrintisi({
         {acilisaCevrilebilir && (
           <Button size="sm" onClick={() => { setCevirAcik(true); setGeriAlAcik(false); }} disabled={cevirAcik}>Açılış fişine çevir</Button>
         )}
+        {faturayaBaglanabilir && <Button size="sm" onClick={() => setBaglamaAcik(true)}>Faturalara bağla</Button>}
         {degistirilebilir && (
           <>
             <Button size="sm" onClick={() => onDuzelt(hareket, karsi)} disabled={geriAlAcik || cevirAcik}>Düzelt</Button>

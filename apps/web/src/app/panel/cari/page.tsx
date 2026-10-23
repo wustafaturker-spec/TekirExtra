@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { BaglanmamisOdemeler } from "@/components/fatura-baglama";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { cariKaydet } from "@/lib/cari-kaydet";
 import { kullanimOlayi } from "@/lib/kullanim";
@@ -1221,6 +1222,10 @@ export default function CariSayfasi() {
           {/* CARI-43: sekmelerden önce cari durum özeti; detay her tazelendiğinde yeniden hesaplanır. */}
           <div style={{ marginTop: "1.25rem" }}>
             <CariDurumPaneli cariId={detay.id} cariUnvan={detay.unvan} yenile={detay} onSekme={setAktifSekme} />
+          </div>
+          {/* KSB-23: faturaya bağlanmamış ödeme varsa vadesi geçmiş görünen fatura bununla ödenmiş olabilir. */}
+          <div style={{ marginTop: "1.25rem" }}>
+            <BaglanmamisOdemeler key={detay.id} cariId={detay.id} yazabilir={rol === "yonetici" || rol === "muhasebe"} onDegisti={(m) => { setBasari(m); void detayAc(detay.id, true); }} />
           </div>
 
           <div style={{ marginTop: "1.25rem" }}>

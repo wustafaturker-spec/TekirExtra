@@ -5116,3 +5116,10 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .mukerrer__onizleme { display: grid; gap: .8rem; margin: 1rem 0; }
 .mukerrer__tasinan { border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: .4rem; padding: .7rem .8rem; }
 .mukerrer__onay { align-items: center; display: flex; gap: .5rem; margin: .8rem 0; }
+
+/* KSB-19…24: ödemeyi faturalara bağlama */
+.fatura-baglama__ozet { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin-bottom: .8rem; }
+.fatura-baglama__baslik { font-size: .95rem; margin: 1rem 0 .4rem; }
+.fatura-baglama__tutar { max-width: 9rem; text-align: right; }
+.fatura-baglama__alt { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; margin-top: 1rem; }
+.fatura-baglama__panel .subtle { margin: 0 0 .6rem; }

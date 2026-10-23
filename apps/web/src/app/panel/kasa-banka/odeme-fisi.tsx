@@ -241,18 +241,20 @@ export function OdemeFisi({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kalaniOtomatikYaz, hesap, fatura, caprazDoviz, kurMetni]);
 
-  // Çoklu dağıtımda yalnız hesapla aynı dövizdeki faturalar seçilebilir (sunucu da aynı kuralı uygular).
-  const dagitilabilir = (f: AcikFatura) => Boolean(hesap && f.dovizCinsi === hesap.dovizCinsi);
+  // Çoklu dağıtımda tutar hesabın dövizindedir; farklı dövizli faturada karşılığı sunucu
+  // fiş tarihinin kuruyla hesaplar (KSB-20) ve kalanı aşarsa reddeder.
+  const dagitilabilir = (f: AcikFatura) => Boolean(hesap);
+  const ayniDoviz = (f: AcikFatura) => Boolean(hesap && f.dovizCinsi === hesap.dovizCinsi);
   const secilenler = coklu ? (faturalar ?? []).filter((f) => sayi(dagitim[f.id] ?? "") > 0 && dagitilabilir(f)) : [];
   const dagitilan = yuvarla(secilenler.reduce((t, f) => t + sayi(dagitim[f.id]), 0));
-  const asanFatura = secilenler.find((f) => sayi(dagitim[f.id]) > sayi(f.kalan) + 0.0001);
+  const asanFatura = secilenler.find((f) => ayniDoviz(f) && sayi(dagitim[f.id]) > sayi(f.kalan) + 0.0001);
   const dagitimGecerli = !coklu || (secilenler.length > 0 && !asanFatura && dagitilan <= sayi(tutar) + 0.0001);
 
   /** Ödeme tutarını vadesi en erken faturadan başlayarak seçili olmayanlar dahil dağıtır. */
   function vadeyeGoreDoldur() {
     let kalan = sayi(tutar);
     const yeni: Record<string, string> = {};
-    for (const f of [...(faturalar ?? [])].filter(dagitilabilir).sort((a, b) => (a.vadeTarihi ?? a.tarih).localeCompare(b.vadeTarihi ?? b.tarih))) {
+    for (const f of [...(faturalar ?? [])].filter(ayniDoviz).sort((a, b) => (a.vadeTarihi ?? a.tarih).localeCompare(b.vadeTarihi ?? b.tarih))) {
       if (kalan <= 0) break;
       const pay = yuvarla(Math.min(kalan, sayi(f.kalan)));
       if (pay > 0) { yeni[f.id] = pay.toFixed(2); kalan = yuvarla(kalan - pay); }
@@ -445,7 +447,7 @@ export function OdemeFisi({
                         aria-label={`${f.no ?? "Numarasız fatura"} faturasına dağıt`}
                         disabled={!dagitilabilir(f)}
                         checked={sayi(dagitim[f.id] ?? "") > 0}
-                        onChange={(e) => setDagitim((d) => ({ ...d, [f.id]: e.target.checked ? f.kalan : "" }))}
+                        onChange={(e) => setDagitim((d) => ({ ...d, [f.id]: e.target.checked && ayniDoviz(f) ? f.kalan : "" }))}
                       />
                     ) : (
                       <input type="radio" name="fatura" checked={faturaId === f.id} onChange={() => faturaSec(f.id)} />
@@ -475,7 +477,7 @@ export function OdemeFisi({
                           step="0.01"
                           value={dagitim[f.id] ?? ""}
                           onChange={(e) => setDagitim((d) => ({ ...d, [f.id]: e.target.value }))}
-                          placeholder="Tutar"
+                          placeholder={ayniDoviz(f) ? "Tutar" : `Tutar (${hesap?.dovizCinsi})`}
                         />
                       )}
                     </span>
@@ -497,8 +499,8 @@ export function OdemeFisi({
               </div>
               {asanFatura && <Alert tone="error">{asanFatura.no ?? "Numarasız fatura"} için yazılan tutar kalanı aşıyor.</Alert>}
               {dagitilan > sayi(tutar) + 0.0001 && <Alert tone="error">Faturalara dağıtılan tutar ödeme tutarını aşıyor.</Alert>}
-              {(faturalar ?? []).some((f) => !dagitilabilir(f)) && (
-                <small className="payment-slip__hint">Hesaptan farklı dövizdeki faturalar çoklu dağıtıma girmez; onları tek fatura seçerek kapatın.</small>
+              {(faturalar ?? []).some((f) => !ayniDoviz(f)) && (
+                <small className="payment-slip__hint">Farklı dövizli faturaya yazılan tutar hesabın dövizindedir; karşılığı fiş tarihinin kuruyla hesaplanır. Bankanın uyguladığı karşılığı girmek için fişi faturasız kaydedip ayrıntısından &quot;Faturalara bağla&quot;yı kullanın.</small>
               )}
             </div>
           )}

@@ -27,6 +27,7 @@ import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
 import { CekBordroService } from "./cek-bordro.service";
 import { DovizIslemService } from "./doviz-islem.service";
+import { DovizBaglamaService } from "./doviz-baglama.service";
 import {
   acilisSemasi,
   dovizIslemSemasi,
@@ -65,6 +66,7 @@ export class KasaBankaController {
     private readonly ekstreEslestirme: EkstreEslestirmeService,
     private readonly bankaEntegrasyon: BankaEntegrasyonService,
     private readonly cekBordro: CekBordroService,
+    private readonly dovizBaglama: DovizBaglamaService,
   ) {}
 
 
@@ -246,6 +248,41 @@ export class KasaBankaController {
       );
     }
     return this.service.hareketEkle(ayristirma.data);
+  }
+
+  /** KSB-23: carinin faturaya bağlanmamış kısmı kalan tahsilat/ödeme fişleri. */
+  @Get("baglanmamis-fisler")
+  baglanmamisFisler(@Query("cariId") cariId?: string) {
+    const g = z.object({ cariId: z.uuid("Geçersiz cari") }).safeParse({ cariId });
+    if (!g.success) throw new BadRequestException("Cari gereklidir");
+    return this.dovizBaglama.baglanmamislar(g.data.cariId);
+  }
+
+  /** KSB-19: fişin bağlanmamış tutarı, elle bağları ve carinin açık faturaları (her dövizde). */
+  @Get("hareketler/:id/fatura-baglama")
+  faturaBaglama(@Param("id", ParseUUIDPipe) id: string) {
+    return this.dovizBaglama.onizle(id);
+  }
+
+  /** KSB-19/20: fişi sonradan faturalara bağlar; farklı dövizde karşılıkla. */
+  @Post("hareketler/:id/fatura-baglama")
+  @Roller("muhasebe")
+  faturalaraBagla(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const sema = z.object({
+      faturalar: z.array(z.object({
+        faturaId: z.uuid(),
+        tutar: z.string().regex(/^\d+(\.\d{1,2})?$/, "Tutar en çok iki ondalıklı olmalı"),
+        karsilik: z.string().regex(/^\d+(\.\d{1,2})?$/, "Karşılık en çok iki ondalıklı olmalı").nullable().optional(),
+      })).min(1, "Bağlanacak fatura seçin").max(100),
+    });
+    return this.dovizBaglama.bagla(id, ayristir(sema, govde).faturalar);
+  }
+
+  /** KSB-24: elle bağlamayı çözer. */
+  @Post("fatura-kapamalari/:id/coz")
+  @Roller("muhasebe")
+  baglamaCoz(@Param("id", ParseUUIDPipe) id: string) {
+    return this.dovizBaglama.coz(id);
   }
 
   /** KSB-08: fişi geri alır (açık dönemde siler, kapalı dönemde ters kayıt). */

@@ -16,6 +16,7 @@ import { maliyetErisiminiDogrula } from "./maliyet-erisim";
 import { maliyetIzlemeSorgusu, maliyetIzlemesiniOku } from "./maliyet-izleme";
 import { eksikTahminleriTamamla, isabetSatirlari } from "../cari/tahmin-isabeti-kaynak";
 import { isabetOzeti } from "../cari/tahmin-isabeti";
+import { baglanmamisOdemeler } from "../kasa-banka/baglanmamis-odeme";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -260,7 +261,12 @@ export class RaporService {
       }
       // Vade veritabanında boş olabildiği için en eskiler hesaplanan vadeyle seçilir.
       const enEskiler = (l: Satir[]) => l.sort((a, b) => a.vadeTarihi.localeCompare(b.vadeTarihi) || a.faturaId.localeCompare(b.faturaId)).slice(0, LISTE_SINIRI);
-      return { alacaklar: enEskiler(alacaklar), borclar: enEskiler(borclar), toplamAlacak: toplamAlacak.toFixed(2), toplamBorc: toplamBorc.toFixed(2), alacakSayisi, borcSayisi };
+      // KSB-23: faturası vadesi geçmiş görünen cari aslında faturaya bağlanmamış bir ödemeyle ödemiş olabilir.
+      const baglanmamisEkle = async (l: Satir[], tip: "tahsilat" | "tediye") => {
+        const harita = await baglanmamisOdemeler(tx, [...new Set(l.map((s) => s.cariId))], tip);
+        return l.map((s) => ({ ...s, baglanmamisOdemeTry: harita.get(s.cariId)?.toFixed(2) ?? null }));
+      };
+      return { alacaklar: await baglanmamisEkle(enEskiler(alacaklar), "tahsilat"), borclar: await baglanmamisEkle(enEskiler(borclar), "tediye"), toplamAlacak: toplamAlacak.toFixed(2), toplamBorc: toplamBorc.toFixed(2), alacakSayisi, borcSayisi };
     });
   }
 

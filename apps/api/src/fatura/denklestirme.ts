@@ -77,7 +77,8 @@ export async function cariDenklestir(tx: Tx, tenantId: string, cariId: string, s
     ekle(faturaKapanan, k.faturaId, k.tutar);
     if (k.iadeFaturaId) ekle(faturaKapanan, k.iadeFaturaId, k.tutar);
     const kaynak = k.kasaBankaHareketId ?? k.krediKartiHareketId ?? k.cekSenetId;
-    if (kaynak) ekle(kaynakKullanilan, kaynak, k.tutar);
+    // KSB-20: farklı dövizli bağlamada kaynaktan kendi dövizindeki tutar düşer.
+    if (kaynak) ekle(kaynakKullanilan, kaynak, k.kaynakTutari ?? k.tutar);
   }
 
   const kaynaklar: (OdemeKaynagi & { dovizCinsi: string })[] = [];

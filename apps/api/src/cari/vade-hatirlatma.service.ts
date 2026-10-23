@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { baglanmamisOdemeler } from "../kasa-banka/baglanmamis-odeme";
 import { EpostaService } from "../tenant/eposta.service";
 import { CariService } from "./cari.service";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
@@ -43,7 +44,7 @@ export class VadeHatirlatmaService {
       });
       const ids = cariler.map((c) => c.id);
       const itirazlar = await itirazliCariler(tx, tenantId, ids);
-      const [kalemler, sonlar] = await Promise.all([vadesiGecmisKalemler(tx, ids, bugun), sonHatirlatmalar(tx, ids)]);
+      const [kalemler, sonlar, baglanmamis] = await Promise.all([vadesiGecmisKalemler(tx, ids, bugun), sonHatirlatmalar(tx, ids), baglanmamisOdemeler(tx, ids, "tahsilat")]);
       const kurlar = await guncelKurlar(tx, tenantId, [...kalemler.values()].flat().map((k) => k.dovizCinsi), bugun);
       return cariler
         .map((c) => {
@@ -62,6 +63,8 @@ export class VadeHatirlatmaService {
             sonHatirlatma: son?.toISOString() ?? null,
             siklikEngeli: siklikEngeli(son),
             itirazEngeli: itirazlar.has(c.id),
+            /** KSB-23: faturaya bağlanmamış tahsilat; vadesi geçmiş görünen fatura bununla ödenmiş olabilir. */
+            baglanmamisTahsilatTry: baglanmamis.get(c.id)?.toFixed(2) ?? null,
             gonderimEngeli: itirazlar.has(c.id) ? ITIRAZ_ILETISIM_ENGELI : null,
           };
         })
@@ -97,9 +100,9 @@ export class VadeHatirlatmaService {
    * E-postası olmayan, vadesi geçmiş alacağı kalmayan ve son 7 günde
    * hatırlatma almış cari atlanır (`siklikSiniriniAs` ile bilerek geçilir).
    */
-  async gonder(girdi: { cariIdler: string[]; kademe: Kademe; not?: string | null; siklikSiniriniAs?: boolean }): Promise<HatirlatmaSonucu[]> {
+  async gonder(girdi: { cariIdler: string[]; kademe: Kademe; not?: string | null; siklikSiniriniAs?: boolean; baglanmamisOnayi?: boolean }): Promise<HatirlatmaSonucu[]> {
     const { tenantId, userId } = aktifBaglam();
-    const sonlar = await this.prisma.tenantIslem(tenantId, (tx) => sonHatirlatmalar(tx, girdi.cariIdler));
+    const [sonlar, baglanmamis] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([sonHatirlatmalar(tx, girdi.cariIdler), baglanmamisOdemeler(tx, girdi.cariIdler, "tahsilat")]));
     const sonuclar: HatirlatmaSonucu[] = [];
     for (const cariId of girdi.cariIdler) {
       let kimlik = { kod: "", unvan: cariId };
@@ -111,6 +114,8 @@ export class VadeHatirlatmaService {
         if (kalemler.length === 0) { atla("Vadesi geçmiş alacak kalmamış"); continue; }
         const son = sonlar.get(cariId);
         if (!girdi.siklikSiniriniAs && siklikEngeli(son)) { atla(`Son hatırlatma ${son!.toLocaleDateString("tr-TR")} tarihinde gitti (7 gün dolmadı)`); continue; }
+        const bagsiz = baglanmamis.get(cariId);
+        if (bagsiz && !girdi.baglanmamisOnayi) { atla(`Faturaya bağlanmamış ${bagsiz.toFixed(2)} TL tahsilat var; ödenmiş faturaya hatırlatma gitmesin diye önce bağlayın ya da onaylayarak gönderin`); continue; }
 
         const bitis = new Date().toISOString().slice(0, 10);
         const baslangic = new Date(Date.now() - EKSTRE_GUN * 86_400_000).toISOString().slice(0, 10);

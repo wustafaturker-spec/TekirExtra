@@ -84,7 +84,10 @@ export class KurFarkiService {
       })),
     });
     const fatura = await this.fatura.olustur(girdi);
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.kasaBankaHareket.updateMany({ where: { id: { in: hareketIdleri } }, data: { kurFarkiFaturaId: fatura.id } }));
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.kasaBankaHareket.updateMany({ where: { id: { in: hareketIdleri } }, data: { kurFarkiFaturaId: fatura.id } });
+      await tx.faturaKapama.updateMany({ where: { id: { in: hareketIdleri } }, data: { kurFarkiFaturaId: fatura.id } });
+    });
     return { faturaId: fatura.id, cariGenisletildi, toplam: kalemler.reduce((t, k) => t.add(D(k.kurFarkiTry).abs()), D(0)).toFixed(2) };
   }
 
@@ -100,6 +103,7 @@ export class KurFarkiService {
       if (fatura.tip !== "alis") throw new BadRequestException("Karşı tarafın kestiği kur farkı faturası alış faturası olarak kayıtlı olmalıdır");
       if (kalemler.some((k) => k.cari.id !== fatura.cariId)) throw new BadRequestException("Fatura seçilen ödemelerin carisine ait değil");
       await tx.kasaBankaHareket.updateMany({ where: { id: { in: hareketIdleri } }, data: { kurFarkiFaturaId: faturaId } });
+      await tx.faturaKapama.updateMany({ where: { id: { in: hareketIdleri } }, data: { kurFarkiFaturaId: faturaId } });
       return { eslesen: kalemler.length };
     });
   }
@@ -107,13 +111,26 @@ export class KurFarkiService {
   /** Fatura gerektirmeyen (ör. önemsiz) kur farklarını listeden kapatır. */
   async kapat(hareketIdleri: string[]) {
     const { tenantId } = aktifBaglam();
-    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.kasaBankaHareket.updateMany({
+    const kapatilan = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hareket = await tx.kasaBankaHareket.updateMany({
         where: { id: { in: hareketIdleri }, OR: [{ kurFarkiFaturaId: null }, { kurFarkiFatura: { durum: "iptal" } }] },
         data: { kurFarkiKapandi: true, kurFarkiFaturaId: null },
-      }),
-    );
-    return { kapatilan: sonuc.count };
+      });
+      const iptaller = await this.iptalKurFarkiFaturalari(tx, hareketIdleri);
+      const kapama = await tx.faturaKapama.updateMany({
+        where: { id: { in: hareketIdleri }, OR: [{ kurFarkiFaturaId: null }, { kurFarkiFaturaId: { in: iptaller } }] },
+        data: { kurFarkiKapandi: true, kurFarkiFaturaId: null },
+      });
+      return hareket.count + kapama.count;
+    });
+    return { kapatilan };
+  }
+
+  /** KSB-22: elle bağlamaların kur farkı faturalarından iptal edilmiş olanlar. */
+  private async iptalKurFarkiFaturalari(tx: Prisma.TransactionClient, kapamaIdleri: string[]) {
+    const kapamalar = await tx.faturaKapama.findMany({ where: { id: { in: kapamaIdleri }, kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } });
+    if (!kapamalar.length) return [];
+    return (await tx.fatura.findMany({ where: { id: { in: kapamalar.map((k) => k.kurFarkiFaturaId!) }, durum: "iptal" }, select: { id: true } })).map((f) => f.id);
   }
 
   /**
@@ -128,7 +145,16 @@ export class KurFarkiService {
         where: { id: { in: hareketIdleri } },
         select: { id: true, kurFarkiKapandi: true, kurFarkiFatura: { select: { tip: true, durum: true, no: true } } },
       });
-      const kendiFaturamiz = hareketler.find((h) => h.kurFarkiFatura && h.kurFarkiFatura.tip === "satis" && h.kurFarkiFatura.durum !== "iptal");
+      const kapamalar = await tx.faturaKapama.findMany({ where: { id: { in: hareketIdleri } }, select: { id: true, kurFarkiKapandi: true, kurFarkiFaturaId: true } });
+      const kapamaFaturalari = new Map((await tx.fatura.findMany({
+        where: { id: { in: kapamalar.map((k) => k.kurFarkiFaturaId).filter((x): x is string => Boolean(x)) } },
+        select: { id: true, tip: true, durum: true, no: true },
+      })).map((f) => [f.id, f]));
+      const tumu = [
+        ...hareketler,
+        ...kapamalar.map((k) => ({ id: k.id, kurFarkiKapandi: k.kurFarkiKapandi, kurFarkiFatura: k.kurFarkiFaturaId ? kapamaFaturalari.get(k.kurFarkiFaturaId) ?? null : null })),
+      ];
+      const kendiFaturamiz = tumu.find((h) => h.kurFarkiFatura && h.kurFarkiFatura.tip === "satis" && h.kurFarkiFatura.durum !== "iptal");
       if (kendiFaturamiz) {
         const f = kendiFaturamiz.kurFarkiFatura!;
         throw new BadRequestException(
@@ -141,7 +167,8 @@ export class KurFarkiService {
         where: { id: { in: hareketler.map((h) => h.id) } },
         data: { kurFarkiKapandi: false, kurFarkiFaturaId: null },
       });
-      return { acilan: sonuc.count };
+      const kapamaSonuc = await tx.faturaKapama.updateMany({ where: { id: { in: kapamalar.map((k) => k.id) } }, data: { kurFarkiKapandi: false, kurFarkiFaturaId: null } });
+      return { acilan: sonuc.count + kapamaSonuc.count };
     });
   }
 
@@ -277,7 +304,7 @@ export class KurFarkiService {
       select: { kaynakRef: true },
     })).map((t) => t.kaynakRef));
 
-    return hareketler
+    const hareketKalemleri = hareketler
       .filter((h) => !geriAlinan.has(h.id) && h.fatura)
       .map((h) => {
         const fatura = h.fatura!;
@@ -307,6 +334,59 @@ export class KurFarkiService {
         };
       })
       .filter((k) => D(k.kurFarkiTry).abs().gte(D("0.01")));
+    return [...hareketKalemleri, ...(await this.baglamaKalemleri(tx, suzgec))]
+      .sort((a, b) => b.tarih.localeCompare(a.tarih));
+  }
+
+  /**
+   * KSB-22: fişin sonradan (elle) farklı dövizli faturaya bağlanan kısmı. Kalem
+   * kimliği kapamanınkidir; fark = ödemenin TL değeri − karşılığın fatura kurundaki TL değeri.
+   */
+  private async baglamaKalemleri(tx: Prisma.TransactionClient, suzgec: { durum: KurFarkiDurumu; hareketIdleri?: string[]; baslangic?: string; bitis?: string }) {
+    const kapamalar = await tx.faturaKapama.findMany({
+      where: {
+        kaynakTutari: { not: null },
+        kasaBankaHareketId: { not: null },
+        fatura: { dovizCinsi: { not: "TRY" } },
+        ...(suzgec.hareketIdleri ? { id: { in: suzgec.hareketIdleri } } : {}),
+        ...(suzgec.baslangic || suzgec.bitis ? { kasaBankaHareket: { tarih: { ...(suzgec.baslangic ? { gte: new Date(suzgec.baslangic) } : {}), ...(suzgec.bitis ? { lte: new Date(suzgec.bitis) } : {}) } } } : {}),
+      },
+      select: {
+        id: true, tutar: true, kaynakTutari: true, kaynakTutariTry: true, kurFarkiFaturaId: true, kurFarkiKapandi: true,
+        kasaBankaHareket: { select: { tip: true, tarih: true, dovizCinsi: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } } } },
+        fatura: { select: { id: true, no: true, tip: true, dovizCinsi: true, kur: true, cari: { select: { id: true, kod: true, unvan: true } }, satirlar: { select: { kdvOrani: true, matrah: true, gibIstisnaKodu: true } } } },
+      },
+    });
+    const kfIdleri = kapamalar.map((k) => k.kurFarkiFaturaId).filter((x): x is string => Boolean(x));
+    const kfFaturalari = new Map((kfIdleri.length ? await tx.fatura.findMany({ where: { id: { in: kfIdleri } }, select: { id: true, no: true, tip: true, durum: true, tarih: true } }) : []).map((f) => [f.id, f]));
+    return kapamalar.map((k) => {
+      const kf = k.kurFarkiFaturaId ? kfFaturalari.get(k.kurFarkiFaturaId) : undefined;
+      const faturali = Boolean(kf && kf.durum !== "iptal");
+      return { k, kf: faturali ? kf! : null, bekleyen: !k.kurFarkiKapandi && !faturali };
+    }).filter((x) => (suzgec.durum === "bekleyen") === x.bekleyen).map(({ k, kf }) => {
+      const h = k.kasaBankaHareket!;
+      const fatura = k.fatura;
+      const fark = k.kaynakTutariTry!.sub(k.tutar.mul(fatura.kur)).toDecimalPlaces(2);
+      const baskin = [...fatura.satirlar].sort((a, b) => b.matrah.comparedTo(a.matrah))[0];
+      return {
+        hareketId: k.id,
+        tarih: h.tarih.toISOString().slice(0, 10),
+        tip: h.tip,
+        hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "—",
+        tutar: k.kaynakTutari!.toFixed(2),
+        dovizCinsi: h.dovizCinsi,
+        cari: fatura.cari,
+        fatura: { id: fatura.id, no: fatura.no, tip: fatura.tip, dovizCinsi: fatura.dovizCinsi, kur: fatura.kur.toFixed(4) },
+        mahsup: k.tutar.toFixed(2),
+        odemeKuru: k.kaynakTutariTry!.div(k.tutar).toFixed(4),
+        kurFarkiTry: fark.toFixed(2),
+        yon: kurFarkiYonu(h.tip, fark),
+        kdvOrani: (baskin?.kdvOrani ?? D(20)).toFixed(2),
+        gibIstisnaKodu: baskin?.gibIstisnaKodu ?? null,
+        kapandi: k.kurFarkiKapandi,
+        kurFarkiFaturasi: kf ? { id: kf.id, no: kf.no, tip: kf.tip, durum: kf.durum, tarih: kf.tarih.toISOString().slice(0, 10) } : null,
+      };
+    }).filter((x) => D(x.kurFarkiTry).abs().gte(D("0.01")));
   }
 
   /** Kur farkı faturalarının hizmet kartı; yoksa bir kez oluşturulur. */
