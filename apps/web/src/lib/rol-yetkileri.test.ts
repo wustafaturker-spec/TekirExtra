@@ -40,3 +40,10 @@ describe("panel rol erişim matrisi", () => {
     expect(finansalOzetGorebilir("yonetici")).toBe(true);
   });
 });
+
+describe("araç ve şoför ayarları (ARC-01)", () => {
+  it("muhasebe plaka ekleyebilsin diye Ayarlar → Araçlar'ı görür; salt okunur görmez", () => {
+    expect(rolMenuYoluGorebilir("muhasebe", "/panel/ayarlar/araclar")).toBe(true);
+    expect(rolMenuYoluGorebilir("salt_okunur", "/panel/ayarlar/araclar")).toBe(false);
+  });
+});
