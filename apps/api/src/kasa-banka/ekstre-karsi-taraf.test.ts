@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adBenzerligi, cariyiAdlaBul, karsiTarafAdaylari, kelimeUyar, kendiAdlariniBul } from "./ekstre-karsi-taraf";
+import { adBenzerligi, cariyiAdlaBul, karsiTarafAdaylari, kelimeUyar, kendiAdlariniBul, maasOdemesiMi } from "./ekstre-karsi-taraf";
 
 // Biçimler gerçek banka ekstrelerinden; adlar değiştirildi.
 const KENDI = "DEMO KİMYASAL ÜRÜNLERİ SANAYİ VE DIŞ TİCARET LİMİTED ŞİRKETİ";
@@ -65,5 +65,14 @@ describe("ekstre açıklamasından karşı taraf (KSB-17)", () => {
     expect(kelimeUyar("guvenligi", "guvenlik")).toBe(false);
     expect(kelimeUyar("ozkann", "ozkan")).toBe(true);
     expect(adBenzerligi("DEMO KİMYASAL ÜRÜNLERİ SANAYİ", "DEMO KİM.ÜR.SAN.DIŞ TİC.LTD.ŞTİ.")).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("maaş ödemesini tanır, banka ücretini saymaz (KSB-18)", () => {
+    expect(maasOdemesiMi("ŞUBAT 2026 MAAŞ ÖDEMESİ - Para Transferi")).toBe(true);
+    expect(maasOdemesiMi("Ekim maaşı")).toBe(true);
+    expect(maasOdemesiMi("BORDRO ÖDEMESİ 10/2026")).toBe(true);
+    expect(maasOdemesiMi("Ücret ödemesi - AYŞE KAYA")).toBe(true);
+    expect(maasOdemesiMi("EFT ÜCRETİ")).toBe(false);
+    expect(maasOdemesiMi("KİRA ÖDEMESİ")).toBe(false);
   });
 });

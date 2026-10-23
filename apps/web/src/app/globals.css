@@ -5107,3 +5107,12 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
   .collection-panel .table tbody tr.collection-row--overdue td:first-child { box-shadow: none; }
   .collection-panel .btn { min-height: 42px; }
 }
+
+/* CARI-56…62: mükerrer cari raporu */
+.mukerrer__ust { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; margin-bottom: 1rem; }
+.mukerrer__grup { margin-bottom: 1rem; }
+.mukerrer__bas { align-items: flex-start; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; margin-bottom: .6rem; }
+.mukerrer__nedenler { color: var(--text-muted); font-size: .85rem; margin: .4rem 0 0; padding-left: 1.1rem; }
+.mukerrer__onizleme { display: grid; gap: .8rem; margin: 1rem 0; }
+.mukerrer__tasinan { border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: .4rem; padding: .7rem .8rem; }
+.mukerrer__onay { align-items: center; display: flex; gap: .5rem; margin: .8rem 0; }

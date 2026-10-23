@@ -255,6 +255,8 @@ model Tenant {
   isKutusuKapanislari   IsKutusuKapanisi[]
   onDenetimKararlari    OnDenetimKarari[]
   onDenetimSusturmalari OnDenetimSusturma[]
+  cariMukerrerIstisnalari CariMukerrerIstisna[]
+  cariBirlestirmeleri     CariBirlestirme[]
   teklifTakipleri       TeklifTakibi[]
   aiGorevleri           TenantAiGorev[]
   aiGorevCalismalari    TenantAiGorevCalisma[]
@@ -1353,6 +1355,8 @@ model CariHesap {
   /// KSB-16: bu tarihten önce girilmiş ödeme/iadeler otomatik dağıtılmaz (göç öncesi veri);
   /// "vadeye göre yeniden denkleştir" boşaltır. Yeni carilerde boş (hepsi).
   denklestirmeBaslangic DateTime?      @map("denklestirme_baslangic")
+  /// CARI-60: başka karta birleştirildiyse ana kart; kart pasiftir, listede ve önerilerde çıkmaz.
+  birlestigiCariId      String?        @map("birlestigi_cari_id") @db.Uuid
   kapamalar             FaturaKapama[]
 
   @@unique([tenantId, kod])
@@ -6540,6 +6544,44 @@ model OnDenetimKarari {
   @@index([tenantId, gelenEbelgeId])
   @@index([tenantId, createdAt])
   @@map("on_denetim_kararlari")
+}
+
+/// CARI-57: "aynı değil" işareti; çift (cari_a_id < cari_b_id) mükerrer raporunda çıkmaz.
+model CariMukerrerIstisna {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  cariAId   String   @map("cari_a_id") @db.Uuid
+  cariBId   String   @map("cari_b_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, cariAId, cariBId])
+  @@map("cari_mukerrer_istisnalari")
+}
+
+/// CARI-62: cari birleştirme izi. Geri alma yoktur; tablo başına taşınan satır sayısı ve doldurulan kart alanları saklanır.
+model CariBirlestirme {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  anaCariId      String   @map("ana_cari_id") @db.Uuid
+  tasinanCariId  String   @map("tasinan_cari_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  /// { tablo.sutun: taşınan satır }, { tablo: düşen kopya satır }
+  tasinanlar     Json
+  dusenler       Json
+  /// Ana kartta boşken taşınan karttan doldurulan alanlar: { alan: değer }
+  doldurulanlar  Json
+  /// Onay anında gösterilen uyarılar.
+  uyarilar       Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, anaCariId])
+  @@index([tenantId, tasinanCariId])
+  @@map("cari_birlestirmeleri")
 }
 
 /// EBLG-141: cari başına "bu kuralı gösterme".

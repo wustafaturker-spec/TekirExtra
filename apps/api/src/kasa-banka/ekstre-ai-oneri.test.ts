@@ -46,6 +46,24 @@ describe("ekstre cari önerisi sırası (KSB-17)", () => {
     expect(r).toMatchObject({ cari: null, adAdayiVar: true });
   });
 
+  it("maaş ödemesinde aynı kişinin personel kartını önerir; maaş değilse yine çekimser (KSB-18)", async () => {
+    const kartlar = [{ ...cari("m1", "MELEK TÜRKER"), tip: "musteri" }, { ...cari("p1", "MELEK TÜRKER"), tip: "personel" }];
+    const tx = bosTx({ cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue(kartlar) } });
+    const maas = await kur(tx).cariOner(tx, "t", { aciklama: "ŞUBAT 2026 MAAŞ ÖDEMESİ - Para Transferi, Gönderen: DEMO LTD , Alıcı: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: false, mutlak: D(100), doviz: "TRY" });
+    expect(maas.cari).toEqual(cari("p1", "MELEK TÜRKER"));
+    expect(maas.gerekce).toContain("maaş ödemesi, personel kartı");
+    const kira = await kur(tx).cariOner(tx, "t", { aciklama: "KİRA - Gönderen: DEMO LTD , Alıcı: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: false, mutlak: D(100), doviz: "TRY" });
+    expect(kira.cari).toBeNull();
+  });
+
+  it("maaş açıklamasında ad personel kartlarında yoksa bütün carilerle arar (KSB-18)", async () => {
+    const kartlar = [{ ...cari("c1", "AYŞE KAYA"), tip: "musteri" }, { ...cari("p1", "MELEK TÜRKER"), tip: "personel" }];
+    const tx = bosTx({ cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue(kartlar) } });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "MAAŞ - Gönderen: DEMO LTD , Alıcı: AYŞE KAYA", karsiIban: null, karsiUnvan: null }, { giris: false, mutlak: D(100), doviz: "TRY" });
+    expect(r.cari).toEqual(cari("c1", "AYŞE KAYA"));
+    expect(r.gerekce).not.toContain("personel");
+  });
+
   it("ad bulunamazsa eski sıraya (IBAN) düşer", async () => {
     const tx = bosTx({ cariBankaHesap: { findFirst: vi.fn().mockResolvedValue({ cari: cari("iban", "BAŞKA FİRMA") }) } });
     const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen:TANINMAYAN AD", karsiIban: "TR00", karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });

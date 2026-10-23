@@ -202,6 +202,8 @@ export class CariService {
         })
       : null;
     return {
+      // CARI-60: birleştirilmiş kartlar listede ve aramada çıkmaz; ana kart üzerinden açılır.
+      birlestigiCariId: null,
       ...(gecikmisIdler ? { id: { in: gecikmisIdler } } : {}),
       ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
       ...(durum === "bloke" ? { karaListe: true } : {}),
@@ -318,8 +320,13 @@ export class CariService {
     // CARI-23: e-Fatura/e-Arşiv ve e-İrsaliye mükellefiyeti, GİB listesinden.
     const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
     const postaKutulari = await this.postaKutulari(kayit);
+    // CARI-60: birleştirilmiş kart ana karta yönlendirir.
+    const birlestigiCari = kayit.birlestigiCariId
+      ? await this.prisma.tenantIslem(ctx.tenantId, (tx) => tx.cariHesap.findUnique({ where: { id: kayit.birlestigiCariId! }, select: { id: true, kod: true, unvan: true } }))
+      : null;
     return {
       ...this.gorunum(kayit),
+      birlestigiCari,
       ebelgeDurumu: { ...cariEbelgeDurumuBul(ebelge, kayit), listeGuncellendi: ebelge.listeGuncellendi },
       postaKutulari,
       adresler: kayit.adresler,
@@ -466,7 +473,7 @@ export class CariService {
     const vkn = vknTckn?.trim();
     if (!vkn || ORTAK_KIMLIKLER.has(vkn)) return;
     const ayni = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHesap.findMany({ where: { vknTckn: vkn, ...(haricId ? { id: { not: haricId } } : {}) }, select: { kod: true, unvan: true }, orderBy: { kod: "asc" }, take: 3 }),
+      tx.cariHesap.findMany({ where: { vknTckn: vkn, birlestigiCariId: null, ...(haricId ? { id: { not: haricId } } : {}) }, select: { kod: true, unvan: true }, orderBy: { kod: "asc" }, take: 3 }),
     );
     if (ayni.length === 0) return;
     throw new ConflictException(`${vkn} ${ayni.map((c) => `${c.kod} (${c.unvan})`).join(", ")} carisinde kayıtlı; ${MUKERRER_VKN_ISARETI}`);
@@ -649,6 +656,7 @@ export class CariService {
   async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>, secenekler: { mukerrerVknOnayi?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     const mevcut = await this.getir(id);
+    if (mevcut.birlestigiCari) throw new BadRequestException(`Bu kart ${mevcut.birlestigiCari.kod} kartına birleştirildi; değişiklikler ana kartta yapılır`);
     // EBLG-95: sistem carisinin kimliği sabittir; adres, iletişim gibi alanları değişebilir.
     if (muhtelifMusteriMi(mevcut)) {
       const kimlikAlani = (["unvan", "ad", "soyad", "kisiTipi", "vknTckn", "tip"] as const).find((alan) => girdi[alan] !== undefined && girdi[alan] !== mevcut[alan]);

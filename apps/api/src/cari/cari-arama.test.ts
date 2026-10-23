@@ -16,7 +16,7 @@ describe("CariService arama", () => {
     await servis.listele("0532 123 45 67");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { aramaNormal: { contains: "0532 123 45 67" } },
+      where: { birlestigiCariId: null, aramaNormal: { contains: "0532 123 45 67" } },
     }));
   });
 
@@ -30,7 +30,7 @@ describe("CariService arama", () => {
     await servis.listele("ŞİŞLİ Makina");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { aramaNormal: { contains: "sisli makina" } },
+      where: { birlestigiCariId: null, aramaNormal: { contains: "sisli makina" } },
     }));
   });
 
@@ -44,7 +44,7 @@ describe("CariService arama", () => {
     await servis.listele(undefined, undefined, 50, "musteri", "bloke");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { tip: { in: ["musteri", "her_ikisi"] }, karaListe: true },
+      where: { birlestigiCariId: null, tip: { in: ["musteri", "her_ikisi"] }, karaListe: true },
     }));
   });
 

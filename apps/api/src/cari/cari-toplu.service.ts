@@ -95,7 +95,7 @@ export class CariTopluService {
       }
     }
     const ids = uygun.map((c) => c.id);
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.updateMany({ where: { id: { in: ids } }, data: { aktif: girdi.aktif } }));
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.updateMany({ where: { id: { in: ids }, birlestigiCariId: null }, data: { aktif: girdi.aktif } }));
     await this.denetimKaydi(girdi.aktif ? "aktif" : "pasif", ids, acikBakiyeli.length ? { acikBakiyeli: acikBakiyeli.map((c) => c.id) } : {});
     return { islenen: ids.length, atlananlar };
   }

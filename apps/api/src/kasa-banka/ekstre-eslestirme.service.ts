@@ -25,7 +25,7 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { kuralAnahtari, kuralBul, satirYonu } from "./ekstre-kural";
 import { metniNormalle } from "./ekstre-oku";
-import { cariyiAdlaBul, karsiTarafAdaylari, kendiAdlariniBul } from "./ekstre-karsi-taraf";
+import { cariyiAdlaBul, karsiTarafAdaylari, kendiAdlariniBul, maasOdemesiMi } from "./ekstre-karsi-taraf";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
 import { DovizIslemService } from "./doviz-islem.service";
 import { KasaBankaService } from "./kasa-banka.service";
@@ -523,8 +523,15 @@ export class EkstreEslestirmeService {
       const adaylar = karsiTarafAdaylari(satir.aciklama, satir.karsiUnvan, tutar.giris, kendiAdlari);
       if (adaylar.length) {
         adAdayiVar = true;
-        const bulunan = cariyiAdlaBul(adaylar, await tx.cariHesap.findMany({ where: { tenantId, aktif: true }, select: sec }));
-        if (bulunan) return { cari: bulunan.cari, kaynak: "aciklama", gerekce: `Açıklamadaki ${bulunan.kaynak}: “${bulunan.ad}” (benzerlik %${Math.round(bulunan.puan * 100)}).` };
+        const cariler = await tx.cariHesap.findMany({ where: { tenantId, aktif: true }, select: { ...sec, tip: true } });
+        // KSB-18: maaş ödemesinde aynı kişinin müşteri kartı da olabilir; önce personel kartları denenir.
+        const personeller = !tutar.giris && maasOdemesiMi(satir.aciklama) ? cariler.filter((c) => c.tip === "personel") : [];
+        const maas = personeller.length ? cariyiAdlaBul(adaylar, personeller) : null;
+        const bulunan = maas ?? cariyiAdlaBul(adaylar, cariler);
+        if (bulunan) {
+          const { tip: _tip, ...cari } = bulunan.cari;
+          return { cari, kaynak: "aciklama", gerekce: `Açıklamadaki ${bulunan.kaynak}: “${bulunan.ad}” (benzerlik %${Math.round(bulunan.puan * 100)})${maas ? "; maaş ödemesi, personel kartı" : ""}.` };
+        }
       }
     }
     if (satir.karsiIban) {
@@ -535,7 +542,7 @@ export class EkstreEslestirmeService {
     }
     // Açıklamada VKN/TCKN geçiyorsa en güvenilir ikinci ipucudur.
     for (const aday of satir.aciklama.match(/\d{10,11}/g) ?? []) {
-      const cari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: aday }, select: sec });
+      const cari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: aday, birlestigiCariId: null }, select: sec });
       if (cari) return { cari, kaynak: "vkn" as CariEslesmeKaynagi };
     }
     // Son çare: açıklamada ya da karşı unvanda cari unvanı geçiyor mu? Karşılaştırma

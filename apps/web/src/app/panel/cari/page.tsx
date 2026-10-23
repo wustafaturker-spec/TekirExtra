@@ -154,6 +154,8 @@ interface GrupOzeti {
 }
 
 interface CariDetay extends Omit<Cari, "grup"> {
+  /** CARI-60: bu kart başka karta birleştirildiyse ana kart. */
+  birlestigiCari: { id: string; kod: string; unvan: string } | null;
   grupId: string | null;
   grup: GrupOzeti | null;
   kisaAd: string | null;
@@ -539,8 +541,15 @@ export default function CariSayfasi() {
   async function detayAc(id: string, sekmeyiKoru = false) {
     setHata("");
     try {
-      const [cDetay, cEkstre, cCrm, cAnaliz] = await Promise.all([
-        api<CariDetay>(`/cari/${id}`),
+      // CARI-60: birleştirilmiş kart doğrudan açılırsa ana karta gidilir.
+      const ilk = await api<CariDetay>(`/cari/${id}`);
+      if (ilk.birlestigiCari) {
+        setBasari(`${ilk.kod} ${ilk.unvan} kartı ${ilk.birlestigiCari.kod} kartına birleştirildi; kayıtları burada.`);
+        router.replace(`/panel/cari/${ilk.birlestigiCari.id}`);
+        return;
+      }
+      const cDetay = ilk;
+      const [cEkstre, cCrm, cAnaliz] = await Promise.all([
         // Seçili ekstre türü korunur; tarih süzgeci yeni caride sıfırdan başlar.
         api<EkstreVeri>(`/cari/${id}/ekstre?${new URLSearchParams({ ...(ekstreTuru !== "standart" ? { tur: ekstreTuru } : {}), ...(ekstreTuru === "doviz" && ekstreDoviz ? { doviz: ekstreDoviz } : {}) })}`).catch(() => null),
         api<CrmVeri>(`/cari/${id}/crm`).catch(() => null),
@@ -1033,6 +1042,7 @@ export default function CariSayfasi() {
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/vade-hatirlatma">⏰ Vade Hatırlatma</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/gruplar">🏢 Cari Grupları</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/mutabakatlar">🤝 Mutabakatlar</ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && (rol === "yonetici" || rol === "muhasebe") && <ButtonLabel as="a" href="/panel/cari/mukerrer">👥 Mükerrer Kartlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
             {!yeniSayfasi && !detaySayfasi && yonetici && <Button onClick={() => setTopluDenklestirme("onay")}>⚖ Toplu denkleştir</Button>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}

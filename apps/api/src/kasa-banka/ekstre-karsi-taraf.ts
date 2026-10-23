@@ -39,6 +39,14 @@ export function karsiTarafAdaylari(aciklama: string, karsiUnvan: string | null, 
   return hamAdaylar(aciklama, karsiUnvan, giris).filter((a) => !kendimiz(a.ad));
 }
 
+/**
+ * KSB-18: açıklama maaş ödemesi mi ("ŞUBAT 2026 MAAŞ ÖDEMESİ", "ücret ödemesi").
+ * Tek başına "ücret" sayılmaz: "EFT ÜCRETİ" banka masrafıdır.
+ */
+export function maasOdemesiMi(aciklama: string): boolean {
+  return /\b(maas|bordro)|\bucret\s+odeme/.test(metniNormalle(aciklama));
+}
+
 function etiketliAlanlar(aciklama: string) {
   return [...aciklama.matchAll(ETIKETLI)].map((m) => ({ etiket: metniNormalle(m[1]), deger: m[2].trim() })).filter((a) => a.deger.length >= 3);
 }
@@ -85,6 +93,8 @@ function hamAdaylar(aciklama: string, karsiUnvan: string | null, giris: boolean)
 const sesli = (k: string) => k.replace(/w/g, "v").replace(/x/g, "ks").replace(/q/g, "k");
 const kelimeler = (metin: string) => metniNormalle(metin).split(/[^a-z0-9]+/).filter((k) => k.length >= 2 && !/^\d+$/.test(k)).map(sesli);
 const ayirtEdici = (metin: string) => kelimeler(metin).filter((k) => !GENEL.has(k));
+/** Unvanın ayırt edici kelimeleri (tüzel ekler ve bağlaçlar atılmış, aksansız); CARI-56 da kullanır. */
+export const adKelimeleri = ayirtEdici;
 
 function mesafe1(a: string, b: string): boolean {
   if (Math.abs(a.length - b.length) > 1) return false;
