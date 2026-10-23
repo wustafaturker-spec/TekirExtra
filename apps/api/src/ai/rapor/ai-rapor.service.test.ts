@@ -42,7 +42,9 @@ describe("yönetici özeti (AI-08)", () => {
     const metinUret = vi.spyOn(saglayici, "metinUret").mockResolvedValue("Net zarar var.");
     const o = await kur(saglayici as never).calistir();
     expect(o.yorum).toBe("Net zarar var.");
-    expect(metinUret.mock.calls[0][0].prompt).toContain('"netKar":-50');
+    expect(metinUret.mock.calls[0][0].prompt).toContain("- Net kâr: -50,00 TL");
+    expect(metinUret.mock.calls[0][0].prompt).toContain("Ay başından bugüne");
+    expect(metinUret.mock.calls[0][0].sistemRol).toContain("brüt kâr ile net kârı");
     expect(metinUret.mock.calls[0][0].sistemRol).toContain("yeni rakam");
   });
 

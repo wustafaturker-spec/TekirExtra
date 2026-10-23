@@ -43,6 +43,35 @@ export function yorumuSadelestir(metin: string): string {
 }
 const tl = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
 
+export const YORUM_SISTEM_ROLU =
+  "Sen bir ön muhasebe uygulamasında yöneticiye kısa finansal yorum yazan asistansın. Yalnız verilen rakamları kullan; yeni rakam, oran, tahmin ya da sektör karşılaştırması üretme. " +
+  "Her tutarı verildiği adıyla an: brüt kâr ile net kârı, satış ile kârı birbirine karıştırma; bir tutarı başka bir kalemin adıyla yazma. " +
+  "Tutarı ya verildiği gibi ya da iki ondalıklı milyon/bin TL olarak yaz (3.083.394,29 TL → 3,08 milyon TL). " +
+  "Kâr ve satış rakamları ay başından bugüne kadardır, dönem kapanmadı: \"dönem sonunda\" deme. Bakiyeler bugün itibarıyladır. " +
+  "Rakamları tekrar sıralama, ne anlama geldiklerini yorumla. Düz metin, başlık ve madde işareti yok, en çok 4 cümle, Türkçe.";
+
+/**
+ * Yorum istemi: rakamlar Türkçe adları ve TL biçimiyle verilir. JSON anahtarlarıyla
+ * (brutKar/netKar) verildiğinde model yuvarladığı iki yakın kârı birbirinin
+ * adıyla yazıyordu (2026-10-23).
+ */
+export function yorumIstemi(donem: YoneticiOzeti["donem"], m: YoneticiOzeti["metrikler"], uyarilar: string[]): string {
+  return [
+    `Ay başından bugüne (${donem.baslangic} – ${donem.bitis}):`,
+    `- Net satış: ${tl(m.netSatis)}`,
+    `- Brüt kâr: ${tl(m.brutKar)}`,
+    `- Net kâr: ${tl(m.netKar)}`,
+    "Bugün itibarıyla:",
+    `- Nakit varlıklar: ${tl(m.nakitVarliklar)}`,
+    `- Toplam alacaklar: ${tl(m.toplamAlacaklar)}`,
+    `- Toplam borçlar: ${tl(m.toplamBorclar)}`,
+    `- Net varlık: ${tl(m.netVarlik)}`,
+    `- Vadesi geçmiş alacak: ${tl(m.vadesiGecenAlacak)} (${m.vadesiGecenAlacakSayisi} fatura)`,
+    `- Vadesi geçmiş borç: ${tl(m.vadesiGecenBorc)}`,
+    `Uyarılar: ${uyarilar.join(" ") || "yok"}`,
+  ].join("\n");
+}
+
 /**
  * AI-08: yönetici özeti rapor modülünün kendi hesaplarından gelir — finansal
  * özet (RPR-15), gelir-gider/kâr (RPR-12), vadesi geçenler (RPR-17). Çağrılar
@@ -98,9 +127,8 @@ export class AiRaporService {
       const { saglayici } = await this.saglayiciBul(aktifBaglam().tenantId);
       if (saglayici.saglayiciAdi === "tanimsiz") return null;
       const metin = await saglayici.metinUret({
-        sistemRol:
-          "Sen bir ön muhasebe uygulamasında yöneticiye kısa finansal yorum yazan asistansın. Yalnız verilen rakamları kullan; yeni rakam, oran, tahmin ya da sektör karşılaştırması üretme. Rakamları tekrar sıralama, ne anlama geldiklerini yorumla. Düz metin, başlık ve madde işareti yok, en çok 4 cümle, Türkçe.",
-        prompt: `Dönem: ${donem.baslangic} – ${donem.bitis} (kâr rakamları bu dönem için; bakiyeler bugün itibarıyla).\nRakamlar (TL): ${JSON.stringify(metrikler)}\nUyarılar: ${uyarilar.join(" ") || "yok"}`,
+        sistemRol: YORUM_SISTEM_ROLU,
+        prompt: yorumIstemi(donem, metrikler, uyarilar),
         dusunmeKapali: true,
       });
       return yorumuSadelestir(metin) || null;
