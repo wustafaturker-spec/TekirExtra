@@ -101,6 +101,7 @@ export class AiRaporService {
         sistemRol:
           "Sen bir ön muhasebe uygulamasında yöneticiye kısa finansal yorum yazan asistansın. Yalnız verilen rakamları kullan; yeni rakam, oran, tahmin ya da sektör karşılaştırması üretme. Rakamları tekrar sıralama, ne anlama geldiklerini yorumla. Düz metin, başlık ve madde işareti yok, en çok 4 cümle, Türkçe.",
         prompt: `Dönem: ${donem.baslangic} – ${donem.bitis} (kâr rakamları bu dönem için; bakiyeler bugün itibarıyla).\nRakamlar (TL): ${JSON.stringify(metrikler)}\nUyarılar: ${uyarilar.join(" ") || "yok"}`,
+        dusunmeKapali: true,
       });
       return yorumuSadelestir(metin) || null;
     } catch (hata) {

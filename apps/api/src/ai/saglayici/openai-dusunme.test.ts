@@ -36,4 +36,12 @@ describe("OpenAI uyumlu sağlayıcıda düşünmeyi kapatma", () => {
     await expect(new OpenAiAiProvider("k", "m", "https://x.example/v1").yapilandirilmisUretim({ prompt: "x", dusunmeKapali: true }, sema)).rejects.toThrow("HTTP 401");
     expect(istek).toHaveBeenCalledTimes(1);
   });
+
+  it("serbest metin üretiminde de istenince düşünme kapatılır", async () => {
+    istek.mockResolvedValue({ choices: [{ message: { content: "yorum" } }] });
+    await expect(new OpenAiAiProvider("k", "qwen", "https://evren.example/v1").metinUret({ prompt: "x", dusunmeKapali: true })).resolves.toBe("yorum");
+    await new OpenAiAiProvider("k", "qwen", "https://evren.example/v1").metinUret({ prompt: "x" });
+    expect(govde(0).chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect("chat_template_kwargs" in govde(1)).toBe(false);
+  });
 });

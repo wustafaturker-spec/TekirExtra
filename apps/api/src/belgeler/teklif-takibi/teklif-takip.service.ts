@@ -150,7 +150,7 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
     const alici = t?.alici ?? b.cari.eposta ?? null;
     try {
       const { saglayici } = await this.saglayiciBul(tenantId);
-      const m = await saglayici.yapilandirilmisUretim({ sistemRol: TAKIP_METNI_TALIMATI, prompt: [takipMetniIstemi(bilgi), tercihlerBlogu(tercihler, veriEtiketiTemizle)].filter(Boolean).join("\n\n") }, takipMetniSemasi);
+      const m = await saglayici.yapilandirilmisUretim({ sistemRol: TAKIP_METNI_TALIMATI, prompt: [takipMetniIstemi(bilgi), tercihlerBlogu(tercihler, veriEtiketiTemizle)].filter(Boolean).join("\n\n"), dusunmeKapali: true }, takipMetniSemasi);
       if (yerTutucuVar(m.konu) || yerTutucuVar(m.metin)) throw new Error("Model metninde yer tutucu kaldı");
       return { ...m, alici, kaynak: "model" };
     } catch (hata) {

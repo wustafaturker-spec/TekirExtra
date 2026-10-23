@@ -57,23 +57,7 @@ export class OpenAiAiProvider implements IAiProvider {
 
     messages.push({ role: "user", content: userContent });
 
-    const endpoint = `${this.baseUrl}/chat/completions`;
-    const govde = { model: this.model, messages, response_format: { type: "json_object" }, temperature: 0.1 };
-    const istek = (ek: Record<string, unknown>) => saglayiciIstegi("OpenAI", endpoint, { Authorization: `Bearer ${this.apiKey}` }, { ...govde, ...ek }, { dnsDogrula: this.dnsDogrula });
-    // OpenAI'nin kendisi bilinmeyen parametreyi reddeder; yalnız uyumlu özel adreslerde
-    // (vLLM/qwen3 sohbet şablonu) istenir, adres reddederse parametresiz yeniden denenir.
-    const dusunmeKapat = girdi.dusunmeKapali && this.dnsDogrula && !/\/\/api\.openai\.com\//.test(endpoint);
-    let veri: any;
-    if (dusunmeKapat) {
-      try {
-        veri = await istek({ chat_template_kwargs: { enable_thinking: false } });
-      } catch (hata) {
-        if (!(hata instanceof Error && hata.message.includes("(HTTP 400)"))) throw hata;
-        veri = await istek({});
-      }
-    } else {
-      veri = await istek({});
-    }
+    const veri = await this.tamamla({ model: this.model, messages, response_format: { type: "json_object" }, temperature: 0.1 }, girdi.dusunmeKapali);
     this.kullanimiAl(veri);
     const hamMetin = veri.choices?.[0]?.message?.content;
     if (!hamMetin) {
@@ -95,16 +79,27 @@ export class OpenAiAiProvider implements IAiProvider {
     }
     messages.push({ role: "user", content: girdi.prompt });
 
-    const endpoint = `${this.baseUrl}/chat/completions`;
-    const veri = await saglayiciIstegi("OpenAI", endpoint, {
-        Authorization: `Bearer ${this.apiKey}`,
-      }, {
-        model: this.model,
-        messages,
-        temperature: 0.3,
-      }, { dnsDogrula: this.dnsDogrula });
+    const veri = await this.tamamla({ model: this.model, messages, temperature: 0.3 }, girdi.dusunmeKapali);
     this.kullanimiAl(veri);
     return veri.choices?.[0]?.message?.content || "";
+  }
+
+  /**
+   * OpenAI'nin kendisi bilinmeyen parametreyi reddeder; düşünme kapatma yalnız uyumlu
+   * özel adreslerde (vLLM/qwen3 sohbet şablonu) istenir, adres reddederse parametresiz
+   * yeniden denenir. EVREN qwen'de düşünme kapalıyken 4 cümlelik yorum 3–4 sn,
+   * açıkken 400–3.900 düşünme token'ıyla 12–60 sn (2026-10-23).
+   */
+  private async tamamla(govde: Record<string, unknown>, dusunmeKapali?: boolean): Promise<any> {
+    const endpoint = `${this.baseUrl}/chat/completions`;
+    const istek = (ek: Record<string, unknown>) => saglayiciIstegi("OpenAI", endpoint, { Authorization: `Bearer ${this.apiKey}` }, { ...govde, ...ek }, { dnsDogrula: this.dnsDogrula });
+    if (!(dusunmeKapali && this.dnsDogrula && !/\/\/api\.openai\.com\//.test(endpoint))) return istek({});
+    try {
+      return await istek({ chat_template_kwargs: { enable_thinking: false } });
+    } catch (hata) {
+      if (!(hata instanceof Error && hata.message.includes("(HTTP 400)"))) throw hata;
+      return istek({});
+    }
   }
 
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {

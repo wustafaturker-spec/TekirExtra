@@ -159,6 +159,7 @@ export class VadeHatirlatmaService {
         "E-postada fatura tablosu zaten var: tutar, tarih ya da fatura numarası yazma, yeni bilgi uydurma. Selamlama ve imza yazma. " +
         "En çok 3 cümle, düz metin, Türkçe.",
       prompt: `Gönderen firma: ${firma?.unvan ?? ""}. Ton: ${ton}. ${ayrinti} Ödeme yapıldıysa dikkate alınmamasını rica eden ve iletişim için davet eden bir not yaz.`,
+      dusunmeKapali: true,
     });
     const not = metin.replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 1000);
     if (!not) throw new BadRequestException("Not üretilemedi; lütfen tekrar deneyin.");
