@@ -7,6 +7,7 @@ import { DemirbasService } from "../src/demirbas/demirbas.service";
 import { DonemKilidiService } from "../src/donem-kapatma/donem-kilidi.service";
 import { fisleriUret } from "../src/mali-musavir/muhasebe/fis-uretici";
 import { uretimGirdisiOku } from "../src/mali-musavir/muhasebe/fis-okuyucu";
+import { tahakkukOku } from "../src/rapor/tahakkuk";
 
 /**
  * DMR-01…11: demirbaş gerçek PostgreSQL'de, uygulama rolüyle (RLS). Faturadan
@@ -150,6 +151,15 @@ describe("demirbaş ve amortisman (DMR-01…11)", () => {
     const o = await calistir(() => amortisman.onizleme(2027));
     expect(o.satirlar.map((s) => s.kod)).not.toContain("DMR-000002");
     await expect(calistir(() => amortisman.geriAl(2026, "deneme"), "yonetici")).rejects.toThrow(/elden çıkmış/);
+  });
+
+  it("bütçe tahakkuku: demirbaş alışı gider değil, amortisman gider; satışta yalnız kâr (DMR-13)", async () => {
+    const t = (bas: string, bit: string) => prisma.tenantIslem(tenantId, (tx) => tahakkukOku(tx as never, tenantId, new Date(`${bas}T00:00:00Z`), new Date(`${bit}T00:00:00Z`)));
+    const y26 = (await t("2026-01-01", "2026-12-31")).kalemler;
+    expect(y26.filter((k) => k.anahtar === "hizmet_alis" || k.anahtar === "mal_alis")).toEqual([]);
+    expect(y26.filter((k) => k.anahtar === "amortisman").reduce((a, k) => a + k.tutarTry, 0)).toBe(141750);
+    const y27 = (await t("2027-01-01", "2027-12-31")).kalemler;
+    expect(y27.map((k) => [k.anahtar, k.tutarTry])).toEqual([["satis:varlik_satisi", 5000]]);
   });
 
   it("kapalı dönemde çıkış yapılmaz; çıkış geri alınınca 2026 geri alınabilir", async () => {

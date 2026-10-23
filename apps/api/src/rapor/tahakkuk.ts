@@ -53,7 +53,11 @@ export interface TahakkukVerisi {
     aciklama: string | null;
     gelirTuru: string | null;
     cari: { unvan: string };
-    satirlar: { matrah: Sayi; stok: { tip: string } | null }[];
+    /**
+     * DMR-13: `demirbas` — demirbaşa bağlı alış satırı (varlıktır, gider değil);
+     * `demirbasCikisTl` — satılan demirbaşa bağlanan TL tutarı (satış geliri değil).
+     */
+    satirlar: { matrah: Sayi; stok: { tip: string } | null; demirbas?: boolean; demirbasCikisTl?: Sayi }[];
   }[];
   masraflar: {
     id: string;
@@ -87,6 +91,10 @@ export interface TahakkukVerisi {
     giderTutari?: Sayi;
     personel: { ad: string; soyad: string };
   }[];
+  /** DMR-13: kesin yıl sonu amortismanı (31.12), kart başına. */
+  amortismanlar?: { id: string; yil: number; kod: string; ad: string; tutar: Sayi }[];
+  /** DMR-13: elden çıkış; fark = satış bedeli − net defter değeri (kâr pozitif). */
+  demirbasCikislari?: { id: string; tarih: Date; kod: string; ad: string; tur: string; fark: Sayi }[];
 }
 
 /**
@@ -113,6 +121,9 @@ export const SABIT_KALEMLER: { anahtar: string; tur: TahakkukTur; anaKategori: s
   { anahtar: "hizmet_alis", tur: "gider", anaKategori: "Hizmet Alış Giderleri", altKategori: "Hizmet Alışları" },
   { anahtar: "satis_iadesi", tur: "gider", anaKategori: "Satış İadeleri", altKategori: "Satış İadesi" },
   { anahtar: "personel", tur: "gider", anaKategori: "Personel Giderleri", altKategori: "Bordro (işveren maliyeti)" },
+  // DMR-13: demirbaş alışı gider değildir; gideri yıl sonu amortismanıdır. Çıkışta yalnız kâr/zarar.
+  { anahtar: "amortisman", tur: "gider", anaKategori: "Amortisman Giderleri", altKategori: "Amortisman" },
+  { anahtar: "demirbas_cikis_zarari", tur: "gider", anaKategori: "Faaliyet Dışı Giderler", altKategori: "Demirbaş Satış ve Hurda Zararı" },
 ];
 const SABIT = new Map(SABIT_KALEMLER.map((k) => [k.anahtar, k]));
 
@@ -148,7 +159,10 @@ export function tahakkukSiniflandir(veri: TahakkukVerisi): { kalemler: TahakkukK
 
     if (f.tip === "satis") {
       const tur = f.gelirTuru && SABIT.has(`satis:${f.gelirTuru}`) ? f.gelirTuru : "ticari_satis";
-      ekle(f.id, `satis:${tur}`, matrah, f.aciklama || "Satış faturası");
+      // DMR-13: satılan demirbaşa bağlanan tutar gelir değil; kâr/zararı çıkış kaydından gelir.
+      const dmr = f.satirlar.reduce((t, s) => t + sayi(s.demirbasCikisTl), 0) / kur;
+      const gelir = kurus(matrah - dmr);
+      if (gelir > 0 || dmr === 0) ekle(f.id, `satis:${tur}`, gelir, f.aciklama || "Satış faturası");
     } else if (f.tip === "satis_iade") {
       ekle(f.id, "satis_iadesi", matrah, f.aciklama || "Satış iade faturası");
     } else if (f.tip === "alis_iade") {
@@ -156,10 +170,13 @@ export function tahakkukSiniflandir(veri: TahakkukVerisi): { kalemler: TahakkukK
     } else if (f.tip === "alis") {
       // Hizmet/mal ayrımı satır matrahlarının oranıyla faturanın toplam
       // matrahına ölçeklenir; genel iskonto toplamı kaydırmasın.
+      // DMR-13: demirbaşa bağlı satırlar gider değildir, payları düşülür.
       const satirToplam = f.satirlar.reduce((t, s) => t + sayi(s.matrah), 0);
-      const hizmetSatir = f.satirlar.filter((s) => s.stok?.tip === "hizmet").reduce((t, s) => t + sayi(s.matrah), 0);
+      const hizmetSatir = f.satirlar.filter((s) => !s.demirbas && s.stok?.tip === "hizmet").reduce((t, s) => t + sayi(s.matrah), 0);
+      const demirbasSatir = f.satirlar.filter((s) => s.demirbas).reduce((t, s) => t + sayi(s.matrah), 0);
       const hizmet = satirToplam > 0 ? kurus((matrah * hizmetSatir) / satirToplam) : 0;
-      const mal = kurus(matrah - hizmet);
+      const demirbas = satirToplam > 0 ? kurus((matrah * demirbasSatir) / satirToplam) : 0;
+      const mal = kurus(matrah - hizmet - demirbas);
       if (hizmet > 0) ekle(`${f.id}:hizmet`, "hizmet_alis", hizmet, f.aciklama ? `${f.aciklama} (hizmet)` : "Alış faturası (hizmet)");
       if (mal > 0) ekle(`${f.id}:mal`, "mal_alis", mal, f.aciklama || "Alış faturası (mal)");
     }
@@ -199,6 +216,24 @@ export function tahakkukSiniflandir(veri: TahakkukVerisi): { kalemler: TahakkukK
     });
   }
 
+  const amortisman = sabit("amortisman");
+  for (const a of veri.amortismanlar ?? []) {
+    const tutar = kurus(sayi(a.tutar));
+    kalemler.push({
+      id: a.id, tarih: `${a.yil}-12-31`, tur: "gider", anahtar: "amortisman", anaKategori: amortisman.anaKategori, altKategori: amortisman.altKategori,
+      belgeNo: a.kod, cariUnvan: "—", aciklama: `${a.ad} ${a.yil} amortismanı`, dovizCinsi: "TRY", tutar, tutarTry: tutar,
+    });
+  }
+  for (const c of veri.demirbasCikislari ?? []) {
+    const fark = kurus(sayi(c.fark));
+    if (fark === 0) continue;
+    const k = sabit(fark > 0 ? "satis:varlik_satisi" : "demirbas_cikis_zarari");
+    kalemler.push({
+      id: c.id, tarih: isoGun(c.tarih), tur: k.tur, anahtar: fark > 0 ? "satis:varlik_satisi" : "demirbas_cikis_zarari", anaKategori: k.anaKategori, altKategori: k.altKategori,
+      belgeNo: c.kod, cariUnvan: "—", aciklama: `${c.ad} elden çıkışı (${fark > 0 ? "kâr" : "zarar"})`, dovizCinsi: "TRY", tutar: Math.abs(fark), tutarTry: Math.abs(fark),
+    });
+  }
+
   kalemler.sort((a, b) => b.tarih.localeCompare(a.tarih));
   return { kalemler, cevrilemeyen };
 }
@@ -230,9 +265,24 @@ export async function tahakkukOku(tx: Prisma.TransactionClient, tenantId: string
     select: {
       id: true, no: true, tip: true, tarih: true, toplamMatrah: true, kur: true, dovizCinsi: true, aciklama: true, gelirTuru: true,
       cari: { select: { unvan: true } },
-      satirlar: { select: { matrah: true, stok: { select: { tip: true } } } },
+      satirlar: { select: { id: true, matrah: true, stok: { select: { tip: true } } } },
     },
   });
+  // DMR-13: demirbaşa bağlı satırlar, kesin amortisman ve elden çıkışlar.
+  const satirIdleri = faturalar.flatMap((f) => f.satirlar.map((s) => s.id));
+  const yillar = Array.from({ length: bitis.getUTCFullYear() - baslangic.getUTCFullYear() + 1 }, (_, i) => baslangic.getUTCFullYear() + i)
+    .filter((y) => { const d = new Date(Date.UTC(y, 11, 31)); return d >= baslangic && d <= bitis; });
+  const [dmrGiris, dmrIlave, dmrCikisSatir, amortismanSatirlari, cikislar] = await Promise.all([
+    tx.demirbas.findMany({ where: { tenantId, faturaSatirId: { in: satirIdleri } }, select: { faturaSatirId: true } }),
+    tx.demirbasIlaveBedel.findMany({ where: { tenantId, faturaSatirId: { in: satirIdleri } }, select: { faturaSatirId: true } }),
+    tx.demirbas.findMany({ where: { tenantId, cikisFaturaSatirId: { in: satirIdleri } }, select: { cikisFaturaSatirId: true, cikisBedeli: true } }),
+    yillar.length ? tx.amortismanSatiri.findMany({ where: { tenantId, yil: { in: yillar }, donem: { durum: "kesin" } }, select: { id: true, yil: true, tutar: true, demirbas: { select: { kod: true, ad: true } } } }) : [],
+    tx.demirbas.findMany({ where: { tenantId, cikisTarihi: { gte: baslangic, lte: bitis } }, select: { id: true, kod: true, ad: true, cikisTarihi: true, cikisTuru: true, cikisBedeli: true, cikisBirikmis: true, edinmeBedeli: true, ilaveBedeller: { select: { tutar: true } } } }),
+  ]);
+  const demirbasSatirlari = new Set([...dmrGiris, ...dmrIlave].map((d) => d.faturaSatirId));
+  const cikisTl = new Map<string, number>();
+  for (const d of dmrCikisSatir) cikisTl.set(d.cikisFaturaSatirId!, (cikisTl.get(d.cikisFaturaSatirId!) ?? 0) + sayi(d.cikisBedeli));
+  const faturaVerisi = faturalar.map((f) => ({ ...f, satirlar: f.satirlar.map((s) => ({ ...s, demirbas: demirbasSatirlari.has(s.id), demirbasCikisTl: cikisTl.get(s.id) ?? 0 })) }));
   const masraflar = await tx.masraf.findMany({
     where: { tenantId, durum: "onaylandi", tarih: { gte: baslangic, lte: bitis } },
     select: {
@@ -262,7 +312,14 @@ export async function tahakkukOku(tx: Prisma.TransactionClient, tenantId: string
     return aySonu >= baslangic && aySonu <= bitis;
   }).map(({ hesapOzeti, kalemler, ...b }) => ({ ...b, giderTutari: bordroGideri(hesapOzeti, kalemler) }));
 
-  const { kalemler, cevrilemeyen } = tahakkukSiniflandir({ faturalar, masraflar, gelirKayitlari, bordrolar });
+  const { kalemler, cevrilemeyen } = tahakkukSiniflandir({
+    faturalar: faturaVerisi, masraflar, gelirKayitlari, bordrolar,
+    amortismanlar: amortismanSatirlari.map((a) => ({ id: a.id, yil: a.yil, kod: a.demirbas.kod, ad: a.demirbas.ad, tutar: a.tutar })),
+    demirbasCikislari: cikislar.map((c) => {
+      const bedel = c.ilaveBedeller.reduce((t, i) => t + sayi(i.tutar), sayi(c.edinmeBedeli));
+      return { id: c.id, tarih: c.cikisTarihi!, kod: c.kod, ad: c.ad, tur: c.cikisTuru ?? "", fark: sayi(c.cikisBedeli) - (bedel - sayi(c.cikisBirikmis)) };
+    }),
+  });
   const uyarilar = cevrilemeyen ? [`${cevrilemeyen} dövizli masraf, kuru kayıtlı olmadığı için sayılmadı.`] : [];
   return { kalemler, uyarilar };
 }

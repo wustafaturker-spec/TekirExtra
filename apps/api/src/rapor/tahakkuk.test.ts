@@ -78,3 +78,32 @@ describe("tahakkukSiniflandir (BUT-01…BUT-04)", () => {
     expect(kategoriOzeti(kalemler, "gelir")).toEqual([{ anaKategori: "Esas Faaliyet Gelirleri", altKategori: "Satış Hasılatı", tutar: "0.30" }]);
   });
 });
+
+describe("demirbaş (DMR-13)", () => {
+  it("demirbaşa bağlı alış satırı gider sayılmaz; payı genel iskontoyla birlikte düşülür", () => {
+    const { kalemler } = tahakkukSiniflandir({
+      ...bos,
+      faturalar: [fatura({
+        id: "a", tip: "alis", toplamMatrah: 900,
+        satirlar: [{ matrah: 500, stok: { tip: "hizmet" }, demirbas: true }, { matrah: 250, stok: { tip: "hizmet" } }, { matrah: 250, stok: { tip: "urun" } }],
+      })],
+    });
+    expect(kalemler.map((k) => [k.anahtar, k.tutarTry])).toEqual([["hizmet_alis", 225], ["mal_alis", 225]]);
+  });
+
+  it("satılan demirbaşın satırı satış gelirinden düşer; çıkış kârı faaliyet dışı gelir, zararı ayrı gider; amortisman 31.12'de gider", () => {
+    const { kalemler } = tahakkukSiniflandir({
+      ...bos,
+      faturalar: [fatura({ id: "s", tip: "satis", toplamMatrah: 1500, satirlar: [{ matrah: 1000, stok: null, demirbasCikisTl: 1000 }, { matrah: 500, stok: null }] })],
+      demirbasCikislari: [
+        { id: "c1", tarih: g("2026-09-05"), kod: "DMR-1", ad: "Forklift", tur: "satis", fark: 300 },
+        { id: "c2", tarih: g("2026-09-06"), kod: "DMR-2", ad: "Yazıcı", tur: "hurda", fark: -120 },
+      ],
+      amortismanlar: [{ id: "am", yil: 2026, kod: "DMR-3", ad: "Bilgisayar", tutar: 2500 }],
+    });
+    expect(kalemler.find((k) => k.id === "s")).toMatchObject({ anahtar: "satis:ticari_satis", tutarTry: 500 });
+    expect(kalemler.find((k) => k.id === "c1")).toMatchObject({ tur: "gelir", anahtar: "satis:varlik_satisi", tutarTry: 300 });
+    expect(kalemler.find((k) => k.id === "c2")).toMatchObject({ tur: "gider", anahtar: "demirbas_cikis_zarari", tutarTry: 120 });
+    expect(kalemler.find((k) => k.id === "am")).toMatchObject({ tur: "gider", anahtar: "amortisman", tarih: "2026-12-31", tutarTry: 2500 });
+  });
+});

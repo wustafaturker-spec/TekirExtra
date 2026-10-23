@@ -79,3 +79,10 @@ describe("satış raporları (RPR-13)", () => {
     expect(bilinenMarj(D(1000), D(0), D(1000))).toBeNull();
   });
 });
+
+describe("demirbaş kâr/zararda (DMR-13)", () => {
+  it("amortisman faaliyet gideri, çıkış zararı faaliyet dışı gider; ikisi de net kârı düşürür", () => {
+    const kz = karZararHesapla([kalem("satis:ticari_satis", 10_000), kalem("amortisman", 1_000), kalem("demirbas_cikis_zarari", 200), kalem("satis:varlik_satisi", 50)], [satir(10_000, 6_000)]);
+    expect(kz).toMatchObject({ brutKar: 4_000, amortisman: 1_000, faaliyetGiderleri: 1_000, digerGiderler: 200, digerGelirler: 50, netKar: 2_850 });
+  });
+});

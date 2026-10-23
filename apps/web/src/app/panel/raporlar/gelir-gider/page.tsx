@@ -50,7 +50,9 @@ interface KarZarar {
   hizmetAlislari: number;
   masraflar: number;
   personel: number;
+  amortisman?: number;
   faaliyetGiderleri: number;
+  digerGiderler?: number;
   netKar: number;
   maliyetsizSatis: { satir: number; ciro: number };
 }
@@ -268,8 +270,10 @@ export default function GelirGiderRaporuSayfasi() {
               <div className="invoice-summary__line is-discount"><span>Hizmet alışları</span><span>{veri.karZarar.hizmetAlislari ? "-" : ""}{tl(veri.karZarar.hizmetAlislari)}</span></div>
               <div className="invoice-summary__line is-discount"><span>Masraflar</span><span>{veri.karZarar.masraflar ? "-" : ""}{tl(veri.karZarar.masraflar)}</span></div>
               <div className="invoice-summary__line is-discount"><span>Personel (bordro)</span><span>{veri.karZarar.personel ? "-" : ""}{tl(veri.karZarar.personel)}</span></div>
+              {Boolean(veri.karZarar.amortisman) && <div className="invoice-summary__line is-discount"><span>Amortisman</span><span>-{tl(veri.karZarar.amortisman ?? 0)}</span></div>}
+              {Boolean(veri.karZarar.digerGiderler) && <div className="invoice-summary__line is-discount"><span>Demirbaş satış/hurda zararı</span><span>-{tl(veri.karZarar.digerGiderler ?? 0)}</span></div>}
               <div className="invoice-summary__line is-grand"><span>Net kâr / zarar</span><span>{tl(veri.karZarar.netKar)}</span></div>
-              <small className="muted">Mal alışı gider sayılmaz: stoğa girer, satıldığında maliyet olarak düşer. Ödemeler kâra girmez. Aşağıdaki gelir/gider tabloları alışları gider olarak gösterir (bütçe karşılaştırması için).</small>
+              <small className="muted">Mal alışı gider sayılmaz: stoğa girer, satıldığında maliyet olarak düşer. Demirbaş alışı da gider sayılmaz; gideri yıl sonu amortismanıdır. Ödemeler kâra girmez. Aşağıdaki gelir/gider tabloları alışları gider olarak gösterir (bütçe karşılaştırması için).</small>
             </div>
           </Card>
 

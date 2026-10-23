@@ -26,7 +26,11 @@ export interface KarZarar {
   hizmetAlislari: number;
   masraflar: number;
   personel: number;
+  /** DMR-13: kesin yıl sonu amortismanı (faaliyet gideri). */
+  amortisman: number;
   faaliyetGiderleri: number;
+  /** DMR-13: demirbaş satış ve hurda zararı (faaliyet dışı). */
+  digerGiderler: number;
   netKar: number;
   /** Maliyeti sıfır görünen mal satışları: brüt kâr bu tutar kadar şişkin olabilir. */
   maliyetsizSatis: { satir: number; ciro: number };
@@ -41,13 +45,15 @@ export function karZararHesapla(kalemler: TahakkukKalemi[], satirlar: SatisSatir
   const hizmetAlislari = kurus(topla((k) => k.anahtar === "hizmet_alis"));
   const masraflar = kurus(topla((k) => k.anahtar.startsWith("masraf_kategori:")));
   const personel = kurus(topla((k) => k.anahtar === "personel"));
+  const amortisman = kurus(topla((k) => k.anahtar === "amortisman"));
+  const digerGiderler = kurus(topla((k) => k.anahtar === "demirbas_cikis_zarari"));
   const smm = kurus(satirlar.reduce((t, s) => t + Number(s.maliyet), 0));
   const maliyetsiz = satirlar.filter(maliyetBilinmiyor);
   const brutKar = kurus(netSatis - smm);
-  const faaliyetGiderleri = kurus(hizmetAlislari + masraflar + personel);
+  const faaliyetGiderleri = kurus(hizmetAlislari + masraflar + personel + amortisman);
   return {
-    netSatis, smm, brutKar, digerGelirler, hizmetAlislari, masraflar, personel, faaliyetGiderleri,
-    netKar: kurus(brutKar + digerGelirler - faaliyetGiderleri),
+    netSatis, smm, brutKar, digerGelirler, hizmetAlislari, masraflar, personel, amortisman, faaliyetGiderleri, digerGiderler,
+    netKar: kurus(brutKar + digerGelirler - faaliyetGiderleri - digerGiderler),
     maliyetsizSatis: { satir: maliyetsiz.length, ciro: kurus(maliyetsiz.reduce((t, s) => t + Number(s.ciro), 0)) },
   };
 }
