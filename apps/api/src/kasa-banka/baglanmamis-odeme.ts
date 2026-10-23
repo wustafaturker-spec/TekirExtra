@@ -28,16 +28,34 @@ export async function baglanmamisFisler(tx: Prisma.TransactionClient, cariIdler:
   const tersler = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "ters_kayit", kaynakRef: { in: fisler.map((f) => f.id) } }, select: { kaynakRef: true, tutar: true } });
   const dusen = new Map<string, Prisma.Decimal>();
   for (const t of tersler) if (t.kaynakRef) dusen.set(t.kaynakRef, (dusen.get(t.kaynakRef) ?? D(0)).add(t.tutar));
+  const ham = fisler.map((f) => ({ f, kalan: f.tutar.sub(dusen.get(f.id) ?? 0).sub(f.kapamalar.reduce((t, k) => t.add(k.kaynakTutari ?? k.tutar), D(0))) }))
+    .filter((x) => x.kalan.gt(0.005));
+  if (!ham.length) return [];
+  // Denkleştirme karşı yöndeki kaynakları (ör. cariye ciro edilen çek, ödememiz) kapama yazmadan
+  // ödemeden en eskiden düşer (KSB-16 ters yön netleştirmesi). Bağlanmamış tutar bu yüzden carinin
+  // o dövizdeki alacaklı (tahsilatta) ya da borçlu (ödemede) bakiyesini aşamaz; kalan en yeni fişlerdedir.
+  const bakiyeler = await tx.cariHareket.groupBy({ by: ["cariId", "dovizCinsi", "tip"], where: { cariId: { in: [...new Set(ham.map((x) => x.f.cariId!))] } }, _sum: { tutar: true } });
+  const sinir = new Map<string, Prisma.Decimal>();
+  for (const b of bakiyeler) {
+    const anahtar = `${b.cariId}|${b.dovizCinsi}`;
+    // Tahsilat cariyi alacaklandırır; fazla tahsilat alacak − borç kadardır. Ödeme için tersi.
+    const isaret = b.tip === "alacak" ? 1 : -1;
+    sinir.set(anahtar, (sinir.get(anahtar) ?? D(0)).add(D(b._sum.tutar ?? 0).mul(isaret)));
+  }
   const sonuc: BaglanmamisFis[] = [];
-  for (const f of fisler) {
-    const kalan = f.tutar.sub(dusen.get(f.id) ?? 0).sub(f.kapamalar.reduce((t, k) => t.add(k.kaynakTutari ?? k.tutar), D(0)));
+  for (const { f, kalan: hamKalan } of [...ham].reverse()) {
+    const anahtar = `${f.cariId}|${f.dovizCinsi}`;
+    // Tahsilatta artı (alacaklı) bakiye, ödemede eksi (borçlu) bakiye kullanılabilir.
+    const yon = f.tip === "tahsilat" ? 1 : -1;
+    const kalan = Prisma.Decimal.min(hamKalan, Prisma.Decimal.max((sinir.get(anahtar) ?? D(0)).mul(yon), 0));
     if (!kalan.gt(0.005)) continue;
+    sinir.set(anahtar, (sinir.get(anahtar) ?? D(0)).sub(kalan.mul(yon)));
     sonuc.push({
       id: f.id, cariId: f.cariId!, tarih: f.tarih, tip: f.tip, dovizCinsi: f.dovizCinsi, tutar: f.tutar, kalan,
       kalanTry: (f.dovizCinsi === "TRY" ? kalan : kalan.mul(f.kur)).toDecimalPlaces(2), makbuzNo: f.makbuzNo, aciklama: f.aciklama,
     });
   }
-  return sonuc;
+  return sonuc.reverse();
 }
 
 /**

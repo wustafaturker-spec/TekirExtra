@@ -122,6 +122,15 @@ describe("ödemeyi sonradan farklı dövizli faturaya bağlama (KSB-19…24)", (
     expect(await yonetim.auditLog.count({ where: { tenantId, islem: { in: ["odeme_faturaya_baglandi", "odeme_fatura_bagi_cozuldu"] } } })).toBe(2);
   });
 
+  it("bağlanmamış tutar carinin alacaklı bakiyesini aşmaz (karşı yön kaynağı kapama yazmadan netleşir)", async () => {
+    const tutar = async () => (await oku((tx) => baglanmamisOdemeler(tx as never, [cariId], "tahsilat"))).get(cariId)?.toFixed(2);
+    // Fişte elle bağlanmamış 8.300; 300'ü TL faturayı otomatik kapatıyor.
+    expect(await tutar()).toBe("8000.00");
+    // Cariye ciro edilen çek gibi faturasız bir borç tahsilattan netleşir; bağlanmamış görünmemeli.
+    await yonetim.$executeRaw`INSERT INTO cari_hareketler (id, tenant_id, cari_id, tip, tutar, doviz_cinsi, kur, tutar_try, tarih, kaynak_tur) VALUES (gen_random_uuid(), ${tenantId}::uuid, ${cariId}::uuid, 'borc', 1000, 'TRY', 1, 1000, '2026-03-11', 'cek_senet_ciro')`;
+    expect(await tutar()).toBe("7300.00");
+  });
+
   it("fiş kapalı dönemde ters kayıtla geri alınırsa cari düzeltmesinin tersi bugün yazılır", async () => {
     await oku((tx) => bagDuzeltmeleriniGeriAl(tx as never, tenantId, [fisId], { tarih: "2026-10-23" }));
     const tersler = await yonetim.cariHareket.findMany({ where: { tenantId, kaynakTur: "doviz_baglama_iptal" } });
