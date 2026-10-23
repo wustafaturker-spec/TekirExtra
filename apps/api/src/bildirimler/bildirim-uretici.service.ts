@@ -20,6 +20,7 @@ import { coz } from "../core/kripto";
 import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
 import { tasarimVergiKodlariEski, vergiKodImzasi, VERGILI_TASARIM_TURLERI } from "../ebelge/firma-tasarimi/vergi-kodlari";
 import { TASARIM_ALANI } from "../tenant/belge-tasarimlari.service";
+import { gecerliYukumlulukler, sonrakiBakim, yukumlulukDurumu } from "../arac-takip/arac-hesap";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
 
 const gunEkle = (t: Date, gun: number) => new Date(t.getTime() + gun * 86_400_000);
@@ -629,6 +630,7 @@ export class BildirimUreticiService {
     girdiler.push(...(await this.kartEkstreUyarilari()));
     girdiler.push(...(await this.krediTaksitUyarilari()));
     girdiler.push(...(await this.teminatSureUyarilari()));
+    girdiler.push(...(await this.aracUyarilari()));
     girdiler.push(...(await this.mutabakatItirazlari()));
     girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
     girdiler.push(...(await this.irsaliyeFaturaOzetleri(gun)));
@@ -709,6 +711,54 @@ export class BildirimUreticiService {
         ...(doldu ? {} : { sonTarih: new Date(`${bitis}T23:59:59+03:00`) }),
       };
     });
+  }
+
+  /**
+   * ARC-04: aktif araçların geçerli yükümlülükleri (muayene, sigorta, kasko,
+   * MTV…) bitişe 30 ve 7 gün kala uyarı, geçince kritik; anahtar eşiğe göre
+   * ayrıldığı için 7 günde yeniden düşer, yenileme girilince kapanır. Bakım
+   * zamanı (ARC-07) geldiğinde ya da geçtiğinde de uyarılır.
+   */
+  private async aracUyarilari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const araclar = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Birim testlerinin sahte işlemlerinde araç tabloları yoktur.
+      if (!tx.arac || !tx.aracKmKaydi) return [];
+      const a = await tx.arac.findMany({ where: { aktif: true }, select: { id: true, plaka: true, bakimKmAraligi: true, bakimAyAraligi: true, sonBakimTarihi: true, sonBakimKm: true, yukumlulukler: { select: { id: true, tur: true, bitis: true } } } });
+      const km = await tx.aracKmKaydi.groupBy({ by: ["aracId"], where: { aracId: { in: a.map((x) => x.id) } }, _max: { km: true } });
+      const kmHaritasi = new Map(km.map((k) => [k.aracId, k._max.km]));
+      return a.map((x) => ({ ...x, km: kmHaritasi.get(x.id) ?? null }));
+    });
+    const ADLAR: Record<string, string> = { muayene: "Muayene", trafik_sigortasi: "Trafik sigortası", kasko: "Kasko", mtv: "MTV", egzoz: "Egzoz emisyon", takograf: "Takograf", diger: "Yükümlülük" };
+    const tarihYaz = (t: string) => t.split("-").reverse().join(".");
+    const girdiler: BildirimGirdisi[] = [];
+    for (const a of araclar) {
+      for (const y of gecerliYukumlulukler(a.yukumlulukler.map((k) => ({ ...k, bitis: k.bitis.toISOString().slice(0, 10) })))) {
+        const d = yukumlulukDurumu(y.bitis, bugun);
+        if (!d.esik) continue;
+        const doldu = d.esik === "doldu";
+        girdiler.push({
+          tur: "vade", onem: doldu ? "kritik" : "uyari",
+          baslik: `${a.plaka}: ${ADLAR[y.tur] ?? y.tur} ${doldu ? "süresi doldu" : "bitiyor"}`,
+          aciklama: `${ADLAR[y.tur] ?? y.tur} bitişi ${tarihYaz(y.bitis)}${doldu ? `; ${-d.kalanGun} gün geçti. Yenileyip araç kartına girin` : d.kalanGun === 0 ? " (bugün)" : ` (${d.kalanGun} gün kaldı)`}.`,
+          birlesimAnahtari: `vade:arac:${y.id}:${d.esik}`, kaynakTur: "arac", kaynakRef: a.id, hedefYol: `/panel/araclar/${a.id}`, roller: HEDEF_ROLLER.vade,
+          ...(doldu ? {} : { sonTarih: new Date(`${y.bitis}T23:59:59+03:00`) }),
+        });
+      }
+      const b = sonrakiBakim({ kmAraligi: a.bakimKmAraligi, ayAraligi: a.bakimAyAraligi, sonTarih: a.sonBakimTarihi?.toISOString().slice(0, 10) ?? null, sonKm: a.sonBakimKm, guncelKm: a.km, bugun });
+      if (b && (b.gecikti || b.yaklasiyor)) {
+        const neden = [b.tarih && `${tarihYaz(b.tarih)}`, b.km != null && `${b.km.toLocaleString("tr-TR")} km`].filter(Boolean).join(" ya da ");
+        girdiler.push({
+          tur: "vade", onem: b.gecikti ? "kritik" : "uyari",
+          baslik: `${a.plaka}: periyodik bakım ${b.gecikti ? "gecikti" : "yaklaşıyor"}`,
+          aciklama: `Sıradaki bakım ${neden}${b.kalanKm != null ? ` (kalan ${b.kalanKm.toLocaleString("tr-TR")} km)` : ""}. Bakım yapılınca araç kartına girin.`,
+          birlesimAnahtari: `vade:arac-bakim:${a.id}:${a.sonBakimTarihi?.toISOString().slice(0, 10) ?? ""}:${a.sonBakimKm ?? ""}:${b.gecikti ? "gecikti" : "yaklasiyor"}`,
+          kaynakTur: "arac", kaynakRef: a.id, hedefYol: `/panel/araclar/${a.id}`, roller: HEDEF_ROLLER.vade,
+        });
+      }
+    }
+    return girdiler;
   }
 
   /**

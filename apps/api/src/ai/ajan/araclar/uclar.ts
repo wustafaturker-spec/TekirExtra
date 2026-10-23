@@ -15,6 +15,8 @@ import { CrmBelgeController } from "../../../crm/crm-belge.controller";
 import { EirsaliyeController } from "../../../ebelge/eirsaliye.controller";
 import { SatinAlmaController } from "../../../satin-alma/satin-alma.controller";
 import { KrediController } from "../../../kasa-banka/kredi.controller";
+import { DemirbasController } from "../../../demirbas/demirbas.controller";
+import { AracTakipController } from "../../../arac-takip/arac-takip.controller";
 import { KrediKartiController } from "../../../kasa-banka/kredi-karti.controller";
 import { OdemeTalimatiController } from "../../../kasa-banka/odeme-talimati.controller";
 import { ButceController } from "../../../butce/butce.controller";
@@ -125,6 +127,13 @@ export const UC = {
   cekSenetVade: uc(KasaBankaController, "cekSenetVadeAnalizi", "GET /kasa-banka/cek-senet-vade-analizi"),
   krediListe: uc(KrediController, "listele", "GET /kasa-banka/krediler"),
   krediGetir: uc(KrediController, "getir", "GET /kasa-banka/krediler/:id"),
+  demirbasListe: uc(DemirbasController, "listele", "GET /demirbas"),
+  demirbasGetir: uc(DemirbasController, "getir", "GET /demirbas/:id"),
+  amortismanOnizleme: uc(DemirbasController, "onizleme", "GET /demirbas/amortisman/:yil"),
+  aracListe: uc(AracTakipController, "listele", "GET /arac-takip"),
+  aracGetir: uc(AracTakipController, "getir", "GET /arac-takip/:id"),
+  aracYaklasanlar: uc(AracTakipController, "yaklasanlar", "GET /arac-takip/yaklasanlar"),
+  aracRapor: uc(AracTakipController, "rapor", "GET /arac-takip/rapor"),
   krediKartiListe: uc(KrediKartiController, "listele", "GET /kasa-banka/kredi-kartlari"),
   krediKartiEkstreler: uc(KrediKartiController, "ekstreler", "GET /kasa-banka/kredi-kartlari/:id/ekstreler"),
   odemeTalimatlari: uc(OdemeTalimatiController, "listele", "GET /kasa-banka/odeme-talimatlari"),

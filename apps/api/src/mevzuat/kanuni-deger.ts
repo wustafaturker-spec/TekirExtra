@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 /** MVZ-13: merkezde tutulan kanuni süre ve eşikler (`kanuni_deger` türü). */
 export type KanuniDegerAnahtari =
   | "babs_esigi" | "earsiv_iptal_gun" | "irsaliye_fatura_gun" | "tevkifat_alt_siniri" | "kidem_tavani"
-  | "dogrudan_gider_siniri" | "binek_amortisman_siniri" | "binek_amortisman_siniri_vergili";
+  | "dogrudan_gider_siniri" | "binek_amortisman_siniri" | "binek_amortisman_siniri_vergili" | "binek_gider_orani" | "binek_kira_siniri";
 
 /**
  * Belge tarihinde (ya da verilen günde) yürürlükteki kanuni değer. Kiracı

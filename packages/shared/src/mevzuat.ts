@@ -50,6 +50,8 @@ export const KANUNI_DEGERLER = [
   ["dogrudan_gider_siniri", "Doğrudan gider yazılabilecek demirbaş tutarı (VUK 313, TL; yalnız başladığı yılda geçerli)"],
   ["binek_amortisman_siniri", "Binek oto amortisman sınırı, ÖTV/KDV hariç ilk iktisap (GVK 40/5, TL; edinme yılına göre)"],
   ["binek_amortisman_siniri_vergili", "Binek oto amortisman sınırı, vergiler maliyette ya da ikinci el (GVK 40/5, TL; edinme yılına göre)"],
+  ["binek_gider_orani", "Binek oto giderlerinin gider yazılabilecek oranı (GVK 40/5, %)"],
+  ["binek_kira_siniri", "Kiralık binek otonun aylık kira gider sınırı (GVK 40/5, TL, KDV hariç; yalnız başladığı yılda geçerli)"],
 ] as const;
 
 /**

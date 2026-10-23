@@ -404,6 +404,8 @@ export class DemirbasService {
         data: { durum: "elden_cikti", cikisTuru: g.tur, cikisTarihi: tarihD(tarih!), cikisBedeli: bedel, cikisFaturaSatirId: g.tur === "satis" ? g.faturaSatirId! : null, cikisGerekcesi: g.gerekce, cikisBirikmis: b, cikisUserId: userId },
       });
       await tx.demirbasZimmet.updateMany({ where: { demirbasId: id, bitis: null }, data: { bitis: tarihD(tarih!) } });
+      // ARC-02: bağlı araç pasif olur.
+      await tx.arac.updateMany({ where: { demirbasId: id }, data: { aktif: false } });
       const sonuc = cikisSonucu(kartBedeli(k), b, bedel);
       await tx.auditLog.create({ data: { tenantId, userId, islem: "demirbas_cikis", varlik: "demirbas", varlikId: id, detay: { tur: g.tur, tarih, bedel: bedel.toFixed(2), birikmis: b.toFixed(2), fark: sonuc.fark.toFixed(2), gerekce: g.gerekce } } });
       const uyarilar = g.tur === "bagis" || g.tur === "hurda" || g.tur === "kayip"

@@ -14,6 +14,7 @@
 import {
   Archive,
   Armchair,
+  Car,
   ArrowLeftRight,
   Coins,
   BadgeCheck,
@@ -162,6 +163,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/kasa-banka/odeme-talimatlari", ikon: Landmark, baslik: "Ödeme Talimatları", eslesme: "tam", esanlamlilar: ["eft", "havale", "toplu ödeme", "ödeme dosyası", "pain.001"] },
       { href: "/panel/kasa-banka/raporlar", ikon: ChartColumn, baslik: "Kasa/Banka Raporları", eslesme: "tam", esanlamlilar: ["bakiye raporu", "tahsilat raporu", "ödeme raporu", "mutabakat", "komisyon", "nakit akışı", "değerleme"] },
       { href: "/panel/kasa-banka/kur-farki", ikon: Coins, baslik: "Kur Farkı", eslesme: "tam", esanlamlilar: ["kur farkı faturası", "değerleme", "revalüasyon", "döviz"] },
+      { href: "/panel/araclar", ikon: Car, baslik: "Araçlar", eslesme: "onek", esanlamlilar: ["araç", "filo", "muayene", "kasko", "trafik sigortası", "mtv", "yakıt", "bakım", "plaka", "trafik cezası"] },
       { href: "/panel/demirbas", ikon: Armchair, baslik: "Demirbaşlar", eslesme: "onek", esanlamlilar: ["sabit kıymet", "amortisman", "zimmet", "duran varlık", "taşıt", "elden çıkarma"] },
       { href: "/panel/projeler", ikon: FolderKanban, baslik: "Projeler & Analitik Yevmiye", eslesme: "tam", esanlamlilar: ["maliyet merkezi"] },
     ],

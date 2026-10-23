@@ -401,6 +401,40 @@ export const MODUL_ARACLARI = [
     },
   }),
   arac({
+    ad: "demirbaslar",
+    aciklama: "Demirbaş ve sabit kıymetler (DMR): bedel, birikmiş amortisman, net değer, zimmet. demirbasId verilirse kartın amortisman planı ve zimmet geçmişi; yil verilirse o yılın amortisman önizlemesi.",
+    sinif: "okuma",
+    girdi: z.object({
+      demirbasId: uuid("Demirbaş kimliği").optional(),
+      durum: z.enum(["kullanimda", "elden_cikti", "tumu"]).optional(),
+      yil: z.number().int().min(2000).max(2100).optional(),
+    }),
+    uc: UC.demirbasListe,
+    async calistir(b, g) {
+      if (g.demirbasId) return kucuk(await cagir(b, UC.demirbasGetir, [g.demirbasId]), 30);
+      if (g.yil) return kucuk(await cagir(b, UC.amortismanOnizleme, [g.yil]), 50);
+      return kucuk(await cagir(b, UC.demirbasListe, [{ durum: g.durum ?? "kullanimda" }]), 50);
+    },
+  }),
+  arac({
+    ad: "araclar",
+    aciklama: "Şirket araçları (ARC): km, sorumlu, en yakın muayene/sigorta/kasko bitişi, bakım durumu. aracId verilirse ayrıntı (yükümlülükler, giderler, cezalar); yaklasanlar=true ise 30 gün içinde biten yükümlülükler ve bakımlar; baslangic+bitis verilirse araç başına maliyet ve binek KKEG.",
+    sinif: "okuma",
+    girdi: z.object({
+      aracId: uuid("Araç kimliği").optional(),
+      yaklasanlar: z.boolean().optional(),
+      baslangic: tarih("Rapor başlangıcı").optional(),
+      bitis: tarih("Rapor bitişi").optional(),
+    }),
+    uc: UC.aracListe,
+    async calistir(b, g) {
+      if (g.aracId) return kucuk(await cagir(b, UC.aracGetir, [g.aracId]), 30);
+      if (g.yaklasanlar) return kucuk(await cagir(b, UC.aracYaklasanlar, []), 50);
+      if (g.baslangic && g.bitis) return kucuk(await cagir(b, UC.aracRapor, [{ baslangic: g.baslangic, bitis: g.bitis }]), 50);
+      return kucuk(await cagir(b, UC.aracListe, [undefined]), 50);
+    },
+  }),
+  arac({
     ad: "kredi_kartlari",
     aciklama: "Şirket kredi kartları ve limitleri; kartId verilirse o kartın ekstreleri (kesim, son ödeme günü, tutar).",
     sinif: "okuma",

@@ -1299,7 +1299,25 @@ Karar 2026-10-23: taslak önerileriyle onaylandı — defter türü firma ayarı
 | DMR-11 | ✅ **Açılış kaydı:** sistem öncesi kıymet bedel, edinme tarihi, yöntem, ömür ve son amortisman yılına kadar ayrılmış birikmiş amortismanla girilir; Excel şablonu indirilir, doldurulan dosya önizlenip uygulanır (hatalı satırlar listelenir, hiçbiri yazılmaz). Açılış muhasebe aktarımına girmez. | Z |
 | DMR-12 | ✅ **Raporlar:** demirbaş listesi (sınıf, durum, konum, zimmet süzgeci; bedel, birikmiş, net değer), kart amortisman planı (yıl yıl, kesin/plan), yıllık amortisman ve KKEG dökümü, zimmet listesi, elden çıkanlar; Excel. | Z |
 | DMR-13 | ✅ **Bütçe ve kâr/zarar** (2026-10-23): tahakkukta demirbaşa bağlı alış satırı (ilave bedeller dahil) gider sayılmaz, payı genel iskontoyla birlikte düşülür; kesin amortisman 31.12 tarihli "Amortisman Giderleri" kalemidir (bütçe satırı); satılan demirbaşa bağlanan satış satırı satış gelirinden düşer, çıkışın kârı "Varlık / Demirbaş Satışı" geliri, zararı "Demirbaş Satış ve Hurda Zararı" gideridir. Kâr/zarar özetinde amortisman faaliyet gideri, çıkış zararı faaliyet dışı giderdir. Nakit akışına girmez. | İ |
-| DMR-14 | ✅ **Yetki ve iz:** kart açma, düzenleme, zimmet, elden çıkarma muhasebe ve yönetici; amortisman kesinleştirme ve geri alma yalnız yönetici; salt okunur rol görür. Değişiklikler denetim kaydına yazılır. Asistan/MCP demirbaşları okur (değişiklik aracı yok). | Z |
+| DMR-14 | ✅ **Yetki ve iz:** kart açma, düzenleme, zimmet, elden çıkarma muhasebe ve yönetici; amortisman kesinleştirme ve geri alma yalnız yönetici; salt okunur rol görür. Değişiklikler denetim kaydına yazılır. Asistan/MCP demirbaşları okur (değişiklik aracı yok; `demirbaslar` aracı 2026-10-23 ARC ile eklendi). | Z |
+
+### 3.21 Araç Takibi (ARC)
+
+Karar 2026-10-23: taslak önerileriyle onaylandı — e-İrsaliye araç kartı (EBLG-25) genişletilir, tek araç listesi; gider bağı masraf ve alış faturası satırı için kurulur; HGS/OGS ve akaryakıt kartı ekstreleri ilk sürümde masraf olarak elle (içe aktarma sonraki aşama); trafik cezasında yalnız kayıt ve sürücü, bordro kesintisi elle; binek gider kısıtı Mevzuat Merkezi'nden (`kanuni_deger`): `binek_gider_orani` %70 (GVK 40/5, 01.01.2020'den), `binek_kira_siniri` aylık KDV hariç (2025: 37.000, 2026: 46.000 TL; 332 Seri No GVGT); demo kiracıda deneme verisi. GPS/telematik ve filo kiralama karşılaştırması kapsam dışı. Durum 2026-10-23: hepsi kodlandı; kabul testi `test/arac-takip.kabul.test.ts`. Uygulama notu: gider bağı araç ekranından kurulur (plakanın geçtiği masraf ve fatura satırları öneri olarak gelir); masraf ve fatura formları değişmez, bağlı aracı gösterir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| ARC-01 | ✅ **Araç kartı:** EBLG-25 kartına marka, model, model yılı, şasi no, tür (binek, hafif ticari, ağır vasıta, motosiklet, iş makinesi, diğer), yakıt türü, güncel km eklenir; e-İrsaliyede plaka seçimi aynen çalışır. | Z |
+| ARC-02 | ✅ **Mülkiyet:** öz mal (taşıt sınıfı demirbaş kartına birebir bağ; demirbaş elden çıkınca araç pasif olur), kiralık (kira sözleşmesine bağ; sözleşmenin masrafları aracın kira gideridir) ya da diğer. Sorumlu personel öz malda demirbaş zimmetinden, kiralıkta araç kartından gelir. | Z |
+| ARC-03 | ✅ **Yükümlülükler:** muayene, trafik sigortası, kasko, MTV, egzoz emisyon, takograf, diğer — bitiş tarihi, belge/poliçe no, tutar, ek; yenileme yeni kayıttır, geçmiş korunur; her türün son kaydı geçerlidir. | Z |
+| ARC-04 | ✅ **Hatırlatma:** geçerli kaydın bitişine 30 gün kala uyarı, 7 gün kala yeniden uyarı, geçince kritik (bildirim merkezi, yönetici ve muhasebe); yenileme girilince kapanır. Bakım zamanı (ARC-07) da aynı yolla uyarılır. | Z |
+| ARC-05 | ✅ **Gider bağı:** onaylı masraf ya da kesin alış faturası satırı araca bağlanır; kategori (akaryakıt, bakım-onarım, lastik, HGS/OGS, otopark, sigorta, MTV, ceza, kira, diğer), akaryakıtta litre ve km. Bir kayıt tek araca bağlanır. Muhasebe değişmez. | Z |
+| ARC-06 | ✅ **Binek gider kısıtı:** binek araçta (sınır uygulanmaz işaretli değilse) kira dışı giderlerin %30'u KKEG; kiralık binekte her ayın kira bedelinin sınırı aşan kısmı KKEG. Oran tarihe, kira sınırı yıla göre okunur; sınır kaydı yoksa KKEG hesaplanmaz ve raporda belirtilir. | Z |
+| ARC-07 | ✅ **Bakım planı:** km ve/veya ay aralığı; son bakım (tarih, km) girilir; sıradaki bakım hangisi önce gelirse; bakım kaydı girilince plan ilerler. | Z |
+| ARC-08 | ✅ **Km:** elle, gider bağı ya da bakımla girilir; önceki en büyük km'den düşük değer gerekçe ister; 100 km başına yakıt tüketimi iki km kaydı arasındaki akaryakıt litresinden hesaplanır. | Z |
+| ARC-09 | ✅ **Trafik cezası:** tarih, tutar, ihlal, yer, o tarihteki sürücü (sorumlu personel), personelden tahsil notu; ceza masrafı bağlanabilir. | Z |
+| ARC-10 | ✅ **Raporlar:** dönem için araç başına maliyet (kategori kırılımı, km başı), tüketim, yaklaşan yükümlülük ve bakımlar, binek KKEG dökümü, cezalar; Excel. | Z |
+| ARC-11 | ✅ **Yetki ve iz:** muhasebe ve yönetici yazar; depo rolü km ve bakım girer; salt okunur görür; asistan/MCP araçları okur. Değişiklikler denetim kaydına yazılır. | Z |
 
 ## 4. Fonksiyonel Olmayan İsterler
 

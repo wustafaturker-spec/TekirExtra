@@ -5142,3 +5142,15 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .demirbas-page tr.tiklanir:hover td { background: var(--surface-2); }
 @media (max-width: 900px) { .demirbas__duzen { grid-template-columns: 1fr; } .demirbas__indir { margin-left: 0; } }
 .demirbas-page tfoot td { border-top: 1px solid var(--border); font-weight: 700; }
+
+/* ─── Araç takibi (ARC, §3.21) ────────────────────────────────────────── */
+.arac-page { display: grid; gap: 1rem; }
+.arac__suzgec { align-items: flex-end; flex-wrap: wrap; gap: .75rem; margin-bottom: .75rem; }
+.arac__duzen { align-items: start; display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.arac__duzen > * { min-width: 0; }
+.arac__genis { grid-column: 1 / -1; }
+.arac__adaylar { display: grid; gap: .5rem; max-height: 22rem; overflow-y: auto; }
+.arac-page tr.tiklanir { cursor: pointer; }
+.arac-page tr.tiklanir:hover td { background: var(--surface-2); }
+.arac-page tfoot td { border-top: 1px solid var(--border); font-weight: 700; }
+@media (max-width: 900px) { .arac__duzen { grid-template-columns: 1fr; } }

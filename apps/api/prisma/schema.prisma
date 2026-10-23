@@ -4384,14 +4384,39 @@ enum ZincirBelgeDurum {
 /// belge kartı referans almaz — kart sonradan değişse de geçmiş irsaliye
 /// GİB'e ne gönderildiyse onu göstermeye devam eder.
 model Arac {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @map("tenant_id") @db.Uuid
-  plaka      String
-  dorsePlaka String?  @map("dorse_plaka")
-  aciklama   String?
-  aktif      Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  plaka             String
+  dorsePlaka        String?  @map("dorse_plaka")
+  aciklama          String?
+  aktif             Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  /// ARC-01/02 (§3.21): araç takibi alanları; e-İrsaliye yalnız plakayı kullanır.
+  marka             String?
+  model             String?
+  modelYili         Int?      @map("model_yili")
+  saseNo            String?   @map("sase_no")
+  /// binek | hafif_ticari | agir_vasita | motosiklet | is_makinesi | diger
+  tur               String?
+  yakitTuru         String?   @map("yakit_turu")
+  /// oz | kiralik | diger
+  mulkiyet          String?
+  demirbasId        String?   @map("demirbas_id") @db.Uuid
+  kiraSozlesmeId    String?   @map("kira_sozlesme_id") @db.Uuid
+  sorumluPersonelId String?   @map("sorumlu_personel_id") @db.Uuid
+  /// ARC-06: binek oto kiralama/işletme faaliyeti — gider kısıtı uygulanmaz.
+  binekSinirYok     Boolean   @default(false) @map("binek_sinir_yok")
+  bakimKmAraligi    Int?      @map("bakim_km_araligi")
+  bakimAyAraligi    Int?      @map("bakim_ay_araligi")
+  sonBakimTarihi    DateTime? @map("son_bakim_tarihi") @db.Date
+  sonBakimKm        Int?      @map("son_bakim_km")
+
+  yukumlulukler AracYukumluluk[]
+  giderler      AracGider[]
+  kmKayitlari   AracKmKaydi[]
+  bakimlar      AracBakim[]
+  cezalar       AracCeza[]
 
   @@unique([tenantId, plaka])
   @@index([tenantId, aktif])
@@ -6747,4 +6772,101 @@ model DemirbasZimmet {
   @@index([tenantId, demirbasId])
   @@index([tenantId, personelId])
   @@map("demirbas_zimmetleri")
+}
+
+// ─── Araç Takibi (ARC, §3.21) ──────────────────────────────────────────────
+
+/// ARC-03: muayene, sigorta, kasko, MTV…; yenileme yeni kayıttır, türün son kaydı geçerlidir.
+model AracYukumluluk {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  aracId    String    @map("arac_id") @db.Uuid
+  tur       String
+  baslangic DateTime? @db.Date
+  bitis     DateTime  @db.Date
+  belgeNo   String?   @map("belge_no")
+  tutar     Decimal?  @db.Decimal(15, 2)
+  aciklama  String?
+  userId    String?   @map("user_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  arac      Arac      @relation(fields: [aracId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, aracId, tur])
+  @@map("arac_yukumlulukleri")
+}
+
+/// ARC-05: onaylı masraf ya da kesin alış faturası satırının araca bağı (raporlama; muhasebe değişmez).
+model AracGider {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  aracId        String   @map("arac_id") @db.Uuid
+  masrafId      String?  @map("masraf_id") @db.Uuid
+  faturaSatirId String?  @map("fatura_satir_id") @db.Uuid
+  kategori      String
+  tarih         DateTime @db.Date
+  /// KDV hariç TL tutar (belge kuruyla).
+  tutarTry      Decimal  @map("tutar_try") @db.Decimal(15, 2)
+  litre         Decimal? @db.Decimal(10, 2)
+  km            Int?
+  userId        String?  @map("user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  arac          Arac     @relation(fields: [aracId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, aracId, tarih])
+  @@map("arac_giderleri")
+}
+
+/// ARC-08: km geçmişi (elle, gider ya da bakım).
+model AracKmKaydi {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  aracId    String   @map("arac_id") @db.Uuid
+  tarih     DateTime @db.Date
+  km        Int
+  kaynak    String
+  kaynakId  String?  @map("kaynak_id") @db.Uuid
+  gerekce   String?
+  userId    String?  @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  arac      Arac     @relation(fields: [aracId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, aracId, tarih])
+  @@map("arac_km_kayitlari")
+}
+
+/// ARC-07: yapılan bakım; planı ilerletir.
+model AracBakim {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  aracId      String   @map("arac_id") @db.Uuid
+  tarih       DateTime @db.Date
+  km          Int?
+  aciklama    String
+  aracGiderId String?  @map("arac_gider_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  arac        Arac     @relation(fields: [aracId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, aracId, tarih])
+  @@map("arac_bakimlari")
+}
+
+/// ARC-09: trafik cezası; sürücü o tarihteki sorumlu personeldir.
+model AracCeza {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  aracId      String   @map("arac_id") @db.Uuid
+  tarih       DateTime @db.Date
+  tutar       Decimal  @db.Decimal(15, 2)
+  ihlal       String
+  yer         String?
+  personelId  String?  @map("personel_id") @db.Uuid
+  tahsilNotu  String?  @map("tahsil_notu")
+  aracGiderId String?  @map("arac_gider_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  arac        Arac     @relation(fields: [aracId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, aracId, tarih])
+  @@map("arac_cezalari")
 }
