@@ -1,10 +1,12 @@
 import { Prisma } from "@prisma/client";
 import type { MuhasebeHesapAnahtari } from "@tekirextra/shared";
 import type {
+  AmortismanGirdisi,
   BordroGirdisi,
   CariBilgi,
   CariDuzeltmeGirdisi,
   CekGirdisi,
+  DemirbasCikisGirdisi,
   DovizIslemGirdisi,
   FaturaGirdisi,
   GelirGirdisi,
@@ -96,7 +98,7 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
         id: true, no: true, tip: true, tarih: true, cariId: true, dovizCinsi: true, kur: true,
         toplamMatrah: true, toplamKdv: true, toplamNetKdv: true, toplamTevkifat: true, toplamStopaj: true, genelToplam: true,
         ihracatTeslimSarti: true, ihracKayitliKodu: true,
-        satirlar: { select: { matrah: true, ekVergiTutari: true, stok: { select: { tip: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } },
+        satirlar: { select: { id: true, matrah: true, ekVergiTutari: true, stok: { select: { tip: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } },
       },
     }),
     tx.kasaBankaHareket.findMany({ where: { kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } }),
@@ -176,11 +178,36 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     olaylar: c.olaylar.map((o) => ({ id: o.id, oncekiDurum: o.oncekiDurum, yeniDurum: o.yeniDurum, tarih: gun(o.islemTarihi), gecerli: !o.geriAlindi && !o.geriAlma })),
   });
 
+  // DMR-02/08/09: demirbaşa bağlı fatura satırları, yıl sonu amortismanı ve elden çıkışlar.
+  const faturaSatirIdleri = faturalar.flatMap((f) => f.satirlar.map((s) => s.id));
+  const yilSonlari = Array.from({ length: Number(bitis.slice(0, 4)) - Number(baslangic.slice(0, 4)) + 1 }, (_, i) => Number(baslangic.slice(0, 4)) + i)
+    .filter((y) => `${y}-12-31` >= baslangic && `${y}-12-31` <= bitis);
+  const DMR_SECIMI = { id: true, kod: true, ad: true, sinif: true, hesapKodu: true, giderHesapKodu: true } as const;
+  const [dmrGirisleri, dmrIlaveleri, dmrCikisSatirlari, amortismanDonemleri, dmrCikislari] = await Promise.all([
+    tx.demirbas.findMany({ where: { faturaSatirId: { in: faturaSatirIdleri } }, select: { ...DMR_SECIMI, faturaSatirId: true } }),
+    tx.demirbasIlaveBedel.findMany({ where: { faturaSatirId: { in: faturaSatirIdleri } }, select: { faturaSatirId: true, demirbas: { select: DMR_SECIMI } } }),
+    tx.demirbas.findMany({ where: { cikisFaturaSatirId: { in: faturaSatirIdleri } }, select: { ...DMR_SECIMI, cikisFaturaSatirId: true, cikisBedeli: true } }),
+    yilSonlari.length ? tx.amortismanDonemi.findMany({ where: { durum: "kesin", yil: { in: yilSonlari } }, include: { satirlar: { include: { demirbas: { select: DMR_SECIMI } } } } }) : [],
+    tx.demirbas.findMany({ where: { cikisTarihi: aralik }, select: { ...DMR_SECIMI, cikisTarihi: true, cikisTuru: true, cikisBedeli: true, cikisBirikmis: true, edinmeBedeli: true, ilaveBedeller: { select: { tutar: true } } } }),
+  ]);
+  const dmrHesabi = (d: { sinif: string; hesapKodu: string | null }) => ({ sinif: d.sinif, hesapKodu: d.hesapKodu });
+  const girisHaritasi = new Map<string, { sinif: string; hesapKodu: string | null }>();
+  for (const d of dmrGirisleri) if (d.faturaSatirId && !girisHaritasi.has(d.faturaSatirId)) girisHaritasi.set(d.faturaSatirId, dmrHesabi(d));
+  for (const i of dmrIlaveleri) if (i.faturaSatirId && !girisHaritasi.has(i.faturaSatirId)) girisHaritasi.set(i.faturaSatirId, dmrHesabi(i.demirbas));
+  const cikisHaritasi = new Map<string, { sinif: string; hesapKodu: string | null; tl: Prisma.Decimal }>();
+  for (const d of dmrCikisSatirlari) {
+    const onceki = cikisHaritasi.get(d.cikisFaturaSatirId!);
+    cikisHaritasi.set(d.cikisFaturaSatirId!, { ...(onceki ?? dmrHesabi(d)), tl: (onceki?.tl ?? new Prisma.Decimal(0)).add(d.cikisBedeli ?? 0) });
+  }
+
   const faturaGirdileri: FaturaGirdisi[] = faturalar.map((f) => ({
     id: f.id, no: f.no, tip: f.tip, tarih: gun(f.tarih), cariId: f.cariId, dovizCinsi: f.dovizCinsi, kur: f.kur,
     toplamMatrah: f.toplamMatrah, toplamKdv: f.toplamKdv, toplamNetKdv: f.toplamNetKdv, toplamTevkifat: f.toplamTevkifat, toplamStopaj: f.toplamStopaj, genelToplam: f.genelToplam,
     ihracat: Boolean(f.ihracatTeslimSarti), ihracKayitli: Boolean(f.ihracKayitliKodu), kurFarki: kurFarkiFaturalari.has(f.id),
-    satirlar: f.satirlar.map((s) => ({ matrah: s.matrah, ekVergi: s.ekVergiTutari, stokTipi: s.stok?.tip ?? null, stokaDagitildi: s.maliyetDagitimlari.length > 0 })),
+    satirlar: f.satirlar.map((s) => ({
+      matrah: s.matrah, ekVergi: s.ekVergiTutari, stokTipi: s.stok?.tip ?? null, stokaDagitildi: s.maliyetDagitimlari.length > 0,
+      demirbas: girisHaritasi.get(s.id) ?? null, demirbasCikis: cikisHaritasi.get(s.id) ?? null,
+    })),
   }));
 
   const dovizGirdileri: DovizIslemGirdisi[] = dovizIslemleri.flatMap((d) => {
@@ -228,6 +255,14 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
       };
     }),
     personelCarileri: new Map(personeller.filter((p) => p.cariId).map((p) => [p.cariId!, p.personelNo])),
+    amortismanlar: amortismanDonemleri.map((d): AmortismanGirdisi => ({
+      id: d.id, yil: d.yil, tarih: `${d.yil}-12-31`,
+      satirlar: d.satirlar.map((s) => ({ kod: s.demirbas.kod, ad: s.demirbas.ad, sinif: s.demirbas.sinif, hesapKodu: s.demirbas.hesapKodu, giderHesapKodu: s.demirbas.giderHesapKodu, tutar: s.tutar })),
+    })),
+    demirbasCikislari: dmrCikislari.map((d): DemirbasCikisGirdisi => ({
+      id: d.id, kod: d.kod, ad: d.ad, sinif: d.sinif, hesapKodu: d.hesapKodu, tarih: gun(d.cikisTarihi!), tur: d.cikisTuru ?? "",
+      bedel: d.ilaveBedeller.reduce((t, i) => t.add(i.tutar), new Prisma.Decimal(d.edinmeBedeli)), birikmis: d.cikisBirikmis ?? new Prisma.Decimal(0), satisTl: d.cikisBedeli ?? new Prisma.Decimal(0),
+    })),
     baslangic,
     bitis,
   };

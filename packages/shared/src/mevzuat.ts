@@ -47,6 +47,9 @@ export const KANUNI_DEGERLER = [
   ["irsaliye_fatura_gun", "İrsaliyenin faturalanma süresi (gün)"],
   ["tevkifat_alt_siniri", "KDV tevkifatı alt sınırı (TL, KDV dahil; yalnız başladığı yılda geçerli)"],
   ["kidem_tavani", "Kıdem tazminatı tavanı (TL; yalnız başladığı yarıyılda geçerli)"],
+  ["dogrudan_gider_siniri", "Doğrudan gider yazılabilecek demirbaş tutarı (VUK 313, TL; yalnız başladığı yılda geçerli)"],
+  ["binek_amortisman_siniri", "Binek oto amortisman sınırı, ÖTV/KDV hariç ilk iktisap (GVK 40/5, TL; edinme yılına göre)"],
+  ["binek_amortisman_siniri_vergili", "Binek oto amortisman sınırı, vergiler maliyette ya da ikinci el (GVK 40/5, TL; edinme yılına göre)"],
 ] as const;
 
 /**

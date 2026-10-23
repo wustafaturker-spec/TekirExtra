@@ -5123,3 +5123,22 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .fatura-baglama__tutar { max-width: 9rem; text-align: right; }
 .fatura-baglama__alt { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; margin-top: 1rem; }
 .fatura-baglama__panel .subtle { margin: 0 0 .6rem; }
+
+/* ─── Demirbaş (DMR, §3.20) ───────────────────────────────────────────── */
+.demirbas-page { display: grid; gap: 1rem; }
+.demirbas__suzgec { align-items: flex-end; flex-wrap: wrap; gap: .75rem; }
+.demirbas__indir { margin-left: auto; }
+.demirbas__duzen { align-items: start; display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+.demirbas__duzen > * { min-width: 0; }
+.demirbas__bilgi { display: grid; gap: .45rem 1rem; grid-template-columns: max-content minmax(0, 1fr); margin: 0; }
+.demirbas__bilgi dt { color: var(--text-muted); font-size: .72rem; font-weight: 700; }
+.demirbas__bilgi dd { font-size: .84rem; margin: 0; }
+.demirbas__binek { border: 1px solid var(--border); border-radius: var(--radius-sm); display: grid; gap: .4rem; margin: 0; padding: .75rem; }
+.demirbas__binek label { align-items: center; display: flex; font-size: .84rem; gap: .5rem; }
+.demirbas__fatura-baslik { caption-side: top; font-size: .78rem; font-weight: 700; padding: .4rem 0; text-align: left; }
+.demirbas__satir { align-items: center; display: flex; font-size: .84rem; gap: .5rem; }
+.demirbas__satir.is-kapali { color: var(--text-muted); }
+.demirbas-page tr.tiklanir { cursor: pointer; }
+.demirbas-page tr.tiklanir:hover td { background: var(--surface-2); }
+@media (max-width: 900px) { .demirbas__duzen { grid-template-columns: 1fr; } .demirbas__indir { margin-left: 0; } }
+.demirbas-page tfoot td { border-top: 1px solid var(--border); font-weight: 700; }

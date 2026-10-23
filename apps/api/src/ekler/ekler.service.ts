@@ -64,6 +64,7 @@ export class EklerService {
       personel: () => tx.personel.findUnique({ where: { id: sahipId } }),
       satin_alma_teklif: () => tx.satinAlmaTeklifi.findUnique({ where: { id: sahipId } }),
       cek_senet: () => tx.cekSenet.findUnique({ where: { id: sahipId } }),
+      demirbas: () => tx.demirbas.findUnique({ where: { id: sahipId } }),
       // AI-79: sohbet eki yalnız kendi sohbetine bağlanır.
       ai_sohbet: () => tx.ajanOturumu.findFirst({ where: { id: sahipId, userId: aktifBaglam().userId } }),
     }[sahipTur];

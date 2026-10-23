@@ -10,6 +10,7 @@ import { PersonelSelfServis } from "@/components/personel-self-servis";
 import { PersonelSgkAlanlari, sgkAlanlariGovdesi, sgkAlanlariKaydindan, type SgkAlanlari } from "@/components/personel-sgk-alanlari";
 import { CIKIS_NEDENI_SGK_KODU, OGRENIM_DURUMLARI, SGK_BELGE_TURLERI, SGK_CIKIS_KODLARI } from "@tekirextra/shared";
 import { Alert, Avatar, Badge, Button, Card, EylemCubugu, Field, Input, Modal, ModalEylem, PageHeader, Para, Select, Stat, StatGrid, Table } from "@/components/ui";
+import { ZimmetUyarisi } from "@/components/zimmet-uyarisi";
 
 interface Bordro {
   id: string;
@@ -336,6 +337,7 @@ export default function PersonelDetaySayfasi() {
       {ayrilisAcik && personel && (
         <Modal genis baslik="İşten çıkış işlemi" aciklama="Bu işlem personeli gelecek tahakkukların dışında bırakır. Çıkış hesabı seçilirse kıdem, ihbar ve kullanılmamış izin ücreti çıkış ayının bordrosuna kalem olarak girer." onKapat={() => setAyrilisAcik(false)}>
           <form className="stack" onSubmit={istenCikar}>
+            <ZimmetUyarisi personelId={personel.id} />
             <div className="form-grid form-grid--2">
               <Field label="Çıkış tarihi"><Input required type="date" value={ayrilis.cikisTarihi} onChange={(e) => setAyrilis({ ...ayrilis, cikisTarihi: e.target.value })} /></Field>
               <Field label="Yasal çıkış nedeni">

@@ -34,6 +34,7 @@ import { AiModule } from "./ai/ai.module";
 
 import { GelirlerModule } from "./gelirler/gelirler.module";
 import { ProjelerModule } from "./projeler/projeler.module";
+import { DemirbasModule } from "./demirbas/demirbas.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
 import { BildirimlerModule } from "./bildirimler/bildirimler.module";
@@ -66,6 +67,7 @@ import { MevzuatModule } from "./mevzuat/mevzuat.module";
     MasraflarModule,
     GelirlerModule,
     ProjelerModule,
+    DemirbasModule,
     DuzeltmelerModule,
     DonemKapatmaModule,
     BildirimlerModule,

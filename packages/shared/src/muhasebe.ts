@@ -41,6 +41,18 @@ export const MUHASEBE_HESAPLARI = {
   hizmet_alis: { kod: "770", ad: "Genel yönetim giderleri (hizmet alımı, kategorisiz masraf)" },
   ucret_gideri: { kod: "770", ad: "Ücret giderleri (brüt ücret, izin ücreti, işveren SGK/işsizlik payı)" },
   tazminat_gideri: { kod: "770", ad: "Kıdem ve ihbar tazminatı giderleri" },
+  // DMR-01/09: sabit kıymet sınıflarının hesapları, birikmiş amortisman ve elden çıkarma.
+  dmr_bina: { kod: "252", ad: "Binalar" },
+  dmr_tesis_makine: { kod: "253", ad: "Tesis, makine ve cihazlar" },
+  dmr_tasit: { kod: "254", ad: "Taşıtlar" },
+  dmr_demirbas: { kod: "255", ad: "Demirbaşlar" },
+  dmr_hak: { kod: "260", ad: "Haklar" },
+  dmr_ozel_maliyet: { kod: "264", ad: "Özel maliyetler" },
+  birikmis_amortisman: { kod: "257", ad: "Birikmiş amortismanlar (-)" },
+  birikmis_itfa: { kod: "268", ad: "Birikmiş amortismanlar (-) (maddi olmayan duran varlıklar)" },
+  amortisman_gideri: { kod: "770", ad: "Amortisman gideri (genel yönetim)" },
+  dmr_satis_kari: { kod: "679", ad: "Diğer olağandışı gelir ve kârlar (sabit kıymet satış kârı)" },
+  dmr_satis_zarari: { kod: "689", ad: "Diğer olağandışı gider ve zararlar (sabit kıymet satış zararı)" },
 } as const;
 
 export type MuhasebeHesapAnahtari = keyof typeof MUHASEBE_HESAPLARI;

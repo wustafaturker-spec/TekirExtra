@@ -220,3 +220,45 @@ describe("bordro fişleri (PRS-19)", () => {
     expect(fisler.map(ozet)).toEqual([["335.01.PRS-000005 B 26075.50", "100.01.001 A 26075.50"], ["196.01.PRS-000005 B 2000.00", "102.01.010 A 2000.00"]]);
   });
 });
+
+describe("demirbaş fişleri (DMR-02/08/09)", () => {
+  it("demirbaşa bağlı alış satırı stok/gider yerine kartın hesabına", () => {
+    const f = fatura({ tip: "alis", cariId: "t", satirlar: [{ matrah: D(800), stokTipi: "hizmet", demirbas: { sinif: "demirbas", hesapKodu: null } }, { matrah: D(200), stokTipi: "hizmet" }] });
+    const { fisler } = fisleriUret(girdi({ faturalar: [f] }));
+    expect(ozet(fisler[0])).toEqual(["255 B 800.00", "770 B 200.00", "191 B 200.00", "320.05.9 A 1200.00"]);
+  });
+
+  it("kartın kendi hesap kodu sınıf hesabından önce gelir", () => {
+    const f = fatura({ tip: "alis", cariId: "t", satirlar: [{ matrah: D(1000), stokTipi: "hizmet", demirbas: { sinif: "tasit", hesapKodu: "254.01.003" } }] });
+    expect(ozet(fisleriUret(girdi({ faturalar: [f] })).fisler[0])[0]).toBe("254.01.003 B 1000.00");
+  });
+
+  it("satılan demirbaşın satırı gelir yerine varlık hesabına; çıkış fişi birikmişi kapatır, fark 679", () => {
+    const f = fatura({ satirlar: [{ matrah: D(1000), stokTipi: "hizmet", demirbasCikis: { sinif: "demirbas", hesapKodu: null, tl: D(1000) } }] });
+    const cikis = { id: "d1", kod: "DMR-000001", ad: "Forklift", sinif: "demirbas", hesapKodu: null, tarih: "2026-09-10", tur: "satis", bedel: D(5000), birikmis: D(4500), satisTl: D(1000) };
+    const { fisler, kontroller } = fisleriUret(girdi({ faturalar: [f], demirbasCikislari: [cikis] }));
+    expect(kontroller).toEqual([]);
+    expect(ozet(fisler[0])).toEqual(["120.01.M001 B 1200.00", "255 A 1000.00", "391 A 200.00"]);
+    // Net değer 500, satış 1000 → kâr 500; 255'in kalan 4000'i kapanır.
+    expect(ozet(fisler[1])).toEqual(["257 B 4500.00", "255 A 4000.00", "679 A 500.00"]);
+    expect(fisler.every(dengeli)).toBe(true);
+  });
+
+  it("hurdada net değer zarar olarak 689'a", () => {
+    const cikis = { id: "d2", kod: "DMR-000002", ad: "Yazılım", sinif: "hak", hesapKodu: null, tarih: "2026-09-20", tur: "hurda", bedel: D(3000), birikmis: D(2000), satisTl: D(0) };
+    const { fisler } = fisleriUret(girdi({ demirbasCikislari: [cikis] }));
+    expect(ozet(fisler[0])).toEqual(["268 B 2000.00", "260 A 3000.00", "689 B 1000.00"]);
+    expect(dengeli(fisler[0])).toBe(true);
+  });
+
+  it("yıl sonu amortismanı: kart başına gider, hesap başına birikmiş", () => {
+    const a = { id: "a", yil: 2026, tarih: "2026-12-31", satirlar: [
+      { kod: "DMR-1", ad: "Bilgisayar", sinif: "demirbas", hesapKodu: null, giderHesapKodu: null, tutar: D(1000) },
+      { kod: "DMR-2", ad: "Kamyonet", sinif: "tasit", hesapKodu: null, giderHesapKodu: "760.01", tutar: D(5000) },
+      { kod: "DMR-3", ad: "Lisans", sinif: "hak", hesapKodu: null, giderHesapKodu: null, tutar: D(300) },
+    ] };
+    const { fisler } = fisleriUret(girdi({ baslangic: "2026-12-01", bitis: "2026-12-31", amortismanlar: [a] }));
+    expect(ozet(fisler[0])).toEqual(["770 B 1000.00", "760.01 B 5000.00", "770 B 300.00", "257 A 6000.00", "268 A 300.00"]);
+    expect(fisler[0].tarih).toBe("2026-12-31");
+  });
+});

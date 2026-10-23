@@ -4092,6 +4092,8 @@ enum EkSahipTur {
   firma_kase
   /// AI-79: asistan sohbetine eklenen dosya; sahip ajan oturumudur, yalnız sohbet sahibi okur.
   ai_sohbet
+  /// DMR-01: demirbaşın faturası, garanti belgesi, fotoğrafı.
+  demirbas
 }
 
 enum PersonelBelgeTuru {
@@ -6603,4 +6605,146 @@ model OnDenetimSusturma {
 
   @@unique([tenantId, cariId, kod])
   @@map("on_denetim_susturmalari")
+}
+
+// ─── Demirbaş ve Sabit Kıymet (DMR, §3.20) ─────────────────────────────────
+
+/// DMR-01: sabit kıymet kartı. Bedel TL'dir (dövizli alışta döviz tutarı ve kur
+/// bilgi için saklanır). Açılış kartı (DMR-11) muhasebe fişi üretmez; birikmiş
+/// amortismanı `acilisSonYil` dahil o güne kadar ayrılmış tutardır.
+model Demirbas {
+  id                 String     @id @default(uuid()) @db.Uuid
+  tenantId           String     @map("tenant_id") @db.Uuid
+  kod                String
+  ad                 String
+  /// bina | tesis_makine | tasit | demirbas | hak | ozel_maliyet
+  sinif              String
+  /// Boşsa sınıfın Muhasebe Aktarımı ayarındaki hesabı.
+  hesapKodu          String?    @map("hesap_kodu")
+  /// Boşsa amortisman gider hesabı ayarı (770).
+  giderHesapKodu     String?    @map("gider_hesap_kodu")
+  /// VUK amortisman listesindeki sıra no (ör. "4.1"); listede yoksa boş.
+  listeKodu          String?    @map("liste_kodu")
+  faydaliOmur        Int        @map("faydali_omur")
+  /// normal | azalan
+  yontem             String     @default("normal")
+  /// DMR-04: azalan bakiyelerden normale geçilen yıl.
+  normaleGecisYili   Int?       @map("normale_gecis_yili")
+  binekOto           Boolean    @default(false) @map("binek_oto")
+  /// DMR-06: ÖTV/KDV maliyete eklendi ya da ikinci el (yüksek sınır).
+  binekVergili       Boolean    @default(false) @map("binek_vergili")
+  /// DMR-06: binek oto kiralama/işletme faaliyeti — sınır uygulanmaz.
+  binekSinirYok      Boolean    @default(false) @map("binek_sinir_yok")
+  edinmeTarihi       DateTime   @map("edinme_tarihi") @db.Date
+  edinmeBedeli       Decimal    @map("edinme_bedeli") @db.Decimal(15, 2)
+  dovizCinsi         DovizCinsi @default(TRY) @map("doviz_cinsi")
+  dovizTutari        Decimal?   @map("doviz_tutari") @db.Decimal(15, 2)
+  kur                Decimal?   @db.Decimal(15, 6)
+  tedarikciCariId    String?    @map("tedarikci_cari_id") @db.Uuid
+  /// DMR-02: kaynağı olan alış faturası satırı (adet başına bölünmüş kartlar aynı satırı gösterir).
+  faturaSatirId      String?    @map("fatura_satir_id") @db.Uuid
+  seriNo             String?    @map("seri_no")
+  konum              String?
+  aciklama           String?
+  /// kullanimda | elden_cikti
+  durum              String     @default("kullanimda")
+  acilis             Boolean    @default(false)
+  acilisBirikmis     Decimal    @default(0) @map("acilis_birikmis") @db.Decimal(15, 2)
+  acilisSonYil       Int?       @map("acilis_son_yil")
+  /// DMR-08: satis | hurda | kayip | bagis
+  cikisTuru          String?    @map("cikis_turu")
+  cikisTarihi        DateTime?  @map("cikis_tarihi") @db.Date
+  cikisBedeli        Decimal?   @map("cikis_bedeli") @db.Decimal(15, 2)
+  cikisFaturaSatirId String?    @map("cikis_fatura_satir_id") @db.Uuid
+  cikisGerekcesi     String?    @map("cikis_gerekcesi")
+  /// Çıkış anındaki birikmiş amortisman (açılış + kesin satırlar).
+  cikisBirikmis      Decimal?   @map("cikis_birikmis") @db.Decimal(15, 2)
+  cikisUserId        String?    @map("cikis_user_id") @db.Uuid
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  ilaveBedeller DemirbasIlaveBedel[]
+  amortismanlar AmortismanSatiri[]
+  zimmetler     DemirbasZimmet[]
+
+  @@unique([tenantId, kod])
+  @@index([tenantId, durum])
+  @@index([tenantId, faturaSatirId])
+  @@map("demirbaslar")
+}
+
+/// DMR-02: edinme bedeline eklenen nakliye, montaj vb.; ilk amortisman kesinleşmeden önce.
+model DemirbasIlaveBedel {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  demirbasId    String   @map("demirbas_id") @db.Uuid
+  tarih         DateTime @db.Date
+  tutar         Decimal  @db.Decimal(15, 2)
+  faturaSatirId String?  @map("fatura_satir_id") @db.Uuid
+  aciklama      String
+  userId        String?  @map("user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  demirbas      Demirbas @relation(fields: [demirbasId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, demirbasId])
+  @@index([tenantId, faturaSatirId])
+  @@map("demirbas_ilave_bedelleri")
+}
+
+/// DMR-07: yıl sonu amortisman çalıştırması. Bir yılın yalnız bir kesin kaydı olur;
+/// geri alınan kayıt iz olarak kalır.
+model AmortismanDonemi {
+  id                  String             @id @default(uuid()) @db.Uuid
+  tenantId            String             @map("tenant_id") @db.Uuid
+  yil                 Int
+  /// kesin | geri_alindi
+  durum               String             @default("kesin")
+  toplam              Decimal            @db.Decimal(15, 2)
+  toplamKkeg          Decimal            @default(0) @map("toplam_kkeg") @db.Decimal(15, 2)
+  kesinlestirenUserId String?            @map("kesinlestiren_user_id") @db.Uuid
+  kesinlesmeAt        DateTime           @default(now()) @map("kesinlesme_at")
+  geriAlanUserId      String?            @map("geri_alan_user_id") @db.Uuid
+  geriAlmaAt          DateTime?          @map("geri_alma_at")
+  geriAlmaGerekcesi   String?            @map("geri_alma_gerekcesi")
+  satirlar            AmortismanSatiri[]
+
+  @@index([tenantId, yil])
+  @@map("amortisman_donemleri")
+}
+
+model AmortismanSatiri {
+  id           String           @id @default(uuid()) @db.Uuid
+  tenantId     String           @map("tenant_id") @db.Uuid
+  donemId      String           @map("donem_id") @db.Uuid
+  demirbasId   String           @map("demirbas_id") @db.Uuid
+  yil          Int
+  tutar        Decimal          @db.Decimal(15, 2)
+  /// DMR-06: binek oto sınırını aşan kısım (kanunen kabul edilmeyen gider).
+  kkeg         Decimal          @default(0) @db.Decimal(15, 2)
+  birikmisOnce Decimal          @map("birikmis_once") @db.Decimal(15, 2)
+  donem        AmortismanDonemi @relation(fields: [donemId], references: [id], onDelete: Cascade)
+  demirbas     Demirbas         @relation(fields: [demirbasId], references: [id], onDelete: Cascade)
+
+  @@unique([donemId, demirbasId])
+  @@index([tenantId, demirbasId, yil])
+  @@map("amortisman_satirlari")
+}
+
+/// DMR-10: zimmet geçmişi; açık zimmetin bitişi boştur.
+model DemirbasZimmet {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  demirbasId String    @map("demirbas_id") @db.Uuid
+  personelId String?   @map("personel_id") @db.Uuid
+  konum      String?
+  baslangic  DateTime  @db.Date
+  bitis      DateTime? @db.Date
+  aciklama   String?
+  userId     String?   @map("user_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  demirbas   Demirbas  @relation(fields: [demirbasId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, demirbasId])
+  @@index([tenantId, personelId])
+  @@map("demirbas_zimmetleri")
 }

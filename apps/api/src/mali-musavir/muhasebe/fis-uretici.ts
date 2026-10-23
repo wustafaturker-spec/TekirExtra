@@ -26,7 +26,7 @@ export interface FisSatiri {
 }
 
 export interface Kaynak {
-  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro";
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas";
   id: string;
   etiket: string;
 }
@@ -58,7 +58,29 @@ export interface FaturaGirdisi {
   ihracat: boolean; ihracKayitli: boolean; kurFarki: boolean;
   /** STK-40: stokaDagitildi — maliyet dağıtımına kaynak olmuş hizmet satırı 153'e gider. */
   /** EBLG-120: ekVergi — bedele eklenen KDV dışı vergi; satırın gider/stok hesabına eklenir. */
-  satirlar: Array<{ matrah: Prisma.Decimal; ekVergi?: Prisma.Decimal; stokTipi: string | null; stokaDagitildi?: boolean }>;
+  /**
+   * DMR-02: demirbaşa bağlı alış satırı stok/gider yerine kartın hesabına;
+   * DMR-08: satılan demirbaşın satırı (kartlara bağlanan TL tutarı) gelir yerine varlık hesabına.
+   */
+  satirlar: Array<{
+    matrah: Prisma.Decimal; ekVergi?: Prisma.Decimal; stokTipi: string | null; stokaDagitildi?: boolean;
+    demirbas?: DemirbasHesabi | null; demirbasCikis?: (DemirbasHesabi & { tl: Prisma.Decimal }) | null;
+  }>;
+}
+
+/** DMR-01: kartın varlık hesabı; boşsa sınıfın ayardaki hesabı. */
+export interface DemirbasHesabi { sinif: string; hesapKodu: string | null }
+
+/** DMR-09: kesin yıl sonu amortismanı (31.12). */
+export interface AmortismanGirdisi {
+  id: string; yil: number; tarih: string;
+  satirlar: Array<DemirbasHesabi & { kod: string; ad: string; giderHesapKodu: string | null; tutar: Prisma.Decimal }>;
+}
+
+/** DMR-08/09: elden çıkış; satisTl satış faturasında varlık hesabına alacaklanan tutardır. */
+export interface DemirbasCikisGirdisi extends DemirbasHesabi {
+  id: string; kod: string; ad: string; tarih: string; tur: string;
+  bedel: Prisma.Decimal; birikmis: Prisma.Decimal; satisTl: Prisma.Decimal;
 }
 
 export interface HareketGirdisi {
@@ -144,6 +166,8 @@ export interface UreticiGirdisi {
   /** PRS-19: onaylı bordrolar ve personel carisi → personel no (335/196 alt hesabı). */
   bordrolar?: BordroGirdisi[];
   personelCarileri?: Map<string, string>;
+  amortismanlar?: AmortismanGirdisi[];
+  demirbasCikislari?: DemirbasCikisGirdisi[];
   baslangic: string;
   bitis: string;
 }
@@ -195,6 +219,15 @@ export class HesapCozucu {
     const ana = this.kod("kisa_vadeli_kredi");
     const uzunAna = this.kod("uzun_vadeli_kredi");
     return kisa === ana || kisa.startsWith(`${ana}.`) ? uzunAna + kisa.slice(ana.length) : `${uzunAna}.01.${String(this.g.hesaplar.get(`kredi:${id}`)?.sira ?? 0).padStart(3, "0")}`;
+  }
+
+  /** DMR-01: kartın varlık hesabı ve birikmiş amortisman hesabı (hak/özel maliyette 268). */
+  demirbas(d: DemirbasHesabi): string {
+    return d.hesapKodu?.trim() || this.kod(`dmr_${d.sinif}` as MuhasebeHesapAnahtari);
+  }
+
+  birikmis(d: DemirbasHesabi): string {
+    return this.kod(d.sinif === "hak" || d.sinif === "ozel_maliyet" ? "birikmis_itfa" : "birikmis_amortisman");
   }
 
   hesapAdi(tur: HesapBilgi["tur"], id: string): string {
@@ -249,9 +282,13 @@ function faturaFisi(f: FaturaGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
     const gelirKodu = f.tip === "satis_iade" ? c.kod("satis_iade") : f.kurFarki ? c.kod("kur_farki_gelir") : c.kod(f.ihracat ? "yurtdisi_satis" : "yurtici_satis");
     // Satış: B 120 / A 600 + A 391. Satış iadesi: tam tersi, gelir yerine 610 borçlanır.
     const cari = (iade ? alacak : borc)(cariKodu, aciklama, cariTl, cariDoviz);
-    const gelir = (iade ? borc : alacak)(gelirKodu, aciklama, TL(f.toplamMatrah, f.kur));
+    // DMR-08: satılan demirbaşa bağlanan tutar gelir yerine varlık hesabına alacak yazılır.
+    const dmrSatirlari = iade ? [] : f.satirlar.filter((s) => s.demirbasCikis);
+    const dmr = dmrSatirlari.map((s) => alacak(c.demirbas(s.demirbasCikis!), `${aciklama} demirbaş satışı`, s.demirbasCikis!.tl));
+    const dmrToplam = dmr.reduce((t, s) => t.add(s.alacak), SIFIR);
+    const gelir = (iade ? borc : alacak)(gelirKodu, aciklama, TL(f.toplamMatrah, f.kur).sub(dmrToplam));
     const kdv = (iade ? borc : alacak)(c.kod("hesaplanan_kdv"), `${aciklama} KDV`, TL(f.toplamNetKdv, f.kur));
-    satirlar.push(cari, gelir, kdv);
+    satirlar.push(cari, gelir, ...dmr, kdv);
     // EBLG-128: tahsil edilen KDV dışı vergi (ÖTV, ÖİV, konaklama…) devlete ödenecektir (360);
     // alıcının kestiği stopaj bizim peşin ödediğimiz vergidir (193).
     const ekVergi = f.satirlar.reduce((t, s) => t.add(s.ekVergi ?? SIFIR), SIFIR);
@@ -264,7 +301,9 @@ function faturaFisi(f: FaturaGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
     const satirToplami = f.satirlar.reduce((t, s) => t.add(s.matrah), SIFIR);
     const gruplar = new Map<string, { matrah: Prisma.Decimal; ekVergi: Prisma.Decimal }>();
     for (const s of f.satirlar) {
-      const kod = f.kurFarki ? c.kod("kur_farki_gider") : s.stokTipi === "urun" || s.stokaDagitildi ? c.kod("mal_alis") : s.stokTipi === "sarf" ? c.kod("sarf_alis") : c.kod("hizmet_alis");
+      const kod = f.kurFarki ? c.kod("kur_farki_gider")
+        : s.demirbas && !iade ? c.demirbas(s.demirbas)
+          : s.stokTipi === "urun" || s.stokaDagitildi ? c.kod("mal_alis") : s.stokTipi === "sarf" ? c.kod("sarf_alis") : c.kod("hizmet_alis");
       const g = gruplar.get(kod) ?? { matrah: SIFIR, ekVergi: SIFIR };
       gruplar.set(kod, { matrah: g.matrah.add(s.matrah), ekVergi: g.ekVergi.add(s.ekVergi ?? SIFIR) });
     }
@@ -563,6 +602,33 @@ function bordroFisi(b: BordroGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
   return { tarih: b.tarih, tur: "mahsup", aciklama: `Bordro tahakkuku ${ad}`, belgeNo: null, kaynak, satirlar };
 }
 
+/** DMR-09: yıl sonu amortismanı — B gider (kart başına) / A birikmiş amortisman. */
+function amortismanFisi(a: AmortismanGirdisi, c: HesapCozucu): Fis {
+  const kaynak: Kaynak = { tur: "amortisman", id: String(a.yil), etiket: `Amortisman ${a.yil}` };
+  const giderler = a.satirlar.map((s) => borc(s.giderHesapKodu?.trim() || c.kod("amortisman_gideri"), `${s.kod} ${s.ad} amortismanı`, s.tutar));
+  const birikmis = new Map<string, Prisma.Decimal>();
+  for (const s of a.satirlar) birikmis.set(c.birikmis(s), (birikmis.get(c.birikmis(s)) ?? SIFIR).add(s.tutar));
+  const alacaklar = [...birikmis.entries()].map(([kod, t]) => alacak(kod, `${a.yil} yılı amortismanı`, t));
+  return { tarih: a.tarih, tur: "mahsup", aciklama: `${a.yil} yılı amortismanı`, belgeNo: null, kaynak, satirlar: [...giderler, ...alacaklar].filter(sifirDegil) };
+}
+
+/**
+ * DMR-08/09: elden çıkış — birikmiş amortisman kapanır, varlık hesabının satış
+ * faturasında alacaklanmamış kalanı kapanır, fark 679 (kâr) / 689 (zarar).
+ */
+function demirbasCikisFisi(d: DemirbasCikisGirdisi, c: HesapCozucu): Fis {
+  const kaynak: Kaynak = { tur: "demirbas", id: d.id, etiket: `Demirbaş ${d.kod}` };
+  const aciklama = `${d.kod} ${d.ad} elden çıkışı`;
+  const kalanVarlik = d.bedel.sub(d.satisTl);
+  const fark = d.satisTl.sub(d.bedel.sub(d.birikmis));
+  const satirlar = [
+    borc(c.birikmis(d), aciklama, d.birikmis),
+    kalanVarlik.gte(0) ? alacak(c.demirbas(d), aciklama, kalanVarlik) : borc(c.demirbas(d), aciklama, kalanVarlik.neg()),
+    fark.gt(0) ? alacak(c.kod("dmr_satis_kari"), `${aciklama} kârı`, fark) : borc(c.kod("dmr_satis_zarari"), `${aciklama} zararı`, fark.neg()),
+  ].filter(sifirDegil);
+  return { tarih: d.tarih, tur: "mahsup", aciklama, belgeNo: d.kod, kaynak, satirlar };
+}
+
 // ─── Giriş noktası ────────────────────────────────────────────────────────
 
 export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kontrol[] } {
@@ -583,7 +649,9 @@ export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kon
   for (const d of g.dovizIslemleri) ekle(dovizIslemFisi(d, c, kontroller));
   for (const h of g.cariDuzeltmeleri ?? []) ekle(cariDuzeltmeFisi(h, c));
   for (const b of g.bordrolar ?? []) ekle(bordroFisi(b, c, kontroller));
-  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, bordro: 7, hareket: 8 };
+  for (const a of g.amortismanlar ?? []) ekle(amortismanFisi(a, c));
+  for (const d of g.demirbasCikislari ?? []) ekle(demirbasCikisFisi(d, c));
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, bordro: 7, hareket: 8, demirbas: 9, amortisman: 10 };
   fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
   return { fisler, kontroller };
 }
