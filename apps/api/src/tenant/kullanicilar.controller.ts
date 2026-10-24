@@ -135,32 +135,65 @@ export class KullanicilarController {
     if (!ayristirma.success) {
       throw new BadRequestException("Geçersiz kullanıcı bilgisi");
     }
+    const girdi = ayristirma.data;
     const { tenantId, userId } = aktifBaglam();
-    await this.bayiCariDogrula(tenantId, ayristirma.data.bayiCariId);
-    if (id === userId && ayristirma.data.aktif === false) {
+    await this.bayiCariDogrula(tenantId, girdi.bayiCariId);
+    if (id === userId && girdi.aktif === false) {
       throw new BadRequestException("Kendi hesabınızı pasifleştiremezsiniz");
     }
-    // PRS-21: çalışan hesabı personel kartına bağlıdır; rolü buradan değişmez, başka hesap çalışan yapılmaz.
-    if (ayristirma.data.rol) {
-      const mevcut = await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findUnique({ where: { id }, select: { rol: true } }));
-      if ((mevcut?.rol === "calisan") !== (ayristirma.data.rol === "calisan")) throw new BadRequestException("Çalışan self-servis hesabının rolü değiştirilemez; erişim personel kartından yönetilir");
+    if (id === userId && girdi.rol !== undefined) {
+      throw new BadRequestException("Kendi rolünüzü değiştiremezsiniz; başka bir yönetici değiştirebilir");
     }
-    try {
-      return await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.user.update({
-          where: { id },
-          data: {
-            ...ayristirma.data,
-            bayiCariId: ayristirma.data.rol && ayristirma.data.rol !== "b2b_bayi" ? null : ayristirma.data.bayiCariId,
-            maksIskontoYuzdesi: ayristirma.data.maksIskontoYuzdesi !== undefined
-              ? (ayristirma.data.maksIskontoYuzdesi !== null ? new Prisma.Decimal(ayristirma.data.maksIskontoYuzdesi) : null)
-              : undefined,
-          },
-          select: KULLANICI_SECIMI,
-        }),
-      );
-    } catch {
-      throw new NotFoundException("Kullanıcı bulunamadı");
-    }
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Yönetici sayısı kuralı aynı anda iki değişiklikte de tutsun diye firma başına sıralanır.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${tenantId}:kullanici-yetki`}, 0))::text`;
+      const mevcut = await tx.user.findUnique({
+        where: { id },
+        select: { rol: true, aktif: true, maksIskontoYuzdesi: true, bayiCariId: true, eposta: true },
+      });
+      if (!mevcut) throw new NotFoundException("Kullanıcı bulunamadı");
+      // PRS-21: çalışan hesabı personel kartına bağlıdır; rolü buradan değişmez, başka hesap çalışan yapılmaz.
+      if (girdi.rol && (mevcut.rol === "calisan") !== (girdi.rol === "calisan")) {
+        throw new BadRequestException("Çalışan self-servis hesabının rolü değiştirilemez; erişim personel kartından yönetilir");
+      }
+      const yeniRol = girdi.rol ?? mevcut.rol;
+      const yeniAktif = girdi.aktif ?? mevcut.aktif;
+      // Yönetim P0-2: firmada en az bir aktif yönetici kalır.
+      if (mevcut.rol === "yonetici" && mevcut.aktif && (yeniRol !== "yonetici" || !yeniAktif)) {
+        const digerYoneticiler = await tx.user.count({ where: { rol: "yonetici", aktif: true, id: { not: id } } });
+        if (digerYoneticiler === 0) throw new BadRequestException("Firmada en az bir aktif yönetici kalmalıdır; önce başka bir kullanıcıyı yönetici yapın");
+      }
+      // Yönetim P2-2: geri açılan hesap da abonelik kullanıcı sınırına sayılır.
+      if (!mevcut.aktif && yeniAktif && yeniRol !== "calisan") {
+        await this.abonelik.limitDogrula("kullanici");
+      }
+      const maksIskontoYuzdesi = girdi.maksIskontoYuzdesi !== undefined
+        ? (girdi.maksIskontoYuzdesi !== null ? new Prisma.Decimal(girdi.maksIskontoYuzdesi) : null)
+        : undefined;
+      const guncel = await tx.user.update({
+        where: { id },
+        data: {
+          ...girdi,
+          bayiCariId: girdi.rol && girdi.rol !== "b2b_bayi" ? null : girdi.bayiCariId,
+          maksIskontoYuzdesi,
+        },
+        select: KULLANICI_SECIMI,
+      });
+      // Yönetim P1-4: yetki değişikliği eski → yeni değerleriyle denetim izine yazılır.
+      const degisiklikler: Record<string, { eski: unknown; yeni: unknown }> = {};
+      const karsilastir = (alan: string, eski: unknown, yeni: unknown) => {
+        if (String(eski ?? "") !== String(yeni ?? "")) degisiklikler[alan] = { eski: eski ?? null, yeni: yeni ?? null };
+      };
+      karsilastir("rol", mevcut.rol, guncel.rol);
+      karsilastir("aktif", mevcut.aktif, guncel.aktif);
+      karsilastir("maksIskontoYuzdesi", mevcut.maksIskontoYuzdesi?.toString(), guncel.maksIskontoYuzdesi?.toString());
+      karsilastir("bayiCariId", mevcut.bayiCariId, guncel.bayiCariId);
+      if (Object.keys(degisiklikler).length) {
+        await tx.auditLog.create({
+          data: { tenantId, userId, islem: "kullanici_yetkisi_degisti", varlik: "user", varlikId: id, detay: { eposta: mevcut.eposta, degisiklikler } as Prisma.InputJsonValue },
+        });
+      }
+      return guncel;
+    });
   }
 }

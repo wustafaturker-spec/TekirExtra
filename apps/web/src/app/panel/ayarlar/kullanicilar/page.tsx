@@ -239,7 +239,7 @@ export default function KullanicilarSayfasi() {
                     {!k.epostaDogrulandi && <span className="subtle"> · doğrulanmadı</span>}
                   </td>
                   <td style={{ minWidth: 150 }}>
-                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select value={k.rol} onChange={(e) => rolDegistir(k.id, e.target.value as Rol)}>
+                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select aria-label={`${k.adSoyad} rolü`} disabled={k.id === benId} title={k.id === benId ? "Kendi rolünüzü başka bir yönetici değiştirebilir" : undefined} value={k.rol} onChange={(e) => rolDegistir(k.id, e.target.value as Rol)}>
                       {ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}
                     </Select>}
                   </td>
@@ -252,9 +252,11 @@ export default function KullanicilarSayfasi() {
                       {k.id !== benId && (
                         <Button size="sm" onClick={() => sifirlamaAc(k)}>Parolayı Sıfırla</Button>
                       )}
-                      <Button size="sm" variant={k.aktif ? "danger" : "ghost"} onClick={() => aktifDegistir(k)}>
-                        {k.aktif ? "Pasife Al" : "Aktif Et"}
-                      </Button>
+                      {k.id !== benId && (
+                        <Button size="sm" variant={k.aktif ? "danger" : "ghost"} onClick={() => aktifDegistir(k)}>
+                          {k.aktif ? "Pasife Al" : "Aktif Et"}
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
