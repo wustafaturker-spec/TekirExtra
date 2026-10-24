@@ -1,0 +1,10 @@
+import * as fs from 'node:fs/promises';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+const root=resolve(import.meta.dirname,'..'),bundle=resolve(root,'.release-candidates/f04-isletim-20261023');
+assert(process.argv[2],'Ağsız dosya doğrulama JSON raporu gerekli');
+const proofPath=resolve(process.argv[2]),proof=JSON.parse(await fs.readFile(proofPath,'utf8')),spec=JSON.parse(await fs.readFile(resolve(bundle,'surum.json'),'utf8')),meta=JSON.parse(await fs.readFile(resolve(bundle,'paket.json'),'utf8'));
+assert.equal(proof.durum,'gecti');assert.deepEqual(proof.aday,spec.aday);assert.equal(proof.dosyaAdedi,meta.beklenenDosyaAdedi);
+meta.durum='hazirlandi';meta.kontrol=proof;meta.dogrulamaRaporSha256=createHash('sha256').update(await fs.readFile(proofPath)).digest('hex');
+await fs.writeFile(resolve(bundle,'paket.json'),JSON.stringify(meta,null,2)+'\n');console.log(JSON.stringify({durum:meta.durum,dosyaAdedi:proof.dosyaAdedi,yayinlandi:false}));

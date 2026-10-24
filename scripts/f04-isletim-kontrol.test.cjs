@@ -1,0 +1,12 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {kontrol,redisAyar}=require('./f04-isletim-kontrol.cjs');
+function fixture({paused=true,active=0,mode='bakim',readyError,gateError,resumeError}={}){
+ const calls=[];return {calls,queue:{state:async()=>({paused,active}),pause:async()=>{calls.push('pause');paused=true;},resume:async()=>{calls.push('resume');if(resumeError)throw Error('resume fixture');paused=false;}},gate:async action=>{calls.push(action);if(gateError&&action==='yeni')throw Error('gate fixture');if(action==='yeni')mode='yeni';if(action==='bakim')mode='bakim';return {mode};},ready:async()=>{calls.push('ready');if(readyError)throw Error('ready fixture');}};
+}
+test('hazırlık queue pause eder, trafik açmaz',async()=>{const f=fixture({paused:false});assert.equal((await kontrol('hazirla',f)).hazirlik.paused,true);assert.deepEqual(f.calls,['pause']);});
+test('aktivasyon pause ve readiness sonrasında yeni trafik açar, en son resume eder',async()=>{const f=fixture();const r=await kontrol('ac',f);assert.equal(r.gate.mode,'yeni');assert.equal(r.queue.paused,false);assert.deepEqual(f.calls.slice(0,4),['ready','yeni','durum','resume']);});
+test('pause yokken aktivasyon resume yapmaz ve bakıma döner',async()=>{const f=fixture({paused:false});await assert.rejects(kontrol('ac',f),/pause değil/);assert.deepEqual(f.calls,['bakim','pause']);});
+for(const setting of ['readyError','gateError','resumeError'])test(setting+' durumunda bakım ve pause korunur',async()=>{const f=fixture({[setting]:true});await assert.rejects(kontrol('ac',f),/fixture/);assert.deepEqual(f.calls.slice(-2),['bakim','pause']);assert.equal((await f.queue.state()).paused,true);});
+test('kapatma önce bakım sonra pause uygular',async()=>{const f=fixture({paused:false,mode:'yeni'});const r=await kontrol('kapat',f);assert.equal(r.gate.mode,'bakim');assert.equal(r.queue.paused,true);assert.deepEqual(f.calls.slice(0,2),['bakim','pause']);});
+test('durum salt okunurdur',async()=>{const f=fixture();await kontrol('durum',f);assert.deepEqual(f.calls,['durum']);});
+test('Redis TLS/kimlik/DB ayrıştırması ve protokol sınırı',()=>{const r=redisAyar('rediss://fixture:p%40ss@redis.example:6380/2');assert.equal(r.password,'p@ss');assert.equal(r.db,2);assert.deepEqual(r.tls,{});assert.throws(()=>redisAyar('https://example.test'),/protokol/);assert.throws(()=>redisAyar('redis://redis/not-db'),/DB/);});
