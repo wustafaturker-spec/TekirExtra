@@ -60,6 +60,7 @@ export default function BankaBaglantilari() {
   const [senkron, setSenkron] = useState<SenkronDurumu[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
+  const [uyari, setUyari] = useState("");
   const yukle = useCallback(async () => {
     const [b, h, e, ben] = await Promise.all([
       api<Baglanti[]>("/baglantilar"),
@@ -148,6 +149,7 @@ export default function BankaBaglantilari() {
   async function senkronize() {
     if (!vomsis) return;
     setHata("");
+    setUyari("");
     try {
       const s = await api<{ yeniSatir: number; yinelenenSatir: number; bakiyeFarklari?: { bankaHesapId: string; fark: string; tarih: string }[] }>(
         `/kasa-banka/banka-baglantilari/${vomsis.id}/senkronize`,
@@ -156,7 +158,7 @@ export default function BankaBaglantilari() {
       setBasari(`${s.yeniSatir} yeni Vomsis hareketi alındı; ${s.yinelenenSatir} tekrar atlandı.`);
       // KSB-31: bankanın bildirdiği bakiye sistemle tutmuyorsa hemen söylenir.
       const farklar = (s.bakiyeFarklari ?? []).map((b) => `${hesaplar.find((h) => h.id === b.bankaHesapId)?.ad ?? "Banka hesabı"}: ${paraBicimle(b.fark)} fark`);
-      if (farklar.length) setHata(`Banka bakiyesi sistemle tutmuyor (${farklar.join("; ")}). Ekstre ekranındaki mutabakattan farkın kaynağına bakın.`);
+      if (farklar.length) setUyari(`Banka bakiyesi sistemle tutmuyor (${farklar.join("; ")}). Ekstre ekranındaki mutabakattan farkın kaynağına bakın.`);
       await yukle();
     } catch (x) {
       setHata(x instanceof Error ? x.message : "Vomsis hareketleri alınamadı");
@@ -195,6 +197,7 @@ export default function BankaBaglantilari() {
         subtitle="Vomsis üzerinden hareketleri çekin veya sağlayıcınızın webhook ile aktarmasını sağlayın."
       />
       <Alert tone="error">{hata}</Alert>
+      <Alert tone="warning">{uyari}</Alert>
       <Alert tone="success">{basari}</Alert>
       <Card>
         <h3>Vomsis</h3>
