@@ -13,7 +13,9 @@ export default defineConfig({
     exclude: ["test/crm-belge.kabul.test.ts", "test/maliyet-yaris.kabul.test.ts", "test/odeme-sozu.kabul.test.ts", "test/tahsilat-takibi.kabul.test.ts",
       "test/odeme-sozu-hatirlatma.kabul.test.ts", "test/ihtiyac.kabul.test.ts", "test/crm-http.kabul.test.ts",
       // Kendi betiğiyle (geçici konteyner / aday dist) koşanlar: scripts/ai-guvenlik-kabul.mjs, scripts/f01-yaris-kabul.mjs --f02-yayin.
-      "test/ai-guvenlik.kabul.test.ts", "test/f02-yayin.kabul.test.ts"],
+      "test/ai-guvenlik.kabul.test.ts", "test/f02-yayin.kabul.test.ts",
+      // F04 izole runner'ları: her biri kendi vitest.<ad>.config.ts ve scripts/f04-* betiğiyle koşar.
+      "test/ebelge-rezervasyon.kabul.test.ts", "test/ihtiyac-gecis.kabul.test.ts", "test/ihtiyac-http.kabul.test.ts", "test/ihtiyac-ileri.kabul.test.ts"],
     testTimeout: 120_000,
     hookTimeout: 120_000,
     fileParallelism: false,
