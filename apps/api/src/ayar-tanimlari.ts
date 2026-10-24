@@ -1,3 +1,4 @@
+import {IHTIYAC_MODULU,ihtiyacAyariSemasi} from './stok/ihtiyac-erisim';
 import { CRM_BELGE_MODULU, crmBelgeAyariSemasi } from "./crm/crm-belge.semalar";
 import { z } from "zod";
 import { registerModulAyar } from "./core/ayarlar/ayar-kayit";
@@ -11,6 +12,7 @@ import { TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi } from "./cari/tahsilat-ot
 import { TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi } from "./ai/teklif-talebi/teklif-talebi-ayari";
 import { TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi } from "./belgeler/teklif-takibi/teklif-takip.kurallari";
 
+registerModulAyar(IHTIYAC_MODULU,ihtiyacAyariSemasi,{surum:1,mod:'kapali'});
 registerModulAyar(MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi, { surum: 1, mod: "kapali" });
 registerModulAyar(TAHSILAT_MODULU, tahsilatAyariSemasi, { surum: 1, mod: "kapali" });
 registerModulAyar(TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi, { acik: false, sorumluUserId: null, uygulamaIciBildirim: false });

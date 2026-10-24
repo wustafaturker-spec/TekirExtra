@@ -106,49 +106,50 @@ enum DuzeltmeTuru {
 }
 
 model Tenant {
-  tahsilatSozBaglari TahsilatSozBaglantisi[]
-  tahsilatTakipleri  TahsilatTakibi[]
-  odemeSozleri       OdemeSozu[]
+  ihtiyacPlanlari         IhtiyacPlani[]
+  tahsilatSozBaglari      TahsilatSozBaglantisi[]
+  tahsilatTakipleri       TahsilatTakibi[]
+  odemeSozleri            OdemeSozu[]
   faturaGecikmeTahminleri FaturaGecikmeTahmini[]
-  id                 String           @id @default(uuid()) @db.Uuid
-  unvan              String
-  vkn                String           @unique
-  vergiDairesi       String?          @map("vergi_dairesi")
+  id                      String                  @id @default(uuid()) @db.Uuid
+  unvan                   String
+  vkn                     String                  @unique
+  vergiDairesi            String?                 @map("vergi_dairesi")
   /// EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan firma bilgisi.
-  adres              String?          @map("adres")
-  ilce               String?          @map("ilce")
-  il                 String?          @map("il")
-  postaKodu          String?          @map("posta_kodu")
-  telefon            String?          @map("telefon")
-  eposta             String?          @map("eposta")
-  webSitesi          String?          @map("web_sitesi")
+  adres                   String?                 @map("adres")
+  ilce                    String?                 @map("ilce")
+  il                      String?                 @map("il")
+  postaKodu               String?                 @map("posta_kodu")
+  telefon                 String?                 @map("telefon")
+  eposta                  String?                 @map("eposta")
+  webSitesi               String?                 @map("web_sitesi")
   /// EBLG-101: entegratöre yüklenen firma tasarımının üst şeridi. Boşsa ünvan yazılır.
-  belgeMarkaAdi      String?          @map("belge_marka_adi")
-  belgeMarkaAlt      String?          @map("belge_marka_alt")
+  belgeMarkaAdi           String?                 @map("belge_marka_adi")
+  belgeMarkaAlt           String?                 @map("belge_marka_alt")
   /// EBLG-101: satıcı bilgilerinin altında ve alt satırda basılan serbest ek bilgi (ör. sertifika no).
-  belgeEkBilgi       String?          @map("belge_ek_bilgi")
+  belgeEkBilgi            String?                 @map("belge_ek_bilgi")
   /// EBLG-101: sağ üstte basılan rozet görselleri (data URI dizisi, en çok 3).
-  belgeRozetleri     Json?            @map("belge_rozetleri")
-  mersisNo           String?          @map("mersis_no")
-  ticaretSicilNo     String?          @map("ticaret_sicil_no")
+  belgeRozetleri          Json?                   @map("belge_rozetleri")
+  mersisNo                String?                 @map("mersis_no")
+  ticaretSicilNo          String?                 @map("ticaret_sicil_no")
   /// EBLG-77: firmanın kendi e-belge mükellefiyetleri. null: GİB mükellef
   /// listesinden belirlenir; true/false: firma ayarında elle söylenmiştir.
   /// e-Arşiv listesi GİB'de yayınlanmadığı için otomatikte e-Faturayı izler.
-  efaturaMukellefi   Boolean?         @map("efatura_mukellefi")
-  earsivMukellefi    Boolean?         @map("earsiv_mukellefi")
-  eirsaliyeMukellefi Boolean?         @map("eirsaliye_mukellefi")
+  efaturaMukellefi        Boolean?                @map("efatura_mukellefi")
+  earsivMukellefi         Boolean?                @map("earsiv_mukellefi")
+  eirsaliyeMukellefi      Boolean?                @map("eirsaliye_mukellefi")
   /// Yolcu beraberi (tax-free): KDV iadesini yapan aracı kurumun varsayılanı;
   /// sihirbazda faturaya özel değiştirilir.
-  araciKurumVkn      String?          @map("araci_kurum_vkn")
-  araciKurumEtiket   String?          @map("araci_kurum_etiket")
-  araciKurumUnvan    String?          @map("araci_kurum_unvan")
+  araciKurumVkn           String?                 @map("araci_kurum_vkn")
+  araciKurumEtiket        String?                 @map("araci_kurum_etiket")
+  araciKurumUnvan         String?                 @map("araci_kurum_unvan")
   /// SGK faturası: firmanın hangi grupta olduğu ve Kurum'da tanımlı kodu/adı.
   /// Sağlık hizmeti sunucusunda sabittir, her faturada tekrar yazılmaz.
-  sgkIlaveFaturaTipi String?          @map("sgk_ilave_fatura_tipi")
-  sgkMukellefKodu    String?          @map("sgk_mukellef_kodu")
-  sgkMukellefAdi     String?          @map("sgk_mukellef_adi")
-  createdAt          DateTime         @default(now()) @map("created_at")
-  updatedAt          DateTime         @updatedAt @map("updated_at")
+  sgkIlaveFaturaTipi      String?                 @map("sgk_ilave_fatura_tipi")
+  sgkMukellefKodu         String?                 @map("sgk_mukellef_kodu")
+  sgkMukellefAdi          String?                 @map("sgk_mukellef_adi")
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
 
   users                     User[]
   modulAyarlari             ModulAyar[]
@@ -238,29 +239,29 @@ model Tenant {
   personelUcretleri         PersonelUcret[]
   personelBilgiTalepleri    PersonelBilgiTalebi[]
 
-  stokEkVergileri       StokEkVergi[]
-  ajanOturumlari        AjanOturumu[]
-  aiOnayTalepleri       AiOnayTalebi[]
-  aiMcpAnahtarlari      AiMcpAnahtari[]
-  aiAracIstekleri       AiAracIstegi[]
-  aiKullanim            AiKullanim[]
-  aiCagriIzleri         AiCagriIz[]
-  aiOcrDenetimleri      AiOcrDenetim[]
-  aiVeriAktarimOnaylari AiVeriAktarimOnayi[]
-  belgeOcrKayitlari     BelgeOcrKaydi[]
-  aiAyari               TenantAiAyari?
-  aiTavani              PlatformAiTavani?
-  epostaTeklifIslemleri EpostaTeklifIslemi[]
-  aiHafiza              AiHafiza[]
-  isKutusuKapanislari   IsKutusuKapanisi[]
-  onDenetimKararlari    OnDenetimKarari[]
-  onDenetimSusturmalari OnDenetimSusturma[]
+  stokEkVergileri         StokEkVergi[]
+  ajanOturumlari          AjanOturumu[]
+  aiOnayTalepleri         AiOnayTalebi[]
+  aiMcpAnahtarlari        AiMcpAnahtari[]
+  aiAracIstekleri         AiAracIstegi[]
+  aiKullanim              AiKullanim[]
+  aiCagriIzleri           AiCagriIz[]
+  aiOcrDenetimleri        AiOcrDenetim[]
+  aiVeriAktarimOnaylari   AiVeriAktarimOnayi[]
+  belgeOcrKayitlari       BelgeOcrKaydi[]
+  aiAyari                 TenantAiAyari?
+  aiTavani                PlatformAiTavani?
+  epostaTeklifIslemleri   EpostaTeklifIslemi[]
+  aiHafiza                AiHafiza[]
+  isKutusuKapanislari     IsKutusuKapanisi[]
+  onDenetimKararlari      OnDenetimKarari[]
+  onDenetimSusturmalari   OnDenetimSusturma[]
   cariMukerrerIstisnalari CariMukerrerIstisna[]
   cariBirlestirmeleri     CariBirlestirme[]
-  teklifTakipleri       TeklifTakibi[]
-  aiGorevleri           TenantAiGorev[]
-  aiGorevCalismalari    TenantAiGorevCalisma[]
-  aiIcgoruleri          AiIcgoru[]
+  teklifTakipleri         TeklifTakibi[]
+  aiGorevleri             TenantAiGorev[]
+  aiGorevCalismalari      TenantAiGorevCalisma[]
+  aiIcgoruleri            AiIcgoru[]
 
   @@map("tenants")
 }
@@ -510,30 +511,30 @@ model EpostaGonderim {
 }
 
 model GelenEposta {
-  id             String   @id @default(uuid()) @db.Uuid
-  tenantId       String   @map("tenant_id") @db.Uuid
-  mesajId        String   @map("mesaj_id")
-  uid            Int?
-  gonderenAdi    String?  @map("gonderen_adi")
-  gonderenEposta String   @map("gonderen_eposta")
-  aliciEposta    String   @map("alici_eposta")
-  konu           String
-  icerikMetin    String?  @map("icerik_metin") @db.Text
-  icerikHtml     String?  @map("icerik_html") @db.Text
-  tarih          DateTime
-  okundu         Boolean  @default(false)
-  durum          String   @default("yeni") // yeni, islendi, arsivlendi, hata
-  cariId         String?  @map("cari_id") @db.Uuid
-  crmFirsatId    String?  @map("crm_firsat_id") @db.Uuid
-  faturaId       String?  @map("fatura_id") @db.Uuid
-  masrafId       String?  @map("masraf_id") @db.Uuid
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  mesajId               String   @map("mesaj_id")
+  uid                   Int?
+  gonderenAdi           String?  @map("gonderen_adi")
+  gonderenEposta        String   @map("gonderen_eposta")
+  aliciEposta           String   @map("alici_eposta")
+  konu                  String
+  icerikMetin           String?  @map("icerik_metin") @db.Text
+  icerikHtml            String?  @map("icerik_html") @db.Text
+  tarih                 DateTime
+  okundu                Boolean  @default(false)
+  durum                 String   @default("yeni") // yeni, islendi, arsivlendi, hata
+  cariId                String?  @map("cari_id") @db.Uuid
+  crmFirsatId           String?  @map("crm_firsat_id") @db.Uuid
+  faturaId              String?  @map("fatura_id") @db.Uuid
+  masrafId              String?  @map("masraf_id") @db.Uuid
   /// AI-33: otomatik yanıt / bülten / teslim raporu (başlıklardan); teklif talebi olarak işlenmez.
-  otomatik       Boolean  @default(false)
+  otomatik              Boolean  @default(false)
   /// AI-39: yanıtladığı iletilerin kimlikleri (In-Reply-To + References).
   yanitlananMesajIdleri String[] @default([]) @map("yanitlanan_mesaj_idleri")
   /// AI-39: yanıt olarak eşleştiği teklif.
-  teklifBelgeId  String?  @map("teklif_belge_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at")
+  teklifBelgeId         String?  @map("teklif_belge_id") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at")
 
   tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cari         CariHesap?          @relation(fields: [cariId], references: [id], onDelete: SetNull)
@@ -651,25 +652,25 @@ model AiHafiza {
 /// AI-66…70: teklif iş kutusundan kaldırılan kayıt; önceki durumla geri alınabilir.
 /// Kayıt başına tek açık kapanış (geri_alindi_at IS NULL) kısmi tekil indeksle göçte korunur.
 model IsKutusuKapanisi {
-  id              String    @id @default(uuid()) @db.Uuid
-  tenantId        String    @map("tenant_id") @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
   /// eposta (eposta_teklif_islemleri) | yanit (teklif_takipleri) | onay (ai_onay_talepleri)
-  tur             String
-  kayitId         String    @map("kayit_id") @db.Uuid
+  tur            String
+  kayitId        String    @map("kayit_id") @db.Uuid
   /// elle_yapildi | iptal | teklif_degil
-  neden           String
-  notMetni        String?   @map("not_metni")
-  bagliBelgeId    String?   @map("bagli_belge_id") @db.Uuid
+  neden          String
+  notMetni       String?   @map("not_metni")
+  bagliBelgeId   String?   @map("bagli_belge_id") @db.Uuid
   /// silindi | iptal_edildi — e-postadan açılmış taslağa yapılan
-  taslakSonucu    String?   @map("taslak_sonucu")
+  taslakSonucu   String?   @map("taslak_sonucu")
   /// Geri alma için kaydın kapanıştan önceki alanları.
-  onceki          Json      @default("{}")
+  onceki         Json      @default("{}")
   /// Kaydın sahibi (çalıştıran / sorumlu / talebi açan); "Benim işlerim" süzgeci.
-  sahipUserId     String?   @map("sahip_user_id") @db.Uuid
-  kapatanUserId   String?   @map("kapatan_user_id") @db.Uuid
-  kapandiAt       DateTime  @default(now()) @map("kapandi_at")
-  geriAlanUserId  String?   @map("geri_alan_user_id") @db.Uuid
-  geriAlindiAt    DateTime? @map("geri_alindi_at")
+  sahipUserId    String?   @map("sahip_user_id") @db.Uuid
+  kapatanUserId  String?   @map("kapatan_user_id") @db.Uuid
+  kapandiAt      DateTime  @default(now()) @map("kapandi_at")
+  geriAlanUserId String?   @map("geri_alan_user_id") @db.Uuid
+  geriAlindiAt   DateTime? @map("geri_alindi_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -787,25 +788,25 @@ model RaporGorunumu {
 /// F02: Cari başına tek açık takip. İtiraz takip nedenidir; mali bakiye üretmez.
 model TahsilatTakibi {
   sozBaglari         TahsilatSozBaglantisi[]
-  id                 String              @id @default(uuid()) @db.Uuid
-  tenantId           String              @map("tenant_id") @db.Uuid
-  cariId             String              @map("cari_id") @db.Uuid
-  sorumluUserId      String              @map("sorumlu_user_id") @db.Uuid
-  olusturanUserId    String              @map("olusturan_user_id") @db.Uuid
-  konu               String              @db.VarChar(200)
-  neden              String              @default("tahsilat")
-  durum              String              @default("acik")
-  sonrakiIslemTarihi DateTime?           @map("sonraki_islem_tarihi") @db.Date
-  sonrakiIslem       String?             @map("sonraki_islem") @db.VarChar(200)
-  sonIslemGerekcesi  String?             @map("son_islem_gerekcesi") @db.VarChar(2000)
-  surum              Int                 @default(1)
-  istekAnahtari      String              @map("istek_anahtari") @db.Uuid
-  girdiOzeti         String              @map("girdi_ozeti") @db.VarChar(64)
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @default(now()) @map("updated_at")
-  tenant             Tenant              @relation(fields: [tenantId], references: [id])
-  cari               CariHesap           @relation(fields: [cariId], references: [id])
-  sorumlu            User                @relation(fields: [sorumluUserId], references: [id])
+  id                 String                  @id @default(uuid()) @db.Uuid
+  tenantId           String                  @map("tenant_id") @db.Uuid
+  cariId             String                  @map("cari_id") @db.Uuid
+  sorumluUserId      String                  @map("sorumlu_user_id") @db.Uuid
+  olusturanUserId    String                  @map("olusturan_user_id") @db.Uuid
+  konu               String                  @db.VarChar(200)
+  neden              String                  @default("tahsilat")
+  durum              String                  @default("acik")
+  sonrakiIslemTarihi DateTime?               @map("sonraki_islem_tarihi") @db.Date
+  sonrakiIslem       String?                 @map("sonraki_islem") @db.VarChar(200)
+  sonIslemGerekcesi  String?                 @map("son_islem_gerekcesi") @db.VarChar(2000)
+  surum              Int                     @default(1)
+  istekAnahtari      String                  @map("istek_anahtari") @db.Uuid
+  girdiOzeti         String                  @map("girdi_ozeti") @db.VarChar(64)
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @default(now()) @map("updated_at")
+  tenant             Tenant                  @relation(fields: [tenantId], references: [id])
+  cari               CariHesap               @relation(fields: [cariId], references: [id])
+  sorumlu            User                    @relation(fields: [sorumluUserId], references: [id])
   gorusmeler         TahsilatGorusmesi[]
 
   @@unique([tenantId, istekAnahtari])
@@ -837,24 +838,24 @@ model TahsilatGorusmesi {
 /// türetilir; kayitDurumu mali gerçekleşme durumu değildir. Aktif tekilliği
 /// migration'daki kısmi unique index ile korunur. Silme servisi yoktur.
 model OdemeSozu {
-  hatirlatma OdemeSozuHatirlatma?
-  takipBaglantisi    TahsilatSozBaglantisi?
-  id                String     @id @default(uuid()) @db.Uuid
-  tenantId          String     @map("tenant_id") @db.Uuid
-  cariId            String     @map("cari_id") @db.Uuid
-  faturaId          String     @map("fatura_id") @db.Uuid
-  dovizCinsi        DovizCinsi @map("doviz_cinsi")
-  tutar             Decimal    @db.Decimal(15, 2)
-  sozTarihi         DateTime   @map("soz_tarihi") @db.Date
-  verildigiZaman    DateTime   @default(now()) @map("verildigi_zaman")
-  olusturanUserId   String     @map("olusturan_user_id") @db.Uuid
-  aciklama          String     @db.VarChar(2000)
-  kayitDurumu       String     @default("aktif") @map("kayit_durumu")
-  sonlandirmaNedeni String?    @map("sonlandirma_nedeni") @db.VarChar(2000)
-  surum             Int        @default(1)
-  oncekiSozId       String?    @unique @map("onceki_soz_id") @db.Uuid
-  istekAnahtari     String     @map("istek_anahtari") @db.Uuid
-  girdiOzeti        String     @map("girdi_ozeti") @db.VarChar(64)
+  hatirlatma        OdemeSozuHatirlatma?
+  takipBaglantisi   TahsilatSozBaglantisi?
+  id                String                 @id @default(uuid()) @db.Uuid
+  tenantId          String                 @map("tenant_id") @db.Uuid
+  cariId            String                 @map("cari_id") @db.Uuid
+  faturaId          String                 @map("fatura_id") @db.Uuid
+  dovizCinsi        DovizCinsi             @map("doviz_cinsi")
+  tutar             Decimal                @db.Decimal(15, 2)
+  sozTarihi         DateTime               @map("soz_tarihi") @db.Date
+  verildigiZaman    DateTime               @default(now()) @map("verildigi_zaman")
+  olusturanUserId   String                 @map("olusturan_user_id") @db.Uuid
+  aciklama          String                 @db.VarChar(2000)
+  kayitDurumu       String                 @default("aktif") @map("kayit_durumu")
+  sonlandirmaNedeni String?                @map("sonlandirma_nedeni") @db.VarChar(2000)
+  surum             Int                    @default(1)
+  oncekiSozId       String?                @unique @map("onceki_soz_id") @db.Uuid
+  istekAnahtari     String                 @map("istek_anahtari") @db.Uuid
+  girdiOzeti        String                 @map("girdi_ozeti") @db.VarChar(64)
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
   cari      CariHesap  @relation(fields: [cariId], references: [id])
@@ -892,16 +893,16 @@ model FaturaGecikmeTahmini {
 
 /// F02: Her söz için tek otomatik iş üretimi; kapalı takip yeniden açılmaz.
 model TahsilatSozBaglantisi {
-  id           String @id @default(uuid()) @db.Uuid
-  tenantId     String @map("tenant_id") @db.Uuid
-  sozId        String @unique @map("soz_id") @db.Uuid
-  takipId      String @map("takip_id") @db.Uuid
-  userId       String @map("user_id") @db.Uuid
-  kalan        Decimal @db.Decimal(15, 2)
-  createdAt    DateTime @default(now()) @map("created_at")
-  tenant       Tenant @relation(fields: [tenantId], references: [id])
-  soz          OdemeSozu @relation(fields: [sozId], references: [id])
-  takip        TahsilatTakibi @relation(fields: [takipId], references: [id])
+  id        String         @id @default(uuid()) @db.Uuid
+  tenantId  String         @map("tenant_id") @db.Uuid
+  sozId     String         @unique @map("soz_id") @db.Uuid
+  takipId   String         @map("takip_id") @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  kalan     Decimal        @db.Decimal(15, 2)
+  createdAt DateTime       @default(now()) @map("created_at")
+  tenant    Tenant         @relation(fields: [tenantId], references: [id])
+  soz       OdemeSozu      @relation(fields: [sozId], references: [id])
+  takip     TahsilatTakibi @relation(fields: [takipId], references: [id])
 
   @@index([tenantId, takipId, createdAt])
   @@map("tahsilat_soz_baglantilari")
@@ -912,46 +913,48 @@ model TahsilatSozBaglantisi {
 /// kısıtı). `otomatik` kayıtlar vadeye göre denkleştirmenin ürünüdür ve her
 /// denkleştirmede yeniden hesaplanır; elle olanlar korunur.
 model FirsatKapamaPayi {
-  id String @id @default(uuid()) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  cariId String @map("cari_id") @db.Uuid
-  firsatId String @map("firsat_id") @db.Uuid
-  faturaId String @map("fatura_id") @db.Uuid
-  kapamaId String @map("kapama_id") @db.Uuid
-  surum Int
-  tutar Decimal @db.Decimal(15,2)
-  kaynakOzeti String @map("kaynak_ozeti") @db.VarChar(64)
-  kanitOzeti String @map("kanit_ozeti") @db.VarChar(64)
-  istekAnahtari String @map("istek_anahtari") @db.Uuid
-  girdiOzeti String @map("girdi_ozeti") @db.VarChar(64)
-  gerekce String @db.VarChar(500)
-  olusturanUserId String @map("olusturan_user_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  @@unique([tenantId,istekAnahtari])
-  @@unique([tenantId,kapamaId,firsatId,surum])
-  @@index([tenantId,faturaId])
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  cariId          String   @map("cari_id") @db.Uuid
+  firsatId        String   @map("firsat_id") @db.Uuid
+  faturaId        String   @map("fatura_id") @db.Uuid
+  kapamaId        String   @map("kapama_id") @db.Uuid
+  surum           Int
+  tutar           Decimal  @db.Decimal(15, 2)
+  kaynakOzeti     String   @map("kaynak_ozeti") @db.VarChar(64)
+  kanitOzeti      String   @map("kanit_ozeti") @db.VarChar(64)
+  istekAnahtari   String   @map("istek_anahtari") @db.Uuid
+  girdiOzeti      String   @map("girdi_ozeti") @db.VarChar(64)
+  gerekce         String   @db.VarChar(500)
+  olusturanUserId String   @map("olusturan_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, istekAnahtari])
+  @@unique([tenantId, kapamaId, firsatId, surum])
+  @@index([tenantId, faturaId])
   @@map("firsat_kapama_paylari")
 }
 
 model FirsatIadePayi {
-  id String @id @default(uuid()) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  cariId String @map("cari_id") @db.Uuid
-  firsatId String @map("firsat_id") @db.Uuid
-  faturaId String @map("fatura_id") @db.Uuid
-  iadeFaturaId String @map("iade_fatura_id") @db.Uuid
-  surum Int
-  matrah Decimal @db.Decimal(15,2)
-  kanitOzeti String @map("kanit_ozeti") @db.VarChar(64)
-  istekAnahtari String @map("istek_anahtari") @db.Uuid
-  girdiOzeti String @map("girdi_ozeti") @db.VarChar(64)
-  gerekce String @db.VarChar(500)
-  olusturanUserId String @map("olusturan_user_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  @@unique([tenantId,istekAnahtari])
-  @@unique([tenantId,faturaId,iadeFaturaId,firsatId,surum])
-  @@index([tenantId,faturaId])
-  @@index([tenantId,iadeFaturaId])
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  cariId          String   @map("cari_id") @db.Uuid
+  firsatId        String   @map("firsat_id") @db.Uuid
+  faturaId        String   @map("fatura_id") @db.Uuid
+  iadeFaturaId    String   @map("iade_fatura_id") @db.Uuid
+  surum           Int
+  matrah          Decimal  @db.Decimal(15, 2)
+  kanitOzeti      String   @map("kanit_ozeti") @db.VarChar(64)
+  istekAnahtari   String   @map("istek_anahtari") @db.Uuid
+  girdiOzeti      String   @map("girdi_ozeti") @db.VarChar(64)
+  gerekce         String   @db.VarChar(500)
+  olusturanUserId String   @map("olusturan_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, istekAnahtari])
+  @@unique([tenantId, faturaId, iadeFaturaId, firsatId, surum])
+  @@index([tenantId, faturaId])
+  @@index([tenantId, iadeFaturaId])
   @@map("firsat_iade_paylari")
 }
 
@@ -1260,68 +1263,68 @@ model CariHesap {
   tahsilatTakipleri       TahsilatTakibi[]
   odemeSozleri            OdemeSozu[]
   gecikmeTahminleri       FaturaGecikmeTahmini[]
-  id                      String              @id @default(uuid()) @db.Uuid
-  tenantId                String              @map("tenant_id") @db.Uuid
+  id                      String                 @id @default(uuid()) @db.Uuid
+  tenantId                String                 @map("tenant_id") @db.Uuid
   /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
-  muhasebeKodu            String?             @map("muhasebe_kodu")
+  muhasebeKodu            String?                @map("muhasebe_kodu")
   kod                     String
   unvan                   String
   /// Gerçek kişide ad ve soyad zorunludur, unvan bunlardan türer (CARI-21).
   /// Tüzel kişide boştur.
   ad                      String?
   soyad                   String?
-  kisaAd                  String?             @map("kisa_ad")
+  kisaAd                  String?                @map("kisa_ad")
   tip                     CariTip
-  kisiTipi                KisiTip             @default(tuzel) @map("kisi_tipi")
+  kisiTipi                KisiTip                @default(tuzel) @map("kisi_tipi")
   sektor                  String?
-  temsilciUserId          String?             @map("temsilci_user_id") @db.Uuid
+  temsilciUserId          String?                @map("temsilci_user_id") @db.Uuid
   /// CARI-41: holding / ana firma grubu; grup limiti üyelerin toplam riskine uygulanır.
-  grupId                  String?             @map("grup_id") @db.Uuid
-  vknTckn                 String?             @map("vkn_tckn")
+  grupId                  String?                @map("grup_id") @db.Uuid
+  vknTckn                 String?                @map("vkn_tckn")
   /// EBLG-86: alıcının GİB'de birden çok posta kutusu varsa elle seçilen kutu.
   /// Listede durduğu sürece seçim kuralının önüne geçer; listeden düşerse
   /// kurala dönülür.
-  efaturaPostaKutusu      String?             @map("efatura_posta_kutusu")
-  eirsaliyePostaKutusu    String?             @map("eirsaliye_posta_kutusu")
+  efaturaPostaKutusu      String?                @map("efatura_posta_kutusu")
+  eirsaliyePostaKutusu    String?                @map("eirsaliye_posta_kutusu")
   /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
   /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
-  aramaNormal             String?             @map("arama_normal")
-  vergiDairesi            String?             @map("vergi_dairesi")
-  mersisNo                String?             @map("mersis_no")
-  ticaretSicilNo          String?             @map("ticaret_sicil_no")
-  kvkkOnayTarihi          DateTime?           @map("kvkk_onay_tarihi") @db.Date
+  aramaNormal             String?                @map("arama_normal")
+  vergiDairesi            String?                @map("vergi_dairesi")
+  mersisNo                String?                @map("mersis_no")
+  ticaretSicilNo          String?                @map("ticaret_sicil_no")
+  kvkkOnayTarihi          DateTime?              @map("kvkk_onay_tarihi") @db.Date
   eposta                  String?
   telefon                 String?
-  webSitesi               String?             @map("web_sitesi")
+  webSitesi               String?                @map("web_sitesi")
   faks                    String?
   iban                    String?
-  karaListe               Boolean             @default(false) @map("kara_liste")
-  karaListeNotu           String?             @map("kara_liste_notu")
-  dovizCinsi              DovizCinsi          @default(TRY) @map("doviz_cinsi")
-  fiyatListesiId          String?             @map("fiyat_listesi_id") @db.Uuid
-  varsayilanIskonto       Decimal?            @map("varsayilan_iskonto") @db.Decimal(5, 2)
-  varsayilanVadeGun       Int?                @map("varsayilan_vade_gun")
-  riskLimiti              Decimal?            @map("risk_limiti") @db.Decimal(15, 2)
-  eFaturaMukellefi        Boolean?            @map("e_fatura_mukellefi")
+  karaListe               Boolean                @default(false) @map("kara_liste")
+  karaListeNotu           String?                @map("kara_liste_notu")
+  dovizCinsi              DovizCinsi             @default(TRY) @map("doviz_cinsi")
+  fiyatListesiId          String?                @map("fiyat_listesi_id") @db.Uuid
+  varsayilanIskonto       Decimal?               @map("varsayilan_iskonto") @db.Decimal(5, 2)
+  varsayilanVadeGun       Int?                   @map("varsayilan_vade_gun")
+  riskLimiti              Decimal?               @map("risk_limiti") @db.Decimal(15, 2)
+  eFaturaMukellefi        Boolean?               @map("e_fatura_mukellefi")
   /// KAMU senaryosu: GİB listesinde ÖZEL görünen kamu idaresi için elle işaret;
   /// harcama birimi sihirbazda varsayılan olarak gelir.
-  kamuIdaresi             Boolean             @default(false) @map("kamu_idaresi")
-  harcamaBirimiVkn        String?             @map("harcama_birimi_vkn")
-  harcamaBirimiAdi        String?             @map("harcama_birimi_adi")
-  mukellefiyetSorguZamani DateTime?           @map("mukellefiyet_sorgu_zamani")
+  kamuIdaresi             Boolean                @default(false) @map("kamu_idaresi")
+  harcamaBirimiVkn        String?                @map("harcama_birimi_vkn")
+  harcamaBirimiAdi        String?                @map("harcama_birimi_adi")
+  mukellefiyetSorguZamani DateTime?              @map("mukellefiyet_sorgu_zamani")
   /// Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19); fatura
   /// üzerinde değiştirilebilir.
-  efaturaProfili          EfaturaProfili      @default(temel) @map("efatura_profili")
+  efaturaProfili          EfaturaProfili         @default(temel) @map("efatura_profili")
   /// Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26);
   /// e-Belge sihirbazında fatura bazında değiştirilebilir.
-  earsivGonderimSekli     EarsivGonderimSekli @default(elektronik) @map("earsiv_gonderim_sekli")
+  earsivGonderimSekli     EarsivGonderimSekli    @default(elektronik) @map("earsiv_gonderim_sekli")
   /// FTR-40: bu cariye kesilen ticari belgelerin varsayılan basım dili; boşsa Türkçe.
-  belgeDili               String?             @map("belge_dili")
-  belgeCiftDil            Boolean             @default(false) @map("belge_cift_dil")
+  belgeDili               String?                @map("belge_dili")
+  belgeCiftDil            Boolean                @default(false) @map("belge_cift_dil")
   notlar                  String?
-  aktif                   Boolean             @default(true)
-  createdAt               DateTime            @default(now()) @map("created_at")
-  updatedAt               DateTime            @updatedAt @map("updated_at")
+  aktif                   Boolean                @default(true)
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
 
   fiyatListesi          FiyatListesi?        @relation(fields: [fiyatListesiId], references: [id])
   temsilci              User?                @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
@@ -1532,22 +1535,22 @@ model CrmFirsat {
 
 /// F03: Mevcut satış teklifi bağı; çözülmüş kayıtlar ve istek izleri korunur.
 model FirsatBelgeBagi {
-  id String @id @default(uuid()) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  firsatId String @map("firsat_id") @db.Uuid
-  cariId String @map("cari_id") @db.Uuid
-  belgeId String @map("belge_id") @db.Uuid
-  olusturanUserId String @map("olusturan_user_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  gerekce String @db.VarChar(500)
-  istekAnahtari String @map("istek_anahtari") @db.Uuid
-  girdiOzeti String @map("girdi_ozeti") @db.VarChar(64)
-  surum Int @default(1)
-  cozulduAt DateTime? @map("cozuldu_at")
-  cozenUserId String? @map("cozen_user_id") @db.Uuid
-  cozmeGerekcesi String? @map("cozme_gerekcesi") @db.VarChar(500)
-  cozmeIstekAnahtari String? @map("cozme_istek_anahtari") @db.Uuid
-  cozmeGirdiOzeti String? @map("cozme_girdi_ozeti") @db.VarChar(64)
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  firsatId           String    @map("firsat_id") @db.Uuid
+  cariId             String    @map("cari_id") @db.Uuid
+  belgeId            String    @map("belge_id") @db.Uuid
+  olusturanUserId    String    @map("olusturan_user_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+  gerekce            String    @db.VarChar(500)
+  istekAnahtari      String    @map("istek_anahtari") @db.Uuid
+  girdiOzeti         String    @map("girdi_ozeti") @db.VarChar(64)
+  surum              Int       @default(1)
+  cozulduAt          DateTime? @map("cozuldu_at")
+  cozenUserId        String?   @map("cozen_user_id") @db.Uuid
+  cozmeGerekcesi     String?   @map("cozme_gerekcesi") @db.VarChar(500)
+  cozmeIstekAnahtari String?   @map("cozme_istek_anahtari") @db.Uuid
+  cozmeGirdiOzeti    String?   @map("cozme_girdi_ozeti") @db.VarChar(64)
 
   @@unique([tenantId, istekAnahtari])
   @@unique([tenantId, cozmeIstekAnahtari])
@@ -2106,6 +2109,7 @@ model Depo {
   partiler               StokParti[]
   hareketler             StokHareket[]
   uretimRezervasyonlari  UretimMalzemeRezervasyon[]
+  ihtiyacUretimTalepleri IhtiyacUretimTalebi[]
   sayimlar               Sayim[]
   faturalar              Fatura[]
   belgeler               Belge[]
@@ -2116,6 +2120,7 @@ model Depo {
   uretimSarfDuzeltmeleri UretimSarfDuzeltme[]
 
   @@unique([tenantId, kod])
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@map("depolar")
 }
@@ -2592,9 +2597,68 @@ model UretimEmriKalem {
   rezervasyonlar   UretimMalzemeRezervasyon[]
   bildirimSarflari UretimBildirimiSarf[]
   sarfDuzeltmeleri UretimSarfDuzeltme[]
+  ihtiyacTalebi    IhtiyacUretimTalebi?
 
+  @@unique([tenantId, id])
   @@index([tenantId, uretimEmriId])
   @@map("uretim_emri_kalemleri")
+}
+
+/// Rezerv dışı üretim kaleminin kullanıcı tarafından seçilmiş hammadde deposu/günü.
+model IhtiyacUretimTalebi {
+  tenantId      String          @map("tenant_id") @db.Uuid
+  kalemId       String          @map("kalem_id") @db.Uuid
+  depoId        String          @map("depo_id") @db.Uuid
+  ihtiyacTarihi DateTime        @map("ihtiyac_tarihi") @db.Date
+  aktif         Boolean         @default(true)
+  surum         Int             @default(1)
+  kaynakOzeti   String          @map("kaynak_ozeti") @db.VarChar(64)
+  gerekce       String          @db.VarChar(1000)
+  userId        String          @map("user_id") @db.Uuid
+  guncellendiAt DateTime        @default(now()) @map("guncellendi_at") @db.Timestamp(3)
+  kalem         UretimEmriKalem @relation(fields: [tenantId, kalemId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+  depo          Depo            @relation(fields: [tenantId, depoId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([tenantId, kalemId])
+  @@unique([kalemId])
+  @@index([tenantId, depoId])
+  @@map("ihtiyac_uretim_talepleri")
+}
+
+/// Salt okunur tarihli hesabın değişmez, kullanıcı isteğiyle saklanan sürüm 1 görüntüsü.
+model IhtiyacPlani {
+  id               String                 @id @default(uuid()) @db.Uuid
+  tenantId         String                 @map("tenant_id") @db.Uuid
+  userId           String                 @map("user_id") @db.Uuid
+  istekAnahtari    String                 @map("istek_anahtari") @db.Uuid
+  istekOzeti       String                 @map("istek_ozeti") @db.VarChar(64)
+  sonucKaniti      String                 @map("sonuc_kaniti") @db.VarChar(64)
+  surum            Int                    @default(1)
+  girdi            Json
+  snapshot         Json
+  createdAt        DateTime               @default(now()) @map("created_at")
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  satinAlmaBagi    IhtiyacSatinAlmaBagi?
+  karsilamaBaglari IhtiyacKarsilamaBagi[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, istekAnahtari])
+  @@index([tenantId, createdAt])
+  @@map("ihtiyac_planlari")
+}
+
+/// Tarihsel kanıt bağıdır; stok rezervi veya planlar arası kapasite tahsisi değildir.
+model IhtiyacKarsilamaBagi {
+  id       String       @id @default(uuid()) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  planId   String       @map("plan_id") @db.Uuid
+  tur      String       @db.VarChar(20)
+  kaynakId String       @map("kaynak_id") @db.VarChar(200)
+  miktar   Decimal      @db.Decimal(15, 3)
+  plan     IhtiyacPlani @relation(fields: [tenantId, planId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([tenantId, planId, tur, kaynakId])
+  @@map("ihtiyac_karsilama_baglari")
 }
 
 /// Bir üretim emri malzemesinin hangi depodaki stoktan ayrıldığını izler.
@@ -2836,132 +2900,132 @@ enum EbelgeTur {
 model Fatura {
   odemeSozleri          OdemeSozu[]
   gecikmeTahmini        FaturaGecikmeTahmini?
-  id                    String              @id @default(uuid()) @db.Uuid
-  tenantId              String              @map("tenant_id") @db.Uuid
+  id                    String                @id @default(uuid()) @db.Uuid
+  tenantId              String                @map("tenant_id") @db.Uuid
   tip                   FaturaTip
-  gelirTuru             FaturaGelirTuru     @default(ticari_satis) @map("gelir_turu")
-  durum                 FaturaDurum         @default(taslak)
+  gelirTuru             FaturaGelirTuru       @default(ticari_satis) @map("gelir_turu")
+  durum                 FaturaDurum           @default(taslak)
   no                    String?
   seri                  String?
   sira                  Int?
   /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
   /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
-  aramaNormal           String?             @map("arama_normal")
-  tarih                 DateTime            @db.Date
-  vadeTarihi            DateTime?           @map("vade_tarihi") @db.Date
-  siparisNo             String?             @map("siparis_no")
-  siparisTarihi         DateTime?           @map("siparis_tarihi") @db.Date
+  aramaNormal           String?               @map("arama_normal")
+  tarih                 DateTime              @db.Date
+  vadeTarihi            DateTime?             @map("vade_tarihi") @db.Date
+  siparisNo             String?               @map("siparis_no")
+  siparisTarihi         DateTime?             @map("siparis_tarihi") @db.Date
   /// FTR-31: müşterinin talep referansı; zincirden gelir ya da elle girilir.
-  talepNo               String?             @map("talep_no")
-  talepTarihi           DateTime?           @map("talep_tarihi") @db.Date
+  talepNo               String?               @map("talep_no")
+  talepTarihi           DateTime?             @map("talep_tarihi") @db.Date
   /// FTR-32: müşteri tarafında ilgili kişi; zincirden gelir ya da elle girilir.
-  ilgiliKisi            String?             @map("ilgili_kisi")
-  ilgiliKisiGorevi      String?             @map("ilgili_kisi_gorevi")
+  ilgiliKisi            String?               @map("ilgili_kisi")
+  ilgiliKisiGorevi      String?               @map("ilgili_kisi_gorevi")
   /// EBLG-78: yatırım teşvik belge numarası ve tarihi. Numara doluysa fatura
   /// YATIRIMTESVIK profiliyle gider (e-Arşiv'de tip YTB önekli olur).
-  ytbNo                 String?             @map("ytb_no")
-  ytbTarihi             DateTime?           @map("ytb_tarihi") @db.Date
+  ytbNo                 String?               @map("ytb_no")
+  ytbTarihi             DateTime?             @map("ytb_tarihi") @db.Date
   /// EBLG-76: sevkiyatın nasıl belgelendiği. `irsaliye` seçilen e-İrsaliyelere
   /// bağlanır, `fatura_once` sonradan kesilecek irsaliyeyi bekler,
   /// `irsaliye_yerine` mal fatura beraberinde sevk edildiği için hiç irsaliye
   /// düzenlenmediğini söyler. Boş: firma e-İrsaliye mükellefi değil ya da
   /// sevkiyat hiç sorulmadı (yalnız hizmet satırı).
-  sevkiyatYontemi       String?             @map("sevkiyat_yontemi")
+  sevkiyatYontemi       String?               @map("sevkiyat_yontemi")
   /// EBLG-76: irsaliye yerine geçen faturada malın fiilen sevk edildiği an;
   /// belgeye `cac:Delivery/cac:Despatch` olarak yazılır.
-  fiiliSevkZamani       DateTime?           @map("fiili_sevk_zamani")
+  fiiliSevkZamani       DateTime?             @map("fiili_sevk_zamani")
   /// FTR-30: malın teslim edildiği yer. e-İrsaliyeden faturalanırsa irsaliyeye
   /// fiilen yazılan adres gelir; yoksa cari adreslerinden seçilir ya da elle
   /// girilir. Belgeye `cac:Delivery/cac:DeliveryAddress` olarak yazılır.
-  teslimatAdres         String?             @map("teslimat_adres")
-  teslimatIl            String?             @map("teslimat_il")
-  teslimatIlce          String?             @map("teslimat_ilce")
-  teslimatPostaKodu     String?             @map("teslimat_posta_kodu")
-  cariId                String              @map("cari_id") @db.Uuid
+  teslimatAdres         String?               @map("teslimat_adres")
+  teslimatIl            String?               @map("teslimat_il")
+  teslimatIlce          String?               @map("teslimat_ilce")
+  teslimatPostaKodu     String?               @map("teslimat_posta_kodu")
+  cariId                String                @map("cari_id") @db.Uuid
   /// STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo
-  depoId                String?             @map("depo_id") @db.Uuid
-  dovizCinsi            DovizCinsi          @default(TRY) @map("doviz_cinsi")
-  kur                   Decimal             @default(1) @db.Decimal(15, 6)
-  genelIskontoYuzdesi   Decimal             @default(0) @map("genel_iskonto_yuzdesi") @db.Decimal(5, 2)
-  genelIskontoTutari    Decimal             @default(0) @map("genel_iskonto_tutari") @db.Decimal(15, 2)
-  toplamBrut            Decimal             @map("toplam_brut") @db.Decimal(15, 2)
-  toplamSatirIskontosu  Decimal             @map("toplam_satir_iskontosu") @db.Decimal(15, 2)
-  genelIskontoToplam    Decimal             @map("genel_iskonto_toplam") @db.Decimal(15, 2)
-  toplamMatrah          Decimal             @map("toplam_matrah") @db.Decimal(15, 2)
-  toplamKdv             Decimal             @map("toplam_kdv") @db.Decimal(15, 2)
-  toplamTevkifat        Decimal             @map("toplam_tevkifat") @db.Decimal(15, 2)
+  depoId                String?               @map("depo_id") @db.Uuid
+  dovizCinsi            DovizCinsi            @default(TRY) @map("doviz_cinsi")
+  kur                   Decimal               @default(1) @db.Decimal(15, 6)
+  genelIskontoYuzdesi   Decimal               @default(0) @map("genel_iskonto_yuzdesi") @db.Decimal(5, 2)
+  genelIskontoTutari    Decimal               @default(0) @map("genel_iskonto_tutari") @db.Decimal(15, 2)
+  toplamBrut            Decimal               @map("toplam_brut") @db.Decimal(15, 2)
+  toplamSatirIskontosu  Decimal               @map("toplam_satir_iskontosu") @db.Decimal(15, 2)
+  genelIskontoToplam    Decimal               @map("genel_iskonto_toplam") @db.Decimal(15, 2)
+  toplamMatrah          Decimal               @map("toplam_matrah") @db.Decimal(15, 2)
+  toplamKdv             Decimal               @map("toplam_kdv") @db.Decimal(15, 2)
+  toplamTevkifat        Decimal               @map("toplam_tevkifat") @db.Decimal(15, 2)
   /// Satırlardan türetilen GİB senaryosu; UBL'e InvoiceTypeCode olarak yazılır.
-  senaryo               FaturaSenaryo       @default(satis)
+  senaryo               FaturaSenaryo         @default(satis)
   /// UBL'e ProfileID olarak yazılır; varsayılanı cari kartından gelir.
-  efaturaProfili        EfaturaProfili      @default(temel) @map("efatura_profili")
+  efaturaProfili        EfaturaProfili        @default(temel) @map("efatura_profili")
   /// Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26); varsayılanı cari
   /// kartından gelir. e-Fatura kanalında kullanılmaz.
-  earsivGonderimSekli   EarsivGonderimSekli @default(elektronik) @map("earsiv_gonderim_sekli")
+  earsivGonderimSekli   EarsivGonderimSekli   @default(elektronik) @map("earsiv_gonderim_sekli")
   /// EBLG-53: fiili ihracat tarihi; UBL'e `cac:Delivery/cbc:ActualDeliveryDate`
   /// olarak yazılır ve ihracat faturasında zorunludur.
-  ihracatTeslimTarihi   DateTime?           @map("ihracat_teslim_tarihi") @db.Date
+  ihracatTeslimTarihi   DateTime?             @map("ihracat_teslim_tarihi") @db.Date
   /// EBLG-53: Incoterms teslim şartı (EXW, FOB, CIF…).
-  ihracatTeslimSarti    String?             @map("ihracat_teslim_sarti")
+  ihracatTeslimSarti    String?               @map("ihracat_teslim_sarti")
   /// FTR-40: kendi bastığımız fatura/proforma çıktısının dili (e-Belge görünümünü etkilemez).
-  belgeDili             String              @default("tr") @map("belge_dili")
-  ciftDil               Boolean             @default(false) @map("cift_dil")
+  belgeDili             String                @default("tr") @map("belge_dili")
+  ciftDil               Boolean               @default(false) @map("cift_dil")
   /// EBLG-53: UN/ECE Rec. 19 taşıma şekli kodu (1 deniz, 3 kara…).
-  ihracatTasimaSekli    String?             @map("ihracat_tasima_sekli")
+  ihracatTasimaSekli    String?               @map("ihracat_tasima_sekli")
   /// EBLG-54: gümrük beyanname numarası; gümrük kapandıktan sonra girilir ve
   /// yalnız kayda işlenir, gönderilmiş belge GİB'e yeniden gönderilmez.
-  gumrukBeyannameNo     String?             @map("gumruk_beyanname_no")
-  gumrukBeyannameTarihi DateTime?           @map("gumruk_beyanname_tarihi") @db.Date
+  gumrukBeyannameNo     String?               @map("gumruk_beyanname_no")
+  gumrukBeyannameTarihi DateTime?             @map("gumruk_beyanname_tarihi") @db.Date
   /// EBLG-56: satış internet üzerinden yapıldı mı; işaret e-Belge sihirbazında
   /// konur ve alan grubu yalnız e-Arşiv kanalında belgeye yazılır.
-  internetSatisi        Boolean             @default(false) @map("internet_satisi")
-  internetWebAdresi     String?             @map("internet_web_adresi")
-  internetOdemeSekli    String?             @map("internet_odeme_sekli")
-  internetOdemeTarihi   DateTime?           @map("internet_odeme_tarihi") @db.Date
-  internetOdemeAracisi  String?             @map("internet_odeme_aracisi")
-  internetTasiyiciUnvan String?             @map("internet_tasiyici_unvan")
-  internetTasiyiciVkn   String?             @map("internet_tasiyici_vkn")
-  internetGonderiTarihi DateTime?           @map("internet_gonderi_tarihi") @db.Date
+  internetSatisi        Boolean               @default(false) @map("internet_satisi")
+  internetWebAdresi     String?               @map("internet_web_adresi")
+  internetOdemeSekli    String?               @map("internet_odeme_sekli")
+  internetOdemeTarihi   DateTime?             @map("internet_odeme_tarihi") @db.Date
+  internetOdemeAracisi  String?               @map("internet_odeme_aracisi")
+  internetTasiyiciUnvan String?               @map("internet_tasiyici_unvan")
+  internetTasiyiciVkn   String?               @map("internet_tasiyici_vkn")
+  internetGonderiTarihi DateTime?             @map("internet_gonderi_tarihi") @db.Date
   /// EBLG-60: ihraç kayıtlı satış kodu (701/702). Doluysa KDV hesaplanır ama
   /// tahsil edilmez; belge IHRACKAYITLI tipinde gider.
-  ihracKayitliKodu      String?             @map("ihrac_kayitli_kodu")
+  ihracKayitliKodu      String?               @map("ihrac_kayitli_kodu")
   /// KAMU senaryosu: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN.
-  kamuHarcamaBirimiVkn  String?             @map("kamu_harcama_birimi_vkn")
-  kamuHarcamaBirimiAdi  String?             @map("kamu_harcama_birimi_adi")
-  kamuIban              String?             @map("kamu_iban")
+  kamuHarcamaBirimiVkn  String?               @map("kamu_harcama_birimi_vkn")
+  kamuHarcamaBirimiAdi  String?               @map("kamu_harcama_birimi_adi")
+  kamuIban              String?               @map("kamu_iban")
   /// Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı.
   /// Satırlar KDV'siz durur; KDV yalnız belge düzeyinde bildirilir.
-  ozelMatrahKodu        String?             @map("ozel_matrah_kodu")
-  ozelMatrahTutari      Decimal?            @map("ozel_matrah_tutari") @db.Decimal(15, 2)
-  ozelMatrahOrani       Decimal?            @map("ozel_matrah_orani") @db.Decimal(5, 2)
+  ozelMatrahKodu        String?               @map("ozel_matrah_kodu")
+  ozelMatrahTutari      Decimal?              @map("ozel_matrah_tutari") @db.Decimal(15, 2)
+  ozelMatrahOrani       Decimal?              @map("ozel_matrah_orani") @db.Decimal(5, 2)
   /// Şarj faturası (EBLG-71): şarj edilen aracın plakası, şarjın başlangıç ve
   /// bitiş anı, ESU rapor kimlikleri (`[{raporId, tarih}]`).
-  sarjPlaka             String?             @map("sarj_plaka")
-  sarjBaslangic         DateTime?           @map("sarj_baslangic")
-  sarjBitis             DateTime?           @map("sarj_bitis")
-  sarjEsuRaporlari      Json?               @map("sarj_esu_raporlari")
+  sarjPlaka             String?               @map("sarj_plaka")
+  sarjBaslangic         DateTime?             @map("sarj_baslangic")
+  sarjBitis             DateTime?             @map("sarj_bitis")
+  sarjEsuRaporlari      Json?                 @map("sarj_esu_raporlari")
   /// İDİS (EBLG-72): Darphane bildiriminden dönen sevkiyat numarası; doluysa
   /// belge IDIS profiliyle gider.
-  idisSevkiyatNo        String?             @map("idis_sevkiyat_no")
+  idisSevkiyatNo        String?               @map("idis_sevkiyat_no")
   /// SGK faturası: ilave fatura tipi, Kurum'daki kod/ad, dosya no ve dönem.
   /// Alıcının VKN'si SGK'nınki olduğunda sihirbazda toplanır.
-  sgkIlaveFaturaTipi    String?             @map("sgk_ilave_fatura_tipi")
-  sgkMukellefKodu       String?             @map("sgk_mukellef_kodu")
-  sgkMukellefAdi        String?             @map("sgk_mukellef_adi")
-  sgkDosyaNo            String?             @map("sgk_dosya_no")
-  sgkDonemBaslangic     DateTime?           @map("sgk_donem_baslangic") @db.Date
-  sgkDonemBitis         DateTime?           @map("sgk_donem_bitis") @db.Date
+  sgkIlaveFaturaTipi    String?               @map("sgk_ilave_fatura_tipi")
+  sgkMukellefKodu       String?               @map("sgk_mukellef_kodu")
+  sgkMukellefAdi        String?               @map("sgk_mukellef_adi")
+  sgkDosyaNo            String?               @map("sgk_dosya_no")
+  sgkDonemBaslangic     DateTime?             @map("sgk_donem_baslangic") @db.Date
+  sgkDonemBitis         DateTime?             @map("sgk_donem_bitis") @db.Date
   /// Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
   /// Biçim `YolcuBeraberiBilgisi` (packages/shared/src/yolcu-beraberi.ts).
-  yolcuBeraberi         Json?               @map("yolcu_beraberi")
-  toplamNetKdv          Decimal             @map("toplam_net_kdv") @db.Decimal(15, 2)
+  yolcuBeraberi         Json?                 @map("yolcu_beraberi")
+  toplamNetKdv          Decimal               @map("toplam_net_kdv") @db.Decimal(15, 2)
   /// EBLG-120: bedele eklenen KDV dışı vergiler ve kesilen stopaj toplamı (belge dövizi).
-  toplamEkVergi         Decimal             @default(0) @map("toplam_ek_vergi") @db.Decimal(15, 2)
-  toplamStopaj          Decimal             @default(0) @map("toplam_stopaj") @db.Decimal(15, 2)
-  genelToplam           Decimal             @map("genel_toplam") @db.Decimal(15, 2)
+  toplamEkVergi         Decimal               @default(0) @map("toplam_ek_vergi") @db.Decimal(15, 2)
+  toplamStopaj          Decimal               @default(0) @map("toplam_stopaj") @db.Decimal(15, 2)
+  genelToplam           Decimal               @map("genel_toplam") @db.Decimal(15, 2)
   aciklama              String?
   notlar                String?
-  createdAt             DateTime            @default(now()) @map("created_at")
-  updatedAt             DateTime            @updatedAt @map("updated_at")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
 
   cari                  CariHesap                  @relation(fields: [cariId], references: [id])
   depo                  Depo?                      @relation(fields: [depoId], references: [id])
@@ -3045,53 +3109,53 @@ model TekrarlayanFatura {
 }
 
 model FaturaSatir {
-  id                String  @id @default(uuid()) @db.Uuid
-  tenantId          String  @map("tenant_id") @db.Uuid
-  faturaId          String  @map("fatura_id") @db.Uuid
+  id                 String  @id @default(uuid()) @db.Uuid
+  tenantId           String  @map("tenant_id") @db.Uuid
+  faturaId           String  @map("fatura_id") @db.Uuid
   /// F03: yalnız belge dönüşümünde taşınır; eski/elle yazılmış satırda bilinmez.
   kaynakBelgeSatirId String? @map("kaynak_belge_satir_id") @db.Uuid
-  stokId            String  @map("stok_id") @db.Uuid
-  varyantId         String? @map("varyant_id") @db.Uuid
-  partiBilgileri    Json?   @map("parti_bilgileri")
-  miktar            Decimal @db.Decimal(15, 3)
-  birim             String  @default("adet")
-  birimFiyat        Decimal @map("birim_fiyat") @db.Decimal(15, 4)
-  iskontoOrani      Decimal @default(0) @map("iskonto_orani") @db.Decimal(5, 2)
-  iskontoTutari     Decimal @default(0) @map("iskonto_tutari") @db.Decimal(15, 2)
-  genelIskontoPayi  Decimal @default(0) @map("genel_iskonto_payi") @db.Decimal(15, 2)
-  matrah            Decimal @db.Decimal(15, 2)
-  kdvOrani          Decimal @default(20) @map("kdv_orani") @db.Decimal(5, 2)
-  kdvTutari         Decimal @map("kdv_tutari") @db.Decimal(15, 2)
+  stokId             String  @map("stok_id") @db.Uuid
+  varyantId          String? @map("varyant_id") @db.Uuid
+  partiBilgileri     Json?   @map("parti_bilgileri")
+  miktar             Decimal @db.Decimal(15, 3)
+  birim              String  @default("adet")
+  birimFiyat         Decimal @map("birim_fiyat") @db.Decimal(15, 4)
+  iskontoOrani       Decimal @default(0) @map("iskonto_orani") @db.Decimal(5, 2)
+  iskontoTutari      Decimal @default(0) @map("iskonto_tutari") @db.Decimal(15, 2)
+  genelIskontoPayi   Decimal @default(0) @map("genel_iskonto_payi") @db.Decimal(15, 2)
+  matrah             Decimal @db.Decimal(15, 2)
+  kdvOrani           Decimal @default(20) @map("kdv_orani") @db.Decimal(5, 2)
+  kdvTutari          Decimal @map("kdv_tutari") @db.Decimal(15, 2)
   /// GİB tevkifat kodu (FTR-18); oran bu koddan türer, pay/payda türetilmiş
   /// değerlerdir ve doğrudan girilmez.
-  tevkifatKodu      String? @map("tevkifat_kodu")
-  tevkifatPay       Int?    @map("tevkifat_pay")
-  tevkifatPayda     Int?    @map("tevkifat_payda")
-  tevkifatTutari    Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
-  netKdvTutari      Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
+  tevkifatKodu       String? @map("tevkifat_kodu")
+  tevkifatPay        Int?    @map("tevkifat_pay")
+  tevkifatPayda      Int?    @map("tevkifat_payda")
+  tevkifatTutari     Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
+  netKdvTutari       Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
   /// EBLG-120: KDV dışı vergiler [{kod, ad, oran, matrah, tutar, stopaj, kdvMatrahinaDahil}]; davranış kodun merkezdeki kaydından.
-  ekVergiler        Json?   @map("ek_vergiler")
-  ekVergiTutari     Decimal @default(0) @map("ek_vergi_tutari") @db.Decimal(15, 2)
-  stopajTutari      Decimal @default(0) @map("stopaj_tutari") @db.Decimal(15, 2)
-  toplamTutar       Decimal @map("toplam_tutar") @db.Decimal(15, 2)
-  gibIstisnaKodu    String? @map("gib_istisna_kodu")
+  ekVergiler         Json?   @map("ek_vergiler")
+  ekVergiTutari      Decimal @default(0) @map("ek_vergi_tutari") @db.Decimal(15, 2)
+  stopajTutari       Decimal @default(0) @map("stopaj_tutari") @db.Decimal(15, 2)
+  toplamTutar        Decimal @map("toplam_tutar") @db.Decimal(15, 2)
+  gibIstisnaKodu     String? @map("gib_istisna_kodu")
   /// İDİS etiket numarası (EBLG-72): 2 harf + 7 rakam, her satırda zorunlu.
-  idisEtiketNo      String? @map("idis_etiket_no")
+  idisEtiketNo       String? @map("idis_etiket_no")
   /// SARJANLIK faturasında satırdaki şarj ünitesinin seri numarası (EBLG-71).
-  sarjUniteSeriNo   String? @map("sarj_unite_seri_no")
+  sarjUniteSeriNo    String? @map("sarj_unite_seri_no")
   /// EBLG-78: yatırım teşvik harcama tipi (01–04) ve makine-teçhizat (01)
   /// satırında Darphane değil E-TUYS listesinden gelen makine kimlikleri.
-  ytbHarcamaTipi    String? @map("ytb_harcama_tipi")
-  ytbMakineAdi      String? @map("ytb_makine_adi")
-  ytbMakineId       String? @map("ytb_makine_id")
-  ytbMakineSiraNo   String? @map("ytb_makine_sira_no")
+  ytbHarcamaTipi     String? @map("ytb_harcama_tipi")
+  ytbMakineAdi       String? @map("ytb_makine_adi")
+  ytbMakineId        String? @map("ytb_makine_id")
+  ytbMakineSiraNo    String? @map("ytb_makine_sira_no")
   /// EBLG-103: ihracat faturasında kalemin kabı (cinsi UN/ECE Rec. 21 kodu,
   /// numarası ve adedi); sihirbazda girilir, UBL'e ActualPackage olarak gider.
-  ihracatKapCinsi   String? @map("ihracat_kap_cinsi")
-  ihracatKapNo      String? @map("ihracat_kap_no")
-  ihracatKapAdet    Int?    @map("ihracat_kap_adet")
-  projeId           String? @map("proje_id") @db.Uuid
-  projeAltKirilimId String? @map("proje_alt_kirilim_id") @db.Uuid
+  ihracatKapCinsi    String? @map("ihracat_kap_cinsi")
+  ihracatKapNo       String? @map("ihracat_kap_no")
+  ihracatKapAdet     Int?    @map("ihracat_kap_adet")
+  projeId            String? @map("proje_id") @db.Uuid
+  projeAltKirilimId  String? @map("proje_alt_kirilim_id") @db.Uuid
 
   fatura          Fatura           @relation(fields: [faturaId], references: [id], onDelete: Cascade)
   stok            StokKart         @relation(fields: [stokId], references: [id])
@@ -3261,40 +3325,40 @@ enum GelenEbelgeYanit {
 /// EBLG-05: entegratörden çekilen gelen e-Faturalar. Çekim anında yalnızca
 /// burada durur; alış faturasına yalnızca kullanıcı onayıyla dönüşür.
 model GelenEbelge {
-  id            String            @id @default(uuid()) @db.Uuid
-  tenantId      String            @map("tenant_id") @db.Uuid
+  id                 String            @id @default(uuid()) @db.Uuid
+  tenantId           String            @map("tenant_id") @db.Uuid
   /// Entegratördeki belge UUID'si — tekrar çekimde yinelenmemesi için anahtar.
-  uuid          String
-  belgeNo       String            @map("belge_no")
-  gonderenVkn   String            @map("gonderen_vkn")
-  gonderenUnvan String            @map("gonderen_unvan")
-  tarih         DateTime          @db.Date
-  profilId      String?           @map("profil_id")
-  xmlIcerik     String            @map("xml_icerik")
-  durum         GelenEbelgeDurum  @default(beklemede)
-  faturaId      String?           @unique @map("fatura_id") @db.Uuid
+  uuid               String
+  belgeNo            String            @map("belge_no")
+  gonderenVkn        String            @map("gonderen_vkn")
+  gonderenUnvan      String            @map("gonderen_unvan")
+  tarih              DateTime          @db.Date
+  profilId           String?           @map("profil_id")
+  xmlIcerik          String            @map("xml_icerik")
+  durum              GelenEbelgeDurum  @default(beklemede)
+  faturaId           String?           @unique @map("fatura_id") @db.Uuid
   /// EBLG-06: TICARIFATURA profilinde gönderilen kabul/ret yanıtı.
-  yanit         GelenEbelgeYanit?
-  yanitGerekce  String?           @map("yanit_gerekce")
-  yanitZamani   DateTime?         @map("yanit_zamani")
+  yanit              GelenEbelgeYanit?
+  yanitGerekce       String?           @map("yanit_gerekce")
+  yanitZamani        DateTime?         @map("yanit_zamani")
   /// Listenin özeti; belge kaydedilirken XML'den yazılır, liste XML okumaz.
   /// NULL: henüz hesaplanmadı (liste ilk açılışta tamamlar).
-  satirSayisi   Int?              @map("satir_sayisi")
-  genelToplam   Decimal?          @map("genel_toplam") @db.Decimal(18, 2)
-  dovizCinsi    String?           @map("doviz_cinsi")
-  okunabilir    Boolean?
+  satirSayisi        Int?              @map("satir_sayisi")
+  genelToplam        Decimal?          @map("genel_toplam") @db.Decimal(18, 2)
+  dovizCinsi         String?           @map("doviz_cinsi")
+  okunabilir         Boolean?
   /// EBLG-144: gelen alış denetçisinin son sonucu (OnDenetimBulgusu[]); NULL: hesaplanmadı.
-  denetimBulgulari   Json?     @map("denetim_bulgulari")
-  denetimUyariSayisi Int?      @map("denetim_uyari_sayisi")
-  denetimAt          DateTime? @map("denetim_at")
+  denetimBulgulari   Json?             @map("denetim_bulgulari")
+  denetimUyariSayisi Int?              @map("denetim_uyari_sayisi")
+  denetimAt          DateTime?         @map("denetim_at")
   /// EBLG-147: belgedeki IBAN'lar (boşluksuz büyük harf); kayıtta XML'den yazılır.
-  odemeHesaplari     String[]  @map("odeme_hesaplari")
+  odemeHesaplari     String[]          @map("odeme_hesaplari")
   /// AI-72: yapay zekâ kontrolünün son başarılı sonucu {imza, sonuc}; imza satır eşleştirmesidir.
-  aiDenetim          Json?     @map("ai_denetim")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
+  aiDenetim          Json?             @map("ai_denetim")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
 
-  fatura Fatura? @relation(fields: [faturaId], references: [id])
+  fatura             Fatura?           @relation(fields: [faturaId], references: [id])
   onDenetimKararlari OnDenetimKarari[]
 
   @@unique([tenantId, uuid])
@@ -4092,7 +4156,7 @@ enum EkSahipTur {
   firma_kase
   /// AI-79: asistan sohbetine eklenen dosya; sahip ajan oturumudur, yalnız sohbet sahibi okur.
   ai_sohbet
-  /// DMR-01: demirbaşın faturası, garanti belgesi, fotoğrafı.
+  /// DMR-01: demirbaş kartının faturası, garanti belgesi, fotoğrafı.
   demirbas
 }
 
@@ -4384,14 +4448,14 @@ enum ZincirBelgeDurum {
 /// belge kartı referans almaz — kart sonradan değişse de geçmiş irsaliye
 /// GİB'e ne gönderildiyse onu göstermeye devam eder.
 model Arac {
-  id                String   @id @default(uuid()) @db.Uuid
-  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
   plaka             String
-  dorsePlaka        String?  @map("dorse_plaka")
+  dorsePlaka        String?   @map("dorse_plaka")
   aciklama          String?
-  aktif             Boolean  @default(true)
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  aktif             Boolean   @default(true)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
   /// ARC-01/02 (§3.21): araç takibi alanları; e-İrsaliye yalnız plakayı kullanır.
   marka             String?
   model             String?
@@ -4558,6 +4622,8 @@ model Belge {
   /// SAT-06: bu sipariş bir satın alma talebinden oluştuysa.
   satinAlmaTalebi SatinAlmaTalebi?
   eirsaliye       EirsaliyeKayit?
+  teklifTakibi    TeklifTakibi?
+  teklifYanitlari GelenEposta[]    @relation("TeklifYanitlari")
 
   /// FTR-34: teklif sürümleri aynı numarayı paylaşır.
   @@unique([tenantId, no, revizyonNo])
@@ -4566,8 +4632,6 @@ model Belge {
   @@index([tenantId, tur, durum])
   @@index([tenantId, cariId])
   @@map("belgeler")
-  teklifTakibi TeklifTakibi?
-  teklifYanitlari GelenEposta[] @relation("TeklifYanitlari")
 }
 
 enum EirsaliyeDurum {
@@ -4709,16 +4773,36 @@ model BelgeSatir {
   /// İDİS etiket numarası (EBLG-72); irsaliye satırında da zorunludur.
   idisEtiketNo       String? @map("idis_etiket_no")
 
-  belge             Belge        @relation(fields: [belgeId], references: [id], onDelete: Cascade)
-  stok              StokKart     @relation(fields: [stokId], references: [id])
-  varyant           StokVaryant? @relation(fields: [varyantId], references: [id])
+  belge             Belge               @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  stok              StokKart            @relation(fields: [stokId], references: [id])
+  varyant           StokVaryant?        @relation(fields: [varyantId], references: [id])
   uretimEmirleri    UretimEmri[]
-  kaynakSatir       BelgeSatir?  @relation("BelgeSatirZinciri", fields: [kaynakSatirId], references: [id], onDelete: SetNull)
-  turetilenSatirlar BelgeSatir[] @relation("BelgeSatirZinciri")
+  kaynakSatir       BelgeSatir?         @relation("BelgeSatirZinciri", fields: [kaynakSatirId], references: [id], onDelete: SetNull)
+  turetilenSatirlar BelgeSatir[]        @relation("BelgeSatirZinciri")
+  girisTarihi       SiparisGirisTarihi?
 
+  @@unique([tenantId, id])
   @@index([tenantId, belgeId])
   @@index([kaynakSatirId])
   @@map("belge_satirlari")
+}
+
+/// F04: yalnız açık alış siparişinin kalan satırı için kullanıcı doğrulaması.
+/// Geçmiş revizyonlar audit_log içinde korunur; kaynak değişirse özet eşleşmez.
+model SiparisGirisTarihi {
+  tenantId         String     @map("tenant_id") @db.Uuid
+  satirId          String     @map("satir_id") @db.Uuid
+  tarih            DateTime?  @db.Date
+  surum            Int        @default(1)
+  kaynakOzeti      String     @map("kaynak_ozeti") @db.VarChar(64)
+  gerekce          String     @db.VarChar(1000)
+  dogrulayanUserId String     @map("dogrulayan_user_id") @db.Uuid
+  guncellendiAt    DateTime   @default(now()) @map("guncellendi_at") @db.Timestamp(3)
+  satir            BelgeSatir @relation(fields: [tenantId, satirId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([tenantId, satirId])
+  @@unique([satirId])
+  @@map("siparis_giris_tarihleri")
 }
 
 /// Belge numaralama sayacı (tur + yıl bazında; yasal kesintisizlik gerekmez).
@@ -4767,30 +4851,46 @@ enum SatinAlmaOlayTuru {
   yeniden_onaya_gonderildi
 }
 
+model IhtiyacSatinAlmaBagi {
+  tenantId   String          @map("tenant_id") @db.Uuid
+  planId     String          @map("plan_id") @db.Uuid
+  talepId    String          @map("talep_id") @db.Uuid
+  userId     String          @map("user_id") @db.Uuid
+  istekOzeti String          @map("istek_ozeti") @db.VarChar(64)
+  createdAt  DateTime        @default(now()) @map("created_at")
+  plan       IhtiyacPlani    @relation(fields: [tenantId, planId], references: [tenantId, id], onDelete: Restrict)
+  talep      SatinAlmaTalebi @relation(fields: [tenantId, talepId], references: [tenantId, id], onDelete: Restrict)
+
+  @@id([tenantId, planId])
+  @@unique([tenantId, talepId])
+  @@map("ihtiyac_satin_alma_baglari")
+}
+
 model SatinAlmaTalebi {
-  id                   String               @id @default(uuid()) @db.Uuid
-  tenantId             String               @map("tenant_id") @db.Uuid
+  ihtiyacBagi          IhtiyacSatinAlmaBagi?
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantId             String                @map("tenant_id") @db.Uuid
   no                   String
-  talepEdenUserId      String               @map("talep_eden_user_id") @db.Uuid
-  departmanId          String?              @map("departman_id") @db.Uuid
-  ihtiyacTarihi        DateTime             @map("ihtiyac_tarihi") @db.Date
+  talepEdenUserId      String                @map("talep_eden_user_id") @db.Uuid
+  departmanId          String?               @map("departman_id") @db.Uuid
+  ihtiyacTarihi        DateTime              @map("ihtiyac_tarihi") @db.Date
   gerekce              String
   /// Bütçe satırı anahtarı (BUT-05): mal_alis, hizmet_alis veya masraf_kategori:<id>.
-  butceAnahtari        String               @map("butce_anahtari")
-  durum                SatinAlmaTalepDurumu @default(taslak)
+  butceAnahtari        String                @map("butce_anahtari")
+  durum                SatinAlmaTalepDurumu  @default(taslak)
   /// Kalemlerin tahmini tutarı; KDV hariç, TL.
-  tahminiToplam        Decimal              @map("tahmini_toplam") @db.Decimal(15, 2)
+  tahminiToplam        Decimal               @map("tahmini_toplam") @db.Decimal(15, 2)
   /// Onaylayan ya da reddeden kullanıcı.
-  onaylayanUserId      String?              @map("onaylayan_user_id") @db.Uuid
-  onayZamani           DateTime?            @map("onay_zamani")
+  onaylayanUserId      String?               @map("onaylayan_user_id") @db.Uuid
+  onayZamani           DateTime?             @map("onay_zamani")
   /// SAT-09: onay anındaki etkin tutar (TL, KDV hariç); seçilen teklif bunu %10'dan fazla aşarsa yeniden onay gerekir.
-  onaylananTutar       Decimal?             @map("onaylanan_tutar") @db.Decimal(15, 2)
-  butceAsimGerekcesi   String?              @map("butce_asim_gerekcesi")
-  redGerekcesi         String?              @map("red_gerekcesi")
-  teklifSecimGerekcesi String?              @map("teklif_secim_gerekcesi")
-  siparisBelgeId       String?              @unique @map("siparis_belge_id") @db.Uuid
-  createdAt            DateTime             @default(now()) @map("created_at")
-  updatedAt            DateTime             @updatedAt @map("updated_at")
+  onaylananTutar       Decimal?              @map("onaylanan_tutar") @db.Decimal(15, 2)
+  butceAsimGerekcesi   String?               @map("butce_asim_gerekcesi")
+  redGerekcesi         String?               @map("red_gerekcesi")
+  teklifSecimGerekcesi String?               @map("teklif_secim_gerekcesi")
+  siparisBelgeId       String?               @unique @map("siparis_belge_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
 
   tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   talepEden    User                   @relation("SatinAlmaTalepEden", fields: [talepEdenUserId], references: [id])
@@ -4801,6 +4901,7 @@ model SatinAlmaTalebi {
   teklifler    SatinAlmaTeklifi[]
   olaylar      SatinAlmaTalepOlayi[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, no])
   @@index([tenantId, durum])
   @@index([tenantId, talepEdenUserId])
@@ -5901,9 +6002,9 @@ model PlatformKullanici {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  hazirlanan MevzuatDegisiklik[] @relation("Hazirlayan")
+  hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari PlatformAiTavani[]
-  yayinlanan MevzuatDegisiklik[] @relation("Yayinlayan")
+  yayinlanan  MevzuatDegisiklik[] @relation("Yayinlayan")
 
   @@map("platform_kullanicilari")
 }
@@ -6255,22 +6356,22 @@ model AiKullanim {
 /// İçerik tutmayan AI çağrı telemetry kaydı. Prompt, yanıt ve araç girdileri
 /// özellikle saklanmaz; yalnız operasyon ve maliyet ölçümleri bulunur.
 model AiCagriIz {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @map("tenant_id") @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  ozellik    String
-  saglayici  String
-  model      String?
-  islem      String
-  sureMs     Int      @map("sure_ms")
-  basarili   Boolean
-  hataSinifi String?  @map("hata_sinifi")
-  girisToken Int?     @map("giris_token")
-  cikisToken Int?     @map("cikis_token")
-  maliyetUsd Decimal? @map("maliyet_usd") @db.Decimal(12, 8)
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  ozellik        String
+  saglayici      String
+  model          String?
+  islem          String
+  sureMs         Int      @map("sure_ms")
+  basarili       Boolean
+  hataSinifi     String?  @map("hata_sinifi")
+  girisToken     Int?     @map("giris_token")
+  cikisToken     Int?     @map("cikis_token")
+  maliyetUsd     Decimal? @map("maliyet_usd") @db.Decimal(12, 8)
   /// AI-30: sağlayıcı token sayısı döndürmediğinde maliyet metin uzunluğundan tahmin edildi.
-  maliyetTahmini Boolean @default(false) @map("maliyet_tahmini")
-  createdAt  DateTime @default(now()) @map("created_at")
+  maliyetTahmini Boolean  @default(false) @map("maliyet_tahmini")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -6385,47 +6486,47 @@ model BelgeOcrKaydi {
 // ─── Tenant AI Özelleştirme & Görevler (BYOK & Kurallar & Otomasyon) ─────
 
 model TenantAiAyari {
-  id                      String    @id @default(uuid()) @db.Uuid
-  tenantId                String    @unique @map("tenant_id") @db.Uuid
-  saglayici               String    @default("varsayilan") @map("saglayici") // "varsayilan", "gemini", "openai", "anthropic", "ollama"
-  apiKey                  String?   @map("api_key")
-  modelAdi                String?   @map("model_adi")
-  ekonomikModelAdi        String?   @map("ekonomik_model_adi") @db.VarChar(120)
-  gucluModelAdi           String?   @map("guclu_model_adi") @db.VarChar(120)
+  id                       String    @id @default(uuid()) @db.Uuid
+  tenantId                 String    @unique @map("tenant_id") @db.Uuid
+  saglayici                String    @default("varsayilan") @map("saglayici") // "varsayilan", "gemini", "openai", "anthropic", "ollama"
+  apiKey                   String?   @map("api_key")
+  modelAdi                 String?   @map("model_adi")
+  ekonomikModelAdi         String?   @map("ekonomik_model_adi") @db.VarChar(120)
+  gucluModelAdi            String?   @map("guclu_model_adi") @db.VarChar(120)
   /// AI-81: isteğe bağlı güçlü sağlayıcı ("Derin analiz"); null = yok, gucluModelAdi ana sağlayıcının modelidir.
-  gucluSaglayici          String?   @map("guclu_saglayici")
+  gucluSaglayici           String?   @map("guclu_saglayici")
   /// AI-81: güçlü sağlayıcının şifreli anahtarı (enc:).
-  gucluApiKey             String?   @map("guclu_api_key")
-  gucluBaseUrl            String?   @map("guclu_base_url")
-  gucluGirisTokenMilyonUsd Decimal? @map("guclu_giris_token_milyon_usd") @db.Decimal(12, 6)
-  gucluCikisTokenMilyonUsd Decimal? @map("guclu_cikis_token_milyon_usd") @db.Decimal(12, 6)
+  gucluApiKey              String?   @map("guclu_api_key")
+  gucluBaseUrl             String?   @map("guclu_base_url")
+  gucluGirisTokenMilyonUsd Decimal?  @map("guclu_giris_token_milyon_usd") @db.Decimal(12, 6)
+  gucluCikisTokenMilyonUsd Decimal?  @map("guclu_cikis_token_milyon_usd") @db.Decimal(12, 6)
   /// AI-81: güçlü sağlayıcının ayrı yurt dışı aktarım onayı.
-  gucluOnayAt             DateTime? @map("guclu_onay_at")
-  gucluOnayUserId         String?   @map("guclu_onay_user_id") @db.Uuid
-  gucluOnaySaglayici      String?   @map("guclu_onay_saglayici")
-  gucluOnayModel          String?   @map("guclu_onay_model")
-  gucluOnayPolitika       String?   @map("guclu_onay_politika")
-  baseUrl                 String?   @map("base_url")
-  ozelTalimatlar          String?   @map("ozel_talimatlar") @db.Text // "Şunları asla yapma", "Şu durumlarda dikkatli ol"
-  guvenlikKurallari       Json?     @map("guvenlik_kurallari")
+  gucluOnayAt              DateTime? @map("guclu_onay_at")
+  gucluOnayUserId          String?   @map("guclu_onay_user_id") @db.Uuid
+  gucluOnaySaglayici       String?   @map("guclu_onay_saglayici")
+  gucluOnayModel           String?   @map("guclu_onay_model")
+  gucluOnayPolitika        String?   @map("guclu_onay_politika")
+  baseUrl                  String?   @map("base_url")
+  ozelTalimatlar           String?   @map("ozel_talimatlar") @db.Text // "Şunları asla yapma", "Şu durumlarda dikkatli ol"
+  guvenlikKurallari        Json?     @map("guvenlik_kurallari")
   /// AI-14: yurt dışındaki sağlayıcıya veri aktarımı için yönetici onayı; null = onay yok.
-  yurtDisiOnayAt          DateTime? @map("yurt_disi_onay_at")
-  yurtDisiOnayUserId      String?   @map("yurt_disi_onay_user_id") @db.Uuid
-  yurtDisiOnaySaglayici   String?   @map("yurt_disi_onay_saglayici")
-  yurtDisiOnayModel       String?   @map("yurt_disi_onay_model")
-  yurtDisiOnayPolitika    String?   @map("yurt_disi_onay_politika")
+  yurtDisiOnayAt           DateTime? @map("yurt_disi_onay_at")
+  yurtDisiOnayUserId       String?   @map("yurt_disi_onay_user_id") @db.Uuid
+  yurtDisiOnaySaglayici    String?   @map("yurt_disi_onay_saglayici")
+  yurtDisiOnayModel        String?   @map("yurt_disi_onay_model")
+  yurtDisiOnayPolitika     String?   @map("yurt_disi_onay_politika")
   /// AI-15: kiracı başına günlük model çağrısı sınırı.
-  gunlukCagriSiniri       Int       @default(1000) @map("gunluk_cagri_siniri")
-  girisTokenMilyonUsd     Decimal?  @map("giris_token_milyon_usd") @db.Decimal(12, 6)
-  cikisTokenMilyonUsd     Decimal?  @map("cikis_token_milyon_usd") @db.Decimal(12, 6)
-  aylikMaliyetButcesiUsd  Decimal?  @map("aylik_maliyet_butcesi_usd") @db.Decimal(12, 2)
-  ozelliklerEtkin         Boolean   @default(true) @map("ozellikler_etkin")
-  telemetriSaklamaGun     Int       @default(90) @map("telemetri_saklama_gun")
-  sohbetSaklamaGun        Int?      @map("sohbet_saklama_gun")
-  telemetriHataEsigiYuzde Int       @default(20) @map("telemetri_hata_esigi_yuzde")
-  telemetriGecikmeEsigiMs Int       @default(10000) @map("telemetri_gecikme_esigi_ms")
-  guncellendiAt           DateTime  @updatedAt @map("guncellendi_at")
-  createdAt               DateTime  @default(now()) @map("created_at")
+  gunlukCagriSiniri        Int       @default(1000) @map("gunluk_cagri_siniri")
+  girisTokenMilyonUsd      Decimal?  @map("giris_token_milyon_usd") @db.Decimal(12, 6)
+  cikisTokenMilyonUsd      Decimal?  @map("cikis_token_milyon_usd") @db.Decimal(12, 6)
+  aylikMaliyetButcesiUsd   Decimal?  @map("aylik_maliyet_butcesi_usd") @db.Decimal(12, 2)
+  ozelliklerEtkin          Boolean   @default(true) @map("ozellikler_etkin")
+  telemetriSaklamaGun      Int       @default(90) @map("telemetri_saklama_gun")
+  sohbetSaklamaGun         Int?      @map("sohbet_saklama_gun")
+  telemetriHataEsigiYuzde  Int       @default(20) @map("telemetri_hata_esigi_yuzde")
+  telemetriGecikmeEsigiMs  Int       @default(10000) @map("telemetri_gecikme_esigi_ms")
+  guncellendiAt            DateTime  @updatedAt @map("guncellendi_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -6542,39 +6643,39 @@ model TenantAiGorevCalisma {
   @@map("tenant_ai_gorev_calismalari")
 }
 
-
 // Söz kimliği değişmeden ikinci e-posta çıkmaz. Belirsiz SMTP sonucu otomatik tekrarlanmaz.
 model OdemeSozuHatirlatma {
-  tenantId String @map("tenant_id") @db.Uuid
-  sozId String @map("soz_id") @db.Uuid
-  durum String @default("gonderiliyor")
-  deneme Int @default(1)
-  alici String @db.VarChar(255)
-  konu String @db.VarChar(255)
-  messageId String? @map("message_id") @db.VarChar(255)
-  hataMesaji String? @map("hata_mesaji") @db.VarChar(1000)
-  baslangicAt DateTime @default(now()) @map("baslangic_at")
-  gonderildiAt DateTime? @map("gonderildi_at")
+  tenantId        String    @map("tenant_id") @db.Uuid
+  sozId           String    @map("soz_id") @db.Uuid
+  durum           String    @default("gonderiliyor")
+  deneme          Int       @default(1)
+  alici           String    @db.VarChar(255)
+  konu            String    @db.VarChar(255)
+  messageId       String?   @map("message_id") @db.VarChar(255)
+  hataMesaji      String?   @map("hata_mesaji") @db.VarChar(1000)
+  baslangicAt     DateTime  @default(now()) @map("baslangic_at")
+  gonderildiAt    DateTime? @map("gonderildi_at")
   sonrakiDenemeAt DateTime? @map("sonraki_deneme_at")
-  soz OdemeSozu @relation(fields: [tenantId, sozId], references: [tenantId, id])
+  soz             OdemeSozu @relation(fields: [tenantId, sozId], references: [tenantId, id])
+
   @@id([tenantId, sozId])
   @@map("odeme_sozu_hatirlatmalari")
 }
 
 /// EBLG-141: ön denetim uyarıları geçilerek yapılan gönderim kararı.
 model OnDenetimKarari {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
   /// Giden: gönderilen fatura; gelen (EBLG-150): işlenen gelen belge. İkisinden yalnız biri dolu.
-  faturaId  String?  @map("fatura_id") @db.Uuid
-  gelenEbelgeId String? @map("gelen_ebelge_id") @db.Uuid
-  userId    String?  @map("user_id") @db.Uuid
+  faturaId      String?  @map("fatura_id") @db.Uuid
+  gelenEbelgeId String?  @map("gelen_ebelge_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
   /// Geçilen uyarılar: [{kod, satir, mesaj}]
-  bulgular  Json
-  gerekce   String?
-  createdAt DateTime @default(now()) @map("created_at")
+  bulgular      Json
+  gerekce       String?
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   gelenEbelge GelenEbelge? @relation(fields: [gelenEbelgeId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, faturaId])
@@ -6600,19 +6701,19 @@ model CariMukerrerIstisna {
 
 /// CARI-62: cari birleştirme izi. Geri alma yoktur; tablo başına taşınan satır sayısı ve doldurulan kart alanları saklanır.
 model CariBirlestirme {
-  id             String   @id @default(uuid()) @db.Uuid
-  tenantId       String   @map("tenant_id") @db.Uuid
-  anaCariId      String   @map("ana_cari_id") @db.Uuid
-  tasinanCariId  String   @map("tasinan_cari_id") @db.Uuid
-  userId         String?  @map("user_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  anaCariId     String   @map("ana_cari_id") @db.Uuid
+  tasinanCariId String   @map("tasinan_cari_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
   /// { tablo.sutun: taşınan satır }, { tablo: düşen kopya satır }
-  tasinanlar     Json
-  dusenler       Json
+  tasinanlar    Json
+  dusenler      Json
   /// Ana kartta boşken taşınan karttan doldurulan alanlar: { alan: değer }
-  doldurulanlar  Json
+  doldurulanlar Json
   /// Onay anında gösterilen uyarılar.
-  uyarilar       Json
-  createdAt      DateTime @default(now()) @map("created_at")
+  uyarilar      Json
+  createdAt     DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

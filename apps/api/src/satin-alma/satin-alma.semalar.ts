@@ -15,6 +15,7 @@ export const idSemasi = z.string().uuid("Geçersiz kimlik");
 
 /** SAT-01 */
 export const talepSemasi = z.object({
+  ihtiyacPlaniId: z.uuid().optional(),
   departmanId: z.string().uuid().nullable().optional(),
   ihtiyacTarihi: z.string().date("İhtiyaç tarihi YYYY-AA-GG biçiminde olmalıdır"),
   gerekce: z.string().trim().min(3, "Gerekçe en az 3 karakter olmalıdır").max(1000),

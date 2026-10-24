@@ -1,6 +1,8 @@
+import {IHTIYAC_MODULU,ihtiyacAyarKilitAnahtari} from '../../stok/ihtiyac-erisim';
 import { CRM_BELGE_MODULU } from "../../crm/crm-belge.semalar";
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -51,8 +53,10 @@ export class AyarlarService {
       );
     }
     const dogrulanmis = ayristirma.data as Record<string, unknown>;
-    const { tenantId, userId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
+    if(modul===IHTIYAC_MODULU&&rol!=="yonetici")throw new ForbiddenException("İhtiyaç kullanım modunu yalnız yönetici değiştirebilir");
     await this.prisma.tenantIslem(tenantId, async (tx) => {
+      if(modul===IHTIYAC_MODULU)await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ihtiyacAyarKilitAnahtari(tenantId)},0))::text`;
       if (modul === TAHSILAT_OTOMASYONU && dogrulanmis.sorumluUserId) {
         const sorumluId = String(dogrulanmis.sorumluUserId);
         if (!(await tx.$queryRaw<{ id: string }[]>`SELECT id FROM users WHERE tenant_id=${tenantId}::uuid AND id=${sorumluId}::uuid AND aktif AND rol IN ('yonetici','muhasebe') FOR SHARE`).length) throw new BadRequestException("Otomatik takip sorumlusu şirketin aktif yönetici veya muhasebe kullanıcısı olmalı");
@@ -72,9 +76,9 @@ export class AyarlarService {
         create: { tenantId, modul, ayarlar: dogrulanmis as Prisma.InputJsonValue },
         update: { ayarlar: dogrulanmis as Prisma.InputJsonValue },
       });
-      if (modul === CRM_BELGE_MODULU || modul === MALIYET_KONTROL_MODULU || modul === TAHSILAT_MODULU || modul === TAHSILAT_OTOMASYONU || modul === TEKLIF_TALEBI_MODULU) {
+      if (modul === IHTIYAC_MODULU || modul === CRM_BELGE_MODULU || modul === MALIYET_KONTROL_MODULU || modul === TAHSILAT_MODULU || modul === TAHSILAT_OTOMASYONU || modul === TEKLIF_TALEBI_MODULU) {
         await tx.auditLog.create({ data: {
-          tenantId, userId, islem: modul === CRM_BELGE_MODULU ? "crm_belge_modu_guncellendi" : modul === MALIYET_KONTROL_MODULU ? "maliyet_kontrol_modu_guncellendi" : modul === TAHSILAT_OTOMASYONU ? "tahsilat_otomasyonu_guncellendi" : modul === TEKLIF_TALEBI_MODULU ? "teklif_talebi_taslagi_guncellendi" : "tahsilat_modu_guncellendi", varlik: "modul_ayar", varlikId: kayit.id,
+          tenantId, userId, islem: modul === IHTIYAC_MODULU ? "ihtiyac_modu_guncellendi" : modul === CRM_BELGE_MODULU ? "crm_belge_modu_guncellendi" : modul === MALIYET_KONTROL_MODULU ? "maliyet_kontrol_modu_guncellendi" : modul === TAHSILAT_OTOMASYONU ? "tahsilat_otomasyonu_guncellendi" : modul === TEKLIF_TALEBI_MODULU ? "teklif_talebi_taslagi_guncellendi" : "tahsilat_modu_guncellendi", varlik: "modul_ayar", varlikId: kayit.id,
           detay: dogrulanmis as Prisma.InputJsonValue,
         } });
       }

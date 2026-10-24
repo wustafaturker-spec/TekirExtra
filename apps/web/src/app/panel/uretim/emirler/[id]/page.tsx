@@ -177,6 +177,18 @@ const sayi = (deger: string | number) => Number(deger).toLocaleString("tr-TR", {
 
 export default function UretimEmriDetaySayfasi() {
   const { id } = useParams<{ id: string }>();
+  const [ihtiyacYetkili, setIhtiyacYetkili] = useState(false);
+  useEffect(() => {
+    let aktif = true;
+    void api<{ rol: string }>("/auth/ben")
+      .then((b) => {
+        if (aktif) setIhtiyacYetkili(["yonetici", "muhasebe", "depo"].includes(b.rol));
+      })
+      .catch(() => {});
+    return () => {
+      aktif = false;
+    };
+  }, []);
   const [emir, setEmir] = useState<Emir | null>(null);
   const [uygunluk, setUygunluk] = useState<Uygunluk | null>(null);
   const [maliyet, setMaliyet] = useState<MaliyetOzeti | null>(null);
@@ -983,6 +995,9 @@ export default function UretimEmriDetaySayfasi() {
                 <div>
                   <span>{kalem.stokKod}</span>
                   <h3>{kalem.stokAd}</h3>
+                  {ihtiyacYetkili && !["taslak", "tamamlandi", "iptal"].includes(emir.durum) && !kalem.varyant && (
+                    <Link href={`/panel/stok/uretim-talepleri?kalemId=${encodeURIComponent(kalem.kalemId)}`}>Rezerv dışı ihtiyacın deposu ve günü</Link>
+                  )}
                   {kalem.varyant && (
                     <small>
                       {kalem.varyant.kod} — {kalem.varyant.ad}

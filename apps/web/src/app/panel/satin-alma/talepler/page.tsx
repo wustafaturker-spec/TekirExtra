@@ -2,7 +2,8 @@
 
 import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ihtiyacGirdisiOku, ihtiyacKaniti, ihtiyacSorgusu, ihtiyactanTalep, type IhtiyacGirdisi, type IhtiyacSonucu } from "@/lib/ihtiyac-talep";
+import type {KayitliIhtiyacPlani} from "@/lib/ihtiyac-plan";
+import { ihtiyacEksigi, ihtiyacGirdisiOku, ihtiyacKaniti, ihtiyacSorgusu, ihtiyactanTalep, type IhtiyacGirdisi, type IhtiyacSonucu } from "@/lib/ihtiyac-talep";
 import { AramaSecici } from "@/components/arama-secici";
 import { BelgeDosyalari, belgeDosyalariniYukle, KayitliEkSatiri, type KayitliEk } from "@/components/belge-dosyalari";
 import { DepoSecici } from "@/components/depo-secici";
@@ -109,6 +110,7 @@ export default function SatinAlmaTalepleriSayfasi() {
   // AI-78: açık satın alma talebi asistan bağlamı olur.
   useEkranKaydi(detay ? { tur: "satin_alma_talebi", id: detay.id, etiket: detay.no } : null);
   const aktarimSirasi = useRef(0);
+  const [ihtiyacPlaniId,setIhtiyacPlaniId]=useState<string|null>(null);
   const [aktarim, setAktarim] = useState<{ girdi: IhtiyacGirdisi; sonuc: IhtiyacSonucu } | null>(null);
   const [form, setForm] = useState<TalepFormu | null>(null);
   const [karar, setKarar] = useState<KararTanimi | null>(null);
@@ -157,13 +159,23 @@ export default function SatinAlmaTalepleriSayfasi() {
         await listeyiYukle(ilk);
         const talep = new URLSearchParams(window.location.search).get("talep");
         if (talep) await detayAc(talep);
+        else if (new URLSearchParams(window.location.search).has('ihtiyacPlani')) {
+          if (!s.yetkiler.talepAcabilir) throw Error('Bu rol satın alma talebi açamaz.');
+          const id=new URLSearchParams(window.location.search).get('ihtiyacPlani')!;
+          const plan=await api<KayitliIhtiyacPlani>(`/stok/ihtiyac-plani/planlar/${encodeURIComponent(id)}`,{cache:'no-store'});
+          if(plan.satinAlmaBagi){await detayAc(plan.satinAlmaBagi.talepId);return;}
+          if(!plan.erisim?.yazabilir)throw Error('Şirket modu salt okunur; yeni ihtiyaç talebi oluşturulamaz.');
+          if(!plan.guncel)throw Error('İhtiyaç planı güncel değil; yeniden hesaplayın.');
+          if(sira===aktarimSirasi.current){setForm(ihtiyactanTalep(plan.snapshot,'tarihli'));setAktarim({girdi:{...plan.girdi,hesapTuru:'tarihli'},sonuc:plan.snapshot});setIhtiyacPlaniId(plan.id);}
+        }
         else {
           const girdi = ihtiyacGirdisiOku(new URLSearchParams(window.location.search));
           if (girdi) {
             if (!s.yetkiler.talepAcabilir) throw Error("Bu rol satın alma talebi açamaz.");
             const sonuc = await api<IhtiyacSonucu>(ihtiyacSorgusu(girdi), { cache: "no-store" });
+            if(girdi.hesapTuru==='tarihli'&&!sonuc.erisim?.yazabilir)throw Error('Şirket modu salt okunur; yeni ihtiyaç talebi oluşturulamaz.');
             if (!s.stoklar.some(k => k.id === sonuc.stok.id)) throw Error("Ürün satın alma listesinde yok. Stok kartını kontrol edin.");
-            if (sira === aktarimSirasi.current) { setForm(ihtiyactanTalep(sonuc)); setAktarim({ girdi, sonuc }); }
+            if (sira === aktarimSirasi.current) { setForm(ihtiyactanTalep(sonuc,girdi.hesapTuru)); setAktarim({ girdi, sonuc }); }
           }
         }
       } catch (h) {
@@ -239,15 +251,18 @@ export default function SatinAlmaTalepleriSayfasi() {
     if (!form) return;
     void calistir(async () => {
       if (aktarim) {
-        if (form.kalemler.length !== 1 || form.kalemler[0].stokId !== aktarim.sonuc.stok.id || form.kalemler[0].miktar !== aktarim.sonuc.hesap.eksik || form.ihtiyacTarihi !== aktarim.sonuc.ihtiyacTarihi) throw Error("Aktarılan ihtiyaç değişti. İhtiyacı yeniden yükleyin.");
+        if (form.kalemler.length !== 1 || form.kalemler[0].stokId !== aktarim.sonuc.stok.id || form.kalemler[0].miktar !== ihtiyacEksigi(aktarim.sonuc,aktarim.girdi.hesapTuru) || form.ihtiyacTarihi !== aktarim.sonuc.ihtiyacTarihi) throw Error("Aktarılan ihtiyaç değişti. İhtiyacı yeniden yükleyin.");
         const guncel = await api<IhtiyacSonucu>(ihtiyacSorgusu(aktarim.girdi), { cache: "no-store" });
+        if(aktarim.girdi.hesapTuru==='tarihli'&&!guncel.erisim?.yazabilir)throw Error('Şirket modu salt okunur; yeni ihtiyaç talebi oluşturulamaz.');
         if (ihtiyacKaniti(guncel) !== ihtiyacKaniti(aktarim.sonuc)) throw Error("Stok ihtiyacı değişti. İhtiyacı yeniden yükleyip miktarı kontrol edin; talep kaydedilmedi.");
+        ihtiyacEksigi(guncel,aktarim.girdi.hesapTuru);
         if (!form.butceAnahtari || !form.kalemler[0]?.tahminiBirimFiyat) throw Error("Bütçe kalemini seçin ve tahmini birim fiyatı girin.");
       }
       // SAT-09: sıfır tahmin onayı anlamsızlaştırır; sunucu da reddeder.
       const eksikKalem = form.kalemler.findIndex((k) => !k.stokId || sayi(k.miktar) <= 0 || sayi(k.tahminiBirimFiyat) <= 0);
       if (eksikKalem >= 0) throw Error(`${eksikKalem + 1}. kalem için kart seçin, miktar ve sıfırdan büyük tahmini birim fiyat girin.`);
       const govde = {
+        ...(ihtiyacPlaniId?{ihtiyacPlaniId}:{}),
         departmanId: form.departmanId || null,
         ihtiyacTarihi: form.ihtiyacTarihi,
         gerekce: form.gerekce,
@@ -257,9 +272,9 @@ export default function SatinAlmaTalepleriSayfasi() {
       const sonuc = form.id
         ? await api<{ id: string }>(`/satin-alma/talepler/${form.id}`, { method: "PUT", body: JSON.stringify(govde) })
         : await api<{ id: string; no: string }>("/satin-alma/talepler", { method: "POST", body: JSON.stringify(govde) });
-      setForm(null); setAktarim(null);
+      setForm(null); setAktarim(null); setIhtiyacPlaniId(null);
       const adres = new URL(window.location.href);
-      for (const k of ["kaynak", "stokId", "depoId", "miktar", "birim", "ihtiyacTarihi"]) adres.searchParams.delete(k);
+      for (const k of ["ihtiyacPlani", "kaynak", "stokId", "depoId", "miktar", "birim", "ihtiyacTarihi", "hesapTuru"]) adres.searchParams.delete(k);
       adres.searchParams.set("talep", sonuc.id); window.history.replaceState(null, "", adres);
       await yenile(form.id ? "Talep güncellendi." : "Talep taslak olarak kaydedildi; onaya göndermeyi unutmayın.", sonuc.id);
     });
@@ -267,9 +282,9 @@ export default function SatinAlmaTalepleriSayfasi() {
 
   function aktarimiKapat() {
     aktarimSirasi.current++;
-    setAktarim(null);
+    setAktarim(null); setIhtiyacPlaniId(null);
     const adres = new URL(window.location.href);
-    for (const k of ["kaynak", "stokId", "depoId", "miktar", "birim", "ihtiyacTarihi"]) adres.searchParams.delete(k);
+    for (const k of ["ihtiyacPlani", "kaynak", "stokId", "depoId", "miktar", "birim", "ihtiyacTarihi", "hesapTuru"]) adres.searchParams.delete(k);
     window.history.replaceState(null, "", adres);
   }
 
@@ -522,9 +537,9 @@ export default function SatinAlmaTalepleriSayfasi() {
 
           {form && secenekler && (
             <Card title={form.id ? "Talebi düzenle" : "Yeni satın alma talebi"}>
-              {aktarim && <div className="stack" style={{ marginBottom: "1rem" }}><Alert tone="warning">Eksik miktar {aktarim.sonuc.depo.ad} deposundan, ana birimde aktarıldı. Bu form stok ayırmaz; taslak kaydından sonra onaya gönderilmelidir.</Alert><div><Button disabled={islemde} onClick={() => void calistir(async () => {
+              {aktarim && <div className="stack" style={{ marginBottom: "1rem" }}><Alert tone="warning">Eksik miktar {aktarim.sonuc.depo.ad} deposundan, ana birimde aktarıldı. {aktarim.girdi.hesapTuru==='tarihli'?'Tarihli açık doğrulanmış girişleri ve atanmış rezerv dışı üretim ihtiyaçlarını içerir. ':''}Bu form stok ayırmaz; taslak kaydından sonra onaya gönderilmelidir.</Alert><div><Button disabled={islemde} onClick={() => void calistir(async () => {
                 const sonuc = await api<IhtiyacSonucu>(ihtiyacSorgusu(aktarim.girdi), { cache: "no-store" });
-                const yeni = ihtiyactanTalep(sonuc);
+                const yeni = ihtiyactanTalep(sonuc,aktarim.girdi.hesapTuru);
                 setForm({ ...yeni, departmanId: form.departmanId, butceAnahtari: form.butceAnahtari, kalemler: [{ ...yeni.kalemler[0], tahminiBirimFiyat: form.kalemler[0]?.tahminiBirimFiyat ?? "" }] });
                 setAktarim({ ...aktarim, sonuc }); setBasari("İhtiyaç güncellendi. Miktarı kontrol edip taslağı kaydedebilirsiniz.");
               })}>İhtiyacı yeniden yükle</Button></div></div>}

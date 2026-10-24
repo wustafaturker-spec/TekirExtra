@@ -74,6 +74,13 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "gecerlilikUyariGun", etiket: "Geçerlilik bitimine kaç iş günü kala uyarılsın", tip: "sayi", min: 0, max: 30 },
     ],
   },
+  stok_ihtiyac_plani: {
+    baslik: "Tarihli Stok İhtiyacı",
+    ikon: "📦",
+    alanlar: [
+      { ad: "mod", etiket: "Kullanım modu", tip: "enum", secenekler: [["kapali", "Kapalı"], ["salt_okunur", "Salt okunur"], ["pilot", "Pilot"], ["acik", "Açık"]], ipucu: "Şirket genelinde geçerlidir. Salt okunur: tarihli hesap, kaynaklar ve plan geçmişi. Pilot ve açık: mevcut roller tarih/üretim ataması, plan ve plan bağlı talep yazabilir. Pilot kullanıcı yetkilerini genişletmez; planlar stok ayırmaz. Anlık stok ve normal satın alma akışı bu ayardan bağımsızdır." },
+    ],
+  },
   maliyet_kontrolu: {
     baslik: "Satış Maliyet Kontrolü",
     ikon: "🔎",
@@ -152,7 +159,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "ebelge", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "ebelge", "stok", "stok_ihtiyac_plani", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;

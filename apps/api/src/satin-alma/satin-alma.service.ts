@@ -1,3 +1,7 @@
+import {ihtiyacErisiminiDogrula} from '../stok/ihtiyac-erisim';
+import { createHash } from 'node:crypto';
+import { IhtiyacService } from '../stok/ihtiyac.service';
+import { ihtiyacSonucKaniti } from '../stok/ihtiyac-sonuc-kaniti';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, type SatinAlmaOlayTuru, type SatinAlmaTalepDurumu } from "@prisma/client";
 import { belgeOlusturSemasi } from "../belgeler/belgeler.semalar";
@@ -38,6 +42,7 @@ function ayAraligi(tarih: Date) {
 }
 
 const DETAY = {
+  ihtiyacBagi: {select:{planId:true}},
   talepEden: { select: { id: true, adSoyad: true } },
   onaylayan: { select: { adSoyad: true } },
   departman: { select: { id: true, ad: true } },
@@ -73,6 +78,7 @@ export class SatinAlmaService {
     private readonly belgeler: BelgelerService,
     private readonly butce: ButceService,
     @Optional() private readonly mevzuat?: MevzuatService,
+    @Optional() private readonly ihtiyac?: IhtiyacService,
   ) {}
 
   private async onayEsigi(tx?: Tx): Promise<number> {
@@ -255,7 +261,7 @@ export class SatinAlmaService {
       onayEngeli,
       yetkiler: {
         // Teklif girilmiş talepte kalemler değişirse teklif fiyatları dayanaksız kalır.
-        duzenle: ctx.sahibi && t.durum === "taslak" && t.teklifler.length === 0,
+        duzenle: ctx.sahibi && t.durum === "taslak" && !t.ihtiyacBagi && t.teklifler.length === 0,
         gonder: ctx.sahibi && t.durum === "taslak",
         geriCek: ctx.sahibi && t.durum === "onay_bekliyor",
         iptal: (ctx.sahibi || ctx.yetkili) && (t.durum === "taslak" || t.durum === "onay_bekliyor"),
@@ -327,7 +333,28 @@ export class SatinAlmaService {
   async olustur(girdi: TalepGirdisi) {
     const { tenantId, userId, rol } = aktifBaglam();
     if (!talepAcabilirMi(rol)) throw new ForbiddenException("Bu rol satın alma talebi açamaz");
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const planId = girdi.ihtiyacPlaniId;
+    if (planId && !['yonetici','muhasebe','depo'].includes(rol)) throw new ForbiddenException('İhtiyaç planından talep açma yetkiniz yok');
+    const istekOzeti = createHash('sha256').update(JSON.stringify([userId,girdi.departmanId??null,girdi.ihtiyacTarihi,girdi.gerekce,girdi.butceAnahtari,girdi.kalemler])).digest('hex');
+    const tekrar = async (tx: Tx) => {
+      const bag = await tx.ihtiyacSatinAlmaBagi.findUnique({where:{tenantId_planId:{tenantId,planId:planId!}},include:{talep:true}});
+      if (!bag) return null;
+      if (bag.userId !== userId || bag.istekOzeti !== istekOzeti) throw new ConflictException('Bu ihtiyaç planı için zaten talep oluşturulmuş; kayıtlı talebi inceleyin');
+      return {id:bag.talep.id,no:bag.talep.no};
+    };
+    try { return await this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (planId) {
+        await ihtiyacErisiminiDogrula(tx,true);
+        const onceki = await tekrar(tx); if (onceki) return onceki;
+        const plan = await tx.ihtiyacPlani.findFirst({where:{tenantId,id:planId}});
+        if (!plan) throw new NotFoundException('İhtiyaç planı bulunamadı');
+        if (!this.ihtiyac) throw new ConflictException('İhtiyaç doğrulama servisi kullanılamıyor');
+        const sonuc = await this.ihtiyac.onizle(plan.girdi,true,tx);
+        if (!('tarihli' in sonuc) || !sonuc.tarihli.veriYeterli || ihtiyacSonucKaniti(sonuc)!==plan.sonucKaniti) throw new ConflictException('İhtiyaç planı güncel değil; yeniden hesaplayın');
+        const eksik=D(sonuc.tarihli.eksik);
+        if (!eksik.gt(0) || D(sonuc.tarihli.donemIciEnBuyukAcik).gt(eksik)) throw new ConflictException('Satın alma açığı yok veya daha erken açık ayrıca planlanmalı');
+        if (girdi.kalemler.length!==1 || girdi.kalemler[0].stokId!==sonuc.stok.id || !D(girdi.kalemler[0].miktar).equals(eksik) || girdi.ihtiyacTarihi!==sonuc.ihtiyacTarihi) throw new BadRequestException('Talep ürünü, miktarı ve günü planın güncel açığıyla aynı olmalı');
+      }
       const kalemler = await this.kalemleriHazirla(tx, tenantId, girdi);
       const yil = Number(istanbulBugun().slice(0, 4));
       const sayac = await tx.satinAlmaSayac.upsert({
@@ -349,8 +376,19 @@ export class SatinAlmaService {
         },
       });
       await this.olay(tx, talep.id, "olusturuldu");
+      if (planId) {
+        await tx.ihtiyacSatinAlmaBagi.create({data:{tenantId,planId,talepId:talep.id,userId,istekOzeti}});
+        await tx.auditLog.create({data:{tenantId,userId,islem:'ihtiyac_planindan_talep',varlik:'ihtiyac_plani',varlikId:planId,detay:{talepId:talep.id}}});
+      }
       return { id: talep.id, no: talep.no };
-    });
+    }, planId ? {isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead,timeout:15000} : undefined); }
+    catch (e) {
+      if (planId && e instanceof Prisma.PrismaClientKnownRequestError && ['P2002','P2034'].includes(e.code)) {
+        const onceki=await this.prisma.tenantIslem(tenantId,async tx=>{await ihtiyacErisiminiDogrula(tx,true);return tekrar(tx);}); if(onceki)return onceki;
+        throw new ConflictException('Eşzamanlı kayıt değişti; aynı girdilerle tekrar deneyin');
+      }
+      throw e;
+    }
   }
 
   /** Talebi getirip talep edenin kendisi olduğunu doğrular. */
@@ -363,8 +401,10 @@ export class SatinAlmaService {
   }
 
   async guncelle(id: string, girdi: TalepGirdisi) {
+    if (girdi.ihtiyacPlaniId) throw new BadRequestException("Plan bağı yalnız ilk talep kaydında verilebilir");
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (await tx.ihtiyacSatinAlmaBagi.findUnique({where:{tenantId_talepId:{tenantId,talepId:id}}})) throw new ConflictException('Plan bağlantılı talep değiştirilemez; iptal edip yeni ihtiyaç planı oluşturun');
       const t = await this.sahibinTalebi(tx, id);
       if (t.durum !== "taslak") throw new BadRequestException("Yalnız taslak talep düzenlenebilir; onaydaki talebi önce geri çekin");
       if (await tx.satinAlmaTeklifi.count({ where: { talepId: id } })) {

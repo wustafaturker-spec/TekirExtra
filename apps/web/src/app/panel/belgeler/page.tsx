@@ -1883,6 +1883,7 @@ export default function BelgelerSayfasi() {
                       <tr key={i}>
                         <td>
                           {satirEtiketi(s, st)}
+                          {detay.tur === "siparis" && detay.yon === "alis" && detay.depoId && !detay.faturaId && ["onaylandi", "kismen_kapandi"].includes(detay.durum) && !s.varyantId && Number(s.kalanMiktar ?? s.miktar) > 0 && <div><a href={`/panel/stok/giris-tarihleri?satirId=${encodeURIComponent(s.id)}`}>Giriş tarihi</a></div>}
                           {s.satirAciklama && <small className="muted"> · {s.satirAciklama}</small>}
                           {/* EBLG-72: onaylı belgede etiket düzenlenemez ama belgeyle giden numara görünmelidir. */}
                           {s.idisEtiketNo && <small className="muted"> · İDİS etiket {s.idisEtiketNo}</small>}

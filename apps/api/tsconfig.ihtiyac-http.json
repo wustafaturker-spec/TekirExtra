@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/stok/ihtiyac.controller.ts", "src/stok/stok.controller.ts", "src/stok/depo.controller.ts", "src/auth/auth.controller.ts", "src/auth/auth.guard.ts", "src/auth/roller.guard.ts", "src/satin-alma/satin-alma.controller.ts", "src/ayar-tanimlari.ts", "src/core/ayarlar/ayarlar.controller.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

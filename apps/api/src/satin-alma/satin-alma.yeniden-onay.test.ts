@@ -61,6 +61,8 @@ function kur(p: { durum?: string; tahmini?: number; onaylanan?: number | null; t
       updateMany: vi.fn(async ({ data }: { data: { secildi: boolean } }) => { teklifler.forEach((t) => (t.secildi = data.secildi)); return { count: teklifler.length }; }),
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: { secildi: boolean } }) => Object.assign(teklifler.find((t) => t.id === where.id)!, data)),
     },
+    // Plan bağı yok: talep ihtiyaç planından açılmamış.
+    ihtiyacSatinAlmaBagi: { findUnique: vi.fn(async () => null) },
     satinAlmaTalepOlayi: {
       create: vi.fn(async ({ data }: { data: { tur: string; userId: string; aciklama: string | null } }) => { olaylar.push({ ...data, createdAt: new Date(Date.now() + olaylar.length) }); return data; }),
     },
