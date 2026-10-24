@@ -1189,6 +1189,11 @@ export class EbelgeService {
 
     const adapter = this.baglantilarService.adapterCoz(hazirlik.saglayici);
     try {
+      if (hazirlik.yenidenDeneme && !adapter.belgeAra) {
+        throw new ServiceUnavailableException(
+          "Sağlayıcı önceki belgeyi arama desteği sunmuyor; mükerrer gönderim riski nedeniyle yeniden gönderim durduruldu",
+        );
+      }
       const { mukellefiyet, tur, ublFatura, saglayiciNumaralandirir, xml } = await this.belgeUblHazirla(adapter, hazirlik);
 
       // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı

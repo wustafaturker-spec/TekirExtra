@@ -448,6 +448,20 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
   });
 
+  it("yeniden denemede adaptör belge aramayı desteklemiyorsa göndermez", async () => {
+    mockAdapter.belgeGonder.mockClear();
+    mockBaglantilar.adapterCoz.mockReturnValueOnce({ ...mockAdapter, belgeAra: undefined });
+    const mockTx = yenidenDenemeTx();
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(mockTx));
+
+    await expect(service.gonder("f1")).rejects.toThrow("arama desteği sunmuyor");
+    expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
+    expect(mockTx.ebelgeKayit.update).toHaveBeenCalledWith({
+      where: { id: "eb1" },
+      data: { durum: "hata", hataMesaji: expect.stringContaining("mükerrer gönderim riski") },
+    });
+  });
+
   it("sağlayıcıda belge yoksa yeniden denemede normal gönderim yapar", async () => {
     mockAdapter.belgeGonder.mockClear();
     mockAdapter.belgeAra.mockResolvedValue(undefined);
