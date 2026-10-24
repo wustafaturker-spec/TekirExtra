@@ -11,6 +11,7 @@ import type { Request } from "express";
 import type { Rol } from "@tekirextra/shared";
 import { baglamKur, platformBaglamKur } from "../core/istek-baglami";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
+import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { PLATFORM_ANAHTAR, PUBLIC_ANAHTAR } from "./public.decorator";
 
 export interface JwtYuku {
@@ -48,7 +49,23 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     // Uygulamada Nest bağlar; guard'ı elle kuran kabul testlerinde durum denetimi atlanır.
     @Optional() private readonly durum?: KullaniciDurumService,
+    @Optional() private readonly platformDb?: PlatformPrismaService,
   ) {}
+
+  /** Platform P1-2: pasife alınan platform kullanıcısı en geç 10 sn içinde düşer. */
+  private readonly platformAktif = new Map<string, { aktif: boolean; bitis: number }>();
+
+  private async platformKullanicisiAktifMi(id: string): Promise<boolean> {
+    if (!this.platformDb) return true;
+    const simdi = Date.now();
+    const k = this.platformAktif.get(id);
+    if (k && k.bitis > simdi) return k.aktif;
+    const kayit = await this.platformDb.db.platformKullanici.findUnique({ where: { id }, select: { aktif: true } });
+    const aktif = Boolean(kayit?.aktif);
+    if (this.platformAktif.size > 1_000) this.platformAktif.clear();
+    this.platformAktif.set(id, { aktif, bitis: simdi + 10_000 });
+    return aktif;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const publicMi = this.reflector.getAllAndOverride<boolean>(PUBLIC_ANAHTAR, [
@@ -77,6 +94,7 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
       }
       if (platformYuku.kapsam !== "platform") throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
+      if (!(await this.platformKullanicisiAktifMi(platformYuku.sub))) throw new UnauthorizedException("Platform hesabı pasif");
       platformBaglamKur({ kullaniciId: platformYuku.sub, eposta: platformYuku.eposta });
       return true;
     }

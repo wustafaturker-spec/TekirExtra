@@ -60,8 +60,14 @@ export class PlatformAiTavanService {
   /** `null` kiracıya özel tavanı kaldırır; ortam varsayılanı geçerli olur. */
   async tavanYaz(tenantId: string, aylikTavanUsd: number | null) {
     const guncelleyenId = aktifPlatformBaglam().kullaniciId;
+    // Platform P1-3: eski → yeni değer olay kaydına; kaldırmada kimin kaldırdığı da kalır.
+    const eski = (await this.platform.db.platformAiTavani.findUnique({ where: { tenantId }, select: { aylikTavanUsd: true } }))?.aylikTavanUsd;
+    const olayYaz = () => this.platform.db.mevzuatOlay.create({
+      data: { kullaniciId: guncelleyenId, olay: "ai_tavani_degisti", detay: { tenantId, eski: eski === undefined ? null : Number(eski), yeni: aylikTavanUsd } },
+    });
     if (aylikTavanUsd === null) {
       await this.platform.db.platformAiTavani.deleteMany({ where: { tenantId } });
+      await olayYaz();
       return { tenantId, ozelTavanUsd: null };
     }
     try {
@@ -74,6 +80,7 @@ export class PlatformAiTavanService {
       if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2003") throw new NotFoundException("Kiracı bulunamadı");
       throw hata;
     }
+    await olayYaz();
     return { tenantId, ozelTavanUsd: aylikTavanUsd };
   }
 }

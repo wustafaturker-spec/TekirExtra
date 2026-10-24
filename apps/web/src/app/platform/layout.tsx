@@ -7,6 +7,7 @@ import { Button } from "@/components/ui";
 import { platformApi, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
 
 const MENU = [
+  { href: "/platform/firmalar", baslik: "Firmalar" },
   { href: "/platform", baslik: "Değişiklikler" },
   { href: "/platform/tablolar", baslik: "Yürürlükteki değerler" },
   { href: "/platform/talepler", baslik: "Talepler" },

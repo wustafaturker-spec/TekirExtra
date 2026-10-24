@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post 
 import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { MaliyetDagitimiService, type DagitimGirdisi } from "./maliyet-dagitimi.service";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 const girdiSemasi = z.object({
   kaynakTur: z.enum(["masraf", "fatura_satiri"]),
@@ -28,6 +29,7 @@ export class MaliyetDagitimiController {
   @Get("adaylar")
   adaylar() { return this.servis.adaylar(); }
 
+  @SaltOkumadaAcik()
   @Post("onizle")
   onizle(@Body() govde: unknown) { return this.servis.onizle(girdi(govde)); }
 

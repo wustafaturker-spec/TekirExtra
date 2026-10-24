@@ -157,6 +157,7 @@ model Tenant {
   auditLoglar               AuditLog[]
   abonelik                  TenantAbonelik?
   abonelikDegisiklikleri    AbonelikDegisikligi[]
+  abonelikTalepleri         AbonelikTalebi[]
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
   pazaryeriKesintileri      PazaryeriKesinti[]
@@ -304,6 +305,28 @@ model AbonelikDegisikligi {
 
   @@index([tenantId, createdAt])
   @@map("abonelik_degisiklikleri")
+}
+
+/// Platform P0-1: firma yöneticisinin plan değişikliği talebi; platform onaylar ya da reddeder.
+/// Firma başına tek bekleyen talep (kısmi benzersiz indeks göçte).
+model AbonelikTalebi {
+  id                   String    @id @default(uuid()) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  mevcutPlan           String    @map("mevcut_plan")
+  istenenPlan          String    @map("istenen_plan")
+  /// bekliyor | onaylandi | reddedildi | geri_cekildi
+  durum                String    @default("bekliyor")
+  aciklama             String?   @db.VarChar(500)
+  kararNotu            String?   @map("karar_notu") @db.VarChar(500)
+  isteyenUserId        String    @map("isteyen_user_id") @db.Uuid
+  kararVerenPlatformId String?   @map("karar_veren_platform_id") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at")
+  kararAt              DateTime? @map("karar_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("abonelik_talepleri")
 }
 
 model User {

@@ -22,6 +22,7 @@ import { bordroTopluSemasi, donemCalismaSemasi, personelCariBaglaSemasi, persone
 import { aktifBaglam } from "../core/istek-baglami";
 import { sayfaAdedi } from "../core/sayfalama";
 import { Roller } from "../auth/roller.decorator";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 @Controller("personel")
 @Roller("muhasebe", "ik")
@@ -106,6 +107,7 @@ export class PersonelController {
     return this.personelService.guncelle(tenantId, id, veri, userId);
   }
 
+  @SaltOkumadaAcik()
   @Post(":id/cikis-onizleme")
   cikisOnizleme(@Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
     return this.personelService.cikisOnizleme(aktifBaglam().tenantId, id, body);

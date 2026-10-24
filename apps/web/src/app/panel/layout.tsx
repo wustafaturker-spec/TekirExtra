@@ -75,6 +75,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [aktifArama, setAktifArama] = useState("");
   const [rol, setRol] = useState<string | null>(null);
+  // Platform P0-1: askıdaki ya da süresi biten abonelikte firma salt okunurdur; neden her sayfada üstte.
+  const [abonelikKisiti, setAbonelikKisiti] = useState<string | null>(null);
   // EBLG-77: firma kayıtlı olmadığı e-belge uygulamasının ekranlarını görmez.
   const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
   const [menuAcik, setMenuAcik] = useState(false);
@@ -144,9 +146,10 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (tokenAl()) {
-      const bildirimleriYenile = () => api<{ rol: string }>("/auth/ben")
+      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
+          setAbonelikKisiti(b.abonelik?.kisitli ? b.abonelik.neden ?? "Aboneliğiniz salt okunur." : null);
           // Kapalı uygulamanın ekranları menüden kalkar (EBLG-77); istek
           // düşerse menü olduğu gibi kalır, uçları guard korur.
           if (b.rol !== "calisan") void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
@@ -472,6 +475,12 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">
+          {abonelikKisiti && (
+            <div className="abonelik-kisiti" role="status">
+              <strong>Salt okunur:</strong> {abonelikKisiti}{" "}
+              {rol === "yonetici" && <Link href="/panel/ayarlar/abonelik">Abonelik</Link>}
+            </div>
+          )}
           {rol === null ? (
             <section className="card empty-state" role="status" aria-live="polite">
               <p>Oturum ve erişim yetkileri doğrulanıyor…</p>

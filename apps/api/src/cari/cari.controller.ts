@@ -38,6 +38,7 @@ import { sayfaAdedi } from "../core/sayfalama";
 import { AbonelikService } from "../tenant/abonelik.service";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import { iptalleriGoster } from "../fatura/iptal-cifti";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 /** CARI-24/25/26: sorgudan ekstre türü, çevrilecek döviz ve mutabakat işareti. */
 function ekstreSecenekleri(sorgu: unknown) {
@@ -365,6 +366,7 @@ export class CariController {
   }
 
   /** CARI-31: önizleme — hiçbir şey yazmaz; satır satır yeni/güncelle/hatalı. */
+  @SaltOkumadaAcik()
   @Post("excel/onizleme")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
@@ -380,6 +382,7 @@ export class CariController {
     return this.iceAktarma.iceAktar(await this.excelDosyasi(file));
   }
 
+  @SaltOkumadaAcik()
   @Post("excel/hatali-satirlar")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))

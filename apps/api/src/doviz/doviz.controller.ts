@@ -3,6 +3,7 @@ import type { ZodType } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { DovizService } from "./doviz.service";
 import { elleKurSemasi, elleKurSilSemasi, kurAraligiSemasi } from "./doviz.semalar";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 function dogrula<T>(sema: ZodType<T>, veri: unknown): T {
   const sonuc = sema.safeParse(veri);
@@ -14,7 +15,7 @@ function dogrula<T>(sema: ZodType<T>, veri: unknown): T {
 export class DovizController {
   constructor(private readonly servis: DovizService) {}
 
-  @Post("test") @Roller("muhasebe") test() { return this.servis.baglantiTesti(); }
+  @SaltOkumadaAcik() @Post("test") @Roller("muhasebe") test() { return this.servis.baglantiTesti(); }
 
   /** Ekranların kur isteği; kiracının o tarihte geçerli kuru (DVZ-04). */
   @Get()

@@ -48,6 +48,7 @@ import {
   posHesapGuncelleSemasi,
   posBankaAktarimSemasi,
 } from "./kasa-banka.semalar";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 const EKSTRE_DURUMLARI: EkstreSatirDurum[] = ["beklemede", "eslesti", "yoksayildi"];
 
@@ -482,6 +483,7 @@ export class KasaBankaController {
   // ─── BANKA EKSTRESİ (KSB-06) ───────────────────────────────────────────────
 
   /** Dosyayı ayrıştırıp önizleme + sütun eşlemesi tahminini döner; kaydetmez. */
+  @SaltOkumadaAcik()
   @Post("ekstre/onizle")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))

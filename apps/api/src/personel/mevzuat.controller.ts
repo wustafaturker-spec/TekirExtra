@@ -4,6 +4,7 @@ import { bordroHesaplamaSemasi } from "./mevzuat.semalar";
 import { MevzuatService } from "./mevzuat.service";
 import { PersonelErisimGuard } from "./personel-erisim.guard";
 import { bordroListeFiltreSemasi } from "./personel.semalar";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 /** MVZ-14: bordro mevzuatı merkezden salt okunur; yalnız görüntüleme ve ön hesaplama. */
 @Controller("personel/mevzuat")
@@ -14,7 +15,7 @@ export class MevzuatController {
 
   @Get() listele() { return this.service.listele(); }
 
-  @Post("hesapla") hesapla(@Body() body: unknown) { return this.service.hesapla(bordroHesaplamaSemasi.parse(body)); }
+  @SaltOkumadaAcik() @Post("hesapla") hesapla(@Body() body: unknown) { return this.service.hesapla(bordroHesaplamaSemasi.parse(body)); }
 
   @Get("doneme-uygun") donemeUygun(@Query("yil") yil?: string, @Query("ay") ay?: string) {
     const f = bordroListeFiltreSemasi.parse({ yil, ay });

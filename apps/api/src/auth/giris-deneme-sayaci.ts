@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { createClient, type RedisClientType } from "redis";
 import { structuredLogger } from "../core/observability/structured-logger";
 
-export type DenemeTuru = "parola" | "totp";
+export type DenemeTuru = "parola" | "totp" | "platform";
 
 /** Yönetim P1-3: e-posta başına, 15 dakikalık pencerede izin verilen hatalı deneme. */
-export const DENEME_SINIRI: Record<DenemeTuru, number> = { parola: 10, totp: 5 };
+export const DENEME_SINIRI: Record<DenemeTuru, number> = { parola: 10, totp: 5, platform: 5 };
 export const KILIT_PENCERESI_MS = 15 * 60_000;
 
 /**
@@ -28,8 +28,8 @@ export class GirisDenemeSayaci implements OnModuleDestroy {
     return s;
   }
 
-  async kilitliMi(eposta: string): Promise<boolean> {
-    for (const tur of ["parola", "totp"] as const) {
+  async kilitliMi(eposta: string, turler: readonly DenemeTuru[] = ["parola", "totp"]): Promise<boolean> {
+    for (const tur of turler) {
       if ((await this.oku(this.anahtar(tur, eposta))) >= DENEME_SINIRI[tur]) return true;
     }
     return false;
@@ -40,8 +40,8 @@ export class GirisDenemeSayaci implements OnModuleDestroy {
     return (await this.artir(this.anahtar(tur, eposta))) === DENEME_SINIRI[tur];
   }
 
-  async temizle(eposta: string): Promise<void> {
-    const anahtarlar = (["parola", "totp"] as const).map((tur) => this.anahtar(tur, eposta));
+  async temizle(eposta: string, turler: readonly DenemeTuru[] = ["parola", "totp"]): Promise<void> {
+    const anahtarlar = turler.map((tur) => this.anahtar(tur, eposta));
     anahtarlar.forEach((a) => this.bellek.delete(a));
     const r = await this.redis();
     if (r) await r.del(anahtarlar).catch(() => undefined);

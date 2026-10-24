@@ -9,6 +9,7 @@ import { belgeGorunumuSemasi, gorunumNormalize, TICARI_BELGE_TURLERI } from "./b
 import { ornekBelgeModeli } from "./ornek-belgeler";
 import { PdfService } from "./pdf.service";
 import { ticariBelgeHtml } from "./ticari-belge";
+import { SaltOkumadaAcik } from "../../auth/public.decorator";
 
 const onizlemeSemasi = z.object({
   /** Kaydedilmemiş görünüm; eksik alanlar kayıtlı görünümden tamamlanır. */
@@ -40,6 +41,7 @@ export class BelgeGorunumuController {
     return { gorunum, firmaId: tenantId, kase };
   }
 
+  @SaltOkumadaAcik()
   @Post("onizleme")
   @Roller("yonetici")
   async onizleme(@Body() govde: unknown, @Res() res: Response) {

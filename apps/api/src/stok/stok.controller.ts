@@ -44,6 +44,7 @@ import {
   stokVaryantTopluSemasi,
   stokFiyatSemasi,
 } from "./stok.semalar";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -164,6 +165,7 @@ export class StokController {
     res.send(buffer);
   }
 
+  @SaltOkumadaAcik()
   @Post("excel-onizle")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))

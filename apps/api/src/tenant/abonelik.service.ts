@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
-import { AbonelikDurumu } from "@prisma/client";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
+import { AbonelikDurumu, Prisma } from "@prisma/client";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 
@@ -19,7 +20,11 @@ export const ABONELIK_PLANLARI = [
 
 @Injectable()
 export class AbonelikService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Elle kurulan testlerde yok; durum değişince salt okunur kuralı hemen tazelenir.
+    @Optional() private readonly erisim?: AbonelikErisimService,
+  ) {}
 
   private plan(kod: string) {
     const plan = ABONELIK_PLANLARI.find((p) => p.kod === kod);
@@ -63,25 +68,50 @@ export class AbonelikService {
       const abonelik = await this.abonelikSagla(tx, tenantId);
       const kullanim = await this.kullanimSay(tx);
       const plan = this.plan(abonelik.planKodu === "v1" ? "profesyonel" : abonelik.planKodu);
-      return { abonelik, plan, planlar: ABONELIK_PLANLARI, kullanim };
+      // Platform P0-1: bekleyen talep ve son karar ekranda gösterilir.
+      const sonTalep = await tx.abonelikTalebi.findFirst({ orderBy: { createdAt: "desc" } });
+      return { abonelik, plan, planlar: ABONELIK_PLANLARI, kullanim, sonTalep };
     });
   }
 
-  async planDegistir(yeniPlanKodu: string) {
-    const { tenantId } = aktifBaglam();
+  /**
+   * Platform P0-1: plan değişikliği talep olarak açılır, platform ekibi onaylar
+   * (ödeme sağlayıcısı bağlanınca onayın yerini ödeme alır). Daha küçük plana
+   * geçişte aşılan sınırlar baştan söylenir.
+   */
+  async planTalebi(yeniPlanKodu: string, aciklama?: string) {
+    const { tenantId, userId } = aktifBaglam();
     const yeniPlan = this.plan(yeniPlanKodu);
+    try {
+      return await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const mevcut = await this.abonelikSagla(tx, tenantId);
+        const mevcutKod = mevcut.planKodu === VARSAYILAN_PLAN_KODU ? "profesyonel" : mevcut.planKodu;
+        if (mevcutKod === yeniPlan.kod) throw new BadRequestException("Zaten bu plandasınız");
+        if (mevcut.durum === AbonelikDurumu.askida) throw new ForbiddenException("Askıdaki abonelikte plan talebi açılamaz; bizimle iletişime geçin");
+        const kullanim = await this.kullanimSay(tx);
+        const asimlar = Object.entries(yeniPlan.limitler).filter(([anahtar, limit]) => limit !== null && kullanim[anahtar as LimitAnahtari] > limit);
+        if (asimlar.length) {
+          throw new BadRequestException("Bu plana geçmek için önce limit aşımını giderin: " + asimlar.map(([a, l]) => `${a} ${kullanim[a as LimitAnahtari]}/${l}`).join(", "));
+        }
+        const talep = await tx.abonelikTalebi.create({ data: { tenantId, mevcutPlan: mevcut.planKodu, istenenPlan: yeniPlan.kod, aciklama: aciklama?.trim() || null, isteyenUserId: userId } });
+        await tx.auditLog.create({ data: { tenantId, userId, islem: "abonelik_talebi_olusturuldu", varlik: "abonelik_talebi", varlikId: talep.id, detay: { mevcutPlan: mevcut.planKodu, istenenPlan: yeniPlan.kod } } });
+        return talep;
+      });
+    } catch (hata) {
+      // Firma başına tek bekleyen talep (kısmi benzersiz indeks).
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Bekleyen bir plan talebiniz var; önce onu geri çekin");
+      throw hata;
+    }
+  }
+
+  async talebiGeriCek() {
+    const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcut = await this.abonelikSagla(tx, tenantId);
-      const kullanim = await this.kullanimSay(tx);
-      const asimlar = Object.entries(yeniPlan.limitler).filter(([anahtar, limit]) => limit !== null && kullanim[anahtar as LimitAnahtari] > limit);
-      if (asimlar.length) {
-        throw new BadRequestException("Bu plana geçmek için önce limit aşımını giderin: " + asimlar.map(([a, l]) => `${a} ${kullanim[a as LimitAnahtari]}/${l}`).join(", "));
-      }
-      const simdi = new Date();
-      const donemSonu = new Date(simdi); donemSonu.setMonth(donemSonu.getMonth() + 1);
-      const abonelik = await tx.tenantAbonelik.update({ where: { tenantId }, data: { planKodu: yeniPlan.kod, durum: "aktif", donemBaslangici: simdi, donemSonu, iptalTarihi: null } });
-      await tx.abonelikDegisikligi.create({ data: { tenantId, oncekiPlan: mevcut.planKodu, yeniPlan: yeniPlan.kod, oncekiDurum: mevcut.durum, yeniDurum: "aktif", neden: "Kullanıcı plan değişikliği" } });
-      return { abonelik, plan: yeniPlan };
+      const talep = await tx.abonelikTalebi.findFirst({ where: { durum: "bekliyor" } });
+      if (!talep) throw new BadRequestException("Bekleyen plan talebi yok");
+      await tx.abonelikTalebi.update({ where: { id: talep.id }, data: { durum: "geri_cekildi", kararAt: new Date() } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "abonelik_talebi_geri_cekildi", varlik: "abonelik_talebi", varlikId: talep.id } });
+      return { mesaj: "Plan talebi geri çekildi" };
     });
   }
 
@@ -97,10 +127,12 @@ export class AbonelikService {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await this.abonelikSagla(tx, tenantId);
+      // Platform P0-1: askıya almayı yalnız platform ekibi kaldırır.
+      if (mevcut.durum === AbonelikDurumu.askida) throw new ForbiddenException("Askıdaki abonelik yalnız TekirExtra ekibi tarafından açılabilir; bizimle iletişime geçin");
       const abonelik = await tx.tenantAbonelik.update({ where: { tenantId }, data: { durum: yeniDurum, iptalTarihi: yeniDurum === "iptal" ? new Date() : null } });
       await tx.abonelikDegisikligi.create({ data: { tenantId, oncekiPlan: mevcut.planKodu, yeniPlan: mevcut.planKodu, oncekiDurum: mevcut.durum, yeniDurum, neden: yeniDurum === "iptal" ? "Dönem sonunda iptal talebi" : "Abonelik yeniden etkinleştirildi" } });
       return abonelik;
-    });
+    }).finally(() => this.erisim?.unut(tenantId));
   }
 
   async gecmis() {

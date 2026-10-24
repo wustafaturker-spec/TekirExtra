@@ -15,6 +15,7 @@ import {
   zimmetIadeSemasi, zimmetSemasi,
 } from "./demirbas.semalar";
 import { CIKIS_ADLARI, DemirbasService, SINIF_ADLARI } from "./demirbas.service";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 function ayristir<T extends z.ZodTypeAny>(sema: T, deger: unknown): z.infer<T> {
   const sonuc = sema.safeParse(deger);
@@ -152,6 +153,7 @@ export class DemirbasController {
     dosyaGonder(res, await acilisSablonu(), "demirbas-acilis-sablonu.xlsx");
   }
 
+  @SaltOkumadaAcik()
   @Post("acilis/onizle")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))

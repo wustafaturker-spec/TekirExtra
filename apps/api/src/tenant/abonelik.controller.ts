@@ -11,12 +11,15 @@ export class AbonelikController {
   @Get() ozet() { return this.abonelik.ozet(); }
   @Get("gecmis") gecmis() { return this.abonelik.gecmis(); }
 
-  @Post("plan-degistir")
-  planDegistir(@Body() govde: unknown) {
-    const sonuc = z.object({ planKodu: z.enum(["baslangic", "profesyonel", "kurumsal"]) }).safeParse(govde);
+  /** Platform P0-1: plan değişikliği talebi; platform ekibi onaylar. */
+  @Post("plan-talebi")
+  planTalebi(@Body() govde: unknown) {
+    const sonuc = z.object({ planKodu: z.enum(["baslangic", "profesyonel", "kurumsal"]), aciklama: z.string().max(500).optional() }).safeParse(govde);
     if (!sonuc.success) throw new BadRequestException("Geçersiz plan seçimi");
-    return this.abonelik.planDegistir(sonuc.data.planKodu);
+    return this.abonelik.planTalebi(sonuc.data.planKodu, sonuc.data.aciklama);
   }
+
+  @Post("plan-talebi/geri-cek") talebiGeriCek() { return this.abonelik.talebiGeriCek(); }
 
   @Patch("faturalama")
   iletisim(@Body() govde: unknown) {

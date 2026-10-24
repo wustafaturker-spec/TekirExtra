@@ -3,6 +3,7 @@ import { TenantAiService, TenantAiAyariGirdi } from "./tenant-ai.service";
 import { Roller } from "../../auth/roller.decorator";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { TenantAiYapilandirma } from "../saglayici/ai-provider.factory";
+import { SaltOkumadaAcik } from "../../auth/public.decorator";
 
 @Controller("ai")
 @Roller("yonetici")
@@ -21,6 +22,7 @@ export class TenantAiController {
     return this.service.ayarKaydet(tenantId, girdi);
   }
 
+  @SaltOkumadaAcik()
   @Post("ayarlar/test-et")
   async baglantiTestEt(@Body() girdi: TenantAiYapilandirma) {
     const { tenantId } = aktifBaglam();
@@ -34,6 +36,7 @@ export class TenantAiController {
     return this.service.gucluKaydet(tenantId, girdi ?? {});
   }
 
+  @SaltOkumadaAcik()
   @Post("ayarlar/guclu/test-et")
   async gucluTestEt() {
     const { tenantId } = aktifBaglam();

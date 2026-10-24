@@ -22,6 +22,7 @@ import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { OnDenetimAiService } from "./on-denetim-ai.service";
 import { GelenDenetimAiService } from "./gelen-denetim-ai.service";
 import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenAiDenetimSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -154,6 +155,7 @@ export class EbelgeController {
    * belge oluşmaz, numara harcanmaz.
    */
   @EbelgeUygulamasi("efatura", "earsiv")
+  @SaltOkumadaAcik()
   @Post("onizle/:faturaId")
   @Roller("muhasebe")
   async onizle(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
@@ -237,6 +239,7 @@ export class EbelgeController {
   yenidenDene(@Param("isId") isId: string) { return this.kuyrukService.yenidenDene(isId); }
 
   @EbelgeUygulamasi("efatura", "earsiv")
+  @SaltOkumadaAcik()
   @Post("sorgula/:faturaId")
   @Roller("muhasebe")
   async sorgula(@Param("faturaId") faturaId: string) {
@@ -263,6 +266,7 @@ export class EbelgeController {
   }
 
   @EbelgeUygulamasi("earsiv")
+  @SaltOkumadaAcik()
   @Post("earsiv/raporlar/:uuid/durum")
   @Roller("muhasebe")
   async earsivRaporDurum(@Param("uuid") uuid: string) {

@@ -11,3 +11,10 @@ export const PLATFORM_ANAHTAR = "platform";
  * kiracı uçlarında geçmez.
  */
 export const PlatformUcu = () => SetMetadata(PLATFORM_ANAHTAR, true);
+
+/**
+ * Platform P0-1: yöntemi POST olsa da veri değiştirmeyen uç (rapor çalıştırma,
+ * dışa aktarma, önizleme). Askıdaki (salt okunur) firmada da açık kalır.
+ */
+export const SALT_OKUMA_ANAHTAR = "saltOkumadaAcik";
+export const SaltOkumadaAcik = () => SetMetadata(SALT_OKUMA_ANAHTAR, true);

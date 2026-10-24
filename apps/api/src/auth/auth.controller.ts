@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Optional,
   Param,
   Post,
   Query,
@@ -12,6 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { z } from "zod";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { AuthService } from "./auth.service";
 import { Public } from "./public.decorator";
@@ -52,7 +54,10 @@ function istemciBilgisi(req: Request) {
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    @Optional() private readonly abonelikErisim?: AbonelikErisimService,
+  ) {}
 
   @Public()
   @Post("giris")
@@ -99,9 +104,10 @@ export class AuthController {
   }
 
   @Get("ben")
-  ben() {
+  async ben() {
     const { userId, tenantId, rol } = aktifBaglam();
-    return { userId, tenantId, rol };
+    // Platform P0-1: panel salt okunur firmada üstte nedenini gösterir.
+    return { userId, tenantId, rol, abonelik: this.abonelikErisim ? await this.abonelikErisim.getir(tenantId) : null };
   }
 
   @Post("totp/kur")

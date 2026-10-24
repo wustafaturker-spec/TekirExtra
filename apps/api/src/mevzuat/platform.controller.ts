@@ -7,6 +7,7 @@ import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
+import { PlatformFirmaService } from "./platform-firma.service";
 
 const tarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalıdır");
 const degisiklikSemasi = z.object({
@@ -179,5 +180,44 @@ export class PlatformAiController {
   @Put("kiracilar/:tenantId/tavan")
   tavanYaz(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
     return this.tavan.tavanYaz(tenantId, ayristir(tavanSemasi, govde).aylikTavanUsd);
+  }
+}
+
+const durumSemasi = z.object({ durum: z.enum(["askida", "aktif"]), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500) });
+const planSemasi = z.object({ planKodu: z.string().min(1).max(40), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500) });
+const kararSemasi = z.object({ onay: z.boolean(), not: z.string().trim().max(500).optional().nullable() });
+
+/** Platform P0-1 / P1-1: firma genel bakışı ve abonelik yönetimi. */
+@PlatformUcu()
+@Controller("platform/firmalar")
+export class PlatformFirmaController {
+  constructor(private readonly firmalar: PlatformFirmaService) {}
+
+  @Get()
+  listele() {
+    return this.firmalar.listele();
+  }
+
+  @Get(":tenantId/gecmis")
+  gecmis(@Param("tenantId", ParseUUIDPipe) tenantId: string) {
+    return this.firmalar.gecmis(tenantId);
+  }
+
+  @Post(":tenantId/durum")
+  durum(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
+    const g = ayristir(durumSemasi, govde);
+    return this.firmalar.durumDegistir(tenantId, g.durum, g.neden);
+  }
+
+  @Post(":tenantId/plan")
+  plan(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
+    const g = ayristir(planSemasi, govde);
+    return this.firmalar.planDegistir(tenantId, g.planKodu, g.neden);
+  }
+
+  @Post("talepler/:talepId/karar")
+  karar(@Param("talepId", ParseUUIDPipe) talepId: string, @Body() govde: unknown) {
+    const g = ayristir(kararSemasi, govde);
+    return this.firmalar.talepKarar(talepId, g.onay, g.not ?? null);
   }
 }

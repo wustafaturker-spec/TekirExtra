@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { VadeHatirlatmaService } from "./vade-hatirlatma.service";
 import { TahsilatRiskiService } from "./tahsilat-riski";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 const kademe = z.enum(["hatirlatma", "ihtar"]);
 const onizlemeSemasi = z.object({ cariId: z.string().uuid(), kademe, not: z.string().max(1000).optional().nullable() });
@@ -57,6 +58,7 @@ export class VadeHatirlatmaController {
     return this.servis.adaylar();
   }
 
+  @SaltOkumadaAcik()
   @Post("onizle")
   @Roller("muhasebe", "satis")
   onizle(@Body() govde: unknown) {

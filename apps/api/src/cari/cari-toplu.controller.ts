@@ -7,6 +7,7 @@ import { CariTopluService } from "./cari-toplu.service";
 import {
   TOPLU_EN_FAZLA, topluDurumSemasi, topluEkstreSemasi, topluEtiketSemasi, topluExcelSemasi, topluGrupSemasi, topluKaraListeSemasi, topluTemsilciSemasi,
 } from "./cari-toplu";
+import { SaltOkumadaAcik } from "../auth/public.decorator";
 
 const ayristir = <T>(sema: z.ZodType<T>, govde: unknown): T => {
   const sonuc = sema.safeParse(govde);
@@ -90,6 +91,7 @@ export class CariTopluController {
     return this.servis.ekstreEposta(ayristir(topluEkstreSemasi, govde));
   }
 
+  @SaltOkumadaAcik()
   @Post("excel")
   async excel(@Body() govde: unknown, @Res() res: Response) {
     const buffer = await this.servis.excel(ayristir(topluExcelSemasi, govde).cariIdler);

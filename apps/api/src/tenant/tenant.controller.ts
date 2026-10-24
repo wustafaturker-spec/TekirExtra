@@ -12,7 +12,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { z } from "zod";
-import { Public } from "../auth/public.decorator";
+import { Public, SaltOkumadaAcik } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
 import { ebelgeUygulamalariCozTenant, mukellefiyetCelismeleriniOku } from "../ebelge/ebelge-uygulamalari.service";
 import type { Prisma } from "@prisma/client";
@@ -188,6 +188,7 @@ export class TenantController {
     return this.baglantilar.olustur(ayristirma.data);
   }
 
+  @SaltOkumadaAcik()
   @Post("baglantilar/:id/test")
   @Roller("yonetici")
   @HttpCode(200)
@@ -229,6 +230,7 @@ export class TenantController {
     return this.tasarimlar.yukle(id, ayristirma.data);
   }
 
+  @SaltOkumadaAcik()
   @Post("baglantilar/:id/tasarimlar/onizle")
   @Roller("yonetici")
   @HttpCode(200)
