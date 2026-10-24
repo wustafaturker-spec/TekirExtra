@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from "@nes
 import { describe, expect, it, vi } from "vitest";
 import { istekBaglami } from "../../core/istek-baglami";
 import { icerikOzeti, kayitIcerigi } from "../ajan/araclar/arac";
-import { AiOnayService } from "./ai-onay.service";
+import { ASKIDA_KALAN_TALEP_HATASI, ASKIDA_KALMA_SURESI_MS, AiOnayService } from "./ai-onay.service";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const KULLANICI = "22222222-2222-2222-2222-222222222222";
@@ -122,5 +122,26 @@ describe("onay talepleri (AI-04)", () => {
     await k.olarak(() => k.service.reddet("talep-1"));
     expect(k.tx.aiOnayTalebi.updateMany).toHaveBeenCalledWith({ where: { id: "talep-1", durum: "bekliyor" }, data: expect.objectContaining({ durum: "reddedildi" }) });
     expect(k.uc.cagir).not.toHaveBeenCalled();
+  });
+  it("uzun süre 'isleniyor' kalan talep belirsiz sonuçla kapanır, yeniden çalışmaz", async () => {
+    const k = kur(talep());
+    k.tx.aiOnayTalebi.findMany.mockImplementation(async ({ where }: { where: { durum?: string } }) =>
+      where.durum === "isleniyor" ? [{ id: "askida-1" }] : []);
+    await k.olarak(() => k.service.listele());
+    const sorgu = k.tx.aiOnayTalebi.findMany.mock.calls.find(([a]: [{ where: { durum?: string } }]) => a.where.durum === "isleniyor")?.[0];
+    const sinir = (sorgu.where.kararAt.lt as Date).getTime();
+    expect(Date.now() - sinir).toBeGreaterThanOrEqual(ASKIDA_KALMA_SURESI_MS - 1000);
+    expect(k.tx.aiOnayTalebi.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["askida-1"] }, durum: "isleniyor" },
+      data: { durum: "hata", hata: ASKIDA_KALAN_TALEP_HATASI },
+    });
+    expect(k.bildirimler.kapatEksikleri).toHaveBeenCalledWith("yapay_zeka", [], ["yapay_zeka:talep:askida-1"]);
+    expect(k.uc.cagir).not.toHaveBeenCalled();
+  });
+
+  it("askıda talep yoksa güncelleme yapılmaz", async () => {
+    const k = kur(talep());
+    await k.olarak(() => k.service.listele());
+    expect(k.tx.aiOnayTalebi.updateMany).not.toHaveBeenCalled();
   });
 });

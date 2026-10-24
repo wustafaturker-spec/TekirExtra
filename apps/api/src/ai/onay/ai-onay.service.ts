@@ -10,6 +10,15 @@ import { icerikOzeti, type OnayOnizlemesi } from "../ajan/araclar/arac";
 /** AI-04: talep 24 saat geçerlidir. */
 export const ONAY_TALEBI_SURESI_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Onaylanan işlem çalışırken süreç çökerse (yeniden başlatma, OOM) talep
+ * "isleniyor" durumunda kalır. Bu süreyi aşan talepler sonucu belirsiz olarak
+ * kapatılır. İşlem yan etki üretmiş olabileceğinden yeniden ÇALIŞTIRILMAZ.
+ */
+export const ASKIDA_KALMA_SURESI_MS = 15 * 60 * 1000;
+export const ASKIDA_KALAN_TALEP_HATASI =
+  "İşlem yarıda kesildi; sonucu belirsiz. Kaydın oluşup oluşmadığını ilgili ekrandan kontrol edin, gerekirse işlemi yeniden isteyin.";
+
 const bildirimAnahtari = (id: string) => `yapay_zeka:talep:${id}`;
 
 export interface OnayTalebiGorunumu {
@@ -190,7 +199,18 @@ export class AiOnayService {
       if (kayitlar.length) {
         await tx.aiOnayTalebi.updateMany({ where: { id: { in: kayitlar.map((k) => k.id) } }, data: { durum: "suresi_doldu" } });
       }
-      return kayitlar;
+      const askidakiler = await tx.aiOnayTalebi.findMany({
+        where: { userId, durum: "isleniyor", kararAt: { lt: new Date(Date.now() - ASKIDA_KALMA_SURESI_MS) } },
+        select: { id: true },
+      });
+      if (askidakiler.length) {
+        // Koşul tekrarlanır: bu arada tamamlanan talebin sonucu ezilmesin.
+        await tx.aiOnayTalebi.updateMany({
+          where: { id: { in: askidakiler.map((k) => k.id) }, durum: "isleniyor" },
+          data: { durum: "hata", hata: ASKIDA_KALAN_TALEP_HATASI },
+        });
+      }
+      return [...kayitlar, ...askidakiler];
     });
     for (const k of dolanlar) await this.bildirimiKapat(k.id);
   }

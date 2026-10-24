@@ -75,8 +75,11 @@ export class AracYurutucu {
 
   /**
    * Model belge/fatura numarası veya unvan/kod verdiğinde otomatik UUID çözümü.
+   * Okuma dışı (taslak/onay) araçlarda ad yalnız kısmen eşleşirse tek aday
+   * olsa bile otomatik seçilmez: "Ahmet" yazıldığında tek eşleşen
+   * "Ahmet Yılmaz Ltd." sessizce işleme alınmasın, kullanıcı seçsin.
    */
-  private async kimlikleriCoz(aracAdi: string, girdi: unknown): Promise<unknown> {
+  private async kimlikleriCoz(aracAdi: string, girdi: unknown, yazma = false): Promise<unknown> {
     if (!girdi || typeof girdi !== "object" || !this.prisma) return girdi;
     const baglam = baglamAl();
     if (!baglam?.tenantId) return girdi;
@@ -127,8 +130,8 @@ export class AracYurutucu {
             where: { unvan: { contains: aranan, mode: "insensitive" } }, take: 6,
             select: { id: true, kod: true, unvan: true, vknTckn: true },
           });
-          if (cariler.length === 1) kopyasi.cariId = cariler[0].id;
-          else if (cariler.length > 1) throw new KimlikBelirsizHatasi("cari", aranan, cariler.slice(0, 5));
+          if (cariler.length === 1 && (tamCariler.length || !yazma)) kopyasi.cariId = cariler[0].id;
+          else if (cariler.length >= 1) throw new KimlikBelirsizHatasi("cari", aranan, cariler.slice(0, 5));
         }
 
         // 4. Stok ID çözümü
@@ -143,8 +146,8 @@ export class AracYurutucu {
             where: { ad: { contains: aranan, mode: "insensitive" } }, take: 6,
             select: { id: true, kod: true, ad: true, barkod: true },
           });
-          if (stoklar.length === 1) kopyasi.stokId = stoklar[0].id;
-          else if (stoklar.length > 1) throw new KimlikBelirsizHatasi("stok", aranan, stoklar.slice(0, 5));
+          if (stoklar.length === 1 && (tamStoklar.length || !yazma)) kopyasi.stokId = stoklar[0].id;
+          else if (stoklar.length >= 1) throw new KimlikBelirsizHatasi("stok", aranan, stoklar.slice(0, 5));
         }
 
         // 5. Satırlardaki stokId çözümü
@@ -163,8 +166,8 @@ export class AracYurutucu {
                     where: { ad: { contains: aranan, mode: "insensitive" } }, take: 6,
                     select: { id: true, kod: true, ad: true, barkod: true },
                   });
-                  if (adaylar.length === 1) s.stokId = adaylar[0].id;
-                  else if (adaylar.length > 1) throw new KimlikBelirsizHatasi("stok", aranan, adaylar.slice(0, 5));
+                  if (adaylar.length === 1 && (tam.length || !yazma)) s.stokId = adaylar[0].id;
+                  else if (adaylar.length >= 1) throw new KimlikBelirsizHatasi("stok", aranan, adaylar.slice(0, 5));
                 }
                 return s;
               }
@@ -195,7 +198,7 @@ export class AracYurutucu {
     }
     let cozulenGirdi: unknown;
     try {
-      cozulenGirdi = await this.kimlikleriCoz(arac.ad, cagri.girdi);
+      cozulenGirdi = await this.kimlikleriCoz(arac.ad, cagri.girdi, arac.sinif !== "okuma");
     } catch (hata) {
       if (hata instanceof KimlikBelirsizHatasi) return { icerik: hata.message, hata: true, secim: hata.secim };
       throw hata;
