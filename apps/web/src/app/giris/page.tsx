@@ -72,11 +72,6 @@ export default function GirisSayfasi() {
     await girisYap(epostaVal, parolaVal, totpVal);
   }
 
-  const demoGirisYap = (demoEposta: string, demoParola: string) => {
-    setEposta(demoEposta);
-    setParola(demoParola);
-    girisYap(demoEposta, demoParola);
-  };
 
   return (
     <main className="auth-page-container">
@@ -132,33 +127,6 @@ export default function GirisSayfasi() {
             <div className="auth-header">
               <h1>Hoş Geldiniz 👋</h1>
               <p>Devam etmek için hesabınıza giriş yapın</p>
-            </div>
-
-            {/* Hızlı Demo Giriş Butonları */}
-            <div className="demo-users-box">
-              <span className="demo-title">🚀 Hızlı Demo Giriş:</span>
-              <div className="demo-buttons">
-                <button
-                  type="button"
-                  onClick={() => demoGirisYap("admin@tekirextra.com", "123456")}
-                  className="demo-btn"
-                  disabled={yukleniyor}
-                >
-                  👨‍💼 Yönetici
-                </button>
-                <button
-                  type="button"
-                  onClick={() => demoGirisYap("muhasebe@tekirextra.com", "123456")}
-                  className="demo-btn"
-                  disabled={yukleniyor}
-                >
-                  📊 Muhasebe
-                </button>
-              </div>
-            </div>
-
-            <div className="auth-divider">
-              <span>veya e-posta ile</span>
             </div>
 
             {hata && <Alert tone="error">{hata}</Alert>}

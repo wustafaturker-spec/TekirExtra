@@ -1807,3 +1807,15 @@ test("kullanıcı Hesap Güvenliği ekranından kendi parolasını değiştirir 
   expect(istek).toEqual({ mevcutParola: "EskiParola2026", yeniParola: "YeniParola2026" });
   await expect(page.getByLabel("Mevcut parola")).toHaveValue("");
 });
+
+test("rol yetkileri ekranı gerçek menü kuralını gösterir ve kaydetme sunmaz (yönetim P0-1)", async ({ page }) => {
+  await page.goto("/panel/ayarlar/izinler");
+  await expect(page.getByRole("heading", { level: 1, name: "Rol Yetkileri" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Kaydet/ })).toHaveCount(0);
+  await page.getByLabel("Rol").selectOption("depo");
+  const ayarlar = page.getByRole("region", { name: "Ayarlar" });
+  await expect(ayarlar.getByText("Hesap Güvenliği (erişebilir)")).toBeAttached();
+  await expect(ayarlar.getByText("Kullanıcılar (erişemez)")).toBeAttached();
+  await page.getByLabel("Rol").selectOption("muhasebe");
+  await expect(page.getByRole("region", { name: "Cari & Personel" }).getByText("Cari Hesaplar (erişebilir)")).toBeAttached();
+});

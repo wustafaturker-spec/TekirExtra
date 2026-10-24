@@ -17,25 +17,12 @@ import {
   Status,
   TableWrap,
 } from "@/components/ui";
+import { ROL_ADI } from "@/lib/rol-adlari";
 
 const ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir", "b2b_bayi", "uretim_planlama", "uretim_operatoru", "depo", "kalite", "maliyet_muhasebesi", "ik"] as const;
 type Rol = (typeof ROLLER)[number];
-const ROL_ADI: Record<Rol, string> = {
-  yonetici: "Yönetici",
-  muhasebe: "Muhasebe",
-  satis: "Satış",
-  salt_okunur: "Salt Okunur",
-  mali_musavir: "Mali Müşavir",
-  b2b_bayi: "B2B Bayi",
-  uretim_planlama: "Üretim Planlama",
-  uretim_operatoru: "Üretim Operatörü",
-  depo: "Depo Sorumlusu",
-  kalite: "Kalite Sorumlusu",
-  maliyet_muhasebesi: "Maliyet Muhasebesi",
-  ik: "İnsan Kaynakları",
-};
 /** PRS-21: çalışan hesabı personel kartından davetle açılır; bu ekranda rolü seçilmez. */
-const rolAdi = (r: string) => (r === "calisan" ? "Çalışan (self-servis)" : ROL_ADI[r as Rol] ?? r);
+const rolAdi = (r: string) => ROL_ADI[r as Rol | "calisan"] ?? r;
 
 interface Kullanici {
   id: string;
@@ -194,8 +181,8 @@ export default function KullanicilarSayfasi() {
         subtitle="Firma kullanıcılarını yönetin: davet, rol atama, aktif/pasif (yalnızca yönetici) — KLN-02."
         actions={
           <>
-            <Link href="/panel/ayarlar/izinler" style={{ padding: "8px 14px", backgroundColor: "#e2e8f0", color: "#334155", borderRadius: "6px", textDecoration: "none", fontSize: "12px", fontWeight: "700" }}>
-              🛡️ İzin Matrisi
+            <Link className="btn btn--ghost" href="/panel/ayarlar/izinler">
+              🛡️ Rol Yetkileri
             </Link>
             <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
               {formAcik ? "Vazgeç" : "➕ Yeni Kullanıcı"}
