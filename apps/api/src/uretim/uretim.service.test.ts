@@ -17,6 +17,7 @@ describe("UretimService profesyonel emir akışı", () => {
   beforeEach(() => {
     prisma = {
       tenantIslem: vi.fn((_tenantId, cb) => cb(prisma)),
+      $queryRaw: vi.fn().mockResolvedValue([]),
       urunRecetesi: {
         findFirst: vi.fn().mockResolvedValue({
           id: "recete-1",
@@ -201,7 +202,7 @@ describe("UretimService profesyonel emir akışı", () => {
     prisma.uretimEmriOperasyonu.findFirst.mockResolvedValue({ id: "op-2", uretimEmriId: "emir-1", sira: 2, durum: "hazir", uretimEmri: { durum: "uretimde" } });
     prisma.uretimEmriOperasyonu.count.mockResolvedValue(1);
 
-    await expect(service.operasyonBaslat("emir-1", "op-2")).rejects.toThrow("Önce önceki operasyonlar tamamlanmalıdır");
+    await expect(service.operasyonBaslat("emir-1", "op-2", { vardiyaId: "22222222-2222-4222-8222-222222222222", operatorId: "user-1" })).rejects.toThrow("Önce önceki operasyonlar tamamlanmalıdır");
     expect(prisma.uretimEmriOperasyonu.updateMany).not.toHaveBeenCalled();
   });
 

@@ -1,10 +1,9 @@
 import { Prisma } from "@prisma/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { siparisKarsiligi, UretimService } from "./uretim.service";
 
-vi.mock("../core/istek-baglami", () => ({
-  aktifBaglam: () => ({ tenantId: "tenant-1", userId: "user-1", rol: "uretim_operatoru" }),
-}));
+const oturum = vi.hoisted(() => ({ tenantId: "tenant-1", userId: "user-1", rol: "uretim_operatoru" }));
+vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => oturum }));
 
 const D = (deger: string | number) => new Prisma.Decimal(deger);
 const ANAHTAR = "11111111-1111-4111-8111-111111111111";
@@ -137,5 +136,120 @@ describe("satış siparişi karşılığı", () => {
     const prisma: any = { tenantIslem: vi.fn((_t, cb) => cb(prisma)), belgeSatir: { findMany: vi.fn().mockResolvedValue([{ id: "s", miktar: D(100), belge: {}, stok: {}, varyant: null, uretimEmirleri: [{ durum: "tamamlandi", planlananMiktar: D(100), uretilenMiktar: D(40) }] }]) } };
     const satirlar = await new UretimService(prisma, {} as any).uretimBekleyenSatisSiparisleri();
     expect(satirlar.map((s) => s.kalanMiktar)).toEqual(["60.000"]);
+  });
+});
+
+afterEach(() => { oturum.userId = "user-1"; oturum.rol = "uretim_operatoru"; });
+
+describe("dönem kilidinin açılması", () => {
+  it("hangi ayın, kimin kapattığı dönemin ve nedeninin denetim kaydına yazılır", async () => {
+    const prisma: any = {
+      tenantIslem: vi.fn((_t, cb) => cb(prisma)),
+      uretimDonemKilidi: {
+        findFirst: vi.fn().mockResolvedValue({ id: "kilit-1", yil: 2026, ay: 9, aciklama: "Mutabakat", kapatanUserId: "u-9", kapatildiAt: new Date("2026-10-05T09:00:00Z"), kapatan: { adSoyad: "Ayşe Kılıç" } }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      auditLog: { create: vi.fn() },
+    };
+    oturum.rol = "maliyet_muhasebesi";
+    await new UretimService(prisma, {} as any).donemKilidiAc("kilit-1", "Eksik sarf düzeltmesi girilecek");
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ islem: "uretim_donem_kilidi_acildi", userId: "user-1", varlikId: "kilit-1", detay: expect.objectContaining({ yil: 2026, ay: 9, neden: "Eksik sarf düzeltmesi girilecek", kapatan: "Ayşe Kılıç" }) }) });
+    expect(prisma.auditLog.create.mock.invocationCallOrder[0]).toBeLessThan(prisma.uretimDonemKilidi.deleteMany.mock.invocationCallOrder[0]);
+  });
+
+  it("kalite kararı kapalı döneme stok hareketi yazmaz", async () => {
+    const prisma: any = { tenantIslem: vi.fn((_t, cb) => cb(prisma)), uretimDonemKilidi: { findFirst: vi.fn().mockResolvedValue({ yil: 2026, ay: 10 }) }, uretimKaliteKontrol: { findFirst: vi.fn() } };
+    oturum.rol = "kalite";
+    await expect(new UretimService(prisma, {} as any).kaliteKarari("k-1", { karar: "kabul", kontrolNotu: "Uygun" })).rejects.toThrow(/dönemi kapalı/);
+    expect(prisma.uretimKaliteKontrol.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("operatör izi", () => {
+  function operasyonKur(operatorId: string | null = "user-1") {
+    const prisma: any = {
+      tenantIslem: vi.fn((_t, cb) => cb(prisma)),
+      uretimEmriOperasyonu: {
+        findFirst: vi.fn().mockResolvedValue({ id: "op-1", sira: 1, durum: "devam_ediyor", operatorId, fiiliBaslangic: new Date(Date.now() - 60000), gerceklesenDakika: D(0), saatlikMaliyet: D(60), uretimEmri: { durum: "kalite_bekliyor" } }),
+        count: vi.fn().mockResolvedValue(0), updateMany: vi.fn().mockResolvedValue({ count: 1 }), findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "op-1" }),
+      },
+      uretimVardiya: { findFirst: vi.fn().mockResolvedValue({ id: "v-1" }) },
+      user: { findFirst: vi.fn().mockResolvedValue({ id: "user-1" }) },
+      uretimDurus: { findFirst: vi.fn().mockResolvedValue(null) },
+      uretimEmri: { update: vi.fn() },
+    };
+    return { prisma, service: new UretimService(prisma, {} as any) };
+  }
+  const V = "22222222-2222-4222-8222-222222222222", BASKASI = "33333333-3333-4333-8333-333333333333";
+
+  it("operatör başka biri adına başlatamaz; kendi adına ve kalite bekleyen emirde başlatabilir", async () => {
+    const k = operasyonKur();
+    await expect(k.service.operasyonBaslat("emir-1", "op-1", { vardiyaId: V, operatorId: BASKASI })).rejects.toThrow(/kendi adınıza/);
+    await k.service.operasyonBaslat("emir-1", "op-1", { vardiyaId: V, operatorId: "user-1" });
+    expect(k.prisma.uretimEmriOperasyonu.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ operatorId: "user-1" }) }));
+  });
+
+  it("yönetici operatör atayabilir", async () => {
+    oturum.rol = "yonetici";
+    const k = operasyonKur();
+    await k.service.operasyonBaslat("emir-1", "op-1", { vardiyaId: V, operatorId: BASKASI });
+    expect(k.prisma.uretimEmriOperasyonu.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ operatorId: BASKASI }) }));
+  });
+
+  it("operasyonu başlatandan başkası tamamlayamaz; yönetici tamamlayabilir", async () => {
+    const k = operasyonKur(BASKASI);
+    await expect(k.service.operasyonTamamla("emir-1", "op-1", {})).rejects.toThrow(/başlatan operatör/);
+    oturum.rol = "yonetici";
+    await k.service.operasyonTamamla("emir-1", "op-1", {});
+    expect(k.prisma.uretimEmriOperasyonu.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "tamamlandi" }) }));
+  });
+});
+
+describe("kalite bekleyen emirde üretim sürer", () => {
+  it("önceki parti kalite beklerken yeni bildirim girilir ve kendi karantina kaydını açar", async () => {
+    const k = kur();
+    k.prisma.uretimEmri.findUnique.mockResolvedValue({ ...(await k.prisma.uretimEmri.findUnique()), durum: "kalite_bekliyor", kaliteKontrolGerekli: true, uretilenMiktar: D(4) });
+    k.prisma.depo = { upsert: vi.fn().mockResolvedValue({ id: "karantina-1" }) };
+    k.prisma.uretimKaliteKontrol = { create: vi.fn() };
+    await k.service.bildir("emir-1", { idempotencyAnahtari: ANAHTAR, uretilenMiktar: "4", hurdaMiktari: "0", yenidenIslemeMiktari: "0" } as any);
+    expect(k.prisma.uretimKaliteKontrol.create).toHaveBeenCalledWith({ data: expect.objectContaining({ miktar: D(4) }) });
+    expect(k.prisma.uretimEmri.update.mock.calls.at(-1)[0].data.durum).toBe("kalite_bekliyor");
+  });
+
+  function kararKur(acikKontrol: number, uretilen = 8) {
+    const prisma: any = {
+      tenantIslem: vi.fn((_t, cb) => cb(prisma)),
+      $queryRaw: vi.fn(),
+      uretimDonemKilidi: { findFirst: vi.fn().mockResolvedValue(null) },
+      uretimKaliteKontrol: {
+        findFirst: vi.fn().mockResolvedValue({ id: "k-1", uretimEmriId: "emir-1", karantinaDepoId: "kar-1", miktar: D(4), uretimBildirimi: { mamulBirimMaliyeti: D(10), toplamMaliyet: D(40) }, uretimEmri: { id: "emir-1", no: "URT-1", stokId: "m", varyantId: null, hedefDepoId: "d", planlananMiktar: D(8), stok: { anaBirim: "adet" }, kalemler: [] } }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }), count: vi.fn().mockResolvedValue(acikKontrol), findUniqueOrThrow: vi.fn().mockResolvedValue({}),
+      },
+      uretimEmri: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "emir-1", uretilenMiktar: D(uretilen), planlananMiktar: D(8) }), update: vi.fn() },
+      uretimMalzemeRezervasyon: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    oturum.rol = "kalite";
+    const service = new UretimService(prisma, { hareketEkle: vi.fn().mockResolvedValue({ partiTahsisleri: [] }) } as any);
+    return { prisma, service };
+  }
+
+  it("başka parti beklerken verilen red üretilenden hemen düşer, emir kalite bekler", async () => {
+    const k = kararKur(1);
+    await k.service.kaliteKarari("k-1", { karar: "red", kontrolNotu: "Tolerans dışı" });
+    expect(k.prisma.$queryRaw).toHaveBeenCalled();
+    expect(k.prisma.uretimEmri.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "kalite_bekliyor", uretilenMiktar: D(4), hurdaMiktari: { increment: D(4) } }) }));
+  });
+
+  it("yeniden işlemedeki parti varken son kabul emri tamamlamaz", async () => {
+    const k = kararKur(1);
+    await k.service.kaliteKarari("k-1", { karar: "kabul", kontrolNotu: "Uygun" });
+    expect(k.prisma.uretimKaliteKontrol.count).toHaveBeenCalledWith({ where: expect.objectContaining({ durum: { in: ["bekliyor", "yeniden_isleme"] } }) });
+    expect(k.prisma.uretimEmri.update.mock.calls.at(-1)[0].data).toMatchObject({ durum: "kalite_bekliyor", tamamlanmaTarihi: null });
+  });
+
+  it("açık kontrol kalmayınca ve miktar tamamsa emir tamamlanır", async () => {
+    const k = kararKur(0);
+    await k.service.kaliteKarari("k-1", { karar: "kabul", kontrolNotu: "Uygun" });
+    expect(k.prisma.uretimEmri.update.mock.calls.at(-1)[0].data.durum).toBe("tamamlandi");
   });
 });

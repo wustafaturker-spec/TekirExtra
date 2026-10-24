@@ -184,6 +184,8 @@ export default function UretimEmriDetaySayfasi() {
   const [operatorler, setOperatorler] = useState<Operator[]>([]);
   const [vardiyaId, setVardiyaId] = useState("");
   const [operatorId, setOperatorId] = useState("");
+  const [operatorAtayabilir, setOperatorAtayabilir] = useState(false);
+  const [oturumKullanicisi, setOturumKullanicisi] = useState("");
   const [durusNedeni, setDurusNedeni] = useState("ariza");
   const [durusAciklama, setDurusAciklama] = useState("");
   const [durusPlanli, setDurusPlanli] = useState(false);
@@ -212,12 +214,13 @@ export default function UretimEmriDetaySayfasi() {
   const [duzeltmeSeriler, setDuzeltmeSeriler] = useState("");
 
   async function yukle() {
-    const [emirVerisi, uygunlukVerisi, maliyetVerisi, vardiyaVerisi, operatorVerisi] = await Promise.all([
+    const [emirVerisi, uygunlukVerisi, maliyetVerisi, vardiyaVerisi, operatorVerisi, ben] = await Promise.all([
       api<Emir>(`/uretim/emirler/${id}`),
       api<Uygunluk>(`/uretim/emirler/${id}/malzeme-uygunlugu`),
       api<MaliyetOzeti>(`/uretim/emirler/${id}/maliyet`),
       api<Vardiya[]>("/uretim/vardiyalar"),
       api<Operator[]>("/uretim/operatorler"),
+      api<{ userId: string; rol: string }>("/auth/ben"),
     ]);
     setEmir(emirVerisi);
     setUygunluk(uygunlukVerisi);
@@ -225,7 +228,11 @@ export default function UretimEmriDetaySayfasi() {
     setVardiyalar(vardiyaVerisi);
     setOperatorler(operatorVerisi);
     setVardiyaId((onceki) => onceki || vardiyaVerisi[0]?.id || "");
-    setOperatorId((onceki) => onceki || operatorVerisi[0]?.id || "");
+    // Operatör izi: operatör kendi adına çalışır; yalnız yönetici başkasını atayabilir.
+    const yonetici = ben.rol === "yonetici";
+    setOperatorAtayabilir(yonetici);
+    setOturumKullanicisi(ben.userId);
+    setOperatorId((onceki) => (yonetici ? onceki || ben.userId : ben.userId));
   }
   useEffect(() => {
     if (!id || !tokenAl()) return;
@@ -422,7 +429,7 @@ export default function UretimEmriDetaySayfasi() {
                 {islem ? "Ayrılıyor…" : "Malzemeleri ayır"}
               </Button>
             )}
-            {["uretimde", "kismen_tamamlandi"].includes(emir.durum) &&
+            {["uretimde", "kismen_tamamlandi", "kalite_bekliyor"].includes(emir.durum) &&
               uygunluk?.kalemler.some((k) => Number(k.rezerveEdilenMiktar) < Number(k.gerekenMiktar)) && (
                 <Button
                   size="sm"
@@ -433,7 +440,8 @@ export default function UretimEmriDetaySayfasi() {
                   {islem ? "Ayrılıyor…" : "Ek malzeme ayır"}
                 </Button>
               )}
-            {["uretimde", "kismen_tamamlandi"].includes(emir.durum) && (
+            {/* Önceki parti kalite beklerken de üretim bildirilir. */}
+            {["uretimde", "kismen_tamamlandi", "kalite_bekliyor"].includes(emir.durum) && (
               <Button size="sm" variant="primary" disabled={islem} onClick={bildirimFormunuAc}>
                 Üretim bildir
               </Button>
@@ -570,7 +578,12 @@ export default function UretimEmriDetaySayfasi() {
               </Select>
             </Field>
             <Field label="Operatör">
-              <Select value={operatorId} onChange={(e) => setOperatorId(e.target.value)}>
+              <Select
+                value={operatorId}
+                disabled={!operatorAtayabilir}
+                title={operatorAtayabilir ? undefined : "Operasyonlar kendi adınıza başlatılır"}
+                onChange={(e) => setOperatorId(e.target.value)}
+              >
                 <option value="">Operatör seçin</option>
                 {operatorler.map((o) => (
                   <option key={o.id} value={o.id}>
@@ -679,14 +692,16 @@ export default function UretimEmriDetaySayfasi() {
                       <Button size="sm" disabled={islem} onClick={() => void operasyonIsle(o, "beklet")}>
                         Duruşa al
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={islem}
-                        onClick={() => void operasyonIsle(o, "tamamla")}
-                      >
-                        Tamamla
-                      </Button>
+                      {(operatorAtayabilir || !o.operator || o.operator.id === oturumKullanicisi) && (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={islem}
+                          onClick={() => void operasyonIsle(o, "tamamla")}
+                        >
+                          Tamamla
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>

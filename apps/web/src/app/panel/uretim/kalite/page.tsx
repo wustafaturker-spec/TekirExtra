@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
 
 type Durum = "bekliyor" | "yeniden_isleme" | "kabul" | "red";
@@ -36,6 +36,8 @@ export default function UretimKaliteSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState(false);
+  const [yenidenIslenen, setYenidenIslenen] = useState<Kontrol | null>(null);
+  const [islemeSonucu, setIslemeSonucu] = useState("");
   async function yukle() {
     setKayitlar(await api<Kontrol[]>(`/uretim/kalite-kontrolleri${filtre ? `?durum=${filtre}` : ""}`));
   }
@@ -69,9 +71,11 @@ export default function UretimKaliteSayfasi() {
       setIslem(false);
     }
   }
-  async function yenidenIslemeTamamla(kontrol: Kontrol) {
-    const aciklama = window.prompt("Yeniden işleme sonucunu açıklayın:");
-    if (!aciklama?.trim()) return;
+  async function yenidenIslemeTamamla(e: React.FormEvent) {
+    e.preventDefault();
+    const kontrol = yenidenIslenen;
+    const aciklama = islemeSonucu.trim();
+    if (!kontrol || aciklama.length < 3) return;
     setIslem(true);
     setHata("");
     try {
@@ -80,6 +84,8 @@ export default function UretimKaliteSayfasi() {
         body: JSON.stringify({ aciklama }),
       });
       setBasari("Yeniden işleme tamamlandı; ürün tekrar kalite incelemesine açıldı.");
+      setYenidenIslenen(null);
+      setIslemeSonucu("");
       await yukle();
     } catch (neden) {
       setHata(neden instanceof Error ? neden.message : "Yeniden işleme tamamlanamadı");
@@ -89,6 +95,35 @@ export default function UretimKaliteSayfasi() {
   }
   return (
     <div className="production-page">
+      {yenidenIslenen && (
+        <Modal
+          baslik={`${yenidenIslenen.uretimEmri.no} yeniden işlemesini tamamla`}
+          aciklama="Ürün yeniden kalite incelemesine açılır. Yapılan işlemi kalite biriminin göreceği şekilde yazın."
+          onKapat={() => !islem && setYenidenIslenen(null)}
+        >
+          <form className="stack" onSubmit={yenidenIslemeTamamla}>
+            <Field label="Yeniden işleme sonucu">
+              <Input
+                autoFocus
+                required
+                minLength={3}
+                maxLength={500}
+                value={islemeSonucu}
+                onChange={(e) => setIslemeSonucu(e.target.value)}
+                placeholder="Örn. çapak alındı, ölçü yeniden kontrol edildi"
+              />
+            </Field>
+            <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+              <Button type="button" disabled={islem} onClick={() => setYenidenIslenen(null)}>
+                Vazgeç
+              </Button>
+              <Button type="submit" variant="primary" disabled={islem || islemeSonucu.trim().length < 3}>
+                {islem ? "Kaydediliyor…" : "İncelemeye gönder"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
       <PageHeader
         title="Üretim Kalite Kontrolü"
         subtitle="Karantinadaki mamulleri inceleyin; kabul, red veya yeniden işleme kararı verin."
@@ -222,7 +257,15 @@ export default function UretimKaliteSayfasi() {
                       İncele
                     </Button>
                   ) : k.durum === "yeniden_isleme" ? (
-                    <Button size="sm" variant="primary" disabled={islem} onClick={() => void yenidenIslemeTamamla(k)}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={islem}
+                      onClick={() => {
+                        setIslemeSonucu("");
+                        setYenidenIslenen(k);
+                      }}
+                    >
                       İşlemeyi tamamla
                     </Button>
                   ) : null}

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from "@nestjs/common";
 import type { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
-import { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKapsamSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
+import { donemKilidiAcSemasi, isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKapsamSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
 import { UretimService } from "./uretim.service";
 
 function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
@@ -24,7 +24,7 @@ export class UretimController {
   @Get("terminal/barkod/:barkod") terminalBarkod(@Param("barkod") barkod: string) { return this.service.terminalBarkod(barkod); }
   @Get("donem-kilitleri") donemKilitleri() { return this.service.donemKilitleri(); }
   @Post("donem-kilitleri") @Roller("maliyet_muhasebesi") donemKilitle(@Body() govde: unknown) { return this.service.donemKilitle(ayristir(uretimDonemKilidiSemasi, govde)); }
-  @Delete("donem-kilitleri/:id") @Roller("maliyet_muhasebesi") @HttpCode(204) async donemKilidiAc(@Param("id") id: string) { await this.service.donemKilidiAc(id); }
+  @Delete("donem-kilitleri/:id") @Roller("maliyet_muhasebesi") @HttpCode(204) async donemKilidiAc(@Param("id") id: string, @Body() govde: unknown) { await this.service.donemKilidiAc(id, ayristir(donemKilidiAcSemasi, govde ?? {}).neden); }
   @Post("is-merkezleri") @Roller("uretim_planlama", "maliyet_muhasebesi") isMerkeziOlustur(@Body() govde: unknown) { return this.service.isMerkeziOlustur(ayristir(isMerkeziKaydetSemasi, govde)); }
   @Put("is-merkezleri/:id") @Roller("uretim_planlama", "maliyet_muhasebesi") isMerkeziGuncelle(@Param("id") id: string, @Body() govde: unknown) { return this.service.isMerkeziGuncelle(id, ayristir(isMerkeziKaydetSemasi, govde)); }
   @Get("kapasite") kapasite(@Query("baslangic") baslangic?: string, @Query("bitis") bitis?: string) { return this.service.kapasite(baslangic, bitis); }

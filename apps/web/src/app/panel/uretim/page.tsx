@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { bugunTR } from "@tekirextra/shared";
@@ -119,6 +119,9 @@ export default function UretimSayfasi() {
   const [kilitYil, setKilitYil] = useState(simdi.getFullYear());
   const [kilitAy, setKilitAy] = useState(simdi.getMonth() + 1);
   const [kilitAciklama, setKilitAciklama] = useState("");
+  // Kapalı dönemi açmak geçmiş aya kayıt girişini serbest bırakır: onay ve neden ister.
+  const [acilacakDonem, setAcilacakDonem] = useState<DonemKilidi | null>(null);
+  const [acmaNedeni, setAcmaNedeni] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState<string | null>(null);
@@ -196,11 +199,20 @@ export default function UretimSayfasi() {
       setHata(h instanceof Error ? h.message : "Dönem kapatılamadı");
     }
   }
-  async function donemAc(id: string) {
+  async function donemAc(e: React.FormEvent) {
+    e.preventDefault();
+    if (!acilacakDonem || acmaNedeni.trim().length < 5) return;
     setHata("");
     try {
-      await api(`/uretim/donem-kilitleri/${id}`, { method: "DELETE" });
-      setBasari("Üretim dönemi yeniden açıldı.");
+      await api(`/uretim/donem-kilitleri/${acilacakDonem.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ neden: acmaNedeni.trim() }),
+      });
+      setBasari(
+        `${String(acilacakDonem.ay).padStart(2, "0")}/${acilacakDonem.yil} üretim dönemi yeniden açıldı; neden denetim kaydına yazıldı.`,
+      );
+      setAcilacakDonem(null);
+      setAcmaNedeni("");
       await yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Dönem açılamadı");
@@ -431,7 +443,14 @@ export default function UretimSayfasi() {
             {donemKilitleri.slice(0, 6).map((k) => (
               <Badge key={k.id} variant="warning">
                 {String(k.ay).padStart(2, "0")}/{k.yil} kapalı · {k.kapatan.adSoyad}{" "}
-                <button type="button" onClick={() => void donemAc(k.id)} aria-label="Dönemi aç">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAcmaNedeni("");
+                    setAcilacakDonem(k);
+                  }}
+                  aria-label={`${String(k.ay).padStart(2, "0")}/${k.yil} dönemini aç`}
+                >
                   ×
                 </button>
               </Badge>
@@ -439,6 +458,35 @@ export default function UretimSayfasi() {
           </div>
         )}
       </Card>
+      {acilacakDonem && (
+        <Modal
+          baslik={`${String(acilacakDonem.ay).padStart(2, "0")}/${acilacakDonem.yil} üretim dönemini aç`}
+          aciklama="Dönem açılınca bu aya yeniden üretim bildirimi, sarf ve emir kaydı girilebilir. Neden, kimin açtığıyla birlikte denetim kaydına yazılır."
+          onKapat={() => setAcilacakDonem(null)}
+        >
+          <form className="stack" onSubmit={donemAc}>
+            <Field label="Açma nedeni">
+              <Input
+                autoFocus
+                required
+                minLength={5}
+                maxLength={500}
+                value={acmaNedeni}
+                onChange={(e) => setAcmaNedeni(e.target.value)}
+                placeholder="Örn. eksik sarf düzeltmesi girilecek"
+              />
+            </Field>
+            <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+              <Button type="button" onClick={() => setAcilacakDonem(null)}>
+                Vazgeç
+              </Button>
+              <Button type="submit" variant="danger" disabled={acmaNedeni.trim().length < 5}>
+                Dönemi aç
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {!urunler.length && (
         <Alert tone="error">
           Üretilebilir ürün bulunmuyor. Önce ilgili stok kartının “Ürün reçetesi” sekmesinden reçete tanımlayın.
@@ -577,7 +625,7 @@ export default function UretimSayfasi() {
                           Başlat
                         </Button>
                       )}
-                      {["uretimde", "kismen_tamamlandi"].includes(e.durum) && (
+                      {["uretimde", "kismen_tamamlandi", "kalite_bekliyor"].includes(e.durum) && (
                         <Link className="btn btn--primary btn--sm" href={`/panel/uretim/emirler/${e.id}`}>
                           Bildir
                         </Link>

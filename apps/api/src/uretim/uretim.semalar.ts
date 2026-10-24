@@ -128,6 +128,11 @@ export const uretimDonemKilidiSemasi = z.object({
   aciklama: z.string().trim().min(3).max(500).optional().nullable(),
 });
 
+/** Kapalı üretim dönemini yeniden açma: neden denetim kaydına yazılır. */
+export const donemKilidiAcSemasi = z.object({
+  neden: z.string().trim().min(5, "Dönemi açma nedeni en az 5 karakter olmalıdır").max(500),
+});
+
 export const uretimEmriListeSemasi = z.object({
   durum: z.enum(["taslak", "planlandi", "malzeme_bekliyor", "hazir", "uretimde", "kismen_tamamlandi", "kalite_bekliyor", "beklemede", "durduruldu", "tamamlandi", "iptal_talebi", "iptal"]).optional(),
   arama: z.string().trim().max(100).optional(),

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -20,6 +20,12 @@ const receteKalemGorunumu = <T extends { miktar: Prisma.Decimal; girilenMiktar: 
 
 /** Operasyonu yürütebilen roller; küçük işletmede yönetici de tezgâhta çalışır. */
 const OPERATOR_ROLLERI: ("uretim_operatoru" | "yonetici")[] = ["uretim_operatoru", "yonetici"];
+
+/** Üretimin sürdüğü emir durumları: bildirim ve operasyon bu durumlarda girilir. */
+const URETIM_SUREN_DURUMLAR: string[] = ["uretimde", "kismen_tamamlandi", "kalite_bekliyor"];
+
+/** Kalite kararı verilmemiş kontroller; yeniden işlemedeki mamul de karantinadadır. */
+const ACIK_KALITE_DURUMLARI: ("bekliyor" | "yeniden_isleme")[] = ["bekliyor", "yeniden_isleme"];
 
 /** Kalite bekleyen mamulün deposu; kabul edilmemiş stok ayrılmaz ve sarf edilmez. */
 const KARANTINA_DEPO_KODU = "KARANTINA";
@@ -130,9 +136,20 @@ export class UretimService {
     return this.prisma.tenantIslem(tenantId, (tx) => tx.uretimDonemKilidi.upsert({ where: { tenantId_yil_ay: { tenantId, yil: girdi.yil, ay: girdi.ay } }, create: { tenantId, kapatanUserId: userId, ...girdi }, update: { kapatanUserId: userId, aciklama: girdi.aciklama, kapatildiAt: new Date() } }));
   }
 
-  async donemKilidiAc(id: string) {
-    const { tenantId } = aktifBaglam();
-    await this.prisma.tenantIslem(tenantId, async (tx) => { const sonuc = await tx.uretimDonemKilidi.deleteMany({ where: { id } }); if (sonuc.count !== 1) throw new NotFoundException("Üretim dönem kilidi bulunamadı"); });
+  /**
+   * Kapalı dönemi yeniden açar. Kilit satırı silindiği için genel denetim izi
+   * yalnız ucu görür; hangi ayın, kimin kapattığı dönemin, hangi nedenle
+   * açıldığı ayrı denetim kaydına aynı işlemde yazılır.
+   */
+  async donemKilidiAc(id: string, neden: string) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kilit = await tx.uretimDonemKilidi.findFirst({ where: { id }, include: { kapatan: { select: { adSoyad: true } } } });
+      if (!kilit) throw new NotFoundException("Üretim dönem kilidi bulunamadı");
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "uretim_donem_kilidi_acildi", varlik: "uretim_donem_kilidi", varlikId: id, detay: { yil: kilit.yil, ay: kilit.ay, neden, kapatan: kilit.kapatan.adSoyad, kapatanUserId: kilit.kapatanUserId, kapatildiAt: kilit.kapatildiAt.toISOString(), kapatmaAciklamasi: kilit.aciklama } } });
+      const sonuc = await tx.uretimDonemKilidi.deleteMany({ where: { id } });
+      if (sonuc.count !== 1) throw new NotFoundException("Üretim dönem kilidi bulunamadı");
+    });
   }
 
   async isMerkeziOlustur(girdi: z.infer<typeof isMerkeziKaydetSemasi>) {
@@ -461,7 +478,7 @@ export class UretimService {
       const emir = await tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { kalemler: { include: { malzeme: true, rezervasyonlar: true } } } });
       if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
       // URT-HURDA: hurda/red ek ihtiyacı için üretimdeki emre de ek ayrım yapılır; durumu değişmez.
-      const uretimde = ["uretimde", "kismen_tamamlandi"].includes(emir.durum);
+      const uretimde = URETIM_SUREN_DURUMLAR.includes(emir.durum);
       if (!uretimde && !["planlandi", "malzeme_bekliyor", "hazir"].includes(emir.durum)) throw new BadRequestException("Yalnız planlanmış, malzeme bekleyen ya da üretimdeki emir için rezervasyon yapılabilir");
 
       let eksikVar = false;
@@ -515,11 +532,14 @@ export class UretimService {
   }
 
   async operasyonBaslat(emirId: string, operasyonId: string, girdi: z.infer<typeof operasyonBaslatSemasi>) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
+    // Operatör izi: operatör yalnız kendi adına başlatır; yönetici atama yapabilir.
+    if (rol !== "yonetici" && girdi.operatorId !== userId) throw new ForbiddenException("Operasyonu yalnız kendi adınıza başlatabilirsiniz");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const operasyon = await tx.uretimEmriOperasyonu.findFirst({ where: { id: operasyonId, uretimEmriId: emirId }, include: { uretimEmri: true } });
       if (!operasyon) throw new NotFoundException("Üretim operasyonu bulunamadı");
-      if (!["uretimde", "kismen_tamamlandi"].includes(operasyon.uretimEmri.durum)) throw new BadRequestException("Operasyon için üretim emri başlatılmış olmalıdır");
+      // Kalite bekleyen parti varken hat çalışmaya devam eder.
+      if (!URETIM_SUREN_DURUMLAR.includes(operasyon.uretimEmri.durum)) throw new BadRequestException("Operasyon için üretim emri başlatılmış olmalıdır");
       const tamamlanmayanOnceki = await tx.uretimEmriOperasyonu.count({ where: { uretimEmriId: emirId, sira: { lt: operasyon.sira }, durum: { not: "tamamlandi" } } });
       if (tamamlanmayanOnceki) throw new BadRequestException("Önce önceki operasyonlar tamamlanmalıdır");
       const [vardiya, operator] = await Promise.all([tx.uretimVardiya.findFirst({ where: { id: girdi.vardiyaId, aktif: true } }), tx.user.findFirst({ where: { id: girdi.operatorId, aktif: true, rol: { in: OPERATOR_ROLLERI } } })]);
@@ -547,10 +567,13 @@ export class UretimService {
   }
 
   async operasyonTamamla(emirId: string, operasyonId: string, girdi: z.infer<typeof operasyonTamamlaSemasi>) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const operasyon = await tx.uretimEmriOperasyonu.findFirst({ where: { id: operasyonId, uretimEmriId: emirId, durum: "devam_ediyor" } });
       if (!operasyon?.fiiliBaslangic) throw new BadRequestException("Yalnız devam eden operasyon tamamlanabilir");
+      // Süre ve maliyet başlatan operatöre yazılı; başkası tamamlayamaz. Devir için
+      // operasyon bekletilir (herkes bekletebilir) ve devralan kendi adına başlatır.
+      if (rol !== "yonetici" && operasyon.operatorId && operasyon.operatorId !== userId) throw new ForbiddenException("Operasyonu başlatan operatör tamamlayabilir; devralmak için bekletip kendi adınıza yeniden başlatın");
       const gecen = D(Math.max(0, (Date.now() - operasyon.fiiliBaslangic.getTime()) / 60000));
       const gerceklesen = girdi.gerceklesenDakika === undefined ? D(operasyon.gerceklesenDakika).add(gecen).toDecimalPlaces(2) : D(girdi.gerceklesenDakika);
       const sonuc = await tx.uretimEmriOperasyonu.updateMany({ where: { id: operasyonId, durum: "devam_ediyor" }, data: { durum: "tamamlandi", gerceklesenDakika: gerceklesen, fiiliBitis: new Date() } });
@@ -574,7 +597,8 @@ export class UretimService {
       }
       const emir = await tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: true, recete: { select: { yanUrunMaliyetYontemi: true } }, operasyonlar: { select: { planlananDakika: true, saatlikMaliyet: true, durum: true } }, giderler: true, ciktilar: { include: { stok: true, receteCikti: { select: { birimMaliyet: true } } } }, kalemler: { include: { malzeme: true, rezervasyonlar: true } } } });
       if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
-      if (!["uretimde", "kismen_tamamlandi"].includes(emir.durum)) throw new BadRequestException("Yalnız üretimde olan emre bildirim girilebilir");
+      // Önceki partinin kalite kararı beklenmez; her bildirim kendi karantina kaydını açar.
+      if (!URETIM_SUREN_DURUMLAR.includes(emir.durum)) throw new BadRequestException("Yalnız üretimde olan emre bildirim girilebilir");
       const uretilen = D(girdi.uretilenMiktar);
       const yeniToplam = D(emir.uretilenMiktar).add(uretilen);
       if (yeniToplam.gt(emir.planlananMiktar)) throw new BadRequestException(`Bildirim kalan üretim miktarını aşıyor (${D(emir.planlananMiktar).sub(emir.uretilenMiktar).toFixed(3)})`);
@@ -673,6 +697,8 @@ export class UretimService {
   async kaliteKarari(id: string, girdi: z.infer<typeof kaliteKararSemasi>) {
     const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Kabul/red karantinadan stok hareketi yazar; kapalı döneme kayıt girmez.
+      await this.uretimDonemiAcikOlmali(tx, new Date());
       const kontrol = await tx.uretimKaliteKontrol.findFirst({ where: { id, durum: "bekliyor" }, include: { uretimBildirimi: true, uretimEmri: { include: { stok: true, kalemler: true } } } });
       if (!kontrol) throw new NotFoundException("Bekleyen kalite kontrol kaydı bulunamadı");
       if (girdi.karar === "yeniden_isleme") {
@@ -695,20 +721,22 @@ export class UretimService {
           if (ekIhtiyac.gt(0)) await tx.uretimEmriKalem.update({ where: { id: kalem.id, tenantId }, data: { ekIhtiyacMiktari: { increment: ekIhtiyac } } });
         }
       }
-      const bekleyen = await tx.uretimKaliteKontrol.count({ where: { uretimEmriId: kontrol.uretimEmriId, durum: "bekliyor", id: { not: id } } });
-      if (!bekleyen) {
-        const emir = await tx.uretimEmri.findUniqueOrThrow({ where: { id: kontrol.uretimEmriId, tenantId } });
-        const kabulEdilen = girdi.karar === "red" ? D(emir.uretilenMiktar).sub(kontrol.miktar) : D(emir.uretilenMiktar);
-        const tamamlandi = kabulEdilen.gte(emir.planlananMiktar);
-        await tx.uretimEmri.update({ where: { id: emir.id, tenantId }, data: {
-          durum: tamamlandi ? "tamamlandi" : girdi.karar === "red" ? "malzeme_bekliyor" : "kismen_tamamlandi",
-          uretilenMiktar: kabulEdilen,
-          // Reddedilen mamul karantinadan çıkıp yok edilir; hurda oranına girer.
-          ...(girdi.karar === "red" ? { hurdaMiktari: { increment: kontrol.miktar } } : {}),
-          tamamlanmaTarihi: tamamlandi ? new Date() : null,
-        } });
-        if (tamamlandi) await this.emirRezervasyonlariniCoz(tx, emir.id);
-      }
+      // Aynı emrin partileri ayrı ayrı karara bağlanabilir: emir satırı kilitlenir
+      // ki iki karar üretilen miktarı birbirinin üstüne yazmasın.
+      await tx.$queryRaw`SELECT id FROM uretim_emirleri WHERE id = ${kontrol.uretimEmriId}::uuid FOR UPDATE`;
+      const emir = await tx.uretimEmri.findUniqueOrThrow({ where: { id: kontrol.uretimEmriId, tenantId } });
+      // Red, başka parti beklese de hemen düşer (önceden yalnız son karar düşüyordu).
+      const kabulEdilen = girdi.karar === "red" ? D(emir.uretilenMiktar).sub(kontrol.miktar) : D(emir.uretilenMiktar);
+      const acikKontrol = await tx.uretimKaliteKontrol.count({ where: { uretimEmriId: kontrol.uretimEmriId, durum: { in: ACIK_KALITE_DURUMLARI }, id: { not: id } } });
+      const tamamlandi = !acikKontrol && kabulEdilen.gte(emir.planlananMiktar);
+      await tx.uretimEmri.update({ where: { id: emir.id, tenantId }, data: {
+        durum: acikKontrol ? "kalite_bekliyor" : tamamlandi ? "tamamlandi" : girdi.karar === "red" ? "malzeme_bekliyor" : "kismen_tamamlandi",
+        uretilenMiktar: kabulEdilen,
+        // Reddedilen mamul karantinadan çıkıp yok edilir; hurda oranına girer.
+        ...(girdi.karar === "red" ? { hurdaMiktari: { increment: kontrol.miktar } } : {}),
+        tamamlanmaTarihi: tamamlandi ? new Date() : null,
+      } });
+      if (tamamlandi) await this.emirRezervasyonlariniCoz(tx, emir.id);
       return tx.uretimKaliteKontrol.findUniqueOrThrow({ where: { id }, include: { uretimEmri: { include: { stok: true } }, karantinaDepo: true } });
     });
   }
