@@ -5280,3 +5280,8 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
   .sat-teklif-tablosu { display: none; }
   .sat-teklif-kartlari { display: grid; }
 }
+
+/* KSB-32: MT940/camt.053 yükleme özeti. */
+.statement-upload__summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .6rem 1rem; margin: 0; }
+.statement-upload__summary dt { font-size: .74rem; color: var(--text-muted); }
+.statement-upload__summary dd { margin: .1rem 0 0; font-weight: 600; }

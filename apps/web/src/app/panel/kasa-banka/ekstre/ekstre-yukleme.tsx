@@ -4,6 +4,8 @@
  * Banka ekstresi yükleme sihirbazı (KSB-06): dosya → sütun eşleme → aktarım.
  * CSV/TXT ve Excel (.xlsx) okunur. Sütun düzeni bankadan bankaya değiştiği için
  * ilk yüklemede kullanıcı eşler; eşleme hesaba kaydedilir.
+ * KSB-32: MT940 ve camt.052/053 standart dosyalarda eşleme adımı yoktur; özet
+ * (hesap, dönem, açılış/kapanış, uyarılar) gösterilip doğrudan aktarılır.
  */
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -29,6 +31,19 @@ interface SutunEslemesi {
   bakiye?: number | null;
 }
 
+interface StandartOzet {
+  bicim: "mt940" | "camt053" | "camt052";
+  hesap: string | null;
+  dovizCinsi: string | null;
+  satirSayisi: number;
+  ilkTarih: string | null;
+  sonTarih: string | null;
+  acilis: string | null;
+  kapanis: string | null;
+  uyarilar: string[];
+  ornekSatirlar: { tarih: string; tutar: string; aciklama: string; karsiUnvan: string | null; bakiye: string | null }[];
+}
+
 interface Onizleme {
   bankaHesapId: string;
   bankaHesapAdi: string;
@@ -37,7 +52,12 @@ interface Onizleme {
   toplamSatir: number;
   esleme: SutunEslemesi;
   eslemeKayitli: boolean;
+  /** MT940/camt dosyası; varsa eşleme adımı atlanır. */
+  standart?: StandartOzet;
 }
+
+const BICIM_ADI: Record<StandartOzet["bicim"], string> = { mt940: "MT940", camt053: "camt.053 gün sonu", camt052: "camt.052 gün içi" };
+const tutar = (v: string | null) => (v === null ? "—" : Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 /** Eşlemede seçilebilecek alanlar; tarih ve açıklama zorunlu. */
 const ESLEME_ALANLARI: { anahtar: keyof SutunEslemesi; baslik: string }[] = [
@@ -81,7 +101,7 @@ export function EkstreYukleme({
       govde.append("bankaHesapId", secilenHesap);
       const veri = await api<Onizleme>("/kasa-banka/ekstre/onizle", { method: "POST", body: govde });
       setOnizleme(veri);
-      setEsleme(veri.esleme);
+      setEsleme(veri.esleme ?? null);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Dosya okunamadı");
     } finally {
@@ -90,19 +110,20 @@ export function EkstreYukleme({
   }
 
   async function aktar() {
-    if (!dosya || !onizleme || !esleme) return;
+    if (!dosya || !onizleme || (!onizleme.standart && !esleme)) return;
     setHata("");
     setIslemde("yukle");
     try {
       const govde = new FormData();
       govde.append("dosya", dosya);
-      govde.append("veri", JSON.stringify({ bankaHesapId: onizleme.bankaHesapId, esleme, eslemeyiKaydet }));
-      const veri = await api<{ okunanSatir: number; yeniSatir: number; yinelenenSatir: number; atlananSatir: number }>("/kasa-banka/ekstre/yukle", { method: "POST", body: govde });
+      govde.append("veri", JSON.stringify(onizleme.standart ? { bankaHesapId: onizleme.bankaHesapId, eslemeyiKaydet: false } : { bankaHesapId: onizleme.bankaHesapId, esleme, eslemeyiKaydet }));
+      const veri = await api<{ okunanSatir: number; yeniSatir: number; yinelenenSatir: number; atlananSatir: number; uyarilar?: string[] }>("/kasa-banka/ekstre/yukle", { method: "POST", body: govde });
       onYuklendi(
         `${veri.okunanSatir} hareket okundu; ${veri.yeniSatir} yeni satır eklendi`
           + (veri.yinelenenSatir > 0 ? `, ${veri.yinelenenSatir} satır daha önce yüklenmişti (atlandı)` : "")
           + (veri.atlananSatir > 0 ? `, ${veri.atlananSatir} veri dışı satır atlandı` : "")
-          + ".",
+          + "."
+          + (veri.uyarilar?.length ? ` Uyarı: ${veri.uyarilar.join(" ")}` : ""),
         onizleme.bankaHesapId,
       );
     } catch (h) {
@@ -116,7 +137,7 @@ export function EkstreYukleme({
     <Card className="statement-upload stack">
       <div className="between">
         <div>
-          <span className="statement-upload__step">{onizleme ? "2 / 2 · Sütunları eşleyin" : "1 / 2 · Dosyayı seçin"}</span>
+          <span className="statement-upload__step">{!onizleme ? "1 / 2 · Dosyayı seçin" : onizleme.standart ? "2 / 2 · Kontrol edip aktarın" : "2 / 2 · Sütunları eşleyin"}</span>
           <h2>Ekstre dosyası yükle</h2>
         </div>
         <Button size="sm" onClick={onKapat} disabled={islemde !== null}>Kapat</Button>
@@ -127,8 +148,9 @@ export function EkstreYukleme({
         <>
           <p className="muted statement-upload__hint">
             İnternet şubesinden hesap hareketlerini <strong>Excel (.xlsx)</strong> ya da <strong>CSV</strong> olarak indirin. İlk
-            yüklemede hangi sütunun ne olduğunu siz eşlersiniz; eşleme hesaba kaydedilir ve sonraki yüklemelerde sorulmaz. Aynı
-            dosyayı ikinci kez yüklemek çift kayıt oluşturmaz.
+            yüklemede hangi sütunun ne olduğunu siz eşlersiniz; eşleme hesaba kaydedilir ve sonraki yüklemelerde sorulmaz.
+            Bankanız <strong>MT940</strong> ya da <strong>camt.053</strong> veriyorsa onu tercih edin: sütun eşlemesi gerekmez,
+            bakiye de dosyadan okunur. Aynı dosyayı ikinci kez yüklemek çift kayıt oluşturmaz.
           </p>
           <div className="treasury-form-grid">
             <Field label="Banka hesabı *">
@@ -137,14 +159,44 @@ export function EkstreYukleme({
                 {hesaplar.map((h) => <option key={h.id} value={h.id}>{h.ad} — {h.bankaAdi} ({h.dovizCinsi})</option>)}
               </Select>
             </Field>
-            <Field label="Ekstre dosyası (.xlsx, .csv) *">
-              <Input type="file" accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setDosya(e.target.files?.[0] ?? null)} />
+            <Field label="Ekstre dosyası (.xlsx, .csv, MT940, camt.053) *">
+              <Input type="file" accept=".xlsx,.csv,.txt,.sta,.mt940,.940,.xml,text/csv,application/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setDosya(e.target.files?.[0] ?? null)} />
             </Field>
           </div>
           <div className="row-tight">
             <Button variant="primary" onClick={() => void onizle()} disabled={!dosya || !secilenHesap || islemde !== null}>
               {islemde === "onizle" ? "Okunuyor…" : "Dosyayı oku"}
             </Button>
+          </div>
+        </>
+      ) : onizleme.standart ? (
+        <>
+          <div className="row-tight">
+            <Badge variant="info">{onizleme.bankaHesapAdi}</Badge>
+            <Badge variant="success">{BICIM_ADI[onizleme.standart.bicim]}</Badge>
+            <Badge variant="neutral">{onizleme.standart.satirSayisi} hareket</Badge>
+          </div>
+          <dl className="statement-upload__summary">
+            <div><dt>Dosyadaki hesap</dt><dd className="mono">{onizleme.standart.hesap ?? "—"} {onizleme.standart.dovizCinsi ?? ""}</dd></div>
+            <div><dt>Dönem</dt><dd>{onizleme.standart.ilkTarih ?? "—"} – {onizleme.standart.sonTarih ?? "—"}</dd></div>
+            <div><dt>Açılış bakiyesi</dt><dd className="num">{tutar(onizleme.standart.acilis)}</dd></div>
+            <div><dt>Kapanış bakiyesi</dt><dd className="num">{tutar(onizleme.standart.kapanis)}</dd></div>
+          </dl>
+          {onizleme.standart.uyarilar.map((u, i) => <Alert key={i} tone="warning">{u}</Alert>)}
+          <TableWrap>
+            <thead><tr><th>Tarih</th><th>Açıklama</th><th>Karşı taraf</th><th className="num">Tutar</th><th className="num">Bakiye</th></tr></thead>
+            <tbody>
+              {onizleme.standart.ornekSatirlar.map((s, i) => (
+                <tr key={i}><td>{s.tarih}</td><td>{s.aciklama}</td><td>{s.karsiUnvan ?? "—"}</td><td className="num">{tutar(s.tutar)}</td><td className="num">{tutar(s.bakiye)}</td></tr>
+              ))}
+            </tbody>
+          </TableWrap>
+          {onizleme.standart.satirSayisi > onizleme.standart.ornekSatirlar.length && <p className="muted">İlk {onizleme.standart.ornekSatirlar.length} hareket gösteriliyor.</p>}
+          <div className="row-tight">
+            <Button variant="primary" onClick={() => void aktar()} disabled={islemde !== null}>
+              {islemde === "yukle" ? "Aktarılıyor…" : `${onizleme.standart.satirSayisi} hareketi aktar`}
+            </Button>
+            <Button onClick={() => setOnizleme(null)} disabled={islemde !== null}>← Dosya seçimine dön</Button>
           </div>
         </>
       ) : (

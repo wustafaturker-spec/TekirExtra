@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
 import { EkstreYukleme, type BankaHesap } from "./ekstre-yukleme";
+import { TopluOnay } from "./ekstre-toplu";
 import { ESLESME_ADI, EslestirmePaneli, type EkstreSatiri, type PosHesabi } from "./ekstre-panel";
 
 type Suzgec = "beklemede" | "eslesti" | "yoksayildi" | "hepsi";
@@ -58,6 +59,7 @@ export default function EkstreSayfasi() {
   const [kurallar, setKurallar] = useState<KuralSatiri[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
+  const [topluAcik, setTopluAcik] = useState(false);
   const listeRef = useRef<HTMLDivElement>(null);
 
   const listeYukle = useCallback(async () => {
@@ -157,12 +159,26 @@ export default function EkstreSayfasi() {
         </div>
         <div>
           <Button onClick={() => void kurallariAc()}>Kurallar</Button>
+          <Button onClick={() => setTopluAcik(true)}>Kesin eşleşmeleri onayla</Button>
           <Button variant="primary" onClick={() => setYuklemeAcik(true)}>Ekstre yükle</Button>
         </div>
       </section>
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      {topluAcik && (
+        <TopluOnay
+          bankaHesapId={bankaFiltresi}
+          onKapat={() => setTopluAcik(false)}
+          onTamamlandi={(mesaj) => {
+            setTopluAcik(false);
+            setBasari(mesaj);
+            setHata("");
+            void Promise.all([listeYukle(), mutabakatYukle()]);
+          }}
+        />
+      )}
 
       {yuklemeAcik && (
         <EkstreYukleme

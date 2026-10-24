@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { paraBicimle } from "@tekirextra/shared";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 
@@ -148,10 +149,14 @@ export default function BankaBaglantilari() {
     if (!vomsis) return;
     setHata("");
     try {
-      const s = await api<{ yeniSatir: number; yinelenenSatir: number }>(`/kasa-banka/banka-baglantilari/${vomsis.id}/senkronize`, {
-        method: "POST",
-      });
+      const s = await api<{ yeniSatir: number; yinelenenSatir: number; bakiyeFarklari?: { bankaHesapId: string; fark: string; tarih: string }[] }>(
+        `/kasa-banka/banka-baglantilari/${vomsis.id}/senkronize`,
+        { method: "POST" },
+      );
       setBasari(`${s.yeniSatir} yeni Vomsis hareketi alındı; ${s.yinelenenSatir} tekrar atlandı.`);
+      // KSB-31: bankanın bildirdiği bakiye sistemle tutmuyorsa hemen söylenir.
+      const farklar = (s.bakiyeFarklari ?? []).map((b) => `${hesaplar.find((h) => h.id === b.bankaHesapId)?.ad ?? "Banka hesabı"}: ${paraBicimle(b.fark)} fark`);
+      if (farklar.length) setHata(`Banka bakiyesi sistemle tutmuyor (${farklar.join("; ")}). Ekstre ekranındaki mutabakattan farkın kaynağına bakın.`);
       await yukle();
     } catch (x) {
       setHata(x instanceof Error ? x.message : "Vomsis hareketleri alınamadı");

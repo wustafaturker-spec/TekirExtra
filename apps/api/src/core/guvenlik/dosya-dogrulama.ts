@@ -26,11 +26,12 @@ export async function excelDosyasiniDogrula(dosya: YuklemeDosyasi): Promise<void
   await yuklemeDenetle(dosya, "excel");
 }
 
-/** KSB-06: banka ekstresi .csv/.txt ya da .xlsx; eski .xls desteklenmez. */
+/** KSB-06/KSB-32: banka ekstresi .csv/.txt/.xlsx, MT940 (.sta/.mt940/.940) ya da camt.052/053 (.xml); eski .xls desteklenmez. */
+const EKSTRE_UZANTILARI = [".xlsx", ".csv", ".txt", ".sta", ".mt940", ".940", ".xml"];
 export async function ekstreDosyasiniDogrula(dosya: YuklemeDosyasi): Promise<void> {
   const uzanti = dosya.originalname.toLocaleLowerCase("tr-TR");
-  if (!uzanti.endsWith(".xlsx") && !uzanti.endsWith(".csv") && !uzanti.endsWith(".txt")) {
-    throw new BadRequestException("Banka ekstresi .csv, .txt ya da .xlsx biçiminde yüklenebilir");
+  if (!EKSTRE_UZANTILARI.some((u) => uzanti.endsWith(u))) {
+    throw new BadRequestException("Banka ekstresi .csv, .txt, .xlsx, MT940 (.sta, .mt940, .940) ya da camt.053 (.xml) biçiminde yüklenebilir");
   }
   await yuklemeDenetle(dosya, "ekstre");
 }

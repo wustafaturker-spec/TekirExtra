@@ -155,6 +155,95 @@ export class EkstreEslestirmeService {
     });
   }
 
+  // ─── TOPLU ONAY (KSB-33) ───────────────────────────────────────────────────
+
+  /**
+   * Satırın belirsizliği olmayan eşleşmesi; yoksa null. Yalnız şunlar kesindir:
+   * - ödeme talimatı: aynı tutarda, numarası açıklamada geçen TEK talimat;
+   * - kural: hedefi tanımlı masraf / gelir / virman kuralı;
+   * - cari: kural, IBAN, VKN ya da fatura numarasıyla bulunmuş cari ve kalan
+   *   tutarı satırla birebir aynı TEK açık fatura.
+   * Ad benzerliği, yapay zekâ ve yalnız tutar eşleşmesi kesin sayılmaz; o
+   * satırlar tek tek onaylanır.
+   */
+  async kesinOneri(id: string): Promise<{ girdi: EslestirGirdisi; ozet: string } | null> {
+    const { tenantId } = aktifBaglam();
+    const satir = await this.satirGetir(tenantId, id);
+    if (satir.durum !== "beklemede") return null;
+    const giris = !satir.tutar.isNegative();
+    const mutlak = satir.tutar.abs();
+    const o = await this.temelOneriler(tenantId, satir, giris, mutlak, satir.bankaHesap.dovizCinsi);
+
+    const anilanlar = o.odemeTalimatlari.filter((t) => t.aciklamadaGeciyor);
+    if (anilanlar.length === 1) {
+      const t = anilanlar[0];
+      return { girdi: { tur: "odeme_talimati", talimatId: t.id }, ozet: `${t.no} ödeme talimatı (${t.aliciUnvan})` };
+    }
+
+    const k = o.kural;
+    if (k?.eslesmeTuru === "masraf" && k.masrafKategoriId && !giris) {
+      const kategori = o.masrafKategorileri.find((m) => m.id === k.masrafKategoriId);
+      if (kategori) return { girdi: { tur: "masraf", kategoriId: kategori.id, kdvOrani: kategori.varsayilanKdvOrani ? String(Number(kategori.varsayilanKdvOrani)) : "0", kuralId: k.id }, ozet: `Masraf: ${kategori.ad} (kural "${k.anahtar}")` };
+    }
+    if (k?.eslesmeTuru === "gelir" && k.gelirKategoriId && giris) {
+      const kategori = o.gelirKategorileri.find((g) => g.id === k.gelirKategoriId);
+      if (kategori) return { girdi: { tur: "gelir", kategoriId: kategori.id, kuralId: k.id }, ozet: `Gelir: ${kategori.ad} (kural "${k.anahtar}")` };
+    }
+    if (k?.eslesmeTuru === "virman" && (k.hedefKasaId || k.hedefBankaHesapId)) {
+      const hedef = o.virmanHesaplari.find((h) => h.id === (k.hedefKasaId ?? k.hedefBankaHesapId));
+      if (hedef) return { girdi: { tur: "virman", karsiKasaId: k.hedefKasaId ?? null, karsiBankaHesapId: k.hedefBankaHesapId ?? null, kuralId: k.id }, ozet: `Virman: ${hedef.ad} (kural "${k.anahtar}")` };
+    }
+
+    const kesinKaynak: CariEslesmeKaynagi[] = ["kural", "iban", "vkn", "fatura_no"];
+    const tamFaturalar = o.faturalar.filter((f) => f.tamEslesme);
+    if (o.onerilenCari && kesinKaynak.includes(o.cariEslesmeKaynagi) && tamFaturalar.length === 1) {
+      const f = tamFaturalar[0];
+      return {
+        girdi: { tur: "cari", cariId: o.onerilenCari.id, dagitim: [{ faturaId: f.id, tutar: mutlak.toFixed(2) }], ...(o.cariEslesmeKaynagi === "kural" && k ? { kuralId: k.id } : {}) },
+        ozet: `${o.onerilenCari.unvan}, ${f.no ?? "fatura"} kapanır`,
+      };
+    }
+    return null;
+  }
+
+  /** Bekleyen satırlardan kesin önerisi olanlar; toplu onay ekranı için. */
+  async kesinOneriler(bankaHesapId?: string) {
+    const { tenantId } = aktifBaglam();
+    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaEkstreSatir.findMany({
+      where: { durum: "beklemede", ...(bankaHesapId ? { bankaHesapId } : {}) },
+      orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
+      take: 200,
+      select: { id: true, tarih: true, tutar: true, aciklama: true, bankaHesap: { select: { ad: true, dovizCinsi: true } } },
+    }));
+    const sonuc = [];
+    for (const s of satirlar) {
+      const oneri = await this.kesinOneri(s.id);
+      if (oneri) sonuc.push({ satirId: s.id, tarih: s.tarih.toISOString().slice(0, 10), tutar: s.tutar.toFixed(2), dovizCinsi: s.bankaHesap.dovizCinsi, bankaHesap: s.bankaHesap.ad, aciklama: s.aciklama, tur: oneri.girdi.tur, ozet: oneri.ozet });
+    }
+    return sonuc;
+  }
+
+  /**
+   * Seçilen satırları kesin önerileriyle eşleştirir. Öneri sunucuda yeniden
+   * hesaplanır (istemcinin gönderdiği eşleşmeye güvenilmez); arada değişen ya
+   * da artık kesin olmayan satır atlanır. Her satır kendi işlemindedir; biri
+   * başarısız olursa diğerleri etkilenmez.
+   */
+  async topluEslestir(satirIdleri: string[]) {
+    const sonuclar: { satirId: string; durum: "eslesti" | "atlandi" | "hata"; mesaj: string }[] = [];
+    for (const satirId of satirIdleri) {
+      try {
+        const oneri = await this.kesinOneri(satirId);
+        if (!oneri) { sonuclar.push({ satirId, durum: "atlandi", mesaj: "Satırın artık kesin bir eşleşmesi yok; tek tek eşleştirin" }); continue; }
+        await this.eslestir(satirId, oneri.girdi);
+        sonuclar.push({ satirId, durum: "eslesti", mesaj: oneri.ozet });
+      } catch (hata) {
+        sonuclar.push({ satirId, durum: "hata", mesaj: hata instanceof Error ? hata.message : "Eşleştirilemedi" });
+      }
+    }
+    return { eslesen: sonuclar.filter((s) => s.durum === "eslesti").length, atlanan: sonuclar.filter((s) => s.durum === "atlandi").length, hatali: sonuclar.filter((s) => s.durum === "hata").length, sonuclar };
+  }
+
   // ─── EŞLEŞTİRME ────────────────────────────────────────────────────────────
 
   async eslestir(id: string, girdi: EslestirGirdisi) {

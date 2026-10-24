@@ -17,8 +17,10 @@ import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { kuralBul } from "./ekstre-kural";
 import { mutabakatHesapla } from "./ekstre-mutabakat";
+import { StandartEkstreHatasi, standartEkstreOku, type StandartEkstre } from "./ekstre-standart";
 import {
   EkstreOkumaHatasi,
+  type EkstreSatiri,
   type SutunEslemesi,
   ekstreSatirlariOku,
   ekstreDosyasiOku,
@@ -59,6 +61,28 @@ export class EkstreService {
 
     const hesap = await this.hesapGetir(tenantId, bankaHesapId);
 
+    // KSB-32: MT940/camt dosyasında sütun eşlemesi sorulmaz; özet ve ilk satırlar döner.
+    const standart = this.standartOku(dosya, hesap);
+    if (standart) {
+      const tarihler = standart.satirlar.map((s) => s.tarih.toISOString().slice(0, 10)).sort();
+      return {
+        bankaHesapId,
+        bankaHesapAdi: hesap.ad,
+        standart: {
+          bicim: standart.bicim,
+          hesap: standart.hesaplar[0]?.hesap ?? null,
+          dovizCinsi: standart.hesaplar[0]?.dovizCinsi ?? null,
+          satirSayisi: standart.satirlar.length,
+          ilkTarih: tarihler[0] ?? null,
+          sonTarih: tarihler.at(-1) ?? null,
+          acilis: standart.acilis?.toFixed(2) ?? null,
+          kapanis: standart.kapanis?.toFixed(2) ?? null,
+          uyarilar: standart.uyarilar,
+          ornekSatirlar: standart.satirlar.slice(0, 5).map((s) => ({ tarih: s.tarih.toISOString().slice(0, 10), tutar: s.tutar.toFixed(2), aciklama: s.aciklama, karsiUnvan: s.karsiUnvan ?? null, bakiye: s.bakiye?.toFixed(2) ?? null })),
+        },
+      };
+    }
+
     let tablo: string[][];
     try {
       tablo = await ekstreDosyasiOku(dosya);
@@ -92,22 +116,31 @@ export class EkstreService {
     bankaHesapId: string,
     dosya: Buffer,
     dosyaAdi: string,
-    esleme: SutunEslemesi,
+    esleme: SutunEslemesi | undefined,
     eslemeyiKaydet: boolean,
   ) {
     const { tenantId } = aktifBaglam();
-    await this.hesapGetir(tenantId, bankaHesapId);
+    const hesap = await this.hesapGetir(tenantId, bankaHesapId);
 
-    let tablo: string[][];
-    try {
-      tablo = await ekstreDosyasiOku(dosya);
-    } catch (hata) {
-      throw new BadRequestException(
-        hata instanceof EkstreOkumaHatasi ? hata.message : "Dosya okunamadı",
-      );
+    const standart = this.standartOku(dosya, hesap);
+    let satirlar: EkstreSatiri[];
+    let atlanan = 0;
+    if (standart) {
+      satirlar = standart.satirlar;
+      // Sütun eşlemesi standart dosyaya ait değildir; hesaba yazılmaz.
+      eslemeyiKaydet = false;
+    } else {
+      if (!esleme) throw new BadRequestException("Sütun eşlemesi gerekli");
+      let tablo: string[][];
+      try {
+        tablo = await ekstreDosyasiOku(dosya);
+      } catch (hata) {
+        throw new BadRequestException(
+          hata instanceof EkstreOkumaHatasi ? hata.message : "Dosya okunamadı",
+        );
+      }
+      ({ satirlar, atlanan } = ekstreSatirlariOku(tablo, esleme));
     }
-
-    const { satirlar, atlanan } = ekstreSatirlariOku(tablo, esleme);
     if (satirlar.length === 0) {
       throw new BadRequestException(
         "Dosyadan hiç hareket okunamadı. Sütun eşlemesini (özellikle tarih ve tutar) kontrol edin.",
@@ -166,6 +199,7 @@ export class EkstreService {
         yinelenenSatir: satirlar.length - yeniler.length,
         /** Tarihi/tutarı çözülemeyip atlanan satırlar (başlık, toplam vb.). */
         atlananSatir: atlanan,
+        ...(standart ? { bicim: standart.bicim, uyarilar: standart.uyarilar } : {}),
       };
     });
   }
@@ -260,7 +294,55 @@ export class EkstreService {
     };
   }
 
+  /**
+   * KSB-31: bankanın bildirdiği son gün sonu bakiyesi sistemle tutuyor mu?
+   * Bekleyen ve yok sayılan satırlarla açıklanan fark sayılmaz; kalan fark
+   * eksik ya da mükerrer hareket demektir. Bakiye bilgisi gelmemişse null.
+   */
+  async bakiyeDurumu(tenantId: string, bankaHesapId: string) {
+    const [satirlar, hareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.bankaEkstreSatir.findMany({ where: { bankaHesapId }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
+      tx.kasaBankaHareket.findMany({ where: { bankaHesapId }, select: { tarih: true, tip: true, tutar: true } }),
+    ]));
+    const sonuc = mutabakatHesapla(satirlar, hareketler);
+    if (!sonuc.son) return null;
+    return {
+      tarih: sonuc.son.tarih,
+      banka: sonuc.son.banka,
+      sistem: sonuc.son.sistem,
+      aciklanmayanFark: sonuc.aciklanmayanFark,
+      tutarli: D(sonuc.aciklanmayanFark).isZero(),
+      farkBaslangici: sonuc.farkBaslangici,
+      acilisBakiyesiEksikOlabilir: sonuc.acilisBakiyesiEksikOlabilir,
+    };
+  }
+
   // ─── YARDIMCILAR ───────────────────────────────────────────────────────────
+
+  /**
+   * KSB-32: MT940/camt dosyasını okur; tablo dosyasıysa null. Dosyadaki hesap
+   * seçilen hesaba ait olmalı (IBAN ve döviz): yanlış hesabın dosyası yanlış
+   * hesaba yazılıp bakiyeyi bozmasın.
+   */
+  private standartOku(dosya: Buffer, hesap: { ad: string; iban: string | null; dovizCinsi: string }): StandartEkstre | null {
+    let standart: StandartEkstre | null;
+    try {
+      standart = standartEkstreOku(dosya);
+    } catch (hata) {
+      throw new BadRequestException(hata instanceof StandartEkstreHatasi ? hata.message : "Ekstre dosyası okunamadı");
+    }
+    if (!standart) return null;
+    if (standart.hesaplar.length > 1) throw new BadRequestException(`Dosyada ${standart.hesaplar.length} ayrı hesabın ekstresi var (${standart.hesaplar.map((h) => h.hesap).join(", ")}); her hesabı ayrı yükleyin`);
+    const dosyaHesabi = standart.hesaplar[0];
+    const iban = (v: string | null | undefined) => (v ?? "").replace(/\s/g, "").toUpperCase();
+    if (dosyaHesabi?.hesap.startsWith("TR") && iban(hesap.iban) && iban(dosyaHesabi.hesap) !== iban(hesap.iban)) {
+      throw new BadRequestException(`Dosya ${dosyaHesabi.hesap} hesabına ait; seçilen hesap ${hesap.ad} (${hesap.iban})`);
+    }
+    if (dosyaHesabi?.dovizCinsi && dosyaHesabi.dovizCinsi !== hesap.dovizCinsi) {
+      throw new BadRequestException(`Dosyanın dövizi ${dosyaHesabi.dovizCinsi}, seçilen hesabın ${hesap.dovizCinsi}`);
+    }
+    return standart;
+  }
 
   private async hesapGetir(tenantId: string, bankaHesapId: string) {
     const hesap = await this.prisma.tenantIslem(tenantId, (tx) =>

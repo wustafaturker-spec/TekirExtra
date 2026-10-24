@@ -171,7 +171,8 @@ export const ekstreSutunEslemesiSemasi = z
 
 export const ekstreYukleSemasi = z.object({
   bankaHesapId: z.string().uuid(),
-  esleme: ekstreSutunEslemesiSemasi,
+  /** MT940/camt dosyasında gerekmez (sütunlar standarttır); tablo dosyasında zorunludur. */
+  esleme: ekstreSutunEslemesiSemasi.optional(),
   /** Eşleme banka hesabına kaydedilsin mi (sonraki yüklemede sorulmaz). */
   eslemeyiKaydet: z.boolean().default(true),
 });

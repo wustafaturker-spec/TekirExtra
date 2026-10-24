@@ -2,12 +2,13 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
+import { CEKILEN_SAGLAYICILAR } from "./banka-saglayici-kaydi";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /**
- * KSB-15: worker'da 5 dakikada bir, otomatik çekimi açık Vomsis
+ * KSB-15: worker'da 5 dakikada bir, otomatik çekimi açık API'li banka
  * bağlantılarından aralığı dolanları çeker. Aralık bağlantı başına
  * (`otomatikSenkronDk`); hatalar bağlantıda saklanır, bildirimi Bildirim
  * Merkezi taraması üretir.
@@ -37,7 +38,7 @@ export class BankaSenkronZamanlayiciService implements OnModuleInit, OnModuleDes
     const yonetim = new PrismaClient({ datasourceUrl: yonetimUrl });
     try {
       const kayitlar = await yonetim.baglanti.findMany({
-        where: { aile: "banka", saglayici: "vomsis", durum: "aktif", otomatikSenkronDk: { gt: 0 }, otomatikDurduNedeni: null },
+        where: { aile: "banka", saglayici: { in: CEKILEN_SAGLAYICILAR() }, durum: "aktif", otomatikSenkronDk: { gt: 0 }, otomatikDurduNedeni: null },
         select: { tenantId: true },
         distinct: ["tenantId"],
       });

@@ -10,6 +10,8 @@ import { VARSAYILAN_ONAY_ESIGI, onaylayabilecekRoller } from "../satin-alma/sati
 import { RaporService } from "../rapor/rapor.service";
 import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
 import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
+import { CEKILEN_SAGLAYICILAR } from "../kasa-banka/banka-saglayici-kaydi";
+import { mutabakatHesapla } from "../kasa-banka/ekstre-mutabakat";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
 import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
@@ -76,7 +78,8 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   cek_senet: ["duzeltme:", "cek_senet:"],
   stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
   donem: ["duzeltme:", "donem:"],
-  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:"],
+  // KSB-31: fark kapanınca bakiye uyarısı da kapanır.
+  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:", "banka-bakiye-farki:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
   personel: ["personel:"],
   // MVZ-07: duyurular ("mevzuat:") taramada kapatılmaz; MVZ-17 yayın eksiği uyarısı ("mevzuat-eksik:") yayınlanınca kapanır.
@@ -542,7 +545,7 @@ export class BildirimUreticiService {
     const { tenantId } = aktifBaglam();
     const [baglantilar, bekleyenler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.baglanti.findMany({
-        where: { aile: "banka", saglayici: "vomsis", durum: "aktif", OR: [{ ardisikHata: { gte: 3 } }, { otomatikDurduNedeni: { not: null } }] },
+        where: { aile: "banka", saglayici: { in: CEKILEN_SAGLAYICILAR() }, durum: "aktif", OR: [{ ardisikHata: { gte: 3 } }, { otomatikDurduNedeni: { not: null } }] },
         select: { id: true, ardisikHata: true, sonSenkronHatasi: true, otomatikDurduNedeni: true },
       }),
       tx.bankaEkstreSatir.groupBy({ by: ["bankaHesapId"], where: { durum: "beklemede" }, _count: { _all: true } }),
@@ -550,13 +553,15 @@ export class BildirimUreticiService {
     const hesapAdlari = bekleyenler.length
       ? new Map((await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findMany({ where: { id: { in: bekleyenler.map((b) => b.bankaHesapId) } }, select: { id: true, ad: true } }))).map((h) => [h.id, h.ad]))
       : new Map<string, string>();
+    const bakiyeFarklari = await this.bankaBakiyeFarklari();
     return [
+      ...bakiyeFarklari,
       ...baglantilar.map((b): BildirimGirdisi => ({
         tur: "entegrasyon",
         onem: b.otomatikDurduNedeni ? "kritik" : "uyari",
         baslik: b.otomatikDurduNedeni ? "Banka hareketlerinin otomatik çekimi durdu" : "Banka hareketleri çekilemiyor",
         aciklama: b.otomatikDurduNedeni
-          ? `${b.otomatikDurduNedeni}. Vomsis bilgilerini düzeltip "Hareketleri çek" ile deneyin; başarılı çekimde otomatik çekim yeniden başlar.`
+          ? `${b.otomatikDurduNedeni}. Bağlantı bilgilerini düzeltip "Hareketleri çek" ile deneyin; başarılı çekimde otomatik çekim yeniden başlar.`
           : `Son ${b.ardisikHata} çekim başarısız oldu: ${b.sonSenkronHatasi ?? "bilinmeyen hata"}. Ekstre satırları güncel olmayabilir.`,
         birlesimAnahtari: `banka-senkron:${b.id}`,
         kaynakTur: "baglanti",
@@ -576,6 +581,50 @@ export class BildirimUreticiService {
         roller: HEDEF_ROLLER.entegrasyon,
       })),
     ];
+  }
+
+  /**
+   * KSB-31: bankanın bildirdiği bakiye (API, webhook ya da MT940/CAMT.053
+   * dosyası) sistemdeki hesap bakiyesini tutmuyorsa uyarı. Bekleyen ve yok
+   * sayılan satırlarla açıklanan fark sayılmaz; kalan fark eksik ya da
+   * mükerrer harekettir. Yalnız son 35 günde bakiyeli satır gelen hesaplar
+   * taranır; fark kapanınca bildirim kendiliğinden kapanır.
+   */
+  private async bankaBakiyeFarklari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const sinir = new Date(Date.now() - 35 * 86_400_000);
+    const hesaplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findMany({
+      where: { ekstreSatirlari: { some: { bakiye: { not: null }, tarih: { gte: sinir } } } },
+      select: { id: true, ad: true, dovizCinsi: true },
+    }));
+    const girdiler: BildirimGirdisi[] = [];
+    for (const hesap of hesaplar) {
+      // Bir hesabın hesabı başarısız olursa diğer bildirimler (ve tarama) sürer.
+      try {
+      const [satirlar, hareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+        tx.bankaEkstreSatir.findMany({ where: { bankaHesapId: hesap.id }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
+        tx.kasaBankaHareket.findMany({ where: { bankaHesapId: hesap.id }, select: { tarih: true, tip: true, tutar: true } }),
+      ]));
+      const m = mutabakatHesapla(satirlar, hareketler);
+      if (!m.son || Number(m.aciklanmayanFark) === 0) continue;
+      const tutar = (v: string) => Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      girdiler.push({
+        tur: "entegrasyon",
+        onem: "uyari",
+        baslik: "Banka bakiyesi sistemle tutmuyor",
+        aciklama: `${hesap.ad}: ${m.son.tarih} günü banka bakiyesi ${tutar(m.son.banka)} ${hesap.dovizCinsi}, sistem ${tutar(m.son.sistem)} ${hesap.dovizCinsi}; bekleyen satırlarla açıklanamayan fark ${tutar(m.aciklanmayanFark)} ${hesap.dovizCinsi}${m.farkBaslangici ? ` (${m.farkBaslangici} gününden beri)` : ""}.`
+          + (m.acilisBakiyesiEksikOlabilir ? " Fark ilk günden beri sabit: hesabın açılış bakiyesi eksik olabilir." : " Eksik ya da mükerrer hareket olabilir; mutabakat ekranında farkın başladığı güne bakın."),
+        birlesimAnahtari: `banka-bakiye-farki:${hesap.id}`,
+        kaynakTur: "banka_hesap",
+        kaynakRef: hesap.id,
+        hedefYol: `/panel/kasa-banka/ekstre?bankaHesapId=${hesap.id}`,
+        roller: HEDEF_ROLLER.entegrasyon,
+      });
+      } catch {
+        continue;
+      }
+    }
+    return girdiler;
   }
 
   private async vadeOzetleri(): Promise<BildirimGirdisi[]> {

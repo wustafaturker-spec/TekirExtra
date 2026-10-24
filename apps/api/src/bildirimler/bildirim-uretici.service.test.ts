@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BildirimUreticiService } from "./bildirim-uretici.service";
 import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
@@ -27,6 +28,9 @@ interface TxSecenekleri {
   /** EBLG-63: beyannamesi gelmemiş ihraç kayıtlı faturaların tarihleri. */
   ihracKayitlilar?: { tarih: Date; tip: string }[];
   kritikStok?: number;
+  /** KSB-31: bakiye mutabakatı için ekstre satırları ve sistem hareketleri. */
+  ekstreSatirlari?: unknown[];
+  bankaHareketleri?: unknown[];
   taslakSayim?: number;
   donemler?: unknown[];
   yukseltmeAdaylari?: { id: string }[];
@@ -72,8 +76,9 @@ function servisKur(secenek: TxSecenekleri = {}) {
       ? (secenek.ebelgeAyarlari ?? []).map((ayar, i) => ({ id: `e${i + 1}`, sifreliConfig: JSON.stringify(ayar) }))
       : secenek.bankaBaglantilari ?? [])) },
     tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801" }) },
-    bankaEkstreSatir: { groupBy: vi.fn().mockResolvedValue(secenek.bekleyenEkstre ?? []) },
-    bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "h1", ad: "Ziraat TL" }]) },
+    bankaEkstreSatir: { groupBy: vi.fn().mockResolvedValue(secenek.bekleyenEkstre ?? []), findMany: vi.fn().mockResolvedValue(secenek.ekstreSatirlari ?? []) },
+    kasaBankaHareket: { findMany: vi.fn().mockResolvedValue(secenek.bankaHareketleri ?? []) },
+    bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "h1", ad: "Ziraat TL", dovizCinsi: "TRY" }]) },
     bankaKrediTaksiti: { findMany: vi.fn().mockResolvedValue([]) },
     cariTeminat: { findMany: vi.fn().mockResolvedValue([]) },
     cariMutabakat: { findMany: vi.fn().mockResolvedValue([]) },
@@ -569,5 +574,35 @@ describe("SGK bildirge süreleri (PRS-27)", () => {
     const sorgular = tx.personelIstihdamDonemi.findMany.mock.calls.map(([a]: [{ where: Record<string, { gte?: Date }> }]) => a.where);
     expect(sorgular[0].baslangicTarihi.gte?.toISOString().slice(0, 10)).toBe("2026-09-09");
     expect(sorgular[1].bitisTarihi.gte?.toISOString().slice(0, 10)).toBe("2026-08-29");
+  });
+});
+
+describe("banka bakiye farkı bildirimi (KSB-31)", () => {
+  const D = (v: number) => new Prisma.Decimal(v);
+  it("banka bakiyesi sistemle tutmuyorsa hesap başına uyarır; bekleyen satırla açıklanan farkı saymaz", async () => {
+    const { servis, bildirimler } = servisKur({
+      // Banka: 1.000 giriş + 500 giriş (bekliyor) → gün sonu 1.500. Sistem: yalnız 800 tahsilat.
+      ekstreSatirlari: [
+        { tarih: new Date("2026-10-23T00:00:00Z"), tutar: D(1000), bakiye: D(1000), durum: "eslesti" },
+        { tarih: new Date("2026-10-23T00:00:00Z"), tutar: D(500), bakiye: D(1500), durum: "beklemede" },
+      ],
+      bankaHareketleri: [{ tarih: new Date("2026-10-23T00:00:00Z"), tip: "tahsilat", tutar: D(800) }],
+    });
+    await servis.tara();
+    const uyari = bildirimler.uret.mock.calls.map(([g]) => g).find((g) => g.birlesimAnahtari === "banka-bakiye-farki:h1");
+    expect(uyari).toMatchObject({ tur: "entegrasyon", onem: "uyari", baslik: "Banka bakiyesi sistemle tutmuyor" });
+    // Fark 700; 500'ü bekleyen satırla açıklanır, açıklanamayan 200.
+    expect(uyari.aciklama).toContain("açıklanamayan fark 200,00 TRY");
+    const entegrasyon = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "entegrasyon")!;
+    expect(entegrasyon[2]).toEqual(expect.arrayContaining(["banka-bakiye-farki:"]));
+  });
+
+  it("bakiye tutuyorsa (ya da fark bekleyen satırlarla açıklanıyorsa) uyarmaz", async () => {
+    const { servis, bildirimler } = servisKur({
+      ekstreSatirlari: [{ tarih: new Date("2026-10-23T00:00:00Z"), tutar: D(1000), bakiye: D(1000), durum: "beklemede" }],
+      bankaHareketleri: [],
+    });
+    await servis.tara();
+    expect(bildirimler.uret.mock.calls.some(([g]) => g.birlesimAnahtari.startsWith("banka-bakiye-farki:"))).toBe(false);
   });
 });

@@ -79,6 +79,10 @@ export class KasaBankaController {
   @Get("banka-baglantilari/:id/vomsis-hesaplari")
   vomsisHesaplari(@Param("id") id: string) { return this.bankaEntegrasyon.vomsisHesaplari(id); }
 
+  /** KSB-30: herhangi bir çekilen sağlayıcının hesapları (id, ad, iban, dovizCinsi, bankaAdi). */
+  @Get("banka-baglantilari/:id/saglayici-hesaplari")
+  saglayiciHesaplari(@Param("id") id: string) { return this.bankaEntegrasyon.saglayiciHesaplari(id); }
+
   @Post("banka-baglantilari/:id/senkronize") @Roller("muhasebe")
   bankaSenkronize(@Param("id") id: string) { return this.bankaEntegrasyon.senkronize(id); }
 
@@ -562,6 +566,22 @@ export class KasaBankaController {
   @Get("ekstre/satirlar/:id/oneriler")
   ekstreOneriler(@Param("id", ParseUUIDPipe) id: string) {
     return this.ekstreEslestirme.oneriler(id);
+  }
+
+  /** KSB-33: bekleyen satırlardan belirsizliği olmayan önerisi olanlar. */
+  @Get("ekstre/kesin-oneriler")
+  @Roller("muhasebe")
+  ekstreKesinOneriler(@Query("bankaHesapId") bankaHesapId?: string) {
+    return this.ekstreEslestirme.kesinOneriler(bankaHesapId && z.uuid().safeParse(bankaHesapId).success ? bankaHesapId : undefined);
+  }
+
+  /** KSB-33: seçilen satırları kesin önerileriyle eşleştirir (öneri sunucuda yeniden hesaplanır). */
+  @Post("ekstre/toplu-eslestir")
+  @Roller("muhasebe")
+  ekstreTopluEslestir(@Body() govde: unknown) {
+    const s = z.object({ satirIdleri: z.array(z.uuid()).min(1).max(200) }).safeParse(govde);
+    if (!s.success) throw new BadRequestException(s.error.issues.map((i) => i.message).join("; "));
+    return this.ekstreEslestirme.topluEslestir([...new Set(s.data.satirIdleri)]);
   }
 
   @Post("ekstre/satirlar/:id/eslestir")

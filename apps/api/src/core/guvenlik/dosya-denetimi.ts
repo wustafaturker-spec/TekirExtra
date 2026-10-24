@@ -31,7 +31,7 @@ export const DOSYA_PROFILLERI = {
   /** Excel içe aktarma (cari, stok, puantaj). */
   excel: ["xlsx"],
   /** Banka ekstresi. */
-  ekstre: ["metin", "xlsx"],
+  ekstre: ["metin", "xlsx", "xml"],
   /** AI-79: asistan sohbetine eklenen fiş/fatura görseli, PDF ya da UBL XML. */
   sohbet: ["pdf", "png", "jpeg", "webp", "xml"],
 } as const satisfies Record<string, readonly DosyaTuru[]>;
@@ -47,7 +47,8 @@ const MIME: Record<DosyaTuru, string> = {
 const UZANTILAR: Record<DosyaTuru, string[]> = {
   pdf: ["pdf"], png: ["png"], jpeg: ["jpg", "jpeg"], gif: ["gif"], webp: ["webp"], svg: ["svg"],
   xlsx: ["xlsx"], docx: ["docx"], pptx: ["pptx"], ofis_eski: ["xls", "doc", "ppt"],
-  metin: ["txt", "csv"], xml: ["xml"],
+  // KSB-32: MT940 dosyaları bankaya göre .sta, .mt940 ya da .940 uzantılı düz metindir.
+  metin: ["txt", "csv", "sta", "mt940", "940"], xml: ["xml"],
 };
 const ESKI_OFIS_MIME: Record<string, string> = { xls: "application/vnd.ms-excel", doc: "application/msword", ppt: "application/vnd.ms-powerpoint" };
 const TUR_ADI: Record<DosyaTuru, string> = {
