@@ -1889,3 +1889,33 @@ test("oturumlarım bu cihazı işaretler, diğerlerini kapatır (yönetim P2-4)"
   await expect(page.getByText("1 oturum kapatıldı; o cihazlar hemen çıkış yapar.")).toBeVisible();
   await expect(liste.getByText("Safari · iOS")).toHaveCount(0);
 });
+
+test("yeni kullanıcı varsayılan olarak davetle açılır, parola sorulmaz (yönetim P2-3)", async ({ page }) => {
+  let govde: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/kullanicilar**", async (route) => {
+    if (route.request().method() === "POST") {
+      govde = route.request().postDataJSON();
+      await route.fulfill({ json: { id: "u9", davet: { gonderildi: true, mesaj: "yeni@example.com adresine davet gönderildi; bağlantı 7 gün geçerli." } } });
+      return;
+    }
+    await route.fulfill({ json: [] });
+  });
+  await page.goto("/panel/ayarlar/kullanicilar");
+  await page.getByRole("button", { name: /Yeni Kullanıcı/ }).click();
+  await page.getByLabel("Ad Soyad *").fill("Yeni Kişi");
+  await page.getByLabel("E-posta *").fill("yeni@example.com");
+  await expect(page.getByLabel(/Parola \*/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Kullanıcı Oluştur" }).click();
+  await expect(page.getByText(/davet gönderildi; bağlantı 7 gün geçerli/)).toBeVisible();
+  expect(govde).toMatchObject({ eposta: "yeni@example.com", davet: true });
+  expect(govde).not.toHaveProperty("parola");
+});
+
+test("muhasebe banka hareketini ekstre ekranından çeker; bakiye farkı uyarı olarak görünür (yönetim P2-1)", async ({ page }) => {
+  await page.route("**/api/v1/kasa-banka/banka-baglantilari/senkron-durumu", (route) => route.fulfill({ json: [{ id: "b1", saglayici: "vomsis", durum: "aktif", sonSenkronTarihi: null }] }));
+  await page.route("**/api/v1/kasa-banka/banka-baglantilari/b1/senkronize", (route) => route.fulfill({ json: { yeniSatir: 3, yinelenenSatir: 1, bakiyeFarklari: [{ bankaHesapId: "h1", fark: "150.00" }] } }));
+  await page.goto("/panel/kasa-banka/ekstre");
+  await page.getByRole("button", { name: "Bankadan çek" }).click();
+  await expect(page.getByText("3 yeni banka hareketi alındı; 1 tekrar atlandı.")).toBeVisible();
+  await expect(page.getByText(/Banka bakiyesi sistemle tutmuyor/)).toBeVisible();
+});

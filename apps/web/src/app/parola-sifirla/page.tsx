@@ -12,6 +12,8 @@ import { Alert, Button, Field, Input } from "@/components/ui";
  */
 export default function ParolaSifirlaSayfasi() {
   const [token, setToken] = useState<string | null>(null);
+  // Yönetim P2-3: davet bağlantısı aynı sayfayı açar, yalnız metin farklıdır.
+  const [davet, setDavet] = useState(false);
   const [hazir, setHazir] = useState(false);
   const [eposta, setEposta] = useState("");
   const [parola, setParola] = useState("");
@@ -22,9 +24,11 @@ export default function ParolaSifirlaSayfasi() {
   const [isleniyor, setIsleniyor] = useState(false);
 
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("token");
+    const p = new URLSearchParams(window.location.search);
+    const t = p.get("token");
     if (t) {
       setToken(t);
+      setDavet(p.get("davet") === "1");
       window.history.replaceState(null, "", "/parola-sifirla");
     }
     setHazir(true);
@@ -69,7 +73,7 @@ export default function ParolaSifirlaSayfasi() {
     <main className="auth-wrap">
       <div className="auth-card card card--pad">
         <div className="auth-brand"><span className="sidebar__brand-mark">TE</span>Tekir<b>Extra</b></div>
-        <p className="auth-title">{token ? "Yeni parola belirleyin" : "Parolanızı mı unuttunuz?"}</p>
+        <p className="auth-title">{token ? (davet ? "Hesabınız için parola belirleyin" : "Yeni parola belirleyin") : "Parolanızı mı unuttunuz?"}</p>
         <Alert tone="error">{hata}</Alert>
         <Alert tone="success">{basari}</Alert>
         {hazir && !tamamlandi && !token && (

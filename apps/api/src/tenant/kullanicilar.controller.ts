@@ -10,7 +10,7 @@ import {
   Patch,
   Post,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
 import { ROLLER } from "@tekirextra/shared";
 import { Prisma } from "@prisma/client";
@@ -27,10 +27,12 @@ const kullaniciOlusturSemasi = z.object({
   eposta: z.email(),
   adSoyad: z.string().min(2).max(120),
   rol: z.enum(ROLLER),
-  parola: parolaSemasi,
+  // Yönetim P2-3: davetle açılan hesapta parolayı kullanıcı belirler.
+  davet: z.boolean().optional().default(false),
+  parola: parolaSemasi.optional(),
   maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
   bayiCariId: z.string().uuid().nullable().optional(),
-});
+}).refine((g) => g.davet || g.parola, { message: "Parola girin ya da davet e-postası seçin", path: ["parola"] });
 
 const kullaniciGuncelleSemasi = z.object({
   rol: z.enum(ROLLER).optional(),
@@ -102,9 +104,10 @@ export class KullanicilarController {
     }
 
     const userId = randomUUID();
-    const parolaHash = await argon2.hash(girdi.parola);
-    // Yönetici tarafından açılan hesapta e-posta doğrulaması aranmaz (KLN-09
-    // self-servis kayıt içindir); kullanıcı ilk girişte parolasını değiştirebilir.
+    // Davette girilemeyen rastgele parola konur; kullanıcı bağlantıyla kendi parolasını belirler.
+    const parolaHash = await argon2.hash(girdi.davet ? randomBytes(32).toString("base64url") : (girdi.parola as string));
+    // Yönetici parolası verilen hesapta e-posta doğrulaması aranmaz (KLN-09
+    // self-servis kayıt içindir). Davetli hesap bağlantı kullanılınca doğrulanır.
     const kullanici = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.user.create({
         data: {
@@ -114,7 +117,7 @@ export class KullanicilarController {
           adSoyad: girdi.adSoyad,
           rol: girdi.rol,
           parolaHash,
-          epostaDogrulandi: true,
+          epostaDogrulandi: !girdi.davet,
           maksIskontoYuzdesi: girdi.maksIskontoYuzdesi !== undefined && girdi.maksIskontoYuzdesi !== null
             ? new Prisma.Decimal(girdi.maksIskontoYuzdesi)
             : null,
@@ -126,7 +129,15 @@ export class KullanicilarController {
     await this.prisma.authKimlik.create({
       data: { eposta: girdi.eposta, tenantId, userId },
     });
-    return kullanici;
+    if (!girdi.davet) return kullanici;
+    return { ...kullanici, davet: await this.parola.davetGonder(userId) };
+  }
+
+  /** Yönetim P2-3: daveti kabul etmemiş kullanıcıya yeni bağlantı gönderir. */
+  @Post(":id/davet")
+  @HttpCode(200)
+  davetGonder(@Param("id") id: string) {
+    return this.parola.davetGonder(id);
   }
 
   /** KLN-10: yönetici kullanıcıya geçici parola verir; kullanıcının oturumları kapanır. */

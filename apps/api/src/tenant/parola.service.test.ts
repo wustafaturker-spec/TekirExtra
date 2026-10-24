@@ -32,6 +32,7 @@ function kur() {
       }),
     },
     auditLog: { create: vi.fn(async ({ data }: { data: { islem: string; userId: string; varlikId: string } }) => { denetim.push(data); return data; }) },
+    tenant: { findUnique: vi.fn(async () => ({ unvan: "Örnek A.Ş." })) },
   };
   const prisma = {
     tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -68,7 +69,10 @@ function kur() {
     },
   };
   const gonderilen: { alici: string; link: string }[] = [];
-  const eposta = { parolaSifirlamaGonder: vi.fn(async (alici: string, _ad: string, link: string) => { gonderilen.push({ alici, link }); return { messageId: null }; }) };
+  const eposta = {
+    parolaSifirlamaGonder: vi.fn(async (alici: string, _ad: string, link: string) => { gonderilen.push({ alici, link }); return { messageId: null }; }),
+    kullaniciDavetGonder: vi.fn(async (alici: string, _ad: string, _firma: string, link: string) => { gonderilen.push({ alici, link }); return { messageId: null }; }),
+  };
   const durum = { unut: vi.fn() };
   const service = new ParolaService(prisma as unknown as PrismaService, eposta as unknown as EpostaService, durum as unknown as KullaniciDurumService);
   const olarak = <T>(userId: string, is: () => Promise<T>) => baglamlaCalistir({ tenantId: TENANT, userId, rol: "yonetici" }, is);
@@ -216,5 +220,35 @@ describe("yönetici oturum kapatma (yönetim P2-4)", () => {
     expect(k.kullanicilar.get(HEDEF)!.oturumSurumu).toBe(1);
     expect(k.denetim.at(-1)).toMatchObject({ islem: "kullanici_oturumlari_kapatildi", varlikId: HEDEF });
     await expect(k.olarak(YONETICI, () => k.service.yoneticiOturumlariKapat(YONETICI))).rejects.toThrow(/Hesap Güvenliği/);
+  });
+});
+
+describe("davetle kullanıcı açma (yönetim P2-3)", () => {
+  let k: ReturnType<typeof kur>;
+  beforeEach(async () => { k = kur(); await kullaniciEkle(k, YONETICI, "yonetici@ornek.com"); await kullaniciEkle(k, HEDEF, "davetli@ornek.com"); });
+  const tokenOf = (link: string) => new URL(link).searchParams.get("token")!;
+
+  it("7 gün geçerli bağlantı gönderir; yenisi eskisini geçersiz kılar; bağlantı hesabı doğrular", async () => {
+    const once = Date.now();
+    await expect(k.olarak(YONETICI, () => k.service.davetGonder(HEDEF))).resolves.toMatchObject({ gonderildi: true });
+    expect(k.sifirlamalar[0].gecerlilikSonu.getTime() - once).toBeGreaterThan(6.9 * 24 * 3600_000);
+    expect(new URL(k.gonderilen[0].link).searchParams.get("davet")).toBe("1");
+    await k.olarak(YONETICI, () => k.service.davetGonder(HEDEF));
+    await expect(k.service.sifirla({ token: tokenOf(k.gonderilen[0].link), parola: "YeniParola2026" })).rejects.toThrow(/geçersiz/);
+    await k.service.sifirla({ token: tokenOf(k.gonderilen[1].link), parola: "YeniParola2026" });
+    expect(k.kullanicilar.get(HEDEF)!.epostaDogrulandi).toBe(true);
+    expect(k.denetim.filter((d) => d.islem === "kullanici_davet_edildi")).toHaveLength(2);
+  });
+
+  it("e-posta gitmezse hesabı bozmaz, nedenini söyler", async () => {
+    k.eposta.kullaniciDavetGonder.mockRejectedValueOnce(new Error("SMTP kapalı"));
+    await expect(k.olarak(YONETICI, () => k.service.davetGonder(HEDEF))).resolves.toEqual({ gonderildi: false, mesaj: expect.stringMatching(/SMTP kapalı.*yeniden gönderin/) });
+  });
+
+  it("daveti kabul etmiş ya da pasif kullanıcıya davet gönderilmez", async () => {
+    k.kullanicilar.get(HEDEF)!.epostaDogrulandi = true;
+    await expect(k.olarak(YONETICI, () => k.service.davetGonder(HEDEF))).rejects.toThrow(/zaten kabul/);
+    k.kullanicilar.get(HEDEF)!.aktif = false;
+    await expect(k.olarak(YONETICI, () => k.service.davetGonder(HEDEF))).rejects.toThrow(/Pasif/);
   });
 });

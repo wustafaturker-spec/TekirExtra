@@ -8,6 +8,7 @@
  * bakiye ve farkın ne kadarının bekleyen/yoksayılan satırlardan geldiği.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { paraBicimle } from "@tekirextra/shared";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
 import { EkstreYukleme, type BankaHesap } from "./ekstre-yukleme";
@@ -60,6 +61,10 @@ export default function EkstreSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [topluAcik, setTopluAcik] = useState(false);
+  // Yönetim P2-1: muhasebe bağlantı ayarlarına girmeden bankadan elle çekim yapabilir.
+  const [cekilenler, setCekilenler] = useState<{ id: string; saglayici: string; durum: string; sonSenkronTarihi: string | null }[]>([]);
+  const [cekiliyor, setCekiliyor] = useState(false);
+  const [uyari, setUyari] = useState("");
   const listeRef = useRef<HTMLDivElement>(null);
 
   const listeYukle = useCallback(async () => {
@@ -101,7 +106,38 @@ export default function EkstreSayfasi() {
     void Promise.all([api<BankaHesap[]>("/kasa-banka/bankalar"), api<PosHesabi[]>("/kasa-banka/pos-hesaplari"), tumSayfalariAl<{ id: string; unvan: string }>("/cari")])
       .then(([b, p, c]) => { setHesaplar(b); setPosHesaplari(p); setCariler(c); })
       .catch(() => undefined);
+    void api<{ id: string; saglayici: string; durum: string; sonSenkronTarihi: string | null }[]>("/kasa-banka/banka-baglantilari/senkron-durumu")
+      .then((l) => setCekilenler(Array.isArray(l) ? l.filter((b) => b.durum === "aktif") : []))
+      .catch(() => undefined);
   }, []);
+
+  async function bankadanCek() {
+    setHata("");
+    setBasari("");
+    setUyari("");
+    setCekiliyor(true);
+    try {
+      let yeni = 0;
+      let yinelenen = 0;
+      const farklar: string[] = [];
+      for (const b of cekilenler) {
+        const s = await api<{ yeniSatir: number; yinelenenSatir: number; bakiyeFarklari?: { bankaHesapId: string; fark: string }[] }>(`/kasa-banka/banka-baglantilari/${b.id}/senkronize`, { method: "POST" });
+        yeni += s.yeniSatir;
+        yinelenen += s.yinelenenSatir;
+        for (const f of s.bakiyeFarklari ?? []) farklar.push(`${hesaplar.find((h) => h.id === f.bankaHesapId)?.ad ?? "Banka hesabı"}: ${paraBicimle(f.fark)}`);
+      }
+      setBasari(`${yeni} yeni banka hareketi alındı; ${yinelenen} tekrar atlandı.`);
+      // KSB-31: hata değil uyarı; çekim başarılı.
+      if (farklar.length) setUyari(`Banka bakiyesi sistemle tutmuyor (${farklar.join("; ")}). Mutabakattan farkın kaynağına bakın.`);
+      await Promise.all([listeYukle(), mutabakatYukle()]);
+      const l = await api<typeof cekilenler>("/kasa-banka/banka-baglantilari/senkron-durumu");
+      setCekilenler(Array.isArray(l) ? l.filter((b) => b.durum === "aktif") : []);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Banka hareketleri alınamadı");
+    } finally {
+      setCekiliyor(false);
+    }
+  }
 
   const secili = satirlar.find((s) => s.id === seciliId) ?? null;
   const ozet = useMemo(() => ({
@@ -158,6 +194,11 @@ export default function EkstreSayfasi() {
           <p>Ekstreleri içeri alın; her satırı cari, fatura, masraf, gelir, virman, çek ya da kart ödemesiyle eşleştirin. Banka bakiyesiyle sistem bakiyesi aynı kalsın.</p>
         </div>
         <div>
+          {cekilenler.length > 0 && (
+            <Button disabled={cekiliyor} onClick={() => void bankadanCek()} title={cekilenler[0].sonSenkronTarihi ? `Son çekim: ${new Date(cekilenler[0].sonSenkronTarihi).toLocaleString("tr-TR")}` : undefined}>
+              {cekiliyor ? "Çekiliyor…" : "Bankadan çek"}
+            </Button>
+          )}
           <Button onClick={() => void kurallariAc()}>Kurallar</Button>
           <Button onClick={() => setTopluAcik(true)}>Kesin eşleşmeleri onayla</Button>
           <Button variant="primary" onClick={() => setYuklemeAcik(true)}>Ekstre yükle</Button>
@@ -165,6 +206,7 @@ export default function EkstreSayfasi() {
       </section>
 
       <Alert tone="error">{hata}</Alert>
+      <Alert tone="warning">{uyari}</Alert>
       <Alert tone="success">{basari}</Alert>
 
       {topluAcik && (

@@ -10,6 +10,8 @@ import { EpostaService } from "./eposta.service";
 
 /** KLN-12: sıfırlama bağlantısı bir saat geçerlidir. */
 export const SIFIRLAMA_GECERLILIK_DK = 60;
+/** Yönetim P2-3: davet bağlantısı bir hafta geçerlidir. */
+export const DAVET_GECERLILIK_GUN = 7;
 /** Aynı kullanıcıya bu süre içinde ikinci bağlantı gönderilmez (posta kutusu bombardımanı). */
 const YENIDEN_ISTEK_ARALIGI_DK = 2;
 
@@ -81,6 +83,38 @@ export class ParolaService {
     });
     await this.kimlikTemizle(tenantId, hedefId);
     return { mesaj: `${hedef.adSoyad} için iki adımlı doğrulama kapatıldı; açık oturumları kapatıldı. Kullanıcı girişten sonra yeniden kurabilir.` };
+  }
+
+  /**
+   * Yönetim P2-3: yöneticinin açtığı hesaba "parolanı belirle" bağlantısı.
+   * Bağlantı kullanılana kadar hesap doğrulanmamış sayılır ve girilemez.
+   * E-posta gitmezse hesap durur; yönetici daveti yeniden gönderebilir.
+   */
+  async davetGonder(hedefId: string): Promise<{ gonderildi: boolean; mesaj: string }> {
+    const { tenantId, userId } = aktifBaglam();
+    const { hedef, firma } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kullanici = await tx.user.findUnique({ where: { id: hedefId }, select: { adSoyad: true, eposta: true, aktif: true, epostaDogrulandi: true } });
+      if (!kullanici) throw new NotFoundException("Kullanıcı bulunamadı");
+      if (!kullanici.aktif) throw new BadRequestException("Pasif kullanıcıya davet gönderilemez; önce aktif edin");
+      if (kullanici.epostaDogrulandi) throw new BadRequestException("Kullanıcı daveti zaten kabul etmiş; gerekirse parolasını sıfırlayın");
+      const t = await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "kullanici_davet_edildi", varlik: "user", varlikId: hedefId, detay: { eposta: kullanici.eposta } } });
+      return { hedef: kullanici, firma: t?.unvan ?? "Firmanız" };
+    });
+    // Önceki davet bağlantıları geçersizleşir; yalnız en sonuncusu çalışır.
+    await this.prisma.parolaSifirlama.updateMany({ where: { userId: hedefId, kullanildi: false }, data: { kullanildi: true } });
+    const token = randomBytes(32).toString("base64url");
+    await this.prisma.parolaSifirlama.create({
+      data: { tenantId, userId: hedefId, tokenHash: tokenHashle(token), gecerlilikSonu: new Date(Date.now() + DAVET_GECERLILIK_GUN * 24 * 60 * 60_000) },
+    });
+    const adres = `${process.env.APP_URL ?? "http://localhost:3100"}/parola-sifirla?token=${token}&davet=1`;
+    try {
+      await this.eposta.kullaniciDavetGonder(hedef.eposta, hedef.adSoyad, firma, adres, DAVET_GECERLILIK_GUN);
+      return { gonderildi: true, mesaj: `${hedef.eposta} adresine davet gönderildi; bağlantı ${DAVET_GECERLILIK_GUN} gün geçerli.` };
+    } catch (hata) {
+      this.logger.warn(`Kullanıcı daveti gönderilemedi: ${String(hata)}`);
+      return { gonderildi: false, mesaj: `Davet e-postası gönderilemedi (${hata instanceof Error ? hata.message : "e-posta hatası"}). E-posta ayarlarını kontrol edip daveti yeniden gönderin.` };
+    }
   }
 
   /** Yönetim P2-4: yönetici kullanıcının bütün oturumlarını kapatır (kayıp cihaz, ayrılan çalışan). */

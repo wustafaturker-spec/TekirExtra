@@ -52,6 +52,8 @@ export default function KullanicilarSayfasi() {
   const [adSoyad, setAdSoyad] = useState("");
   const [rol, setRol] = useState<Rol>("satis");
   const [parola, setParola] = useState("");
+  // Yönetim P2-3: varsayılan davet; parolayı kullanıcı belirler, yöneticide kalmaz.
+  const [davetle, setDavetle] = useState(true);
   const [maksIskonto, setMaksIskonto] = useState("");
   const [bayiCariId, setBayiCariId] = useState("");
 
@@ -112,6 +114,18 @@ export default function KullanicilarSayfasi() {
     }
   }
 
+  async function davetiYenidenGonder(k: Kullanici) {
+    setHata("");
+    setBasari("");
+    try {
+      const s = await api<{ gonderildi: boolean; mesaj: string }>(`/kullanicilar/${k.id}/davet`, { method: "POST" });
+      if (s.gonderildi) setBasari(s.mesaj);
+      else setHata(s.mesaj);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Davet gönderilemedi");
+    }
+  }
+
   // Yönetim P2-4: kayıp cihaz ya da ayrılan çalışan için bütün oturumları kapatır.
   async function oturumlariKapat(k: Kullanici) {
     setHata("");
@@ -150,23 +164,25 @@ export default function KullanicilarSayfasi() {
     setHata("");
     setBasari("");
     try {
-      await api("/kullanicilar", {
+      const sonuc = await api<{ davet?: { gonderildi: boolean; mesaj: string } }>("/kullanicilar", {
         method: "POST",
         body: JSON.stringify({
           eposta,
           adSoyad,
           rol,
-          parola,
+          ...(davetle ? { davet: true } : { parola }),
           maksIskontoYuzdesi: maksIskonto ? Number(maksIskonto) : undefined,
           bayiCariId: rol === "b2b_bayi" ? bayiCariId || undefined : undefined,
         }),
       });
-      setBasari(`${adSoyad} kullanıcısı oluşturuldu.`);
+      if (sonuc.davet && !sonuc.davet.gonderildi) setHata(`${adSoyad} kullanıcısı oluşturuldu. ${sonuc.davet.mesaj}`);
+      else setBasari(`${adSoyad} kullanıcısı oluşturuldu.${sonuc.davet ? ` ${sonuc.davet.mesaj}` : ""}`);
       setFormAcik(false);
       setEposta("");
       setAdSoyad("");
       setRol("satis");
       setParola("");
+      setDavetle(true);
       setMaksIskonto("");
       setBayiCariId("");
       await yukle();
@@ -237,7 +253,15 @@ export default function KullanicilarSayfasi() {
             </div>
             <div className="row">
               <div style={{ flex: 1, minWidth: 160 }}><Field label="Rol"><Select value={rol} onChange={(e) => setRol(e.target.value as Rol)}>{ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}</Select></Field></div>
-              <div style={{ flex: 1, minWidth: 200 }}><Field label="Parola * (en az 10, harf + rakam)"><Input type="password" value={parola} onChange={(e) => setParola(e.target.value)} required minLength={10} /></Field></div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label="Giriş">
+                  <Select aria-label="Giriş yöntemi" value={davetle ? "davet" : "parola"} onChange={(e) => setDavetle(e.target.value === "davet")}>
+                    <option value="davet">Davet e-postası gönder (önerilen)</option>
+                    <option value="parola">Parolayı ben belirleyeyim</option>
+                  </Select>
+                </Field>
+              </div>
+              {!davetle && <div style={{ flex: 1, minWidth: 200 }}><Field label="Parola * (en az 10, harf + rakam)"><Input type="password" value={parola} onChange={(e) => setParola(e.target.value)} required minLength={10} /></Field></div>}
               <div style={{ flex: 1, minWidth: 160 }}><Field label="Maks. İskonto % (opsiyonel)"><Input type="number" step="0.01" min="0" max="100" value={maksIskonto} onChange={(e) => setMaksIskonto(e.target.value)} placeholder="sınırsız" /></Field></div>
               {rol === "b2b_bayi" && <div style={{ flex: 1, minWidth: 200 }}><Field label="Bağlı Bayi / Cari *"><Select required value={bayiCariId} onChange={(e) => setBayiCariId(e.target.value)}><option value="">Bayi seçin</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select></Field></div>}
             </div>
@@ -270,7 +294,7 @@ export default function KullanicilarSayfasi() {
                   <td style={{ fontWeight: 600 }}>{k.adSoyad}</td>
                   <td>
                     {k.eposta}
-                    {!k.epostaDogrulandi && <span className="subtle"> · doğrulanmadı</span>}
+                    {!k.epostaDogrulandi && <span className="subtle"> · davet bekliyor</span>}
                   </td>
                   <td style={{ minWidth: 150 }}>
                     {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select aria-label={`${k.adSoyad} rolü`} disabled={k.id === benId} title={k.id === benId ? "Kendi rolünüzü başka bir yönetici değiştirebilir" : undefined} value={k.rol} onChange={(e) => rolDegistir(k.id, e.target.value as Rol)}>
@@ -293,6 +317,9 @@ export default function KullanicilarSayfasi() {
                     <div className="row-tight" style={{ justifyContent: "center", flexWrap: "nowrap" }}>
                       {k.id !== benId && (
                         <Button size="sm" onClick={() => sifirlamaAc(k)}>Parolayı Sıfırla</Button>
+                      )}
+                      {k.aktif && !k.epostaDogrulandi && (
+                        <Button size="sm" onClick={() => void davetiYenidenGonder(k)}>Daveti Yeniden Gönder</Button>
                       )}
                       {k.id !== benId && (
                         <Button size="sm" onClick={() => void oturumlariKapat(k)}>Oturumları Kapat</Button>
