@@ -1,6 +1,7 @@
 # Platform Paneli İnceleme Raporu
 
 **Tarih:** 24 Ekim 2026
+**Durum (2026-10-25):** P0-1 ve P1-1…3 kapandı, pilotta (platform-20261025) geçici firmayla canlı denendi; P2/P3 açık.
 **İnceleme türü:** Kod okuma + yerel veritabanında salt okuma. Kod değişikliği yapılmadı; platform
 paneline giriş yapılmadı (2FA kodu gerektirir).
 **Kapsam:** Tüm firmaları yöneten ekip ekranı (`/platform`), platform kimlik doğrulaması (MVZ-04),
@@ -31,10 +32,10 @@ Satışa (ücretli aboneliğe) geçmeden önce 1. madde kapanmalı.
 
 | Öncelik | Madde | Durum |
 |---|---|---|
-| P0-1 | Abonelik denetimsiz: ücretsiz plan yükseltme, etkisiz iptal, askıya alma yolu yok (satış öncesi kapı) | Açık |
-| P1-1 | Firma listesi / genel bakış yok | Açık |
-| P1-2 | Platform girişinde deneme sınırı yok; başarısız denemeler kaydedilmiyor; pasif platform kullanıcısının token'ı 30 dk yaşıyor | Açık |
-| P1-3 | Yapay zekâ tavanı değişikliği denetim izine yazılmıyor | Açık |
+| P0-1 | Abonelik denetimsiz: ücretsiz plan yükseltme, etkisiz iptal, askıya alma yolu yok (satış öncesi kapı) | ✅ 8b6efb7 — talep + platform onayı; askıda/süresi biten firma salt okunur |
+| P1-1 | Firma listesi / genel bakış yok | ✅ 8b6efb7 — /platform/firmalar |
+| P1-2 | Platform girişinde deneme sınırı yok; başarısız denemeler kaydedilmiyor; pasif platform kullanıcısının token'ı 30 dk yaşıyor | ✅ 8b6efb7 — 5 hata/15 dk, giris_basarisiz, 10 sn |
+| P1-3 | Yapay zekâ tavanı değişikliği denetim izine yazılmıyor | ✅ 8b6efb7 — ai_tavani_degisti |
 | P2-1 | Platform kullanıcı yönetimi yalnız betikle; platform rolleri yok | Açık |
 | P2-2 | `/platform` sayfaları web rota korumasının dışında (veri sızmaz, arayüz kabuğu görünür) | Açık |
 | P3-1 | Kayıtlı ve izinli destek erişimi (firma adına bakma) | Açık |
