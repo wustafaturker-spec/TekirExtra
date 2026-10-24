@@ -21,6 +21,7 @@ import { UcCagirici } from "./uc-cagirici";
 import { UC } from "./araclar/uclar";
 import { EklerService, type YuklenenDosya } from "../../ekler/ekler.service";
 import { ublOzeti } from "./ubl-ozeti";
+import { acikYazmaIstegiVar } from "./yazma-niyeti";
 
 /**
  * AI-82: akışlı yanıtın olayları. Yanıt metni yanıt denetiminden (uydurma
@@ -498,7 +499,7 @@ export class AiAjanService {
     let finansAciklama: FinansAciklama | undefined;
     let duzeltmeIstendi = false;
     let hariciIcerikOkundu = false;
-    const acikYazmaIstegi = /\b(oluştur|olustur|hazırla|hazirla|kaydet|gönder|gonder|onayla|iptal|dönüştür|donustur|güncelle|guncelle)\b/i.test(g.kullaniciTalebi);
+    const acikYazmaIstegi = acikYazmaIstegiVar(g.kullaniciTalebi);
 
     for (let tur = 0; tur < EN_COK_TUR && cevap === null; tur++) {
       // AI-82: durdurma turlar arasında uygulanır; süren model çağrısı yarıda kesilmez.

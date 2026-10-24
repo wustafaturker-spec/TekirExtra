@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { createServer } from "node:http";
@@ -8,6 +9,9 @@ import { OdemeSozuHatirlatmaService } from "./cari/odeme-sozu-hatirlatma.service
 
 @Module({ providers: [PrismaService, EpostaService, OdemeSozuHatirlatmaService] })
 class OdemeSozuWorkerModule {}
+// Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
+uretimSirlariniDenetle();
+
 async function bootstrap() {
   process.env.TEKIR_ODEME_SOZU_WORKER = "1";
   const app = await NestFactory.createApplicationContext(OdemeSozuWorkerModule);

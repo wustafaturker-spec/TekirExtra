@@ -1,8 +1,12 @@
 import "reflect-metadata";
+import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { NestFactory } from "@nestjs/core";
 import { createServer } from "node:http";
 import { AppModule } from "./app.module";
 import { MetricsService } from "./core/observability/metrics.service";
+
+// Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
+uretimSirlariniDenetle();
 
 /** Ayrı süreçte kalıcı BullMQ işleyicilerini çalıştırır. */
 async function bootstrap(): Promise<void> {

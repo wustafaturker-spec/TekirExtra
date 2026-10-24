@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { NestFactory } from "@nestjs/core";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
@@ -11,6 +12,9 @@ import { structuredLogger } from "./core/observability/structured-logger";
 import { DagitikRateLimiter } from "./core/guvenlik/rate-limiter";
 
 import { json, urlencoded } from "express";
+
+// Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
+uretimSirlariniDenetle();
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
