@@ -346,45 +346,45 @@ describe("UretimService profesyonel emir akışı", () => {
 
   it("kapasitede cumartesi yarım gün, pazar hiç sayılmaz", () => {
     // 24.08.2026 pazartesi … 30.08.2026 pazar: 5 tam + cumartesi yarım
-    expect(kapasiteGunu(new Date("2026-08-24T00:00:00"), new Date("2026-08-30T23:59:59.999")).toString()).toBe("5.5");
-    expect(kapasiteGunu(new Date("2026-08-29T00:00:00"), new Date("2026-08-29T23:59:59.999")).toString()).toBe("0.5");
-    expect(kapasiteGunu(new Date("2026-08-30T00:00:00"), new Date("2026-08-30T23:59:59.999")).toString()).toBe("0");
+    expect(kapasiteGunu(new Date("2026-08-24T00:00:00+03:00"), new Date("2026-08-30T23:59:59.999+03:00")).toString()).toBe("5.5");
+    expect(kapasiteGunu(new Date("2026-08-29T00:00:00+03:00"), new Date("2026-08-29T23:59:59.999+03:00")).toString()).toBe("0.5");
+    expect(kapasiteGunu(new Date("2026-08-30T00:00:00+03:00"), new Date("2026-08-30T23:59:59.999+03:00")).toString()).toBe("0");
   });
 
   it("operasyonları iş günü takvimine yerleştirir: cumartesi yarım, pazar yok", () => {
-    const [kesim, paket] = operasyonlariPlanla(new Date("2026-08-28T00:00:00"), [
+    const [kesim, paket] = operasyonlariPlanla(new Date("2026-08-28T00:00:00+03:00"), [
       // Cuma 480 + cumartesi 240 + pazartesi 280 = 1000 dk
       { dakika: D(1000), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) },
       // Verimlilik %50: günde 240 dk; pazartesi 280. dakikadan sonra yer yok → salı
       { dakika: D(60), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(50) },
     ]);
-    expect(kesim.baslangic).toEqual(new Date("2026-08-28T08:00:00"));
-    expect(kesim.bitis).toEqual(new Date("2026-08-31T12:40:00"));
-    expect(paket.baslangic).toEqual(new Date("2026-09-01T08:00:00"));
-    expect(paket.bitis).toEqual(new Date("2026-09-01T09:00:00"));
+    expect(kesim.baslangic).toEqual(new Date("2026-08-28T08:00:00+03:00"));
+    expect(kesim.bitis).toEqual(new Date("2026-08-31T12:40:00+03:00"));
+    expect(paket.baslangic).toEqual(new Date("2026-09-01T08:00:00+03:00"));
+    expect(paket.bitis).toEqual(new Date("2026-09-01T09:00:00+03:00"));
   });
 
   it("pazar başlayan emrin ilk operasyonu pazartesi 08:00'de başlar", () => {
-    const [op] = operasyonlariPlanla(new Date("2026-08-30T00:00:00"), [{ dakika: D(30), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }]);
-    expect(op.baslangic).toEqual(new Date("2026-08-31T08:00:00"));
-    expect(op.bitis).toEqual(new Date("2026-08-31T08:30:00"));
+    const [op] = operasyonlariPlanla(new Date("2026-08-30T00:00:00+03:00"), [{ dakika: D(30), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }]);
+    expect(op.baslangic).toEqual(new Date("2026-08-31T08:00:00+03:00"));
+    expect(op.bitis).toEqual(new Date("2026-08-31T08:30:00+03:00"));
   });
 
   it("tatil günlerini atlar, arifeyi yarım gün sayar, ayardaki saatten başlar", () => {
     // 28.10.2026 çarşamba arife (yarım), 29.10 perşembe Cumhuriyet Bayramı
     const tatiller = new Map([["2026-10-28", 0.5], ["2026-10-29", 0]]);
-    const [op] = operasyonlariPlanla(new Date("2026-10-28T00:00:00"), [{ dakika: D(600), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }], { baslangicSaati: "07:30", tatiller });
+    const [op] = operasyonlariPlanla(new Date("2026-10-28T00:00:00+03:00"), [{ dakika: D(600), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }], { baslangicSaati: "07:30", tatiller });
     // Çarşamba 240 dk (07:30–11:30), perşembe tatil, cuma 360 dk (07:30–13:30)
-    expect(op.baslangic).toEqual(new Date("2026-10-28T07:30:00"));
-    expect(op.bitis).toEqual(new Date("2026-10-30T13:30:00"));
-    expect(kapasiteGunu(new Date("2026-10-26T00:00:00"), new Date("2026-11-01T23:59:59.999"), tatiller).toString()).toBe("4"); // pzt 1 + salı 1 + arife 0,5 + bayram 0 + cuma 1 + cts 0,5
+    expect(op.baslangic).toEqual(new Date("2026-10-28T07:30:00+03:00"));
+    expect(op.bitis).toEqual(new Date("2026-10-30T13:30:00+03:00"));
+    expect(kapasiteGunu(new Date("2026-10-26T00:00:00+03:00"), new Date("2026-11-01T23:59:59.999+03:00"), tatiller).toString()).toBe("4"); // pzt 1 + salı 1 + arife 0,5 + bayram 0 + cuma 1 + cts 0,5
   });
 
   it("gece yarısını aşan iş günü aynı gün sayılır", () => {
     // 22:00'de başlayan 480 dk'lık gün ertesi 06:00'da biter; 600 dk'nın kalanı sonraki iş gününe
-    const [op] = operasyonlariPlanla(new Date("2026-08-24T00:00:00"), [{ dakika: D(600), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }], { baslangicSaati: "22:00" });
-    expect(op.baslangic).toEqual(new Date("2026-08-24T22:00:00"));
-    expect(op.bitis).toEqual(new Date("2026-08-26T00:00:00"));
+    const [op] = operasyonlariPlanla(new Date("2026-08-24T00:00:00+03:00"), [{ dakika: D(600), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }], { baslangicSaati: "22:00" });
+    expect(op.baslangic).toEqual(new Date("2026-08-24T22:00:00+03:00"));
+    expect(op.bitis).toEqual(new Date("2026-08-26T00:00:00+03:00"));
   });
 
   it("reçeteyi hazırlayan kullanıcı onaylayamaz", async () => {

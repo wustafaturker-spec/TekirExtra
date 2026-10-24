@@ -11,15 +11,31 @@ export interface TakvimAyari {
   tatiller?: TatilHaritasi;
 }
 
-/** Yerel takvim günü anahtarı; tatiller tabloda gün olarak saklanır. */
-const gunAnahtari = (gun: Date) => `${gun.getFullYear()}-${String(gun.getMonth() + 1).padStart(2, "0")}-${String(gun.getDate()).padStart(2, "0")}`;
+/**
+ * Takvim Türkiye saatiyle işler; sunucunun saat dilimi (Docker'da UTC)
+ * sonucu değiştirmez. Türkiye 2016'dan beri yaz saati uygulamaz: UTC+3 sabit.
+ * `duvar`, anı Türkiye duvar saatine kaydırır; UTC alanlarıyla okunur.
+ */
+const TR_FARK_MS = 3 * 3600000;
+const duvar = (an: Date) => new Date(an.getTime() + TR_FARK_MS);
+const andan = (duvarSaati: Date) => new Date(duvarSaati.getTime() - TR_FARK_MS);
+
+/** Türkiye takvim günü anahtarı; tatiller tabloda gün olarak saklanır. */
+const gunAnahtari = (gun: Date) => duvar(gun).toISOString().slice(0, 10);
+
+/** Türkiye'de o günün saat:dakika anı. */
+function trAni(gun: Date, saat: number, dakika: number): Date {
+  const d = duvar(gun);
+  d.setUTCHours(saat, dakika, 0, 0);
+  return andan(d);
+}
 
 /**
  * Günün çalışma katsayısı: hafta içi tam, cumartesi yarım, pazar yok; tatil
  * günü 0, arife yarım. Cumartesiye denk gelen arife yine yarım gündür.
  */
 export function gunKatsayisi(gun: Date, tatiller?: TatilHaritasi): number {
-  const haftaGunu = gun.getDay();
+  const haftaGunu = duvar(gun).getUTCDay();
   const hafta = haftaGunu === 0 ? 0 : haftaGunu === 6 ? 0.5 : 1;
   const tatil = tatiller?.get(gunAnahtari(gun));
   return tatil === undefined ? hafta : Math.min(hafta, tatil);
@@ -48,9 +64,10 @@ export function operasyonlariPlanla<T extends { dakika: Prisma.Decimal; gunlukKa
   // Takvim durumu: içinde bulunulan iş günü (başlangıç anı) ve o gün harcanan
   // dakika. Gün, anın kendisinden türetilmez; geç başlayan gün gece yarısını
   // aşsa da aynı iş günü sayılır.
-  let gun = new Date(baslangicGunu); gun.setHours(saat, dakika, 0, 0);
+  let gun = trAni(baslangicGunu, saat, dakika);
   let kullanilan = 0;
-  const sonrakiGun = () => { const yeni = new Date(gun); yeni.setDate(yeni.getDate() + 1); yeni.setHours(saat, dakika, 0, 0); gun = yeni; kullanilan = 0; };
+  // Bir sonraki Türkiye gününün başlangıç saati (gün +24 saat; TR'de yaz saati yok).
+  const sonrakiGun = () => { gun = trAni(new Date(gun.getTime() + 86400000), saat, dakika); kullanilan = 0; };
   const an = () => new Date(gun.getTime() + kullanilan * 60000);
   // Yanlışlıkla her gün tatil girilse bile döngü biter: en fazla iki yıl ileriye bakılır.
   const sinir = new Date(gun.getTime() + 730 * 86400000);
