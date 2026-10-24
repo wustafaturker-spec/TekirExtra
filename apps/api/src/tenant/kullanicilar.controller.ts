@@ -18,6 +18,7 @@ import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { aktifBaglam } from "../core/istek-baglami";
+import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import { AbonelikService } from "./abonelik.service";
 import { ParolaService } from "./parola.service";
@@ -55,7 +56,12 @@ const KULLANICI_SECIMI = {
 @Controller("kullanicilar")
 @Roller("yonetici")
 export class KullanicilarController {
-  constructor(private readonly prisma: PrismaService, private readonly abonelik: AbonelikService, private readonly parola: ParolaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly abonelik: AbonelikService,
+    private readonly parola: ParolaService,
+    private readonly durum: KullaniciDurumService,
+  ) {}
 
   private async bayiCariDogrula(tenantId: string, bayiCariId?: string | null) {
     if (!bayiCariId) return;
@@ -151,7 +157,7 @@ export class KullanicilarController {
     if (id === userId && girdi.rol !== undefined) {
       throw new BadRequestException("Kendi rolünüzü değiştiremezsiniz; başka bir yönetici değiştirebilir");
     }
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       // Yönetici sayısı kuralı aynı anda iki değişiklikte de tutsun diye firma başına sıralanır.
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${tenantId}:kullanici-yetki`}, 0))::text`;
       const mevcut = await tx.user.findUnique({
@@ -202,5 +208,9 @@ export class KullanicilarController {
       }
       return guncel;
     });
+    // Yönetim P1-2: pasife alınan ya da rolü değişen kullanıcının eldeki token'ı beklemeden düşer.
+    this.durum.unut(id);
+    if (girdi.aktif === false) await this.prisma.oturum.deleteMany({ where: { userId: id } });
+    return sonuc;
   }
 }

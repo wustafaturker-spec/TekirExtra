@@ -321,6 +321,8 @@ model User {
   totpAktif              Boolean          @default(false) @map("totp_aktif")
   /// Yönetim P1-1: tek kullanımlık 2FA kurtarma kodlarının sha256 özetleri.
   totpKurtarmaOzetleri   String[]         @default([]) @map("totp_kurtarma_ozetleri")
+  /// Yönetim P1-2: parola/2FA değişince artar; eski erişim token'ları reddedilir.
+  oturumSurumu           Int              @default(0) @map("oturum_surumu")
   maksIskontoYuzdesi     Decimal?         @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
   bayiCariId             String?          @map("bayi_cari_id") @db.Uuid
   /// PRS-21: çalışan rolünün bağlı olduğu personel kartı.

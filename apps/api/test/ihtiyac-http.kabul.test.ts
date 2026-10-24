@@ -20,7 +20,7 @@ if(parsed.hostname!=='127.0.0.1'||!/^\/f01_yaris_[a-f0-9]{16}$/.test(parsed.path
 const req=createRequire(import.meta.url),load=(p:string)=>req(resolve(dist,p+'.js'));
 load('ayar-tanimlari');
 const {PrismaService}=load('core/prisma.service'),{bosTutucuylaCalistir,baglamlaCalistir}=load('core/istek-baglami');
-const {AuthGuard}=load('auth/auth.guard'),{RollerGuard}=load('auth/roller.guard'),{AuthService}=load('auth/auth.service'),{AuthController}=load('auth/auth.controller');
+const {AuthGuard}=load('auth/auth.guard'),{RollerGuard}=load('auth/roller.guard'),{AuthService}=load('auth/auth.service'),{GirisDenemeSayaci}=load('auth/giris-deneme-sayaci'),{AuthController}=load('auth/auth.controller');
 const {IhtiyacController}=load('stok/ihtiyac.controller'),{IhtiyacService}=load('stok/ihtiyac.service'),{IhtiyacPlanService}=load('stok/ihtiyac-plan.service'),{IhtiyacUretimTalebiService}=load('stok/ihtiyac-uretim-talebi.service'),{SiparisGirisTarihiService}=load('stok/siparis-giris-tarihi.service');
 const {StokController}=load('stok/stok.controller'),{StokService}=load('stok/stok.service'),{DepoController}=load('stok/depo.controller'),{DepoService}=load('stok/depo.service'),{SayimService}=load('stok/sayim.service'),{TransferService}=load('stok/transfer.service'),{AbonelikService}=load('tenant/abonelik.service'),{DonemKilidiService}=load('donem-kapatma/donem-kilidi.service');
 const {AyarlarController}=load('core/ayarlar/ayarlar.controller');
@@ -28,7 +28,7 @@ const {SatinAlmaController}=load('satin-alma/satin-alma.controller'),{SatinAlmaS
 const db=new PrismaService({datasourceUrl:url}),jwt=new JwtService({secret:randomBytes(32).toString('hex'),signOptions:{expiresIn:'10m'}});
 const external=new Proxy({},{get:(_t,k)=>()=>{throw Error('Kapsam dışı servis çağrısı: '+String(k));}});
 const ihtiyac=new IhtiyacService(db),depo=new DepoService(db);
-const providers=[ [AyarlarService,new AyarlarService(db)],[SatinAlmaService,new SatinAlmaService(db,new AyarlarService(db),external,new ButceService(db),undefined,ihtiyac)],[PrismaService,db],[AuthService,new AuthService(db,jwt)],[IhtiyacService,ihtiyac],[IhtiyacPlanService,new IhtiyacPlanService(db,ihtiyac)],[IhtiyacUretimTalebiService,new IhtiyacUretimTalebiService(db)],[SiparisGirisTarihiService,new SiparisGirisTarihiService(db)],[DepoService,depo],[StokService,new StokService(db,external,depo,new DonemKilidiService(db))],[AbonelikService,new AbonelikService(db)],[SayimService,Object.freeze({})],[TransferService,Object.freeze({})] ];
+const providers=[ [AyarlarService,new AyarlarService(db)],[SatinAlmaService,new SatinAlmaService(db,new AyarlarService(db),external,new ButceService(db),undefined,ihtiyac)],[PrismaService,db],[AuthService,new AuthService(db,jwt,GirisDenemeSayaci.bellekte())],[IhtiyacService,ihtiyac],[IhtiyacPlanService,new IhtiyacPlanService(db,ihtiyac)],[IhtiyacUretimTalebiService,new IhtiyacUretimTalebiService(db)],[SiparisGirisTarihiService,new SiparisGirisTarihiService(db)],[DepoService,depo],[StokService,new StokService(db,external,depo,new DonemKilidiService(db))],[AbonelikService,new AbonelikService(db)],[SayimService,Object.freeze({})],[TransferService,Object.freeze({})] ];
 class TestModule{}
 Module({controllers:[AyarlarController,SatinAlmaController,AuthController,IhtiyacController,StokController,DepoController],providers:providers.map(([provide,useValue])=>({provide,useValue}))})(TestModule);
 let app:any,base:string,web:ChildProcess|undefined,proxy:Server|undefined,browser:Browser|undefined,webUrl:string;

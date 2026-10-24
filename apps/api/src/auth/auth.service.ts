@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -8,6 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import { coz, sifrele } from "../core/kripto";
+import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -30,20 +33,31 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly denemeler: GirisDenemeSayaci,
   ) {}
 
   async giris(eposta: string, parola: string, totpKodu?: string): Promise<GirisSonucu> {
+    // Yönetim P1-3: kilit, parola doğrulanmadan (argon2 maliyeti harcanmadan) uygulanır.
+    if (await this.denemeler.kilitliMi(eposta)) {
+      throw new HttpException(
+        "Bu hesap için çok fazla başarısız deneme yapıldı. 15 dakika sonra tekrar deneyin ya da parolanızı sıfırlayın.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     // Rehber RLS'siz: oturum açarken kiracı bağlamı henüz yok (MIMARI §7)
     const kimlik = await this.prisma.authKimlik.findUnique({ where: { eposta } });
-    // Kullanıcı yok/parola yanlış ayrımı sızdırılmaz — tek mesaj
-    const hataliGiris = new UnauthorizedException("E-posta veya parola hatalı");
-    if (!kimlik) throw hataliGiris;
+    // Kullanıcı yok/parola yanlış ayrımı sızdırılmaz — tek mesaj; sayaç her durumda işler
+    const hataliGiris = async () => {
+      if ((await this.denemeler.hataKaydet("parola", eposta)) && kimlik) await this.kilitKaydet(kimlik.tenantId, kimlik.userId, "parola");
+      return new UnauthorizedException("E-posta veya parola hatalı");
+    };
+    if (!kimlik) throw await hataliGiris();
 
     const kullanici = await this.prisma.tenantIslem(kimlik.tenantId, (tx) =>
       tx.user.findUnique({ where: { id: kimlik.userId } }),
     );
-    if (!kullanici || !kullanici.aktif) throw hataliGiris;
-    if (!(await argon2.verify(kullanici.parolaHash, parola))) throw hataliGiris;
+    if (!kullanici || !kullanici.aktif) throw await hataliGiris();
+    if (!(await argon2.verify(kullanici.parolaHash, parola))) throw await hataliGiris();
 
     if (!kullanici.epostaDogrulandi) {
       throw new UnauthorizedException(
@@ -59,14 +73,24 @@ export class AuthService {
       const totpGecerli = !kurtarmaKoduBicimindeMi(totpKodu) && verifySync({ secret, token: totpKodu }).valid;
       // Yönetim P1-1: telefonu olmayan kullanıcı tek kullanımlık kurtarma koduyla girer.
       if (!totpGecerli && !(await this.kurtarmaKoduKullan(kullanici.tenantId, kullanici.id, totpKodu))) {
+        if (await this.denemeler.hataKaydet("totp", eposta)) await this.kilitKaydet(kullanici.tenantId, kullanici.id, "totp");
         throw new UnauthorizedException("TOTP kodu geçersiz");
       }
     }
 
-    return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, {
+    await this.denemeler.temizle(eposta);
+
+    return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
     });
+  }
+
+  /** Kilit başladığında yöneticinin Denetim İzi'nde görmesi için. */
+  private async kilitKaydet(tenantId: string, userId: string, tur: "parola" | "totp"): Promise<void> {
+    await this.prisma
+      .tenantIslem(tenantId, (tx) => tx.auditLog.create({ data: { tenantId, userId, islem: "giris_kilitlendi", varlik: "user", varlikId: userId, detay: { tur } } }))
+      .catch(() => undefined);
   }
 
   async yenile(refreshToken: string): Promise<GirisSonucu> {
@@ -84,7 +108,7 @@ export class AuthService {
     }
     // Rotasyon: eski refresh token tek kullanımlıktır
     await this.prisma.oturum.delete({ where: { id: oturum.id } });
-    return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, {
+    return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
     });
@@ -240,9 +264,10 @@ export class AuthService {
     tenantId: string,
     userId: string,
     rol: string,
+    oturumSurumu: number,
     profil: { adSoyad: string; eposta: string },
   ): Promise<GirisSonucu> {
-    const yuk: JwtYuku = { sub: userId, tenantId, rol: rol as JwtYuku["rol"] };
+    const yuk: JwtYuku = { sub: userId, tenantId, rol: rol as JwtYuku["rol"], sv: oturumSurumu };
     const accessToken = await this.jwt.signAsync(yuk);
     const refreshToken = randomBytes(48).toString("base64url");
     const gecerlilikSonu = new Date(

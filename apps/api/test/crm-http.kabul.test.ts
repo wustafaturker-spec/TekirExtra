@@ -20,7 +20,7 @@ if(parsed.hostname!=='127.0.0.1' || !/^\/f01_yaris_[a-f0-9]{16}$/.test(parsed.pa
 const req=createRequire(import.meta.url),load=(p:string)=>req(resolve(dist,p+'.js'));
 load('ayar-tanimlari');
 const {PrismaService}=load('core/prisma.service'),{bosTutucuylaCalistir,baglamlaCalistir}=load('core/istek-baglami');
-const {AuthGuard}=load('auth/auth.guard'),{RollerGuard}=load('auth/roller.guard'),{AuthService}=load('auth/auth.service'),{AuthController}=load('auth/auth.controller');
+const {AuthGuard}=load('auth/auth.guard'),{RollerGuard}=load('auth/roller.guard'),{AuthService}=load('auth/auth.service'),{GirisDenemeSayaci}=load('auth/giris-deneme-sayaci'),{AuthController}=load('auth/auth.controller');
 const {CrmBelgeService}=load('crm/crm-belge.service'),{CrmBelgeController}=load('crm/crm-belge.controller'),{CrmFirsatService}=load('crm/crm-firsat.service'),{CrmFirsatController}=load('crm/crm-firsat.controller');
 const {BelgelerService}=load('belgeler/belgeler.service'),{BelgelerController}=load('belgeler/belgeler.controller'),{FaturaService}=load('fatura/fatura.service'),{FaturaController}=load('fatura/fatura.controller');
 const {DonemKilidiService}=load('donem-kapatma/donem-kilidi.service'),{DepoService}=load('stok/depo.service'),{StokService}=load('stok/stok.service'),{BaglantilarService}=load('tenant/baglantilar.service'),{AbonelikService}=load('tenant/abonelik.service');
@@ -28,7 +28,7 @@ const db=new PrismaService({datasourceUrl:url}),jwt=new JwtService({secret:rando
 const external=new Proxy({}, {get:(_t,key)=>()=>{throw Error('Harici servis bu provada çağrılamaz: '+String(key));}});
 const donem=new DonemKilidiService(db),depo=new DepoService(db),stok=new StokService(db,external,depo,donem),belgeler=new BelgelerService(db,external,depo,donem);
 const services=[
- [AuthService,new AuthService(db,jwt)], [CrmFirsatService,new CrmFirsatService(db)], [CrmBelgeService,new CrmBelgeService(db,belgeler)],
+ [AuthService,new AuthService(db,jwt,GirisDenemeSayaci.bellekte())], [CrmFirsatService,new CrmFirsatService(db)], [CrmBelgeService,new CrmBelgeService(db,belgeler)],
  [BelgelerService,belgeler], [AbonelikService,new AbonelikService(db)],
  [FaturaService,new FaturaService(db,stok,depo,external,external,belgeler,donem,new BaglantilarService(db),external,external)],
 ];

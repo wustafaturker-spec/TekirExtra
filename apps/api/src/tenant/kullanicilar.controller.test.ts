@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../core/istek-baglami";
+import type { KullaniciDurumService } from "../core/kullanici-durum.service";
 import type { PrismaService } from "../core/prisma.service";
 import type { AbonelikService } from "./abonelik.service";
 import { KullanicilarController } from "./kullanicilar.controller";
@@ -27,11 +28,12 @@ function kur(satirlar: Satir[]) {
     },
     auditLog: { create: vi.fn(async ({ data }: { data: { islem: string; varlikId: string; detay: unknown } }) => { denetim.push(data); return data; }) },
   };
-  const prisma = { tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)) };
+  const prisma = { tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)), oturum: { deleteMany: vi.fn(async () => ({ count: 0 })) } };
   const abonelik = { limitDogrula: vi.fn(async () => undefined) };
-  const controller = new KullanicilarController(prisma as unknown as PrismaService, abonelik as unknown as AbonelikService, {} as ParolaService);
+  const durum = { unut: vi.fn() };
+  const controller = new KullanicilarController(prisma as unknown as PrismaService, abonelik as unknown as AbonelikService, {} as ParolaService, durum as unknown as KullaniciDurumService);
   const olarak = <T>(userId: string, is: () => Promise<T>) => baglamlaCalistir({ tenantId: TENANT, userId, rol: "yonetici" }, is);
-  return { kullanicilar, denetim, abonelik, controller, olarak };
+  return { kullanicilar, denetim, abonelik, controller, olarak, durum, prisma };
 }
 
 const satir = (id: string, rol: string, aktif = true): Satir => ({ id, eposta: `${id}@ornek.com`, rol, aktif, maksIskontoYuzdesi: null, bayiCariId: null });

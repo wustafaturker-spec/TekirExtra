@@ -4,6 +4,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { AuthController } from "./auth.controller";
 import { AuthGuard } from "./auth.guard";
 import { AuthService } from "./auth.service";
+import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { RollerGuard } from "./roller.guard";
 
 @Module({
@@ -19,6 +20,7 @@ import { RollerGuard } from "./roller.guard";
   controllers: [AuthController],
   providers: [
     AuthService,
+    GirisDenemeSayaci,
     // Sıra önemli: önce kimlik (AuthGuard), sonra rol (RollerGuard)
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RollerGuard },

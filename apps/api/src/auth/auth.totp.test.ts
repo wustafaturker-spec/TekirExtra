@@ -5,6 +5,7 @@ import { sifrele } from "../core/kripto";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import type { PrismaService } from "../core/prisma.service";
 import { AuthService } from "./auth.service";
+import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { KURTARMA_KODU_SAYISI, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
 
 const TENANT = "00000000-0000-0000-0000-0000000000aa";
@@ -42,7 +43,7 @@ function kur() {
     oturum: { create: vi.fn(async () => ({})) },
   };
   const jwt = { signAsync: vi.fn(async () => "erisim-token") };
-  const service = new AuthService(prisma as unknown as PrismaService, jwt as never);
+  const service = new AuthService(prisma as unknown as PrismaService, jwt as never, GirisDenemeSayaci.bellekte());
   const olarak = <T>(is: () => Promise<T>) => baglamlaCalistir({ tenantId: TENANT, userId: KULLANICI, rol: "muhasebe" }, is);
   const totpKodu = () => generateSync({ secret });
   return { k, secret, denetim, service, olarak, totpKodu };

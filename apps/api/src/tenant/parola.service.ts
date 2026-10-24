@@ -4,6 +4,7 @@ import * as argon2 from "argon2";
 import { z } from "zod";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
+import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import { EpostaService } from "./eposta.service";
 
@@ -42,6 +43,7 @@ export class ParolaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eposta: EpostaService,
+    private readonly durum: KullaniciDurumService,
   ) {}
 
   /** KLN-10: yönetici başka bir kullanıcıya geçici parola verir. */
@@ -59,7 +61,7 @@ export class ParolaService {
       });
       return kullanici;
     });
-    await this.kimlikTemizle(hedefId);
+    await this.kimlikTemizle(tenantId, hedefId);
     return { mesaj: `${hedef.adSoyad} için yeni parola kaydedildi; açık oturumları kapatıldı.` };
   }
 
@@ -77,7 +79,7 @@ export class ParolaService {
       });
       return kullanici;
     });
-    await this.kimlikTemizle(hedefId);
+    await this.kimlikTemizle(tenantId, hedefId);
     return { mesaj: `${hedef.adSoyad} için iki adımlı doğrulama kapatıldı; açık oturumları kapatıldı. Kullanıcı girişten sonra yeniden kurabilir.` };
   }
 
@@ -97,7 +99,7 @@ export class ParolaService {
       await tx.user.update({ where: { id: userId }, data: { parolaHash } });
       await tx.auditLog.create({ data: { tenantId, userId, islem: "parola_degistirildi", varlik: "user", varlikId: userId } });
     });
-    await this.kimlikTemizle(userId, refreshToken ? tokenHashle(refreshToken) : undefined);
+    await this.kimlikTemizle(tenantId, userId, refreshToken ? tokenHashle(refreshToken) : undefined);
     return { mesaj: "Parolanız değiştirildi; diğer cihazlardaki oturumlarınız kapatıldı." };
   }
 
@@ -162,12 +164,18 @@ export class ParolaService {
         data: { tenantId: kayit.tenantId, userId: kayit.userId, islem: "parola_baglantiyla_sifirlandi", varlik: "user", varlikId: kayit.userId },
       });
     });
-    await this.kimlikTemizle(kayit.userId);
+    await this.kimlikTemizle(kayit.tenantId, kayit.userId);
     return { mesaj: "Parolanız güncellendi; yeni parolanızla giriş yapabilirsiniz." };
   }
 
-  /** KLN-13: oturumları (biri hariç tutulabilir) ve kullanılmamış sıfırlama bağlantılarını kapatır. */
-  private async kimlikTemizle(userId: string, korunanRefreshHash?: string): Promise<void> {
+  /**
+   * KLN-13: oturumları (biri hariç tutulabilir) ve kullanılmamış sıfırlama
+   * bağlantılarını kapatır; oturum sürümü artar, eldeki erişim token'ları da
+   * düşer (yönetim P1-2). Korunan oturum yeni token'ını yenilemeyle alır.
+   */
+  private async kimlikTemizle(tenantId: string, userId: string, korunanRefreshHash?: string): Promise<void> {
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.user.update({ where: { id: userId }, data: { oturumSurumu: { increment: 1 } } }));
+    this.durum.unut(userId);
     await this.prisma.oturum.deleteMany({
       where: { userId, ...(korunanRefreshHash ? { NOT: { refreshTokenHash: korunanRefreshHash } } : {}) },
     });

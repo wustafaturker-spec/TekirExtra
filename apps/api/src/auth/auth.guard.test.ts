@@ -59,3 +59,50 @@ describe("platform ve kiracı token ayrımı (MVZ-04)", () => {
     expect(r).toMatchObject({ sonuc: true, kiraci: { tenantId: "t1", userId: "u1", rol: "yonetici" }, platform: undefined });
   });
 });
+
+describe("kullanıcı durumu denetimi (yönetim P1-2)", () => {
+  const jwt = new JwtService({ secret: KIRACI });
+  const reflector = { getAllAndOverride: () => false } as unknown as Reflector;
+  let db: { aktif: boolean; rol: string; oturumSurumu: number };
+  let okuma: number;
+  // Gerçek önbellekli servis, sahte Prisma üstünde.
+  const kurGuard = async () => {
+    const { KullaniciDurumService } = await import("../core/kullanici-durum.service");
+    const prisma = { tenantIslem: async (_t: string, fn: (tx: unknown) => Promise<unknown>) => fn({ user: { findUnique: async () => { okuma++; return { ...db }; } } }) };
+    return new AuthGuard(jwt, reflector, new KullaniciDurumService(prisma as never));
+  };
+  const dene = (guard: AuthGuard, token: string) => {
+    const context = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ headers: { authorization: `Bearer ${token}` } }) }) } as never;
+    return istekBaglami.run({}, () => guard.canActivate(context));
+  };
+  const token = (yuk: Record<string, unknown>) => jwt.signAsync({ sub: "u1", tenantId: "t1", rol: "muhasebe", ...yuk });
+
+  beforeEach(() => { process.env.JWT_SECRET = KIRACI; db = { aktif: true, rol: "muhasebe", oturumSurumu: 0 }; okuma = 0; });
+
+  it("güncel token geçer; ardışık isteklerde DB'ye gidilmez", async () => {
+    const guard = await kurGuard();
+    const t = await token({ sv: 0 });
+    await expect(dene(guard, t)).resolves.toBe(true);
+    await expect(dene(guard, t)).resolves.toBe(true);
+    expect(okuma).toBe(1);
+  });
+
+  it("sürüm alanı olmayan eski token sürüm 0 sayılır", async () => {
+    await expect(dene(await kurGuard(), await token({}))).resolves.toBe(true);
+  });
+
+  it("pasife alınan, rolü değişen ya da sürümü artan kullanıcının token'ı reddedilir", async () => {
+    for (const degisiklik of [{ aktif: false }, { rol: "satis" }, { oturumSurumu: 1 }]) {
+      db = { aktif: true, rol: "muhasebe", oturumSurumu: 0, ...degisiklik };
+      await expect(dene(await kurGuard(), await token({ sv: 0 }))).rejects.toThrow(/güncel değil/);
+    }
+  });
+
+  it("önbellek bayatken yeni sürümlü token bir kez taze okumayla geçer, eski token düşer", async () => {
+    const guard = await kurGuard();
+    await expect(dene(guard, await token({ sv: 0 }))).resolves.toBe(true);
+    db.oturumSurumu = 1; // parola değişti; bu süreçte önbellek hâlâ 0 diyor
+    await expect(dene(guard, await token({ sv: 1 }))).resolves.toBe(true);
+    await expect(dene(guard, await token({ sv: 0 }))).rejects.toThrow(/güncel değil/);
+  });
+});

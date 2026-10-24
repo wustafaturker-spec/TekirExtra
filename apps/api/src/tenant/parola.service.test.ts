@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as argon2 from "argon2";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../core/istek-baglami";
+import type { KullaniciDurumService } from "../core/kullanici-durum.service";
 import type { PrismaService } from "../core/prisma.service";
 import type { EpostaService } from "./eposta.service";
 import { ParolaService, SIFIRLAMA_ISTEK_YANITI } from "./parola.service";
@@ -12,7 +13,7 @@ const HEDEF = "00000000-0000-0000-0000-000000000002";
 const ESKI_PAROLA = "EskiParola2026";
 const ozet = (t: string) => createHash("sha256").update(t).digest("hex");
 
-interface Kullanici { id: string; eposta: string; adSoyad: string; rol: string; aktif: boolean; parolaHash: string; epostaDogrulandi: boolean }
+interface Kullanici { id: string; eposta: string; adSoyad: string; rol: string; aktif: boolean; parolaHash: string; epostaDogrulandi: boolean; oturumSurumu?: number }
 interface Sifirlama { id: string; tenantId: string; userId: string; tokenHash: string; gecerlilikSonu: Date; kullanildi: boolean; createdAt: Date }
 
 function kur() {
@@ -23,7 +24,12 @@ function kur() {
   const tx = {
     user: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => kullanicilar.get(where.id) ?? null),
-      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<Kullanici> }) => Object.assign(kullanicilar.get(where.id)!, data)),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<Kullanici> | { oturumSurumu: { increment: number } } }) => {
+        const u = kullanicilar.get(where.id)!;
+        const { oturumSurumu, ...diger } = data as { oturumSurumu?: number | { increment: number } };
+        if (typeof oturumSurumu === "object") u.oturumSurumu = (u.oturumSurumu ?? 0) + oturumSurumu.increment;
+        return Object.assign(u, diger);
+      }),
     },
     auditLog: { create: vi.fn(async ({ data }: { data: { islem: string; userId: string; varlikId: string } }) => { denetim.push(data); return data; }) },
   };
@@ -63,9 +69,10 @@ function kur() {
   };
   const gonderilen: { alici: string; link: string }[] = [];
   const eposta = { parolaSifirlamaGonder: vi.fn(async (alici: string, _ad: string, link: string) => { gonderilen.push({ alici, link }); return { messageId: null }; }) };
-  const service = new ParolaService(prisma as unknown as PrismaService, eposta as unknown as EpostaService);
+  const durum = { unut: vi.fn() };
+  const service = new ParolaService(prisma as unknown as PrismaService, eposta as unknown as EpostaService, durum as unknown as KullaniciDurumService);
   const olarak = <T>(userId: string, is: () => Promise<T>) => baglamlaCalistir({ tenantId: TENANT, userId, rol: "yonetici" }, is);
-  return { kullanicilar, oturumlar, sifirlamalar, denetim, gonderilen, eposta, service, olarak };
+  return { kullanicilar, oturumlar, sifirlamalar, denetim, gonderilen, eposta, service, olarak, durum };
 }
 
 async function kullaniciEkle(k: ReturnType<typeof kur>, id: string, eposta: string, aktif = true) {
