@@ -6,18 +6,237 @@ import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap
 import { api, tokenAl } from "@/lib/api";
 
 type Durum = "bekliyor" | "yeniden_isleme" | "kabul" | "red";
-interface Kontrol { id: string; miktar: string; durum: Durum; yenidenIslemeSayisi: number; kontrolNotu?: string | null; kontrolZamani?: string | null; createdAt: string; karantinaDepo: { kod: string; ad: string }; uretimBildirimi: { bildirimTarihi: string }; uretimEmri: { id: string; no: string; stok: { kod: string; ad: string; anaBirim: string }; varyant?: { kod: string; ad: string } | null; hedefDepo: { kod: string; ad: string } } }
+interface Kontrol {
+  id: string;
+  miktar: string;
+  durum: Durum;
+  yenidenIslemeSayisi: number;
+  kontrolNotu?: string | null;
+  kontrolZamani?: string | null;
+  createdAt: string;
+  karantinaDepo: { kod: string; ad: string };
+  uretimBildirimi: { bildirimTarihi: string };
+  uretimEmri: {
+    id: string;
+    no: string;
+    stok: { kod: string; ad: string; anaBirim: string };
+    varyant?: { kod: string; ad: string } | null;
+    hedefDepo: { kod: string; ad: string };
+  };
+}
 const sayi = (v: string | number) => Number(v).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
 export default function UretimKaliteSayfasi() {
-  const [kayitlar, setKayitlar] = useState<Kontrol[]>([]); const [filtre, setFiltre] = useState<"" | Durum>("bekliyor"); const [secili, setSecili] = useState<Kontrol | null>(null); const [karar, setKarar] = useState<"kabul" | "red" | "yeniden_isleme">("kabul"); const [not, setNot] = useState(""); const [olcum, setOlcum] = useState(""); const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [islem, setIslem] = useState(false);
-  async function yukle() { setKayitlar(await api<Kontrol[]>(`/uretim/kalite-kontrolleri${filtre ? `?durum=${filtre}` : ""}`)); }
-  useEffect(() => { if (tokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Kalite kayıtları yüklenemedi")); }, [filtre]);
-  async function kaydet(e: React.FormEvent) { e.preventDefault(); if (!secili) return; setIslem(true); setHata(""); try { await api(`/uretim/kalite-kontrolleri/${secili.id}/karar`, { method: "POST", body: JSON.stringify({ karar, kontrolNotu: not, olcumler: olcum ? { genel: olcum } : undefined }) }); setBasari(karar === "kabul" ? "Ürünler kabul edilerek hedef depoya aktarıldı." : karar === "red" ? "Ürünler reddedildi; ek malzeme ihtiyacı oluşturuldu." : "Ürünler karantinada tutularak yeniden işleme gönderildi."); setSecili(null); setNot(""); setOlcum(""); await yukle(); } catch (neden) { setHata(neden instanceof Error ? neden.message : "Kalite kararı kaydedilemedi"); } finally { setIslem(false); } }
-  async function yenidenIslemeTamamla(kontrol: Kontrol) { const aciklama = window.prompt("Yeniden işleme sonucunu açıklayın:"); if (!aciklama?.trim()) return; setIslem(true); setHata(""); try { await api(`/uretim/kalite-kontrolleri/${kontrol.id}/yeniden-isleme-tamamla`, { method: "POST", body: JSON.stringify({ aciklama }) }); setBasari("Yeniden işleme tamamlandı; ürün tekrar kalite incelemesine açıldı."); await yukle(); } catch (neden) { setHata(neden instanceof Error ? neden.message : "Yeniden işleme tamamlanamadı"); } finally { setIslem(false); } }
-  return <div className="production-page"><PageHeader title="Üretim Kalite Kontrolü" subtitle="Karantinadaki mamulleri inceleyin; kabul, red veya yeniden işleme kararı verin." actions={<div className="production-head-filter"><span>Görünüm</span><Select aria-label="Durum filtresi" value={filtre} onChange={(e) => setFiltre(e.target.value as "" | Durum)}><option value="">Tüm kayıtlar</option><option value="bekliyor">Bekleyenler</option><option value="yeniden_isleme">Yeniden işlemede</option><option value="kabul">Kabul edilenler</option><option value="red">Reddedilenler</option></Select></div>} />
-    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
-    {secili && <Card title={`${secili.uretimEmri.no} kalite kararı`}><form className="form-grid" onSubmit={kaydet}><Field label="Karar"><Select value={karar} onChange={(e) => setKarar(e.target.value as "kabul" | "red" | "yeniden_isleme")}><option value="kabul">Kabul — hedef depoya aktar</option><option value="yeniden_isleme">Yeniden işleme — karantinada tut</option><option value="red">Red — karantina stoğundan çıkar</option></Select></Field><Field className="form-grid__genis" label="Kontrol/ölçüm özeti"><Input maxLength={500} value={olcum} onChange={(e) => setOlcum(e.target.value)} placeholder="Örn. çap 19,98 mm; yüzey uygun" /></Field><Field className="form-grid__genis" label="Kontrol notu"><Input required minLength={3} maxLength={1000} value={not} onChange={(e) => setNot(e.target.value)} /></Field><div className="row-tight"><Button type="submit" variant={karar === "red" ? "danger" : "primary"} disabled={islem}>Kararı kaydet</Button><Button type="button" disabled={islem} onClick={() => setSecili(null)}>Vazgeç</Button></div></form></Card>}
-    <Card pad={false}><TableWrap><thead><tr><th>Emir / Ürün</th><th>Bildirim</th><th className="num">Miktar</th><th>Karantina</th><th>Hedef depo</th><th>Durum</th><th>İşlem</th></tr></thead><tbody>{kayitlar.map((k) => <tr key={k.id}><td><Link href={`/panel/uretim/emirler/${k.uretimEmri.id}`}><strong>{k.uretimEmri.no}</strong></Link><br /><small>{k.uretimEmri.varyant ? `${k.uretimEmri.varyant.kod} — ${k.uretimEmri.stok.ad} — ${k.uretimEmri.varyant.ad}` : `${k.uretimEmri.stok.kod} — ${k.uretimEmri.stok.ad}`}</small></td><td>{new Date(k.uretimBildirimi.bildirimTarihi).toLocaleString("tr-TR")}</td><td className="num">{sayi(k.miktar)} {k.uretimEmri.stok.anaBirim}</td><td>{k.karantinaDepo.ad}</td><td>{k.uretimEmri.hedefDepo.ad}</td><td><Badge variant={k.durum === "kabul" ? "success" : k.durum === "red" ? "danger" : k.durum === "yeniden_isleme" ? "info" : "warning"}>{k.durum === "kabul" ? "Kabul" : k.durum === "red" ? "Red" : k.durum === "yeniden_isleme" ? "Yeniden işlemede" : "Bekliyor"}</Badge>{k.yenidenIslemeSayisi > 0 && <><br /><small>{k.yenidenIslemeSayisi} yeniden işleme</small></>}{k.kontrolNotu && <><br /><small>{k.kontrolNotu}</small></>}</td><td>{k.durum === "bekliyor" ? <Button size="sm" variant="primary" onClick={() => { setSecili(k); setKarar("kabul"); }}>İncele</Button> : k.durum === "yeniden_isleme" ? <Button size="sm" variant="primary" disabled={islem} onClick={() => void yenidenIslemeTamamla(k)}>İşlemeyi tamamla</Button> : null}</td></tr>)}{!kayitlar.length && <tr><td colSpan={7}>Bu durumda kalite kontrol kaydı yok.</td></tr>}</tbody></TableWrap></Card>
-  </div>;
+  const [kayitlar, setKayitlar] = useState<Kontrol[]>([]);
+  const [filtre, setFiltre] = useState<"" | Durum>("bekliyor");
+  const [secili, setSecili] = useState<Kontrol | null>(null);
+  const [karar, setKarar] = useState<"kabul" | "red" | "yeniden_isleme">("kabul");
+  const [not, setNot] = useState("");
+  const [olcum, setOlcum] = useState("");
+  const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
+  const [islem, setIslem] = useState(false);
+  async function yukle() {
+    setKayitlar(await api<Kontrol[]>(`/uretim/kalite-kontrolleri${filtre ? `?durum=${filtre}` : ""}`));
+  }
+  useEffect(() => {
+    if (tokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Kalite kayıtları yüklenemedi"));
+  }, [filtre]);
+  async function kaydet(e: React.FormEvent) {
+    e.preventDefault();
+    if (!secili) return;
+    setIslem(true);
+    setHata("");
+    try {
+      await api(`/uretim/kalite-kontrolleri/${secili.id}/karar`, {
+        method: "POST",
+        body: JSON.stringify({ karar, kontrolNotu: not, olcumler: olcum ? { genel: olcum } : undefined }),
+      });
+      setBasari(
+        karar === "kabul"
+          ? "Ürünler kabul edilerek hedef depoya aktarıldı."
+          : karar === "red"
+            ? "Ürünler reddedildi; ek malzeme ihtiyacı oluşturuldu."
+            : "Ürünler karantinada tutularak yeniden işleme gönderildi.",
+      );
+      setSecili(null);
+      setNot("");
+      setOlcum("");
+      await yukle();
+    } catch (neden) {
+      setHata(neden instanceof Error ? neden.message : "Kalite kararı kaydedilemedi");
+    } finally {
+      setIslem(false);
+    }
+  }
+  async function yenidenIslemeTamamla(kontrol: Kontrol) {
+    const aciklama = window.prompt("Yeniden işleme sonucunu açıklayın:");
+    if (!aciklama?.trim()) return;
+    setIslem(true);
+    setHata("");
+    try {
+      await api(`/uretim/kalite-kontrolleri/${kontrol.id}/yeniden-isleme-tamamla`, {
+        method: "POST",
+        body: JSON.stringify({ aciklama }),
+      });
+      setBasari("Yeniden işleme tamamlandı; ürün tekrar kalite incelemesine açıldı.");
+      await yukle();
+    } catch (neden) {
+      setHata(neden instanceof Error ? neden.message : "Yeniden işleme tamamlanamadı");
+    } finally {
+      setIslem(false);
+    }
+  }
+  return (
+    <div className="production-page">
+      <PageHeader
+        title="Üretim Kalite Kontrolü"
+        subtitle="Karantinadaki mamulleri inceleyin; kabul, red veya yeniden işleme kararı verin."
+        actions={
+          <div className="production-head-filter">
+            <span>Görünüm</span>
+            <Select
+              aria-label="Durum filtresi"
+              value={filtre}
+              onChange={(e) => setFiltre(e.target.value as "" | Durum)}
+            >
+              <option value="">Tüm kayıtlar</option>
+              <option value="bekliyor">Bekleyenler</option>
+              <option value="yeniden_isleme">Yeniden işlemede</option>
+              <option value="kabul">Kabul edilenler</option>
+              <option value="red">Reddedilenler</option>
+            </Select>
+          </div>
+        }
+      />
+      <Alert tone="error">{hata}</Alert>
+      <Alert tone="success">{basari}</Alert>
+      {secili && (
+        <Card title={`${secili.uretimEmri.no} kalite kararı`}>
+          <form className="form-grid" onSubmit={kaydet}>
+            <Field label="Karar">
+              <Select value={karar} onChange={(e) => setKarar(e.target.value as "kabul" | "red" | "yeniden_isleme")}>
+                <option value="kabul">Kabul — hedef depoya aktar</option>
+                <option value="yeniden_isleme">Yeniden işleme — karantinada tut</option>
+                <option value="red">Red — karantina stoğundan çıkar</option>
+              </Select>
+            </Field>
+            <Field className="form-grid__genis" label="Kontrol/ölçüm özeti">
+              <Input
+                maxLength={500}
+                value={olcum}
+                onChange={(e) => setOlcum(e.target.value)}
+                placeholder="Örn. çap 19,98 mm; yüzey uygun"
+              />
+            </Field>
+            <Field className="form-grid__genis" label="Kontrol notu">
+              <Input required minLength={3} maxLength={1000} value={not} onChange={(e) => setNot(e.target.value)} />
+            </Field>
+            <div className="row-tight">
+              <Button type="submit" variant={karar === "red" ? "danger" : "primary"} disabled={islem}>
+                Kararı kaydet
+              </Button>
+              <Button type="button" disabled={islem} onClick={() => setSecili(null)}>
+                Vazgeç
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+      <Card pad={false}>
+        <TableWrap>
+          <thead>
+            <tr>
+              <th>Emir / Ürün</th>
+              <th>Bildirim</th>
+              <th className="num">Miktar</th>
+              <th>Karantina</th>
+              <th>Hedef depo</th>
+              <th>Durum</th>
+              <th>İşlem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {kayitlar.map((k) => (
+              <tr key={k.id}>
+                <td>
+                  <Link href={`/panel/uretim/emirler/${k.uretimEmri.id}`}>
+                    <strong>{k.uretimEmri.no}</strong>
+                  </Link>
+                  <br />
+                  <small>
+                    {k.uretimEmri.varyant
+                      ? `${k.uretimEmri.varyant.kod} — ${k.uretimEmri.stok.ad} — ${k.uretimEmri.varyant.ad}`
+                      : `${k.uretimEmri.stok.kod} — ${k.uretimEmri.stok.ad}`}
+                  </small>
+                </td>
+                <td>{new Date(k.uretimBildirimi.bildirimTarihi).toLocaleString("tr-TR")}</td>
+                <td className="num">
+                  {sayi(k.miktar)} {k.uretimEmri.stok.anaBirim}
+                </td>
+                <td>{k.karantinaDepo.ad}</td>
+                <td>{k.uretimEmri.hedefDepo.ad}</td>
+                <td>
+                  <Badge
+                    variant={
+                      k.durum === "kabul"
+                        ? "success"
+                        : k.durum === "red"
+                          ? "danger"
+                          : k.durum === "yeniden_isleme"
+                            ? "info"
+                            : "warning"
+                    }
+                  >
+                    {k.durum === "kabul"
+                      ? "Kabul"
+                      : k.durum === "red"
+                        ? "Red"
+                        : k.durum === "yeniden_isleme"
+                          ? "Yeniden işlemede"
+                          : "Bekliyor"}
+                  </Badge>
+                  {k.yenidenIslemeSayisi > 0 && (
+                    <>
+                      <br />
+                      <small>{k.yenidenIslemeSayisi} yeniden işleme</small>
+                    </>
+                  )}
+                  {k.kontrolNotu && (
+                    <>
+                      <br />
+                      <small>{k.kontrolNotu}</small>
+                    </>
+                  )}
+                </td>
+                <td>
+                  {k.durum === "bekliyor" ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => {
+                        setSecili(k);
+                        setKarar("kabul");
+                      }}
+                    >
+                      İncele
+                    </Button>
+                  ) : k.durum === "yeniden_isleme" ? (
+                    <Button size="sm" variant="primary" disabled={islem} onClick={() => void yenidenIslemeTamamla(k)}>
+                      İşlemeyi tamamla
+                    </Button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+            {!kayitlar.length && (
+              <tr>
+                <td colSpan={7}>Bu durumda kalite kontrol kaydı yok.</td>
+              </tr>
+            )}
+          </tbody>
+        </TableWrap>
+      </Card>
+    </div>
+  );
 }

@@ -7,60 +7,604 @@ import { api, tokenAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { bugunTR } from "@tekirextra/shared";
 
-interface Uretilebilir { id: string; ciktiMiktari: string; genelRecete?: boolean; receteliVaryantIdleri?: string[]; stok: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; takipTipi: string; varyantlar?: { id: string; kod: string; ad: string; mevcutMiktar: string }[] }; _count: { kalemler: number } }
-type EmirDurum = "taslak" | "planlandi" | "malzeme_bekliyor" | "hazir" | "uretimde" | "kismen_tamamlandi" | "kalite_bekliyor" | "beklemede" | "durduruldu" | "tamamlandi" | "iptal_talebi" | "iptal";
-interface Emir { id: string; no: string; tarih: string; planlananBitis?: string | null; planlananMiktar: string; uretilenMiktar: string; toplamMaliyet: string; durum: EmirDurum; stok: { id: string; kod: string; ad: string; anaBirim: string; takipTipi?: "yok" | "lot" | "seri" }; varyant?: { id: string; kod: string; ad: string } | null; hedefDepo: { id: string; kod: string; ad: string }; satisSiparisSatiri?: { belge: { id: string; no: string | null } } | null; _count: { kalemler: number } }
-interface SatisIhtiyaci { id: string; siparis: { id: string; no: string | null; tarih: string; cari: { kod: string; unvan: string } }; stok: { id: string; kod: string; ad: string; anaBirim: string }; varyant?: { id: string; kod: string; ad: string } | null; siparisMiktari: string; planlananMiktar: string; kalanMiktar: string }
-interface DonemKilidi { id: string; yil: number; ay: number; aciklama?: string | null; kapatildiAt: string; kapatan: { adSoyad: string } }
-interface UretimOzeti { acikEmir: number; uretimde: number; malzemeBekleyen: number; kaliteBekleyen: number; geciken: number; uretilenMiktar: string; hurdaMiktari: string; yenidenIslemeMiktari: string; hurdaOrani: string }
-const durumAdi: Record<EmirDurum, string> = { taslak: "Taslak", planlandi: "Planlandı", malzeme_bekliyor: "Malzeme bekliyor", hazir: "Hazır", uretimde: "Üretimde", kismen_tamamlandi: "Kısmen tamamlandı", kalite_bekliyor: "Kalite bekliyor", beklemede: "Beklemede", durduruldu: "Durduruldu", tamamlandi: "Tamamlandı", iptal_talebi: "İptal talebi", iptal: "İptal" };
+interface Uretilebilir {
+  id: string;
+  ciktiMiktari: string;
+  genelRecete?: boolean;
+  receteliVaryantIdleri?: string[];
+  stok: {
+    id: string;
+    kod: string;
+    ad: string;
+    anaBirim: string;
+    mevcutMiktar: string;
+    takipTipi: string;
+    varyantlar?: { id: string; kod: string; ad: string; mevcutMiktar: string }[];
+  };
+  _count: { kalemler: number };
+}
+type EmirDurum =
+  | "taslak"
+  | "planlandi"
+  | "malzeme_bekliyor"
+  | "hazir"
+  | "uretimde"
+  | "kismen_tamamlandi"
+  | "kalite_bekliyor"
+  | "beklemede"
+  | "durduruldu"
+  | "tamamlandi"
+  | "iptal_talebi"
+  | "iptal";
+interface Emir {
+  id: string;
+  no: string;
+  tarih: string;
+  planlananBitis?: string | null;
+  planlananMiktar: string;
+  uretilenMiktar: string;
+  toplamMaliyet: string;
+  durum: EmirDurum;
+  stok: { id: string; kod: string; ad: string; anaBirim: string; takipTipi?: "yok" | "lot" | "seri" };
+  varyant?: { id: string; kod: string; ad: string } | null;
+  hedefDepo: { id: string; kod: string; ad: string };
+  satisSiparisSatiri?: { belge: { id: string; no: string | null } } | null;
+  _count: { kalemler: number };
+}
+interface SatisIhtiyaci {
+  id: string;
+  siparis: { id: string; no: string | null; tarih: string; cari: { kod: string; unvan: string } };
+  stok: { id: string; kod: string; ad: string; anaBirim: string };
+  varyant?: { id: string; kod: string; ad: string } | null;
+  siparisMiktari: string;
+  planlananMiktar: string;
+  kalanMiktar: string;
+}
+interface DonemKilidi {
+  id: string;
+  yil: number;
+  ay: number;
+  aciklama?: string | null;
+  kapatildiAt: string;
+  kapatan: { adSoyad: string };
+}
+interface UretimOzeti {
+  acikEmir: number;
+  uretimde: number;
+  malzemeBekleyen: number;
+  kaliteBekleyen: number;
+  geciken: number;
+  uretilenMiktar: string;
+  hurdaMiktari: string;
+  yenidenIslemeMiktari: string;
+  hurdaOrani: string;
+}
+const durumAdi: Record<EmirDurum, string> = {
+  taslak: "Taslak",
+  planlandi: "Planlandı",
+  malzeme_bekliyor: "Malzeme bekliyor",
+  hazir: "Hazır",
+  uretimde: "Üretimde",
+  kismen_tamamlandi: "Kısmen tamamlandı",
+  kalite_bekliyor: "Kalite bekliyor",
+  beklemede: "Beklemede",
+  durduruldu: "Durduruldu",
+  tamamlandi: "Tamamlandı",
+  iptal_talebi: "İptal talebi",
+  iptal: "İptal",
+};
 const bugun = () => bugunTR();
 const sayi = (v: string | number) => Number(v).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
 export default function UretimSayfasi() {
   const { depolar, varsayilan } = useDepolar();
-  const [urunler, setUrunler] = useState<Uretilebilir[]>([]); const [emirler, setEmirler] = useState<Emir[]>([]);
+  const [urunler, setUrunler] = useState<Uretilebilir[]>([]);
+  const [emirler, setEmirler] = useState<Emir[]>([]);
   const [ozet, setOzet] = useState<UretimOzeti | null>(null);
-  const [satisIhtiyaclari, setSatisIhtiyaclari] = useState<SatisIhtiyaci[]>([]); const [donemKilitleri, setDonemKilitleri] = useState<DonemKilidi[]>([]);
-  const [durumFiltresi, setDurumFiltresi] = useState(""); const [arama, setArama] = useState(""); const [gecikenFiltresi, setGecikenFiltresi] = useState(false);
-  const [formAcik, setFormAcik] = useState(false); const [stokId, setStokId] = useState(""); const [varyantId, setVaryantId] = useState(""); const [hedefDepoId, setHedefDepoId] = useState(""); const [miktar, setMiktar] = useState("1"); const [tarih, setTarih] = useState(bugun()); const [planlananBitis, setPlanlananBitis] = useState(""); const [aciklama, setAciklama] = useState("");
-  const [satisSiparisSatirId, setSatisSiparisSatirId] = useState(""); const simdi = new Date(); const [kilitYil, setKilitYil] = useState(simdi.getFullYear()); const [kilitAy, setKilitAy] = useState(simdi.getMonth() + 1); const [kilitAciklama, setKilitAciklama] = useState("");
-  const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [islem, setIslem] = useState<string | null>(null);
+  const [satisIhtiyaclari, setSatisIhtiyaclari] = useState<SatisIhtiyaci[]>([]);
+  const [donemKilitleri, setDonemKilitleri] = useState<DonemKilidi[]>([]);
+  const [durumFiltresi, setDurumFiltresi] = useState("");
+  const [arama, setArama] = useState("");
+  const [gecikenFiltresi, setGecikenFiltresi] = useState(false);
+  const [formAcik, setFormAcik] = useState(false);
+  const [stokId, setStokId] = useState("");
+  const [varyantId, setVaryantId] = useState("");
+  const [hedefDepoId, setHedefDepoId] = useState("");
+  const [miktar, setMiktar] = useState("1");
+  const [tarih, setTarih] = useState(bugun());
+  const [planlananBitis, setPlanlananBitis] = useState("");
+  const [aciklama, setAciklama] = useState("");
+  const [satisSiparisSatirId, setSatisSiparisSatirId] = useState("");
+  const simdi = new Date();
+  const [kilitYil, setKilitYil] = useState(simdi.getFullYear());
+  const [kilitAy, setKilitAy] = useState(simdi.getMonth() + 1);
+  const [kilitAciklama, setKilitAciklama] = useState("");
+  const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
+  const [islem, setIslem] = useState<string | null>(null);
   /** Varyantlı mamulde üretilecek renk/beden seçilir; giriş o varyantın stoğuna olur. */
   const secilenUrun = urunler.find((u) => u.stok.id === stokId);
   const uretilecekVaryantlar = secilenUrun?.stok.varyantlar ?? [];
-  function emirSorgusu() { const q = new URLSearchParams(); if (durumFiltresi) q.set("durum", durumFiltresi); if (arama.trim()) q.set("arama", arama.trim()); if (gecikenFiltresi) q.set("geciken", "true"); return q.size ? `?${q}` : ""; }
-  async function yukle() { const [u, e, o, s, k] = await Promise.all([api<Uretilebilir[]>("/uretim/urunler"), api<Emir[]>(`/uretim/emirler${emirSorgusu()}`), api<UretimOzeti>("/uretim/ozet"), api<SatisIhtiyaci[]>("/uretim/satis-siparisleri"), api<DonemKilidi[]>("/uretim/donem-kilitleri")]); setUrunler(u); setEmirler(e); setOzet(o); setSatisIhtiyaclari(s); setDonemKilitleri(k); }
-  useEffect(() => { if (tokenAl()) void yukle().catch((h) => setHata(h instanceof Error ? h.message : "Üretim bilgileri yüklenemedi")); }, [durumFiltresi, arama, gecikenFiltresi]);
-  useEffect(() => { if (!hedefDepoId && varsayilan) setHedefDepoId(varsayilan.id); }, [varsayilan, hedefDepoId]);
-  async function olustur(event: React.FormEvent) { event.preventDefault(); setHata(""); try { await api("/uretim/emirler", { method: "POST", body: JSON.stringify({ stokId, varyantId: varyantId || null, satisSiparisSatirId: satisSiparisSatirId || null, hedefDepoId, planlananMiktar: miktar, tarih, planlananBitis: planlananBitis || null, aciklama: aciklama || null }) }); setPlanlananBitis(""); setBasari("Üretim emri oluşturuldu."); setFormAcik(false); setStokId(""); setVaryantId(""); setSatisSiparisSatirId(""); setMiktar("1"); setAciklama(""); await yukle(); } catch (h) { setHata(h instanceof Error ? h.message : "Üretim emri oluşturulamadı"); } }
-  async function donemKilitle() { setHata(""); try { await api("/uretim/donem-kilitleri", { method: "POST", body: JSON.stringify({ yil: kilitYil, ay: kilitAy, aciklama: kilitAciklama || null }) }); setBasari(`${String(kilitAy).padStart(2, "0")}/${kilitYil} üretim dönemi kapatıldı.`); setKilitAciklama(""); await yukle(); } catch (h) { setHata(h instanceof Error ? h.message : "Dönem kapatılamadı"); } }
-  async function donemAc(id: string) { setHata(""); try { await api(`/uretim/donem-kilitleri/${id}`, { method: "DELETE" }); setBasari("Üretim dönemi yeniden açıldı."); await yukle(); } catch (h) { setHata(h instanceof Error ? h.message : "Dönem açılamadı"); } }
+  function emirSorgusu() {
+    const q = new URLSearchParams();
+    if (durumFiltresi) q.set("durum", durumFiltresi);
+    if (arama.trim()) q.set("arama", arama.trim());
+    if (gecikenFiltresi) q.set("geciken", "true");
+    return q.size ? `?${q}` : "";
+  }
+  async function yukle() {
+    const [u, e, o, s, k] = await Promise.all([
+      api<Uretilebilir[]>("/uretim/urunler"),
+      api<Emir[]>(`/uretim/emirler${emirSorgusu()}`),
+      api<UretimOzeti>("/uretim/ozet"),
+      api<SatisIhtiyaci[]>("/uretim/satis-siparisleri"),
+      api<DonemKilidi[]>("/uretim/donem-kilitleri"),
+    ]);
+    setUrunler(u);
+    setEmirler(e);
+    setOzet(o);
+    setSatisIhtiyaclari(s);
+    setDonemKilitleri(k);
+  }
+  useEffect(() => {
+    if (tokenAl()) void yukle().catch((h) => setHata(h instanceof Error ? h.message : "Üretim bilgileri yüklenemedi"));
+  }, [durumFiltresi, arama, gecikenFiltresi]);
+  useEffect(() => {
+    if (!hedefDepoId && varsayilan) setHedefDepoId(varsayilan.id);
+  }, [varsayilan, hedefDepoId]);
+  async function olustur(event: React.FormEvent) {
+    event.preventDefault();
+    setHata("");
+    try {
+      await api("/uretim/emirler", {
+        method: "POST",
+        body: JSON.stringify({
+          stokId,
+          varyantId: varyantId || null,
+          satisSiparisSatirId: satisSiparisSatirId || null,
+          hedefDepoId,
+          planlananMiktar: miktar,
+          tarih,
+          planlananBitis: planlananBitis || null,
+          aciklama: aciklama || null,
+        }),
+      });
+      setPlanlananBitis("");
+      setBasari("Üretim emri oluşturuldu.");
+      setFormAcik(false);
+      setStokId("");
+      setVaryantId("");
+      setSatisSiparisSatirId("");
+      setMiktar("1");
+      setAciklama("");
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Üretim emri oluşturulamadı");
+    }
+  }
+  async function donemKilitle() {
+    setHata("");
+    try {
+      await api("/uretim/donem-kilitleri", {
+        method: "POST",
+        body: JSON.stringify({ yil: kilitYil, ay: kilitAy, aciklama: kilitAciklama || null }),
+      });
+      setBasari(`${String(kilitAy).padStart(2, "0")}/${kilitYil} üretim dönemi kapatıldı.`);
+      setKilitAciklama("");
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Dönem kapatılamadı");
+    }
+  }
+  async function donemAc(id: string) {
+    setHata("");
+    try {
+      await api(`/uretim/donem-kilitleri/${id}`, { method: "DELETE" });
+      setBasari("Üretim dönemi yeniden açıldı.");
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Dönem açılamadı");
+    }
+  }
   // Tamamlama yalnız emir ekranındaki üretim bildirimiyle yapılır: kalite,
   // gerçek sarf, lot/seri ve yan ürünler orada işlenir.
   async function durumIsle(emir: Emir, eylem: "planla" | "rezerve-et" | "baslat" | "iptal") {
-    setIslem(emir.id); setHata(""); setBasari("");
+    setIslem(emir.id);
+    setHata("");
+    setBasari("");
     try {
       await api(`/uretim/emirler/${emir.id}/${eylem}`, { method: "POST", body: JSON.stringify({}) });
-      setBasari(eylem === "planla" ? "Üretim emri planlandı." : eylem === "rezerve-et" ? "Uygun malzemeler depo bazında rezerve edildi." : eylem === "baslat" ? "Üretim başlatıldı." : "Üretim emri iptal edildi.");
+      setBasari(
+        eylem === "planla"
+          ? "Üretim emri planlandı."
+          : eylem === "rezerve-et"
+            ? "Uygun malzemeler depo bazında rezerve edildi."
+            : eylem === "baslat"
+              ? "Üretim başlatıldı."
+              : "Üretim emri iptal edildi.",
+      );
       await yukle();
-    } catch (h) { setHata(h instanceof Error ? h.message : "İşlem başarısız"); }
-    finally { setIslem(null); }
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "İşlem başarısız");
+    } finally {
+      setIslem(null);
+    }
   }
-  return <div className="production-page"><PageHeader title="Üretim Emirleri" subtitle="Emri planlayın, malzemeyi ayırın; üretim bildirimleriyle stoğa alın." actions={<Button variant="primary" onClick={() => setFormAcik((v) => !v)}>+ Yeni Üretim Emri</Button>} />
-    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
-    {ozet && <section className="production-summary" aria-label="Üretim kontrol merkezi">
-      <article><span>Açık emir</span><strong>{ozet.acikEmir}</strong><small>{ozet.uretimde} emir üretimde</small></article>
-      <article><span>Bekleyen işler</span><strong>{ozet.malzemeBekleyen + ozet.kaliteBekleyen}</strong><small>{ozet.malzemeBekleyen} malzeme · {ozet.kaliteBekleyen} kalite</small></article>
-      <article><span>Geciken emir</span><strong>{ozet.geciken}</strong><small>Planlanan bitişi geçmiş açık işler</small></article>
-      <article><span>İyi üretim</span><strong>{sayi(ozet.uretilenMiktar)}</strong><small>Toplam gerçekleşen miktar</small></article>
-      <article><span>Hurda oranı</span><strong>%{sayi(ozet.hurdaOrani)}</strong><small>{sayi(ozet.hurdaMiktari)} hurda</small></article>
-      <article><span>Yeniden işleme</span><strong>{sayi(ozet.yenidenIslemeMiktari)}</strong><small>Bildirilen toplam miktar</small></article>
-    </section>}
-    {formAcik && <Card title="Yeni üretim emri" style={{ marginBottom: "1rem" }}><form className="form-grid" onSubmit={olustur}><Field className="form-grid__genis" label="Satış siparişi ihtiyacı"><Select value={satisSiparisSatirId} onChange={(e) => { const deger = e.target.value; const ihtiyac = satisIhtiyaclari.find((x) => x.id === deger); setSatisSiparisSatirId(deger); if (ihtiyac) { setStokId(ihtiyac.stok.id); setVaryantId(ihtiyac.varyant?.id ?? ""); setMiktar(ihtiyac.kalanMiktar); } }}><option value="">Siparişten bağımsız üretim</option>{satisIhtiyaclari.map((s) => <option key={s.id} value={s.id}>{s.siparis.no ?? "Numarasız"} · {s.siparis.cari.unvan} · {s.varyant?.kod ?? s.stok.kod} · Kalan {sayi(s.kalanMiktar)} {s.stok.anaBirim}</option>)}</Select></Field><Field label="Üretilecek ürün"><Select required disabled={Boolean(satisSiparisSatirId)} value={stokId} onChange={(e) => { setStokId(e.target.value); setVaryantId(""); }}><option value="">Reçeteli ürün seçin</option>{urunler.map((u) => <option key={u.id} value={u.stok.id}>{u.stok.kod} — {u.stok.ad} · {u._count.kalemler} malzeme</option>)}</Select></Field>{(uretilecekVaryantlar.length > 0 || varyantId) && <Field label="Üretilecek varyant"><Select required disabled={Boolean(satisSiparisSatirId)} value={varyantId} onChange={(e) => setVaryantId(e.target.value)}><option value="">Varyant seçin</option>{uretilecekVaryantlar.map((v) => { const ozel = secilenUrun?.receteliVaryantIdleri?.includes(v.id); return <option key={v.id} value={v.id} disabled={!ozel && secilenUrun?.genelRecete === false}>{v.ad} · {v.kod} · Stok {sayi(v.mevcutMiktar)}{ozel ? " · özel reçete" : secilenUrun?.genelRecete === false ? " · reçete yok" : ""}</option>; })}</Select></Field>}<Field label="Üretilecek miktar"><Input required type="number" min="0.001" max={satisSiparisSatirId ? satisIhtiyaclari.find((s) => s.id === satisSiparisSatirId)?.kalanMiktar : undefined} step="0.001" value={miktar} onChange={(e) => setMiktar(e.target.value)} /></Field><Field label="Mamul giriş deposu"><Select required value={hedefDepoId} onChange={(e) => setHedefDepoId(e.target.value)}><option value="">Depo seçin</option>{depolar.map((d) => <option key={d.id} value={d.id}>{d.kod} — {d.ad}</option>)}</Select></Field><Field label="Başlangıç tarihi"><Input required type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} /></Field><Field label="Planlanan bitiş (boşsa operasyon planından)"><Input type="date" min={tarih} value={planlananBitis} onChange={(e) => setPlanlananBitis(e.target.value)} /></Field><Field className="form-grid__genis" label="Açıklama"><Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} /></Field><div><Button type="submit" variant="primary">Emri oluştur</Button></div></form></Card>}
-    <Card className="production-filter-card" title="Üretim dönem kontrolü"><div className="production-filter-grid"><Field label="Yıl"><Input type="number" min="2020" max="2100" value={kilitYil} onChange={(e) => setKilitYil(Number(e.target.value))} /></Field><Field label="Ay"><Select value={kilitAy} onChange={(e) => setKilitAy(Number(e.target.value))}>{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}. ay</option>)}</Select></Field><Field label="Kapatma açıklaması"><Input minLength={3} maxLength={500} value={kilitAciklama} onChange={(e) => setKilitAciklama(e.target.value)} placeholder="Mutabakat tamamlandı" /></Field><div><Button variant="danger" onClick={() => void donemKilitle()}>Dönemi kapat</Button></div></div>{!!donemKilitleri.length && <div className="row-tight">{donemKilitleri.slice(0, 6).map((k) => <Badge key={k.id} variant="warning">{String(k.ay).padStart(2, "0")}/{k.yil} kapalı · {k.kapatan.adSoyad} <button type="button" onClick={() => void donemAc(k.id)} aria-label="Dönemi aç">×</button></Badge>)}</div>}</Card>
-    {!urunler.length && <Alert tone="error">Üretilebilir ürün bulunmuyor. Önce ilgili stok kartının “Ürün reçetesi” sekmesinden reçete tanımlayın.</Alert>}
-    <Card className="production-filter-card" title="Emir filtreleri"><div className="production-filter-grid"><Field label="Emir / ürün ara"><Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Emir no, stok kodu veya ürün adı" /></Field><Field label="Durum"><Select value={durumFiltresi} onChange={(e) => setDurumFiltresi(e.target.value)}><option value="">Tüm durumlar</option>{Object.entries(durumAdi).map(([deger, ad]) => <option key={deger} value={deger}>{ad}</option>)}</Select></Field><label className="production-filter-check"><input type="checkbox" checked={gecikenFiltresi} onChange={(e) => setGecikenFiltresi(e.target.checked)} /><span><strong>Yalnız gecikenler</strong><small>Plan tarihi geçmiş açık emirler</small></span></label></div></Card>
-    <Card pad={false}><TableWrap><thead><tr><th>Emir No</th><th>Tarih</th><th>Ürün</th><th>Hedef depo</th><th className="num">İlerleme</th><th>Durum</th><th className="num">Maliyet</th><th>İşlem</th></tr></thead><tbody>{emirler.map((e) => { const ilerleme = Math.min(100, Number(e.planlananMiktar) ? Number(e.uretilenMiktar) * 100 / Number(e.planlananMiktar) : 0); const gecikti = (e.planlananBitis ?? e.tarih).slice(0, 10) < bugun() && !["tamamlandi", "iptal"].includes(e.durum); return <tr key={e.id}><td><Link href={"/panel/uretim/emirler/" + e.id}><strong>{e.no}</strong></Link><br /><small>{e._count.kalemler} malzeme</small></td><td>{e.tarih.slice(0, 10)}{e.planlananBitis && e.planlananBitis.slice(0, 10) !== e.tarih.slice(0, 10) && <><br /><small>Bitiş {e.planlananBitis.slice(0, 10)}</small></>}{gecikti && <><br /><Badge variant="danger">Gecikti</Badge></>}</td><td>{e.varyant ? `${e.varyant.kod} — ${e.stok.ad} — ${e.varyant.ad}` : `${e.stok.kod} — ${e.stok.ad}`}</td><td>{e.hedefDepo.ad}</td><td className="num"><strong>%{sayi(ilerleme)}</strong><br /><small>{sayi(e.uretilenMiktar)} / {sayi(e.planlananMiktar)} {e.stok.anaBirim}</small></td><td><Badge variant={e.durum === "tamamlandi" ? "success" : e.durum === "iptal" ? "danger" : e.durum === "uretimde" ? "info" : "warning"}>{durumAdi[e.durum]}</Badge></td><td className="num">{sayi(e.toplamMaliyet)} TL</td><td><div className="row-tight">{e.durum === "taslak" && <Button size="sm" variant="primary" disabled={islem === e.id} onClick={() => void durumIsle(e, "planla")}>Planla</Button>}{["planlandi", "malzeme_bekliyor"].includes(e.durum) && <Button size="sm" variant="primary" disabled={islem === e.id} onClick={() => void durumIsle(e, "rezerve-et")}>Malzeme ayır</Button>}{e.durum === "hazir" && <Button size="sm" variant="primary" disabled={islem === e.id} onClick={() => void durumIsle(e, "baslat")}>Başlat</Button>}{["uretimde", "kismen_tamamlandi"].includes(e.durum) && <Link className="btn btn--primary btn--sm" href={`/panel/uretim/emirler/${e.id}`}>Bildir</Link>}{["taslak", "planlandi", "malzeme_bekliyor", "hazir"].includes(e.durum) && <Button size="sm" variant="danger" disabled={islem === e.id} onClick={() => void durumIsle(e, "iptal")}>İptal</Button>}</div></td></tr>; })}{!emirler.length && <tr><td colSpan={8}>Filtrelere uygun üretim emri yok.</td></tr>}</tbody></TableWrap></Card>
-  </div>;
+  return (
+    <div className="production-page">
+      <PageHeader
+        title="Üretim Emirleri"
+        subtitle="Emri planlayın, malzemeyi ayırın; üretim bildirimleriyle stoğa alın."
+        actions={
+          <Button variant="primary" onClick={() => setFormAcik((v) => !v)}>
+            + Yeni Üretim Emri
+          </Button>
+        }
+      />
+      <Alert tone="error">{hata}</Alert>
+      <Alert tone="success">{basari}</Alert>
+      {ozet && (
+        <section className="production-summary" aria-label="Üretim kontrol merkezi">
+          <article>
+            <span>Açık emir</span>
+            <strong>{ozet.acikEmir}</strong>
+            <small>{ozet.uretimde} emir üretimde</small>
+          </article>
+          <article>
+            <span>Bekleyen işler</span>
+            <strong>{ozet.malzemeBekleyen + ozet.kaliteBekleyen}</strong>
+            <small>
+              {ozet.malzemeBekleyen} malzeme · {ozet.kaliteBekleyen} kalite
+            </small>
+          </article>
+          <article>
+            <span>Geciken emir</span>
+            <strong>{ozet.geciken}</strong>
+            <small>Planlanan bitişi geçmiş açık işler</small>
+          </article>
+          <article>
+            <span>İyi üretim</span>
+            <strong>{sayi(ozet.uretilenMiktar)}</strong>
+            <small>Toplam gerçekleşen miktar</small>
+          </article>
+          <article>
+            <span>Hurda oranı</span>
+            <strong>%{sayi(ozet.hurdaOrani)}</strong>
+            <small>{sayi(ozet.hurdaMiktari)} hurda</small>
+          </article>
+          <article>
+            <span>Yeniden işleme</span>
+            <strong>{sayi(ozet.yenidenIslemeMiktari)}</strong>
+            <small>Bildirilen toplam miktar</small>
+          </article>
+        </section>
+      )}
+      {formAcik && (
+        <Card title="Yeni üretim emri" style={{ marginBottom: "1rem" }}>
+          <form className="form-grid" onSubmit={olustur}>
+            <Field className="form-grid__genis" label="Satış siparişi ihtiyacı">
+              <Select
+                value={satisSiparisSatirId}
+                onChange={(e) => {
+                  const deger = e.target.value;
+                  const ihtiyac = satisIhtiyaclari.find((x) => x.id === deger);
+                  setSatisSiparisSatirId(deger);
+                  if (ihtiyac) {
+                    setStokId(ihtiyac.stok.id);
+                    setVaryantId(ihtiyac.varyant?.id ?? "");
+                    setMiktar(ihtiyac.kalanMiktar);
+                  }
+                }}
+              >
+                <option value="">Siparişten bağımsız üretim</option>
+                {satisIhtiyaclari.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.siparis.no ?? "Numarasız"} · {s.siparis.cari.unvan} · {s.varyant?.kod ?? s.stok.kod} · Kalan{" "}
+                    {sayi(s.kalanMiktar)} {s.stok.anaBirim}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Üretilecek ürün">
+              <Select
+                required
+                disabled={Boolean(satisSiparisSatirId)}
+                value={stokId}
+                onChange={(e) => {
+                  setStokId(e.target.value);
+                  setVaryantId("");
+                }}
+              >
+                <option value="">Reçeteli ürün seçin</option>
+                {urunler.map((u) => (
+                  <option key={u.id} value={u.stok.id}>
+                    {u.stok.kod} — {u.stok.ad} · {u._count.kalemler} malzeme
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {(uretilecekVaryantlar.length > 0 || varyantId) && (
+              <Field label="Üretilecek varyant">
+                <Select
+                  required
+                  disabled={Boolean(satisSiparisSatirId)}
+                  value={varyantId}
+                  onChange={(e) => setVaryantId(e.target.value)}
+                >
+                  <option value="">Varyant seçin</option>
+                  {uretilecekVaryantlar.map((v) => {
+                    const ozel = secilenUrun?.receteliVaryantIdleri?.includes(v.id);
+                    return (
+                      <option key={v.id} value={v.id} disabled={!ozel && secilenUrun?.genelRecete === false}>
+                        {v.ad} · {v.kod} · Stok {sayi(v.mevcutMiktar)}
+                        {ozel ? " · özel reçete" : secilenUrun?.genelRecete === false ? " · reçete yok" : ""}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </Field>
+            )}
+            <Field label="Üretilecek miktar">
+              <Input
+                required
+                type="number"
+                min="0.001"
+                max={
+                  satisSiparisSatirId
+                    ? satisIhtiyaclari.find((s) => s.id === satisSiparisSatirId)?.kalanMiktar
+                    : undefined
+                }
+                step="0.001"
+                value={miktar}
+                onChange={(e) => setMiktar(e.target.value)}
+              />
+            </Field>
+            <Field label="Mamul giriş deposu">
+              <Select required value={hedefDepoId} onChange={(e) => setHedefDepoId(e.target.value)}>
+                <option value="">Depo seçin</option>
+                {depolar.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.kod} — {d.ad}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Başlangıç tarihi">
+              <Input required type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} />
+            </Field>
+            <Field label="Planlanan bitiş (boşsa operasyon planından)">
+              <Input
+                type="date"
+                min={tarih}
+                value={planlananBitis}
+                onChange={(e) => setPlanlananBitis(e.target.value)}
+              />
+            </Field>
+            <Field className="form-grid__genis" label="Açıklama">
+              <Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} />
+            </Field>
+            <div>
+              <Button type="submit" variant="primary">
+                Emri oluştur
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+      <Card className="production-filter-card" title="Üretim dönem kontrolü">
+        <div className="production-filter-grid">
+          <Field label="Yıl">
+            <Input
+              type="number"
+              min="2020"
+              max="2100"
+              value={kilitYil}
+              onChange={(e) => setKilitYil(Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Ay">
+            <Select value={kilitAy} onChange={(e) => setKilitAy(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {i + 1}. ay
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Kapatma açıklaması">
+            <Input
+              minLength={3}
+              maxLength={500}
+              value={kilitAciklama}
+              onChange={(e) => setKilitAciklama(e.target.value)}
+              placeholder="Mutabakat tamamlandı"
+            />
+          </Field>
+          <div>
+            <Button variant="danger" onClick={() => void donemKilitle()}>
+              Dönemi kapat
+            </Button>
+          </div>
+        </div>
+        {!!donemKilitleri.length && (
+          <div className="row-tight">
+            {donemKilitleri.slice(0, 6).map((k) => (
+              <Badge key={k.id} variant="warning">
+                {String(k.ay).padStart(2, "0")}/{k.yil} kapalı · {k.kapatan.adSoyad}{" "}
+                <button type="button" onClick={() => void donemAc(k.id)} aria-label="Dönemi aç">
+                  ×
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
+      </Card>
+      {!urunler.length && (
+        <Alert tone="error">
+          Üretilebilir ürün bulunmuyor. Önce ilgili stok kartının “Ürün reçetesi” sekmesinden reçete tanımlayın.
+        </Alert>
+      )}
+      <Card className="production-filter-card" title="Emir filtreleri">
+        <div className="production-filter-grid">
+          <Field label="Emir / ürün ara">
+            <Input
+              value={arama}
+              onChange={(e) => setArama(e.target.value)}
+              placeholder="Emir no, stok kodu veya ürün adı"
+            />
+          </Field>
+          <Field label="Durum">
+            <Select value={durumFiltresi} onChange={(e) => setDurumFiltresi(e.target.value)}>
+              <option value="">Tüm durumlar</option>
+              {Object.entries(durumAdi).map(([deger, ad]) => (
+                <option key={deger} value={deger}>
+                  {ad}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <label className="production-filter-check">
+            <input type="checkbox" checked={gecikenFiltresi} onChange={(e) => setGecikenFiltresi(e.target.checked)} />
+            <span>
+              <strong>Yalnız gecikenler</strong>
+              <small>Plan tarihi geçmiş açık emirler</small>
+            </span>
+          </label>
+        </div>
+      </Card>
+      <Card pad={false}>
+        <TableWrap>
+          <thead>
+            <tr>
+              <th>Emir No</th>
+              <th>Tarih</th>
+              <th>Ürün</th>
+              <th>Hedef depo</th>
+              <th className="num">İlerleme</th>
+              <th>Durum</th>
+              <th className="num">Maliyet</th>
+              <th>İşlem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {emirler.map((e) => {
+              const ilerleme = Math.min(
+                100,
+                Number(e.planlananMiktar) ? (Number(e.uretilenMiktar) * 100) / Number(e.planlananMiktar) : 0,
+              );
+              const gecikti =
+                (e.planlananBitis ?? e.tarih).slice(0, 10) < bugun() && !["tamamlandi", "iptal"].includes(e.durum);
+              return (
+                <tr key={e.id}>
+                  <td>
+                    <Link href={"/panel/uretim/emirler/" + e.id}>
+                      <strong>{e.no}</strong>
+                    </Link>
+                    <br />
+                    <small>{e._count.kalemler} malzeme</small>
+                  </td>
+                  <td>
+                    {e.tarih.slice(0, 10)}
+                    {e.planlananBitis && e.planlananBitis.slice(0, 10) !== e.tarih.slice(0, 10) && (
+                      <>
+                        <br />
+                        <small>Bitiş {e.planlananBitis.slice(0, 10)}</small>
+                      </>
+                    )}
+                    {gecikti && (
+                      <>
+                        <br />
+                        <Badge variant="danger">Gecikti</Badge>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    {e.varyant ? `${e.varyant.kod} — ${e.stok.ad} — ${e.varyant.ad}` : `${e.stok.kod} — ${e.stok.ad}`}
+                  </td>
+                  <td>{e.hedefDepo.ad}</td>
+                  <td className="num">
+                    <strong>%{sayi(ilerleme)}</strong>
+                    <br />
+                    <small>
+                      {sayi(e.uretilenMiktar)} / {sayi(e.planlananMiktar)} {e.stok.anaBirim}
+                    </small>
+                  </td>
+                  <td>
+                    <Badge
+                      variant={
+                        e.durum === "tamamlandi"
+                          ? "success"
+                          : e.durum === "iptal"
+                            ? "danger"
+                            : e.durum === "uretimde"
+                              ? "info"
+                              : "warning"
+                      }
+                    >
+                      {durumAdi[e.durum]}
+                    </Badge>
+                  </td>
+                  <td className="num">{sayi(e.toplamMaliyet)} TL</td>
+                  <td>
+                    <div className="row-tight">
+                      {e.durum === "taslak" && (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={islem === e.id}
+                          onClick={() => void durumIsle(e, "planla")}
+                        >
+                          Planla
+                        </Button>
+                      )}
+                      {["planlandi", "malzeme_bekliyor"].includes(e.durum) && (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={islem === e.id}
+                          onClick={() => void durumIsle(e, "rezerve-et")}
+                        >
+                          Malzeme ayır
+                        </Button>
+                      )}
+                      {e.durum === "hazir" && (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={islem === e.id}
+                          onClick={() => void durumIsle(e, "baslat")}
+                        >
+                          Başlat
+                        </Button>
+                      )}
+                      {["uretimde", "kismen_tamamlandi"].includes(e.durum) && (
+                        <Link className="btn btn--primary btn--sm" href={`/panel/uretim/emirler/${e.id}`}>
+                          Bildir
+                        </Link>
+                      )}
+                      {["taslak", "planlandi", "malzeme_bekliyor", "hazir"].includes(e.durum) && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={islem === e.id}
+                          onClick={() => void durumIsle(e, "iptal")}
+                        >
+                          İptal
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {!emirler.length && (
+              <tr>
+                <td colSpan={8}>Filtrelere uygun üretim emri yok.</td>
+              </tr>
+            )}
+          </tbody>
+        </TableWrap>
+      </Card>
+    </div>
+  );
 }
