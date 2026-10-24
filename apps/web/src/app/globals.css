@@ -5232,3 +5232,6 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .rol-yetki-listesi li { font-size: 0.9rem; padding: 0.15rem 0; }
 .rol-yetki-listesi li.is-kapali { color: var(--text-subtle); }
 .rol-yetki-listesi li.is-acik span[aria-hidden] { color: var(--success); font-weight: 700; }
+
+/* 2FA kurtarma kodları (Hesap Güvenliği) */
+.kurtarma-kodlari__liste { margin: 0; padding: 0.75rem 1rem 0.75rem 2.25rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.35rem 1.5rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; }

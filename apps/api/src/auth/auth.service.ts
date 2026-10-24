@@ -8,6 +8,7 @@ import { createHash, randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import { coz, sifrele } from "../core/kripto";
+import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import type { JwtYuku } from "./auth.guard";
@@ -55,7 +56,9 @@ export class AuthService {
         throw new UnauthorizedException("TOTP kodu gerekli");
       }
       const secret = coz(kullanici.totpSecretSifreli as string);
-      if (!verifySync({ secret, token: totpKodu }).valid) {
+      const totpGecerli = !kurtarmaKoduBicimindeMi(totpKodu) && verifySync({ secret, token: totpKodu }).valid;
+      // Yönetim P1-1: telefonu olmayan kullanıcı tek kullanımlık kurtarma koduyla girer.
+      if (!totpGecerli && !(await this.kurtarmaKoduKullan(kullanici.tenantId, kullanici.id, totpKodu))) {
         throw new UnauthorizedException("TOTP kodu geçersiz");
       }
     }
@@ -140,8 +143,8 @@ export class AuthService {
     };
   }
 
-  /** Kurulumdaki secret ile üretilen ilk kod doğrulanınca TOTP etkinleşir. */
-  async totpEtkinlestir(kod: string): Promise<void> {
+  /** Kurulumdaki secret ile üretilen ilk kod doğrulanınca TOTP etkinleşir; kurtarma kodları bir kez döner. */
+  async totpEtkinlestir(kod: string): Promise<{ kurtarmaKodlari: string[] }> {
     const { tenantId, userId } = aktifBaglam();
     const kullanici = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.user.findUnique({ where: { id: userId } }),
@@ -152,9 +155,71 @@ export class AuthService {
     if (!verifySync({ secret: coz(kullanici.totpSecretSifreli), token: kod }).valid) {
       throw new BadRequestException("TOTP kodu geçersiz");
     }
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.user.update({ where: { id: userId }, data: { totpAktif: true } }),
+    const { kodlar, ozetler } = kurtarmaKodlariUret();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { totpAktif: true, totpKurtarmaOzetleri: ozetler } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "iki_adimli_dogrulama_acildi", varlik: "user", varlikId: userId } });
+    });
+    return { kurtarmaKodlari: kodlar };
+  }
+
+  /** Hesap Güvenliği ekranı: 2FA açık mı, kaç kurtarma kodu kaldı. */
+  async totpDurum(): Promise<{ aktif: boolean; kalanKurtarmaKodu: number }> {
+    const { tenantId, userId } = aktifBaglam();
+    const k = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId }, select: { totpAktif: true, totpKurtarmaOzetleri: true } }),
     );
+    return { aktif: Boolean(k?.totpAktif), kalanKurtarmaKodu: k?.totpAktif ? k.totpKurtarmaOzetleri.length : 0 };
+  }
+
+  /** Kullanıcı geçerli bir 2FA kodu (ya da kurtarma kodu) ile kendi 2FA'sını kapatır. */
+  async totpKapat(kod: string): Promise<void> {
+    const { tenantId, userId } = aktifBaglam();
+    await this.totpKoduDogrula(tenantId, userId, kod, true);
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [] } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "iki_adimli_dogrulama_kapatildi", varlik: "user", varlikId: userId } });
+    });
+  }
+
+  /** Eski kurtarma kodlarını geçersiz kılıp yenilerini verir; yalnız uygulamadaki kodla. */
+  async kurtarmaKodlariniYenile(kod: string): Promise<{ kurtarmaKodlari: string[] }> {
+    const { tenantId, userId } = aktifBaglam();
+    await this.totpKoduDogrula(tenantId, userId, kod, false);
+    const { kodlar, ozetler } = kurtarmaKodlariUret();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { totpKurtarmaOzetleri: ozetler } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "kurtarma_kodlari_yenilendi", varlik: "user", varlikId: userId } });
+    });
+    return { kurtarmaKodlari: kodlar };
+  }
+
+  private async totpKoduDogrula(tenantId: string, userId: string, kod: string, kurtarmaKoduOlur: boolean): Promise<void> {
+    const k = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId }, select: { totpAktif: true, totpSecretSifreli: true } }),
+    );
+    if (!k?.totpAktif || !k.totpSecretSifreli) throw new BadRequestException("İki adımlı doğrulama etkin değil");
+    if (!kurtarmaKoduBicimindeMi(kod) && verifySync({ secret: coz(k.totpSecretSifreli), token: kod }).valid) return;
+    if (kurtarmaKoduOlur && (await this.kurtarmaKoduKullan(tenantId, userId, kod))) return;
+    // 401 değil 400: istemci 401'de oturumu yenilemeye çalışır.
+    throw new BadRequestException("Doğrulama kodu geçersiz");
+  }
+
+  /** Kodu diziden atomik olarak düşürür; aynı kod iki kez geçmez. */
+  private async kurtarmaKoduKullan(tenantId: string, userId: string, kod: string): Promise<boolean> {
+    if (!kurtarmaKoduBicimindeMi(kod)) return false;
+    const ozet = kurtarmaKoduOzeti(kod);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const satir = await tx.$queryRaw<{ kalan: number }[]>`
+        UPDATE users SET totp_kurtarma_ozetleri = array_remove(totp_kurtarma_ozetleri, ${ozet})
+        WHERE id = ${userId}::uuid AND ${ozet} = ANY(totp_kurtarma_ozetleri)
+        RETURNING cardinality(totp_kurtarma_ozetleri) AS kalan`;
+      if (!satir.length) return false;
+      await tx.auditLog.create({
+        data: { tenantId, userId, islem: "kurtarma_kodu_kullanildi", varlik: "user", varlikId: userId, detay: { kalan: Number(satir[0].kalan) } },
+      });
+      return true;
+    });
   }
 
   /** Para çıkışı gibi kritik işlemlerde oturumdan bağımsız yeniden TOTP doğrulaması. */

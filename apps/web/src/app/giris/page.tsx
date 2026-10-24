@@ -169,12 +169,12 @@ export default function GirisSayfasi() {
               </Field>
 
               {totpGerekli && (
-                <Field label="2FA Kodu (TOTP)">
+                <Field label="2FA kodu ya da kurtarma kodu">
                   <Input
                     name="totpKodu"
-                    inputMode="numeric"
-                    pattern="\d{6}"
-                    placeholder="6 haneli doğrulama kodu"
+                    autoComplete="one-time-code"
+                    maxLength={11}
+                    placeholder="6 haneli kod ya da XXXXX-XXXXX"
                     autoFocus
                     required
                   />

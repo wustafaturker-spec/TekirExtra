@@ -1819,3 +1819,44 @@ test("rol yetkileri ekranı gerçek menü kuralını gösterir ve kaydetme sunma
   await page.getByLabel("Rol").selectOption("muhasebe");
   await expect(page.getByRole("region", { name: "Cari & Personel" }).getByText("Cari Hesaplar (erişebilir)")).toBeAttached();
 });
+
+test("etkin 2FA kalan kurtarma kodunu gösterir, yenileme kodları bir kez listeler (yönetim P1-1)", async ({ page }) => {
+  let istek: unknown = null;
+  await page.route("**/api/v1/auth/totp/durum", (route) => route.fulfill({ json: { aktif: true, kalanKurtarmaKodu: 2 } }));
+  await page.route("**/api/v1/auth/totp/kurtarma-kodlari", async (route) => {
+    istek = route.request().postDataJSON();
+    await route.fulfill({ json: { kurtarmaKodlari: ["ABCDE-FGHJK", "MNPQR-STUVW"] } });
+  });
+  await page.goto("/panel/ayarlar/hesap");
+  await expect(page.getByText(/kodlarınız azaldı/)).toBeVisible();
+  await page.getByLabel(/Uygulamadaki 6 haneli kod \(kapatmada/).fill("123456");
+  await page.getByRole("button", { name: "Kurtarma kodlarını yenile" }).click();
+  const kodlar = page.getByRole("region", { name: "Kurtarma kodları" });
+  await expect(kodlar.getByText("ABCDE-FGHJK")).toBeVisible();
+  await expect(kodlar.getByText(/bir daha gösterilmeyecek/)).toBeVisible();
+  expect(istek).toEqual({ kod: "123456" });
+});
+
+test("yönetici telefonunu kaybeden kullanıcının 2FA'sını sıfırlar (yönetim P1-1)", async ({ page }) => {
+  let yol = "";
+  await page.route("**/api/v1/kullanicilar**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (route.request().method() === "POST") {
+      yol = pathname;
+      await route.fulfill({ json: { mesaj: "Ayşe Muhasebe için iki adımlı doğrulama kapatıldı; açık oturumları kapatıldı." } });
+      return;
+    }
+    const satir = { epostaDogrulandi: true, maksIskontoYuzdesi: null, bayiCariId: null, bayiCari: null, aktif: true };
+    await route.fulfill({ json: [
+      { ...satir, id: "u1", eposta: "yonetici@example.com", adSoyad: "Yönetici Kişi", rol: "yonetici", totpAktif: true },
+      { ...satir, id: "u2", eposta: "ayse@example.com", adSoyad: "Ayşe Muhasebe", rol: "muhasebe", totpAktif: true },
+    ] });
+  });
+  await page.goto("/panel/ayarlar/kullanicilar");
+  await expect(page.getByRole("row", { name: /Yönetici Kişi/ }).getByRole("button", { name: "Sıfırla", exact: true })).toHaveCount(0);
+  await page.getByRole("row", { name: /Ayşe Muhasebe/ }).getByRole("button", { name: "Sıfırla", exact: true }).click();
+  await page.getByRole("dialog", { name: "İki adımlı doğrulamayı sıfırla" }).getByRole("button", { name: "2FA'yı sıfırla" }).click();
+  await expect(page.getByText(/iki adımlı doğrulama kapatıldı/)).toBeVisible();
+  expect(yol).toBe("/api/v1/kullanicilar/u2/iki-adim-sifirla");
+  await expect(page.getByRole("combobox", { name: "Yönetici Kişi rolü" })).toBeDisabled();
+});

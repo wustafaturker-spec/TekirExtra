@@ -63,6 +63,24 @@ export class ParolaService {
     return { mesaj: `${hedef.adSoyad} için yeni parola kaydedildi; açık oturumları kapatıldı.` };
   }
 
+  /** Yönetim P1-1: telefonunu kaybeden kullanıcının 2FA'sı kapatılır; bir sonraki girişte yeniden kurabilir. */
+  async yoneticiIkiAdimSifirla(hedefId: string): Promise<{ mesaj: string }> {
+    const { tenantId, userId } = aktifBaglam();
+    if (hedefId === userId) throw new BadRequestException("Kendi iki adımlı doğrulamanızı Hesap Güvenliği ekranından yönetin");
+    const hedef = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kullanici = await tx.user.findUnique({ where: { id: hedefId }, select: { adSoyad: true, eposta: true, totpAktif: true } });
+      if (!kullanici) throw new NotFoundException("Kullanıcı bulunamadı");
+      if (!kullanici.totpAktif) throw new BadRequestException("Bu kullanıcıda iki adımlı doğrulama zaten kapalı");
+      await tx.user.update({ where: { id: hedefId }, data: { totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [] } });
+      await tx.auditLog.create({
+        data: { tenantId, userId, islem: "kullanici_2fa_sifirlandi", varlik: "user", varlikId: hedefId, detay: { eposta: kullanici.eposta } },
+      });
+      return kullanici;
+    });
+    await this.kimlikTemizle(hedefId);
+    return { mesaj: `${hedef.adSoyad} için iki adımlı doğrulama kapatıldı; açık oturumları kapatıldı. Kullanıcı girişten sonra yeniden kurabilir.` };
+  }
+
   /** KLN-11: kullanıcı mevcut parolasıyla kendi parolasını değiştirir; bu oturum açık kalır. */
   async degistir(govde: unknown, refreshToken: string | undefined): Promise<{ mesaj: string }> {
     const { mevcutParola, yeniParola } = ayristir(degistirmeSemasi, govde);

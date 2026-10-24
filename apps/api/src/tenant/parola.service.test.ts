@@ -178,3 +178,22 @@ describe("şifremi unuttum (KLN-12)", () => {
     await expect(k.service.sifirla({ token: tokenOf(k.gonderilen[0].link), parola: "BaskaParola2026" })).rejects.toThrow(/geçersiz/);
   });
 });
+
+describe("yönetici 2FA sıfırlaması (yönetim P1-1)", () => {
+  let k: ReturnType<typeof kur>;
+  beforeEach(async () => { k = kur(); await kullaniciEkle(k, YONETICI, "yonetici@ornek.com"); await kullaniciEkle(k, HEDEF, "hedef@ornek.com"); });
+  const iki = (id: string) => k.kullanicilar.get(id) as unknown as { totpAktif: boolean; totpSecretSifreli: string | null; totpKurtarmaOzetleri: string[] };
+
+  it("2FA'yı, gizli anahtarı ve kurtarma kodlarını siler; oturumları kapatır; denetim kaydı yazar", async () => {
+    Object.assign(iki(HEDEF), { totpAktif: true, totpSecretSifreli: "sifreli", totpKurtarmaOzetleri: ["o1", "o2"] });
+    await k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(HEDEF));
+    expect(iki(HEDEF)).toMatchObject({ totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [] });
+    expect(k.oturumlar.filter((o) => o.userId === HEDEF)).toHaveLength(0);
+    expect(k.denetim.at(-1)).toMatchObject({ islem: "kullanici_2fa_sifirlandi", userId: YONETICI, varlikId: HEDEF });
+  });
+
+  it("kendine uygulanamaz; 2FA'sı kapalı kullanıcıda anlamlı hata verir", async () => {
+    await expect(k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(YONETICI))).rejects.toThrow(/Hesap Güvenliği/);
+    await expect(k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(HEDEF))).rejects.toThrow(/zaten kapalı/);
+  });
+});

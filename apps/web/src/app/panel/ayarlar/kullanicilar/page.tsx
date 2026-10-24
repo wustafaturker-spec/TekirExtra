@@ -61,6 +61,8 @@ export default function KullanicilarSayfasi() {
   const [geciciParolaTekrar, setGeciciParolaTekrar] = useState("");
   const [sifirlamaHata, setSifirlamaHata] = useState("");
   const [sifirlaniyor, setSifirlaniyor] = useState(false);
+  // Yönetim P1-1: telefonunu kaybeden kullanıcının 2FA'sını kapatma onayı
+  const [ikiAdimSifirlanan, setIkiAdimSifirlanan] = useState<Kullanici | null>(null);
 
   const yukle = useCallback(async () => {
     setHata("");
@@ -89,6 +91,24 @@ export default function KullanicilarSayfasi() {
     setGeciciParola("");
     setGeciciParolaTekrar("");
     setSifirlamaHata("");
+  }
+
+  async function ikiAdimSifirla(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ikiAdimSifirlanan) return;
+    setSifirlaniyor(true);
+    try {
+      const s = await api<{ mesaj: string }>(`/kullanicilar/${ikiAdimSifirlanan.id}/iki-adim-sifirla`, { method: "POST" });
+      setBasari(s.mesaj);
+      setHata("");
+      setIkiAdimSifirlanan(null);
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "İki adımlı doğrulama sıfırlanamadı");
+      setIkiAdimSifirlanan(null);
+    } finally {
+      setSifirlaniyor(false);
+    }
   }
 
   async function parolaSifirla(e: React.FormEvent) {
@@ -244,7 +264,14 @@ export default function KullanicilarSayfasi() {
                     </Select>}
                   </td>
                   <td><Status tone={k.aktif ? "ok" : "danger"}>{k.aktif ? "Aktif" : "Pasif"}</Status></td>
-                  <td>{k.totpAktif ? <Badge variant="success">Etkin</Badge> : <span className="subtle">—</span>}</td>
+                  <td>
+                    {k.totpAktif ? (
+                      <div className="row-tight" style={{ flexWrap: "nowrap" }}>
+                        <Badge variant="success">Etkin</Badge>
+                        {k.id !== benId && <Button size="sm" variant="ghost" onClick={() => setIkiAdimSifirlanan(k)}>Sıfırla</Button>}
+                      </div>
+                    ) : <span className="subtle">—</span>}
+                  </td>
                   <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <Select value={k.bayiCariId ?? ""} onChange={(e) => bayiCariDegistir(k.id, e.target.value)}><option value="">Atanmamış</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select> : <span className="subtle">—</span>}</td>
                   <td className="num">{k.maksIskontoYuzdesi === null ? <span className="subtle">Sınırsız</span> : `%${k.maksIskontoYuzdesi}`}</td>
                   <td className="center">
@@ -265,6 +292,18 @@ export default function KullanicilarSayfasi() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {ikiAdimSifirlanan && (
+        <Modal
+          baslik="İki adımlı doğrulamayı sıfırla"
+          aciklama={`${ikiAdimSifirlanan.adSoyad} (${ikiAdimSifirlanan.eposta}) telefonuna erişemiyorsa 2FA'sını kapatın. Açık oturumları kapanır; kullanıcı yalnız parolasıyla girip Hesap Güvenliği ekranından yeniden kurabilir. Bu işlem denetim izine yazılır.`}
+          onKapat={() => setIkiAdimSifirlanan(null)}
+        >
+          <form onSubmit={ikiAdimSifirla}>
+            <ModalEylem onVazgec={() => setIkiAdimSifirlanan(null)} isleniyor={sifirlaniyor} metin="2FA'yı sıfırla" tehlikeli />
+          </form>
+        </Modal>
+      )}
 
       {sifirlanan && (
         <Modal

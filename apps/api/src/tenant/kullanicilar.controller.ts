@@ -129,6 +129,13 @@ export class KullanicilarController {
     return this.parola.yoneticiSifirla(id, govde);
   }
 
+  /** Yönetim P1-1: kullanıcının 2FA'sı kapatılır (telefon kaybı); oturumları kapanır. */
+  @Post(":id/iki-adim-sifirla")
+  @HttpCode(200)
+  ikiAdimSifirla(@Param("id") id: string) {
+    return this.parola.yoneticiIkiAdimSifirla(id);
+  }
+
   @Patch(":id")
   async guncelle(@Param("id") id: string, @Body() govde: unknown) {
     const ayristirma = kullaniciGuncelleSemasi.safeParse(govde);

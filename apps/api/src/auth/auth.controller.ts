@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   Query,
   Req,
@@ -105,7 +106,27 @@ export class AuthController {
   @Post("totp/etkinlestir")
   async totpEtkinlestir(@Body() govde: { kod?: string }) {
     if (!govde.kod) throw new BadRequestException("Kod gerekli");
-    await this.auth.totpEtkinlestir(govde.kod);
-    return { durum: "ok", mesaj: "TOTP etkinleştirildi" };
+    const { kurtarmaKodlari } = await this.auth.totpEtkinlestir(govde.kod);
+    return { durum: "ok", mesaj: "TOTP etkinleştirildi", kurtarmaKodlari };
+  }
+
+  @Get("totp/durum")
+  totpDurum() {
+    return this.auth.totpDurum();
+  }
+
+  @Post("totp/kapat")
+  @HttpCode(200)
+  async totpKapat(@Body() govde: { kod?: string }) {
+    if (!govde.kod) throw new BadRequestException("Kod gerekli");
+    await this.auth.totpKapat(govde.kod);
+    return { mesaj: "İki adımlı doğrulama kapatıldı" };
+  }
+
+  @Post("totp/kurtarma-kodlari")
+  @HttpCode(200)
+  kurtarmaKodlariniYenile(@Body() govde: { kod?: string }) {
+    if (!govde.kod) throw new BadRequestException("Kod gerekli");
+    return this.auth.kurtarmaKodlariniYenile(govde.kod);
   }
 }

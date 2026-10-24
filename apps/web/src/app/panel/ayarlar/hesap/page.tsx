@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Button, Card, Field, Input, PageHeader } from "@/components/ui";
 
@@ -9,12 +9,20 @@ interface KurBilgi {
   secret: string;
 }
 
+interface TotpDurum {
+  aktif: boolean;
+  kalanKurtarmaKodu: number;
+}
+
 export default function HesapGuvenligiSayfasi() {
   const [kurBilgi, setKurBilgi] = useState<KurBilgi | null>(null);
   const [kod, setKod] = useState("");
-  const [etkin, setEtkin] = useState(false);
-  const [zatenEtkin, setZatenEtkin] = useState(false);
+  const [durum, setDurum] = useState<TotpDurum | null>(null);
+  // Yönetim P1-1: kurtarma kodları yalnız üretildikleri anda gösterilir.
+  const [kurtarmaKodlari, setKurtarmaKodlari] = useState<string[] | null>(null);
+  const [yonetimKodu, setYonetimKodu] = useState("");
   const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
   const [mevcutParola, setMevcutParola] = useState("");
   const [yeniParola, setYeniParola] = useState("");
   const [yeniParolaTekrar, setYeniParolaTekrar] = useState("");
@@ -45,34 +53,59 @@ export default function HesapGuvenligiSayfasi() {
     }
   }
 
-  async function kur() {
+  const durumYukle = useCallback(async () => {
+    setDurum(await api<TotpDurum>("/auth/totp/durum"));
+  }, []);
+
+  useEffect(() => {
+    void durumYukle().catch(() => undefined);
+  }, [durumYukle]);
+
+  async function calistir(is: () => Promise<void>, varsayilanHata: string) {
     setHata("");
-    setEtkin(false);
-    setZatenEtkin(false);
+    setBasari("");
     try {
-      const b = await api<KurBilgi>("/auth/totp/kur", { method: "POST" });
-      setKurBilgi(b);
+      await is();
     } catch (h) {
-      const m = h instanceof Error ? h.message : "TOTP kurulamadı";
-      if (m.toLocaleLowerCase("tr").includes("zaten")) {
-        setZatenEtkin(true);
-      } else {
-        setHata(m);
-      }
+      setHata(h instanceof Error ? h.message : varsayilanHata);
     }
   }
 
-  async function etkinlestir(e: React.FormEvent) {
+  function kur() {
+    setKurtarmaKodlari(null);
+    void calistir(async () => setKurBilgi(await api<KurBilgi>("/auth/totp/kur", { method: "POST" })), "TOTP kurulamadı");
+  }
+
+  function etkinlestir(e: React.FormEvent) {
     e.preventDefault();
-    setHata("");
-    try {
-      await api("/auth/totp/etkinlestir", { method: "POST", body: JSON.stringify({ kod }) });
-      setEtkin(true);
+    void calistir(async () => {
+      const s = await api<{ kurtarmaKodlari: string[] }>("/auth/totp/etkinlestir", { method: "POST", body: JSON.stringify({ kod }) });
+      setKurtarmaKodlari(s.kurtarmaKodlari);
+      setBasari("İki adımlı doğrulama etkinleştirildi. Bir sonraki girişte doğrulama kodu istenecek.");
       setKurBilgi(null);
       setKod("");
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Kod doğrulanamadı");
-    }
+      await durumYukle();
+    }, "Kod doğrulanamadı");
+  }
+
+  function kodlariYenile() {
+    void calistir(async () => {
+      const s = await api<{ kurtarmaKodlari: string[] }>("/auth/totp/kurtarma-kodlari", { method: "POST", body: JSON.stringify({ kod: yonetimKodu }) });
+      setKurtarmaKodlari(s.kurtarmaKodlari);
+      setBasari("Yeni kurtarma kodları oluşturuldu; eski kodlar artık geçersiz.");
+      setYonetimKodu("");
+      await durumYukle();
+    }, "Kurtarma kodları yenilenemedi");
+  }
+
+  function kapat() {
+    void calistir(async () => {
+      await api("/auth/totp/kapat", { method: "POST", body: JSON.stringify({ kod: yonetimKodu }) });
+      setKurtarmaKodlari(null);
+      setBasari("İki adımlı doğrulama kapatıldı.");
+      setYonetimKodu("");
+      await durumYukle();
+    }, "İki adımlı doğrulama kapatılamadı");
   }
 
   return (
@@ -107,7 +140,7 @@ export default function HesapGuvenligiSayfasi() {
       </Card>
 
       <Alert tone="error">{hata}</Alert>
-      {etkin && <Alert tone="success">İki adımlı doğrulama etkinleştirildi. Bir sonraki girişte doğrulama kodu istenecek.</Alert>}
+      <Alert tone="success">{basari}</Alert>
 
       <Card className="stack">
         <div>
@@ -119,11 +152,36 @@ export default function HesapGuvenligiSayfasi() {
           </p>
         </div>
 
-        {zatenEtkin && (
-          <Alert tone="success">Hesabınızda iki adımlı doğrulama zaten etkin.</Alert>
+        {kurtarmaKodlari && (
+          <div className="stack kurtarma-kodlari" role="region" aria-label="Kurtarma kodları">
+            <Alert tone="warning">
+              Bu kodları şimdi güvenli bir yere kaydedin; bir daha gösterilmeyecek. Telefonunuza erişemezseniz girişte
+              doğrulama kodu yerine bunlardan birini yazın. Her kod bir kez kullanılır.
+            </Alert>
+            <ol className="kurtarma-kodlari__liste mono">
+              {kurtarmaKodlari.map((k) => <li key={k}>{k}</li>)}
+            </ol>
+            <div><Button onClick={() => void navigator.clipboard?.writeText(kurtarmaKodlari.join("\n"))}>Kodları kopyala</Button></div>
+          </div>
         )}
 
-        {!kurBilgi && !etkin && (
+        {durum?.aktif && (
+          <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <p style={{ margin: 0 }}>
+              <strong>Etkin.</strong> Kalan kurtarma kodu: <strong>{durum.kalanKurtarmaKodu}</strong>
+              {durum.kalanKurtarmaKodu <= 2 && <span className="subtle"> — kodlarınız azaldı, yenilemenizi öneririz.</span>}
+            </p>
+            <Field label="Uygulamadaki 6 haneli kod (kapatmada kurtarma kodu da olur)">
+              <Input value={yonetimKodu} onChange={(e) => setYonetimKodu(e.target.value)} autoComplete="one-time-code" maxLength={11} placeholder="123456" />
+            </Field>
+            <div className="row-tight">
+              <Button disabled={!yonetimKodu} onClick={kodlariYenile}>Kurtarma kodlarını yenile</Button>
+              <Button variant="danger" disabled={!yonetimKodu} onClick={kapat}>İki adımlı doğrulamayı kapat</Button>
+            </div>
+          </div>
+        )}
+
+        {durum && !durum.aktif && !kurBilgi && (
           <div><Button variant="primary" onClick={kur}>İki Adımlı Doğrulamayı Kur</Button></div>
         )}
 
