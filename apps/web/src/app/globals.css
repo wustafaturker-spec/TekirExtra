@@ -5154,3 +5154,129 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .arac-page tr.tiklanir:hover td { background: var(--surface-2); }
 .arac-page tfoot td { border-top: 1px solid var(--border); font-weight: 700; }
 @media (max-width: 900px) { .arac__duzen { grid-template-columns: 1fr; } }
+
+/* ─── Satın alma talepleri (SAT-09) ──────────────────────────────────────────
+   Ana–ayrıntı düzeni: geniş ekranda liste solda, kayıt sağda; dar ekranda biri
+   görünür. Renkler yalnız tema token'larından gelir. */
+.sat-yerlesim { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.sat-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+.sat-geri { display: none; justify-self: start; }
+@media (max-width: 1100px) {
+  .sat-yerlesim { grid-template-columns: minmax(0, 1fr); }
+  .sat-yerlesim.is-sag-acik .sat-liste, .sat-bos-panel { display: none; }
+  .sat-yerlesim:not(.is-sag-acik) .sat-panel { display: none; }
+  .sat-geri { display: inline-flex; }
+}
+
+.sat-liste { display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding: 0; position: sticky; top: 1rem; max-height: calc(100vh - 2rem); }
+@media (max-width: 1100px) { .sat-liste { position: static; max-height: none; } }
+.sat-liste > .tabs { padding: 0 0.75rem; margin: 0; }
+.sat-liste__suzgec { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; padding: 0.75rem; border-bottom: 1px solid var(--border); }
+.sat-liste__suzgec .search, .sat-liste__suzgec .select { width: 100%; min-width: 0; }
+.sat-liste__not { margin: 0; padding: 0.5rem 0.75rem; font-size: 0.76rem; color: var(--warning); background: var(--warning-soft); }
+.sat-liste__ogeler { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.sat-liste__bos { padding: 2rem 1rem; text-align: center; color: var(--text-muted); font-size: 0.86rem; line-height: 1.5; }
+
+.sat-satir { display: grid; gap: 0.25rem; width: 100%; padding: 0.7rem 0.85rem 0.7rem calc(0.85rem - 3px); text-align: left; background: none; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--border); color: inherit; font: inherit; cursor: pointer; }
+.sat-satir:hover { background: var(--surface-2); }
+.sat-satir:focus-visible { outline: none; box-shadow: inset var(--ring); }
+.sat-satir.is-secili { background: var(--accent-soft); border-left-color: var(--accent); }
+.sat-satir__ust, .sat-satir__alt { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.sat-satir__no { font-weight: 650; font-variant-numeric: tabular-nums; }
+.sat-satir__gerekce { font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sat-satir__alt { font-size: 0.78rem; color: var(--text-muted); }
+.sat-satir__alt > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sat-satir__alt .para { color: var(--text); font-weight: 600; flex-shrink: 0; }
+.sat-satir__not { font-size: 0.74rem; color: var(--warning); }
+
+.sat-bos-panel { display: grid; place-content: center; min-height: 16rem; padding: 2rem; text-align: center; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); max-width: 100%; }
+.sat-bos-panel p { margin: 0.2rem auto; max-width: 42ch; }
+
+.sat-detay { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.1rem; padding: 1.15rem 1.25rem 1.4rem; min-width: 0; }
+.sat-detay > .action-bar { margin: 0 -1.25rem; padding-inline: 1.25rem; border-top: 1px solid var(--border); }
+.sat-detay > .stat-grid { margin-bottom: 0; }
+.sat-detay__bas { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.sat-detay__no { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.sat-detay__gerekce { margin: 0.2rem 0 0; color: var(--text-muted); max-width: 70ch; }
+.sat-alt-baslik { margin: 0 0 0.6rem; font-size: 0.92rem; font-weight: 650; }
+.sat-not { margin: 0; padding: 0.6rem 0.75rem; border-left: 3px solid var(--info); background: var(--info-soft); font-size: 0.84rem; }
+.sat-kotu { color: var(--danger); }
+
+/* Akış: dört aşama, aralarında ilerleyen çizgi. */
+.sat-akis { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; }
+.sat-akis__adim { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-subtle); text-align: center; }
+.sat-akis__adim + .sat-akis__adim::before { content: ""; position: absolute; top: 0.8rem; right: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.sat-akis__no { position: relative; z-index: 1; display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; border: 2px solid var(--border-strong); background: var(--surface); font-weight: 700; font-size: 0.75rem; }
+.sat-akis__adim.is-tamam { color: var(--text-muted); }
+.sat-akis__adim.is-tamam .sat-akis__no { background: var(--success); border-color: var(--success); color: #fff; }
+.sat-akis__adim.is-tamam + .sat-akis__adim::before { background: var(--success); }
+.sat-akis__adim.is-aktif { color: var(--text); font-weight: 650; }
+.sat-akis__adim.is-aktif .sat-akis__no { border-color: var(--accent); color: var(--accent-text); box-shadow: var(--ring); }
+.sat-akis__adim.is-kapali .sat-akis__no { border-style: dashed; color: var(--text-subtle); }
+/* Kapanan ilk adım (red ya da iptal noktası) kırmızı; sonrakiler soluk kalır. */
+.sat-akis__adim:not(.is-kapali) + .sat-akis__adim.is-kapali { color: var(--danger); }
+.sat-akis__adim:not(.is-kapali) + .sat-akis__adim.is-kapali .sat-akis__no { border: 2px solid var(--danger); color: var(--danger); }
+
+/* Kısa anahtar–değer özeti. */
+.sat-ozet { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem 1.25rem; margin: 0; }
+.sat-ozet dt { font-size: 0.76rem; color: var(--text-muted); }
+.sat-ozet dd { margin: 0.1rem 0 0; font-size: 0.88rem; }
+.sat-ozet__genis { grid-column: 1 / -1; }
+
+.sat-butce-olcer { margin-top: 0.55rem; }
+.sat-butce-olcer.is-asim > span { background: var(--danger); }
+
+/* Teklif karşılaştırması: seçili sütun ve yeniden onay sınırı çubuğu. */
+.sat-teklif-baslik { display: grid; gap: 0.3rem; justify-items: end; white-space: normal; min-width: 9rem; }
+.sat-secili-sutun { background: color-mix(in srgb, var(--info-soft) 70%, transparent); }
+.sat-toplam-satiri td { border-top: 1px solid var(--border-strong); }
+.sat-cubuk { display: grid; gap: 0.3rem; min-width: 8.5rem; }
+.sat-cubuk__iz { position: relative; height: 8px; border-radius: var(--radius-pill); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+.sat-cubuk__dolgu { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--info); transition: width 0.2s ease; }
+.sat-cubuk__sinir { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+.sat-cubuk small { font-size: 0.74rem; color: var(--text-muted); }
+.sat-cubuk.is-asim .sat-cubuk__dolgu { background: var(--warning); }
+.sat-cubuk.is-asim small { color: var(--warning); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .sat-cubuk__dolgu { transition: none; } }
+
+.sat-teklif-ozet { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8.5rem, 14rem); gap: 1rem; align-items: center; padding: 0.75rem; border-radius: var(--radius); background: var(--surface-2); }
+.sat-siparis { display: grid; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.sat-siparis .sat-alt-baslik { margin: 0; }
+.sat-tam { grid-column: 1 / -1; }
+.sat-form-alt { margin: 0.75rem 0 1rem; }
+.sat-miktar { display: inline-flex; align-items: center; gap: 0.35rem; }
+.sat-miktar .input { max-width: 110px; }
+
+/* Geçmiş: en yenisi üstte, solda ince çizgi. */
+.sat-gecmis { list-style: none; margin: 0; padding: 0 0 0 1rem; border-left: 2px solid var(--border); display: grid; gap: 0.85rem; }
+.sat-gecmis li { position: relative; font-size: 0.84rem; }
+.sat-gecmis li::before { content: ""; position: absolute; left: calc(-1rem - 6px); top: 0.35rem; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); }
+.sat-gecmis li.is-iyi::before { border-color: var(--success); background: var(--success); }
+.sat-gecmis li.is-kotu::before { border-color: var(--danger); background: var(--danger); }
+.sat-gecmis li.is-uyari::before { border-color: var(--warning); background: var(--warning); }
+.sat-gecmis__baslik { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; align-items: baseline; }
+.sat-gecmis p { margin: 0.2rem 0 0; color: var(--text-muted); max-width: 75ch; }
+
+@media (max-width: 700px) {
+  .sat-detay { padding: 1rem; }
+  .sat-detay > .action-bar { margin: 0 -1rem; padding-inline: 1rem; }
+  .sat-detay__bas { flex-direction: column-reverse; gap: 0.5rem; }
+  .sat-akis__adim { font-size: 0.7rem; }
+  .sat-teklif-ozet { grid-template-columns: 1fr; }
+  .sat-panel .form-grid.form-grid--2 { grid-template-columns: 1fr; }
+}
+
+/* Telefonda teklifler sütun karşılaştırması yerine alt alta kart. */
+.sat-teklif-kartlari { display: none; list-style: none; margin: 0; padding: 0; gap: 0.75rem; }
+.sat-teklif-karti { display: grid; gap: 0.6rem; padding: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.sat-teklif-karti.is-secili { border-color: var(--info); box-shadow: inset 3px 0 0 var(--info); }
+.sat-teklif-karti__bas { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.sat-teklif-karti__bas strong { font-size: 0.92rem; }
+.sat-teklif-karti__toplam { font-size: 1.15rem; font-weight: 700; }
+.sat-teklif-karti dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 0.75rem; margin: 0; font-size: 0.8rem; }
+.sat-teklif-karti dt { color: var(--text-muted); }
+.sat-teklif-karti dd { margin: 0; }
+@media (max-width: 700px) {
+  .sat-teklif-tablosu { display: none; }
+  .sat-teklif-kartlari { display: grid; }
+}

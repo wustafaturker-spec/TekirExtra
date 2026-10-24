@@ -25,9 +25,11 @@ export function onaylayabilecekRoller(tutar: number, esik: number): Rol[] {
 /**
  * SAT-03: kullanıcı talebi onaylayabilir mi? Onaylayabilirse null, yoksa
  * kullanıcıya gösterilecek sebep. Görev ayrılığı yöneticiye de uygulanır.
+ * SAT-09: teklif seçerek talebi yeniden onaya düşüren kullanıcı o onayı veremez.
  */
-export function onayYetkisi(p: { rol: string; userId: string; talepEdenUserId: string; tutar: number; esik: number }): string | null {
+export function onayYetkisi(p: { rol: string; userId: string; talepEdenUserId: string; tutar: number; esik: number; yenidenGonderenUserId?: string | null }): string | null {
   if (p.userId === p.talepEdenUserId) return "Kendi talebinizi onaylayamazsınız; talebi başka bir yetkili onaylamalıdır";
+  if (p.yenidenGonderenUserId && p.userId === p.yenidenGonderenUserId) return "Teklifi seçip talebi yeniden onaya gönderen kullanıcı bu onayı veremez; başka bir yetkili onaylamalıdır";
   if ((onaylayabilecekRoller(p.tutar, p.esik) as string[]).includes(p.rol)) return null;
   return p.rol === "muhasebe" ? `Onay eşiğini (${tl(p.esik)}) aşan talebi yalnız yönetici onaylayabilir` : "Satın alma talebini onaylama yetkiniz yok";
 }
@@ -50,6 +52,45 @@ export function butceDurumuHesapla(p: { butce: number | null; gerceklesen: numbe
   if (p.butce === null) return { tanimli: false, butce: 0, kalan: 0, asim: 0, ...ortak };
   const kalan = kurus(p.butce - p.gerceklesen - p.digerTalepler);
   return { tanimli: true, butce: kurus(p.butce), kalan, asim: Math.max(0, kurus(p.talep - kalan)), ...ortak };
+}
+
+/** SAT-09: seçilen teklif onaylanan tutarı en çok bu oranda aşabilir. */
+export const YENIDEN_ONAY_MARJI = 0.1;
+
+/** Kuruşa çevrilmiş tam sayı; ondalık karşılaştırmada kayan nokta hatası olmasın. */
+const kurusa = (tutar: number) => Math.round(tutar * 100);
+
+/**
+ * SAT-09: onaydan sonra seçilen teklif yeniden onay gerektirir mi?
+ * - Onaylanan tutarı %10'dan fazla aşarsa (sınır dahil serbest), ya da
+ * - onay eşiğin altında verilmişken yeni tutar eşiği aşarsa (muhasebenin
+ *   verdiği onay yönetici onayı gereken tutara taşınamaz).
+ * Gerekmiyorsa null, gerekiyorsa kullanıcıya gösterilecek neden.
+ */
+export function yenidenOnayNedeni(p: { onaylanan: number; yeni: number; esik: number }): string | null {
+  const onaylanan = kurusa(p.onaylanan);
+  const yeni = kurusa(p.yeni);
+  const sinir = Math.round(onaylanan * (1 + YENIDEN_ONAY_MARJI));
+  if (yeni > sinir) {
+    const oran = onaylanan > 0 ? ` (%${(((yeni - onaylanan) / onaylanan) * 100).toLocaleString("tr-TR", { maximumFractionDigits: 1 })})` : "";
+    return `Seçilen teklif (${tl(p.yeni)}) onaylanan tutarı (${tl(p.onaylanan)}) %${YENIDEN_ONAY_MARJI * 100} marjın üstünde aşıyor${oran}; yeniden onay gerekir`;
+  }
+  const esik = kurusa(p.esik);
+  if (onaylanan <= esik && yeni > esik) {
+    return `Seçilen teklif (${tl(p.yeni)}) onay eşiğini (${tl(p.esik)}) aşıyor; yönetici onayı gerekir`;
+  }
+  return null;
+}
+
+/** SAT-09: arayüzdeki uyarı için yeniden onay gerektirmeyen en yüksek tutar. */
+export function yenidenOnaySiniri(onaylanan: number, esik: number): number {
+  const marj = Math.round(kurusa(onaylanan) * (1 + YENIDEN_ONAY_MARJI)) / 100;
+  return kurusa(onaylanan) <= kurusa(esik) ? Math.min(marj, esik) : marj;
+}
+
+/** Geçerlilik tarihi (YYYY-AA-GG, dahil) bugünden önceyse teklifin süresi dolmuştur. */
+export function teklifSuresiDolduMu(gecerlilikTarihi: string | null, bugun: string): boolean {
+  return gecerlilikTarihi !== null && gecerlilikTarihi < bugun;
 }
 
 /** SAT-05: TL toplamı en düşük teklif(ler); eşit en düşüklerin hepsi sayılır. */

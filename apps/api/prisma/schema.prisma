@@ -4763,6 +4763,8 @@ enum SatinAlmaOlayTuru {
   teklif_silindi
   teklif_secildi
   siparise_donustu
+  /// SAT-09: seçilen teklif onaylanan tutarı marjın üstünde aştı ya da eşiği geçti.
+  yeniden_onaya_gonderildi
 }
 
 model SatinAlmaTalebi {
@@ -4781,6 +4783,8 @@ model SatinAlmaTalebi {
   /// Onaylayan ya da reddeden kullanıcı.
   onaylayanUserId      String?              @map("onaylayan_user_id") @db.Uuid
   onayZamani           DateTime?            @map("onay_zamani")
+  /// SAT-09: onay anındaki etkin tutar (TL, KDV hariç); seçilen teklif bunu %10'dan fazla aşarsa yeniden onay gerekir.
+  onaylananTutar       Decimal?             @map("onaylanan_tutar") @db.Decimal(15, 2)
   butceAsimGerekcesi   String?              @map("butce_asim_gerekcesi")
   redGerekcesi         String?              @map("red_gerekcesi")
   teklifSecimGerekcesi String?              @map("teklif_secim_gerekcesi")

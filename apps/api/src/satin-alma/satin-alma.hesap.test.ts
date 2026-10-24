@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { butceDurumuHesapla, enDusukTeklifler, onayYetkisi, onaylayabilecekRoller, talepAcabilirMi, teklifHesapla, tumTalepleriGorurMu } from "./satin-alma.hesap";
+import { butceDurumuHesapla, enDusukTeklifler, onayYetkisi, onaylayabilecekRoller, talepAcabilirMi, teklifHesapla, teklifSuresiDolduMu, tumTalepleriGorurMu, yenidenOnayNedeni, yenidenOnaySiniri } from "./satin-alma.hesap";
 
 const D = (v: string) => new Prisma.Decimal(v);
 
@@ -60,5 +60,58 @@ describe("teklifler (SAT-05)", () => {
     expect(() => teklifHesapla(kalemler, [{ talepKalemiId: "k1", birimFiyat: "1" }], "1")).toThrow("tüm kalemlerine");
     expect(() => teklifHesapla(kalemler, [{ talepKalemiId: "k1", birimFiyat: "1" }, { talepKalemiId: "k2", birimFiyat: "1" }, { talepKalemiId: "x", birimFiyat: "1" }], "1")).toThrow("talepte bulunmayan");
     expect(() => teklifHesapla(kalemler, [{ talepKalemiId: "k1", birimFiyat: "1" }, { talepKalemiId: "k1", birimFiyat: "2" }], "1")).toThrow("birden çok fiyat");
+  });
+});
+
+describe("yeniden onay (SAT-09)", () => {
+  const esik = 25_000;
+
+  it("%10 marjın içindeki teklif yeniden onay istemez; sınır dahildir", () => {
+    expect(yenidenOnayNedeni({ onaylanan: 10_000, yeni: 10_999.99, esik })).toBeNull();
+    expect(yenidenOnayNedeni({ onaylanan: 10_000, yeni: 11_000, esik })).toBeNull();
+    expect(yenidenOnayNedeni({ onaylanan: 10_000, yeni: 9_000, esik })).toBeNull();
+  });
+
+  it("marjın bir kuruş üstü yeniden onay ister", () => {
+    expect(yenidenOnayNedeni({ onaylanan: 10_000, yeni: 11_000.01, esik })).toMatch(/%10 marjın üstünde/);
+  });
+
+  it("kayan nokta hatası sınırı kaydırmaz", () => {
+    // 0.1 + 0.2 benzeri: 1.10 × 30.03 = 33.033 → sınır 33.03
+    expect(yenidenOnayNedeni({ onaylanan: 30.03, yeni: 33.03, esik })).toBeNull();
+    expect(yenidenOnayNedeni({ onaylanan: 30.03, yeni: 33.04, esik })).not.toBeNull();
+  });
+
+  it("eşik altında verilmiş onay, marj içinde kalsa da eşiği aşan teklife taşınmaz", () => {
+    expect(yenidenOnayNedeni({ onaylanan: 24_000, yeni: 25_000, esik })).toBeNull();
+    expect(yenidenOnayNedeni({ onaylanan: 24_000, yeni: 25_000.01, esik })).toMatch(/yönetici onayı/);
+  });
+
+  it("yönetici zaten eşik üstünde onayladıysa yalnız marj uygulanır", () => {
+    expect(yenidenOnayNedeni({ onaylanan: 30_000, yeni: 33_000, esik })).toBeNull();
+    expect(yenidenOnayNedeni({ onaylanan: 30_000, yeni: 33_000.01, esik })).not.toBeNull();
+  });
+
+  it("0 TL onaylanmış eski talepte her pozitif teklif yeniden onay ister", () => {
+    expect(yenidenOnayNedeni({ onaylanan: 0, yeni: 0.01, esik })).not.toBeNull();
+  });
+
+  it("arayüz sınırı marj ile eşiğin küçüğüdür", () => {
+    expect(yenidenOnaySiniri(10_000, esik)).toBe(11_000);
+    expect(yenidenOnaySiniri(24_000, esik)).toBe(25_000);
+    expect(yenidenOnaySiniri(30_000, esik)).toBe(33_000);
+  });
+
+  it("teklifi seçip yeniden onaya düşüren kullanıcı onaylayamaz", () => {
+    const ortak = { rol: "yonetici", talepEdenUserId: "a", tutar: 50_000, esik };
+    expect(onayYetkisi({ ...ortak, userId: "b", yenidenGonderenUserId: "b" })).toMatch(/yeniden onaya gönderen/);
+    expect(onayYetkisi({ ...ortak, userId: "c", yenidenGonderenUserId: "b" })).toBeNull();
+    expect(onayYetkisi({ ...ortak, userId: "c", yenidenGonderenUserId: null })).toBeNull();
+  });
+
+  it("geçerlilik tarihi bugün dahil geçerlidir", () => {
+    expect(teklifSuresiDolduMu("2026-10-24", "2026-10-24")).toBe(false);
+    expect(teklifSuresiDolduMu("2026-10-23", "2026-10-24")).toBe(true);
+    expect(teklifSuresiDolduMu(null, "2026-10-24")).toBe(false);
   });
 });

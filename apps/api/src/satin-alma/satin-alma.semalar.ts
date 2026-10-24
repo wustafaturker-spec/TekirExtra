@@ -24,7 +24,8 @@ export const talepSemasi = z.object({
       z.object({
         stokId: z.string().uuid("Kalem için stok veya hizmet kartı seçin"),
         miktar: pozitif("Miktar", 3),
-        tahminiBirimFiyat: ondalik("Tahmini birim fiyat", 4),
+        // SAT-09: sıfır tahmin onayı anlamsızlaştırır (0 TL talep her eşiğin altında kalır).
+        tahminiBirimFiyat: pozitif("Tahmini birim fiyat", 4),
       }),
     )
     .min(1, "Talepte en az bir kalem bulunmalıdır")
@@ -48,7 +49,8 @@ const teklifTemeli = z.object({
     .array(
       z.object({
         talepKalemiId: z.string().uuid(),
-        birimFiyat: ondalik("Birim fiyat", 4),
+        // Boş bırakılan fiyat 0 sayılıp "en düşük teklif" olmasın.
+        birimFiyat: pozitif("Birim fiyat", 4),
         kdvOrani: ondalik("KDV oranı", 2).refine((v) => Number(v) <= 100, "KDV oranı 100'ü aşamaz"),
       }),
     )

@@ -15,7 +15,10 @@ import {
   onaylayabilecekRoller,
   talepAcabilirMi,
   teklifHesapla,
+  teklifSuresiDolduMu,
   tumTalepleriGorurMu,
+  yenidenOnayNedeni,
+  yenidenOnaySiniri,
 } from "./satin-alma.hesap";
 import type { SiparisGirdisi, TalepGirdisi, TeklifGirdisi } from "./satin-alma.semalar";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
@@ -47,6 +50,16 @@ const DETAY = {
 type TalepDetay = Prisma.SatinAlmaTalebiGetPayload<{ include: typeof DETAY }>;
 type TutarKaynagi = { tahminiToplam: Prisma.Decimal; teklifler: { secildi: boolean; toplamTry: Prisma.Decimal }[] };
 
+/** Talebin onaya son gönderilişi: sahibi mi gönderdi, teklif seçen mi yeniden düşürdü. */
+const GONDERIM_OLAYLARI: SatinAlmaOlayTuru[] = ["onaya_gonderildi", "yeniden_onaya_gonderildi"];
+const SON_GONDERIM = { where: { tur: { in: GONDERIM_OLAYLARI } }, orderBy: { createdAt: "desc" }, take: 1, select: { tur: true, userId: true, aciklama: true } } satisfies Prisma.SatinAlmaTalebi$olaylarArgs;
+
+/** SAT-09: son gönderim yeniden onaysa onu tetikleyen kullanıcı; değilse null. */
+function yenidenGonderen(olaylar: { tur: SatinAlmaOlayTuru; userId: string }[]): string | null {
+  const son = olaylar[0];
+  return son?.tur === "yeniden_onaya_gonderildi" ? son.userId : null;
+}
+
 /**
  * Satın alma talep ve onay (SAT-01…SAT-08). Talep → onay → teklif → alış
  * siparişi. Sipariş mevcut belge zinciriyle oluşturulur; stok ve "yoldaki"
@@ -70,6 +83,11 @@ export class SatinAlmaService {
   private olay(tx: Tx, talepId: string, tur: SatinAlmaOlayTuru, aciklama?: string | null) {
     const { tenantId, userId } = aktifBaglam();
     return tx.satinAlmaTalepOlayi.create({ data: { tenantId, talepId, tur, aciklama: aciklama ?? null, userId } });
+  }
+
+  /** SAT-09: onay anındaki tutar; alan eklenmeden önce onaylananlarda tahmini toplam. */
+  private onaylananTutar(t: { onaylananTutar: Prisma.Decimal | null; tahminiToplam: Prisma.Decimal }): number {
+    return Number(t.onaylananTutar ?? t.tahminiToplam);
   }
 
   /** Teklif seçildiyse onun TL toplamı, yoksa tahmini toplam. */
@@ -134,10 +152,11 @@ export class SatinAlmaService {
           departman: { select: { ad: true } },
           siparisBelge: { select: { id: true, no: true } },
           teklifler: { select: { secildi: true, toplamTry: true } },
+          olaylar: SON_GONDERIM,
         },
       });
       return talepler
-        .filter((t) => kapsam !== "onay" || onayYetkisi({ rol, userId, talepEdenUserId: t.talepEdenUserId, tutar: this.etkinTutar(t), esik }) === null)
+        .filter((t) => kapsam !== "onay" || onayYetkisi({ rol, userId, talepEdenUserId: t.talepEdenUserId, tutar: this.etkinTutar(t), esik, yenidenGonderenUserId: yenidenGonderen(t.olaylar) }) === null)
         .map((t) => ({
           id: t.id,
           no: t.no,
@@ -151,6 +170,7 @@ export class SatinAlmaService {
           teklifSayisi: t.teklifler.length,
           siparisBelge: t.siparisBelge,
           onaylayabilecekRoller: t.durum === "onay_bekliyor" ? onaylayabilecekRoller(this.etkinTutar(t), esik) : [],
+          yenidenOnay: t.durum === "onay_bekliyor" && t.olaylar[0]?.tur === "yeniden_onaya_gonderildi",
           olusturuldu: t.createdAt.toISOString(),
         }));
     });
@@ -173,7 +193,12 @@ export class SatinAlmaService {
   private async detayGorunumu(tx: Tx, t: TalepDetay, ctx: { sahibi: boolean; yetkili: boolean; esik: number }) {
     const { userId, rol } = aktifBaglam();
     const tutar = this.etkinTutar(t);
-    const onayEngeli = t.durum === "onay_bekliyor" ? onayYetkisi({ rol, userId, talepEdenUserId: t.talepEdenUserId, tutar, esik: ctx.esik }) : null;
+    // DETAY olayları artan sırada; son gönderim sondan aranır.
+    const sonGonderim = [...t.olaylar].reverse().filter((o) => GONDERIM_OLAYLARI.includes(o.tur)).slice(0, 1);
+    const yenidenOnay = t.durum === "onay_bekliyor" && sonGonderim[0]?.tur === "yeniden_onaya_gonderildi" ? sonGonderim[0] : null;
+    const onayEngeli = t.durum === "onay_bekliyor" ? onayYetkisi({ rol, userId, talepEdenUserId: t.talepEdenUserId, tutar, esik: ctx.esik, yenidenGonderenUserId: yenidenGonderen(sonGonderim) }) : null;
+    const onaylanan = t.onayZamani && t.durum !== "reddedildi" ? this.onaylananTutar(t) : null;
+    const bugun = istanbulBugun();
     const butce = await this.butceDurumu(tx, t);
     const kalemAdi = (await this.giderKalemleri(tx, t.tenantId)).find((k) => k.anahtar === t.butceAnahtari)?.ad ?? t.butceAnahtari;
     const enDusuk = enDusukTeklifler(t.teklifler.map((k) => ({ id: k.id, toplamTry: Number(k.toplamTry) })));
@@ -187,6 +212,10 @@ export class SatinAlmaService {
       butceKalemi: kalemAdi,
       tahminiToplam: t.tahminiToplam.toFixed(2),
       etkinTutar: tutar.toFixed(2),
+      onaylananTutar: onaylanan === null ? null : onaylanan.toFixed(2),
+      // SAT-09: bu tutarı aşan teklif seçilirse talep yeniden onaya düşer.
+      yenidenOnaySiniri: t.durum === "onaylandi" && onaylanan !== null ? yenidenOnaySiniri(onaylanan, ctx.esik).toFixed(2) : null,
+      yenidenOnayNedeni: yenidenOnay?.aciklama ?? null,
       talepEden: t.talepEden,
       departman: t.departman,
       onaylayan: t.onaylayan?.adSoyad ?? null,
@@ -217,6 +246,7 @@ export class SatinAlmaService {
         toplamTry: k.toplamTry.toFixed(2),
         secildi: k.secildi,
         enDusuk: enDusuk.has(k.id),
+        suresiDoldu: teklifSuresiDolduMu(isoGun(k.gecerlilikTarihi), bugun),
         kalemler: k.kalemler.map((f) => ({ talepKalemiId: f.talepKalemiId, birimFiyat: f.birimFiyat.toFixed(4), kdvOrani: f.kdvOrani.toFixed(2) })),
       })),
       olaylar: t.olaylar.map((o) => ({ tur: o.tur, aciklama: o.aciklama, kullanici: o.user.adSoyad, zaman: o.createdAt.toISOString() })),
@@ -224,7 +254,8 @@ export class SatinAlmaService {
       onaylayabilecekRoller: onaylayabilecekRoller(tutar, ctx.esik),
       onayEngeli,
       yetkiler: {
-        duzenle: ctx.sahibi && t.durum === "taslak",
+        // Teklif girilmiş talepte kalemler değişirse teklif fiyatları dayanaksız kalır.
+        duzenle: ctx.sahibi && t.durum === "taslak" && t.teklifler.length === 0,
         gonder: ctx.sahibi && t.durum === "taslak",
         geriCek: ctx.sahibi && t.durum === "onay_bekliyor",
         iptal: (ctx.sahibi || ctx.yetkili) && (t.durum === "taslak" || t.durum === "onay_bekliyor"),
@@ -336,6 +367,9 @@ export class SatinAlmaService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const t = await this.sahibinTalebi(tx, id);
       if (t.durum !== "taslak") throw new BadRequestException("Yalnız taslak talep düzenlenebilir; onaydaki talebi önce geri çekin");
+      if (await tx.satinAlmaTeklifi.count({ where: { talepId: id } })) {
+        throw new BadRequestException("Teklif girilmiş talebin kalemleri değiştirilemez; talebi iptal edip yenisini açın");
+      }
       const kalemler = await this.kalemleriHazirla(tx, tenantId, girdi);
       await tx.satinAlmaTalepKalemi.deleteMany({ where: { talepId: id } });
       await tx.satinAlmaTalebi.update({
@@ -357,7 +391,9 @@ export class SatinAlmaService {
   async gonder(id: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      await this.sahibinTalebi(tx, id);
+      const t = await this.sahibinTalebi(tx, id);
+      // SAT-09: alan zorunlu olmadan önce kaydedilmiş 0 TL taslaklar onaya gidemez.
+      if (t.tahminiToplam.lte(0)) throw new BadRequestException("Tahmini toplam sıfır olamaz; kalemlere tahmini birim fiyat girin");
       await this.gecis(tx, id, ["taslak"], { durum: "onay_bekliyor" });
       await this.olay(tx, id, "onaya_gonderildi");
       return { id, durum: "onay_bekliyor" };
@@ -389,10 +425,10 @@ export class SatinAlmaService {
   /** Onay/red ortak ön koşulu: talep onay bekliyor ve kullanıcı karar verebilir. */
   private async kararVerilecekTalep(tx: Tx, id: string) {
     const { userId, rol } = aktifBaglam();
-    const t = await tx.satinAlmaTalebi.findUnique({ where: { id }, include: { teklifler: { select: { secildi: true, toplamTry: true } } } });
+    const t = await tx.satinAlmaTalebi.findUnique({ where: { id }, include: { teklifler: { select: { secildi: true, toplamTry: true } }, olaylar: SON_GONDERIM } });
     if (!t) throw new NotFoundException("Satın alma talebi bulunamadı");
     if (t.durum !== "onay_bekliyor") throw new ConflictException("Talep onay beklemiyor");
-    const engel = onayYetkisi({ rol, userId, talepEdenUserId: t.talepEdenUserId, tutar: this.etkinTutar(t), esik: await this.onayEsigi(tx) });
+    const engel = onayYetkisi({ rol, userId, talepEdenUserId: t.talepEdenUserId, tutar: this.etkinTutar(t), esik: await this.onayEsigi(tx), yenidenGonderenUserId: yenidenGonderen(t.olaylar) });
     if (engel) throw new ForbiddenException(engel);
     return t;
   }
@@ -408,7 +444,7 @@ export class SatinAlmaService {
           `Talep ${String(butce.ay).padStart(2, "0")}/${butce.yil} bütçesini ${butce.asim.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL aşıyor; onaylamak için aşım gerekçesi yazın (en az 5 karakter)`,
         );
       }
-      await this.gecis(tx, id, ["onay_bekliyor"], { durum: "onaylandi", onaylayanUserId: userId, onayZamani: new Date(), butceAsimGerekcesi: butce.asim > 0 ? gerekce : null });
+      await this.gecis(tx, id, ["onay_bekliyor"], { durum: "onaylandi", onaylayanUserId: userId, onayZamani: new Date(), onaylananTutar: D(this.etkinTutar(t)).toDecimalPlaces(2), butceAsimGerekcesi: butce.asim > 0 ? gerekce : null });
       await this.olay(tx, id, "onaylandi", butce.asim > 0 ? `Bütçe aşımı ${butce.asim.toFixed(2)} TL — ${gerekce}` : null);
       return { id, durum: "onaylandi", butce };
     });
@@ -467,6 +503,7 @@ export class SatinAlmaService {
     const { tenantId } = aktifBaglam();
     // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
     await this.mevzuat?.kdvOranlariniDogrula(girdi.kalemler.map((k) => k.kdvOrani), new Date());
+    if (teklifSuresiDolduMu(girdi.gecerlilikTarihi ?? null, istanbulBugun())) throw new BadRequestException("Geçerlilik tarihi geçmiş teklif girilemez");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const t = await this.onayliTalep(tx, talepId);
       const { teklif, tedarikci } = await this.teklifKaydet(tx, t, girdi, false);
@@ -492,11 +529,36 @@ export class SatinAlmaService {
     });
   }
 
+  /**
+   * SAT-09: seçilen teklif onaylanan tutarı marjın üstünde aşıyor ya da eşiği
+   * geçiyorsa talep onay bekliyor durumuna döner; önceki onay geçersizleşir.
+   * Neden döner; gerekmiyorsa null.
+   */
+  private async gerekirseYenidenOnaya(
+    tx: Tx,
+    talep: { id: string; onaylananTutar: Prisma.Decimal | null; tahminiToplam: Prisma.Decimal },
+    yeniTutar: Prisma.Decimal,
+    tedarikci: string,
+  ): Promise<string | null> {
+    const neden = yenidenOnayNedeni({ onaylanan: this.onaylananTutar(talep), yeni: Number(yeniTutar), esik: await this.onayEsigi(tx) });
+    if (!neden) return null;
+    await this.gecis(tx, talep.id, ["onaylandi"], { durum: "onay_bekliyor", onaylayanUserId: null, onayZamani: null, butceAsimGerekcesi: null });
+    await this.olay(tx, talep.id, "yeniden_onaya_gonderildi", `${tedarikci} — ${neden}`);
+    return neden;
+  }
+
+  private suresiKontrol(teklif: { gecerlilikTarihi: Date | null }) {
+    if (teklifSuresiDolduMu(isoGun(teklif.gecerlilikTarihi), istanbulBugun())) {
+      throw new BadRequestException(`Teklifin geçerlilik süresi ${isoGun(teklif.gecerlilikTarihi)} tarihinde dolmuş; tedarikçiden güncel teklif alıp yeniden girin`);
+    }
+  }
+
   /** SAT-05: en düşükten farklı teklif ancak gerekçeyle seçilir. */
   async teklifSec(teklifId: string, gerekce?: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const { teklif, talep } = await this.teklifVeTalep(tx, teklifId);
+      this.suresiKontrol(teklif);
       const enDusuk = enDusukTeklifler(talep.teklifler.map((k) => ({ id: k.id, toplamTry: Number(k.toplamTry) })));
       const aciklama = gerekce?.trim() ?? "";
       if (!enDusuk.has(teklifId) && aciklama.length < 5) {
@@ -506,7 +568,8 @@ export class SatinAlmaService {
       await tx.satinAlmaTeklifi.update({ where: { id: teklifId }, data: { secildi: true } });
       await tx.satinAlmaTalebi.update({ where: { id: talep.id }, data: { teklifSecimGerekcesi: enDusuk.has(teklifId) ? null : aciklama } });
       await this.olay(tx, talep.id, "teklif_secildi", enDusuk.has(teklifId) ? teklif.tedarikci.unvan : `${teklif.tedarikci.unvan} — en düşük değil: ${aciklama}`);
-      return { id: teklifId };
+      const yenidenOnay = await this.gerekirseYenidenOnaya(tx, talep, teklif.toplamTry, teklif.tedarikci.unvan);
+      return { id: teklifId, yenidenOnay };
     });
   }
 
@@ -527,9 +590,15 @@ export class SatinAlmaService {
         await this.olay(tx, id, "teklif_eklendi", `${tedarikci.unvan} · ${teklif.toplamTry.toFixed(2)} TL (doğrudan sipariş)`);
         secilen = { ...teklif, tedarikci: { unvan: tedarikci.unvan } };
       }
+      this.suresiKontrol(secilen);
+      // SAT-09: seçimden sonra eşik/ayar değişmiş ya da doğrudan fiyat girilmiş olabilir; sipariş öncesi yeniden denetlenir.
+      const yenidenOnay = await this.gerekirseYenidenOnaya(tx, t, secilen.toplamTry, secilen.tedarikci.unvan);
+      if (yenidenOnay) return { yenidenOnay } as const;
       await this.gecis(tx, id, ["onaylandi"], { durum: "siparise_donustu" });
-      return { talep: t, teklif: secilen };
+      return { talep: t, teklif: secilen, yenidenOnay: null };
     });
+    // Yeniden onay kaydı (ve doğrudan girilen teklif) kalıcıdır; sipariş açılmaz.
+    if (hazirlik.yenidenOnay !== null) return { id, siparisBelgeId: null, yenidenOnay: hazirlik.yenidenOnay };
 
     const fiyatlar = new Map(hazirlik.teklif.kalemler.map((k) => [k.talepKalemiId, k]));
     let belge: { id: string };
@@ -564,6 +633,6 @@ export class SatinAlmaService {
       await tx.satinAlmaTalebi.update({ where: { id }, data: { siparisBelgeId: belge.id } });
       await this.olay(tx, id, "siparise_donustu", `Taslak alış siparişi oluşturuldu — ${hazirlik.teklif.tedarikci.unvan}`);
     });
-    return { id, siparisBelgeId: belge.id };
+    return { id, siparisBelgeId: belge.id, yenidenOnay: null };
   }
 }
