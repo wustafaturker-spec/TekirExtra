@@ -74,7 +74,7 @@ describe("BaglantilarService bağlantı testi", () => {
     const update = vi.fn().mockResolvedValue({});
     const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "pasif",
       sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes" })) };
-    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update } })) } as never;
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update }, auditLog: { create: vi.fn() } })) } as never;
     const servis = new BaglantilarService(prisma);
     vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: true }) } as never);
 
@@ -87,7 +87,7 @@ describe("BaglantilarService bağlantı testi", () => {
     const update = vi.fn().mockResolvedValue({});
     const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "aktif",
       sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes" })) };
-    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update } })) } as never;
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update }, auditLog: { create: vi.fn() } })) } as never;
     const servis = new BaglantilarService(prisma);
     vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: true }) } as never);
 
@@ -100,7 +100,7 @@ describe("BaglantilarService bağlantı testi", () => {
     const update = vi.fn().mockResolvedValue({});
     const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "aktif",
       sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes" })) };
-    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update } })) } as never;
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update }, auditLog: { create: vi.fn() } })) } as never;
     const servis = new BaglantilarService(prisma);
     vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: false, mesaj: "olmadı" }) } as never);
 
@@ -118,6 +118,7 @@ describe("BaglantilarService seri denetimi (EBLG-97)", () => {
     const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "pasif", sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes", ...config })) };
     const tx = {
       baglanti: { findUnique: async () => kayit, update, updateMany },
+      auditLog: { create: vi.fn() },
       tenant: { findUnique: async () => ({ vkn: "1234567802", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true }) },
       gibMukellef: { findFirst: async () => null, count: async () => 0 },
       gibMukellefSenkron: { findFirst: async () => null },
@@ -159,11 +160,23 @@ describe("BaglantilarService güncelleme (EBLG-01b)", () => {
         findUnique: vi.fn().mockResolvedValue({ id: "b1", aile: "ebelge", saglayici, durum: "aktif", sifreliConfig: sifrele(JSON.stringify({ saglayici, ...config })) }),
         update,
       },
+      auditLog: { create: vi.fn() },
     };
     const prisma = { tenantIslem: (_tenantId: string, fn: (t: typeof tx) => unknown) => fn(tx) };
     const saklanan = () => JSON.parse(coz(update.mock.calls[0][0].data.sifreliConfig)) as Record<string, unknown>;
-    return { servis: new BaglantilarService(prisma as never), saklanan };
+    const denetim = () => tx.auditLog.create.mock.calls.map((c) => c[0].data);
+    return { servis: new BaglantilarService(prisma as never), saklanan, denetim };
   }
+
+  it("güncelleme denetim izine yazılır; değişen gizli alan değeriyle yazılmaz (yönetim P1-4)", async () => {
+    const { servis, denetim } = kurulum();
+    await baglamda(() => servis.guncelle("b1", { config: { kullaniciAdi: "yeni@nes.com.tr", belgeSeriOneki: "K08", earsivSeriOneki: "SNC", testOrtami: true } }));
+    expect(denetim()).toEqual([{
+      tenantId: "tenant-1", userId: "user-1", islem: "baglanti_guncellendi", varlik: "baglanti", varlikId: "b1",
+      detay: { aile: "ebelge", saglayici: "nes", degisiklikler: { kullaniciAdi: { eski: "•••", yeni: "•••" }, belgeSeriOneki: { eski: "K07", yeni: "K08" } } },
+    }]);
+    expect(JSON.stringify(denetim())).not.toContain("yeni@nes.com.tr");
+  });
 
   it("boş bırakılan gizli alanları korur, gönderilen gizli olmayan alanları olduğu gibi yazar", async () => {
     const { servis, saklanan } = kurulum();

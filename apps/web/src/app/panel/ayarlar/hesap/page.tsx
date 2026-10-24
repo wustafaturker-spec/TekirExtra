@@ -2,11 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { Alert, Button, Card, Field, Input, PageHeader } from "@/components/ui";
+import { tarayiciAdi } from "@/lib/tarayici-adi";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/components/ui";
 
 interface KurBilgi {
   otpauthUrl: string;
   secret: string;
+}
+
+interface Oturum {
+  id: string;
+  girisAt: string;
+  sonYenilemeAt: string;
+  ip: string | null;
+  tarayici: string | null;
+  buOturum: boolean;
 }
 
 interface TotpDurum {
@@ -23,6 +33,9 @@ export default function HesapGuvenligiSayfasi() {
   const [yonetimKodu, setYonetimKodu] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
+  // Yönetim P2-4: açık oturumlar
+  const [oturumlar, setOturumlar] = useState<Oturum[]>([]);
+  const [oturumMesaji, setOturumMesaji] = useState<{ ton: "success" | "error"; metin: string } | null>(null);
   const [mevcutParola, setMevcutParola] = useState("");
   const [yeniParola, setYeniParola] = useState("");
   const [yeniParolaTekrar, setYeniParolaTekrar] = useState("");
@@ -60,6 +73,31 @@ export default function HesapGuvenligiSayfasi() {
   useEffect(() => {
     void durumYukle().catch(() => undefined);
   }, [durumYukle]);
+
+  const oturumlariYukle = useCallback(async () => {
+    const liste = await api<Oturum[]>("/auth/oturumlar");
+    setOturumlar(Array.isArray(liste) ? liste : []);
+  }, []);
+
+  useEffect(() => {
+    void oturumlariYukle().catch(() => undefined);
+  }, [oturumlariYukle]);
+
+  async function oturumKapat(id?: string) {
+    setOturumMesaji(null);
+    try {
+      if (id) {
+        await api(`/auth/oturumlar/${id}/kapat`, { method: "POST" });
+        setOturumMesaji({ ton: "success", metin: "Oturum kapatıldı; o cihaz en geç 15 dakika içinde çıkış yapar." });
+      } else {
+        const s = await api<{ kapatilan: number }>("/auth/oturumlar/digerlerini-kapat", { method: "POST" });
+        setOturumMesaji({ ton: "success", metin: `${s.kapatilan} oturum kapatıldı; o cihazlar hemen çıkış yapar.` });
+      }
+      await oturumlariYukle();
+    } catch (h) {
+      setOturumMesaji({ ton: "error", metin: h instanceof Error ? h.message : "Oturum kapatılamadı" });
+    }
+  }
 
   async function calistir(is: () => Promise<void>, varsayilanHata: string) {
     setHata("");
@@ -137,6 +175,28 @@ export default function HesapGuvenligiSayfasi() {
           </Field>
           <div><Button variant="primary" type="submit" disabled={parolaIsleniyor}>{parolaIsleniyor ? "Kaydediliyor…" : "Parolayı değiştir"}</Button></div>
         </form>
+      </Card>
+
+      <Card className="stack" style={{ marginBottom: "1.5rem" }}>
+        <div className="between">
+          <h3 className="card__title" style={{ fontSize: "1.05rem" }}>💻 Oturumlarım</h3>
+          {oturumlar.some((o) => !o.buOturum) && <Button size="sm" variant="danger" onClick={() => void oturumKapat()}>Diğer oturumları kapat</Button>}
+        </div>
+        {oturumMesaji && <Alert tone={oturumMesaji.ton}>{oturumMesaji.metin}</Alert>}
+        <ul className="oturum-listesi" aria-label="Açık oturumlar">
+          {oturumlar.map((o) => (
+            <li key={o.id}>
+              <div>
+                <strong>{tarayiciAdi(o.tarayici)}</strong> {o.buOturum && <Badge variant="success">Bu cihaz</Badge>}
+                <div className="subtle">
+                  Giriş {new Date(o.girisAt).toLocaleString("tr-TR")} · son etkinlik {new Date(o.sonYenilemeAt).toLocaleString("tr-TR")}{o.ip ? ` · ${o.ip}` : ""}
+                </div>
+              </div>
+              {!o.buOturum && <Button size="sm" onClick={() => void oturumKapat(o.id)}>Kapat</Button>}
+            </li>
+          ))}
+          {oturumlar.length === 0 && <li className="subtle">Açık oturum bilgisi yok.</li>}
+        </ul>
       </Card>
 
       <Alert tone="error">{hata}</Alert>

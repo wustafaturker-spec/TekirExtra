@@ -15,6 +15,8 @@ import { z } from "zod";
 import { Public } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
 import { ebelgeUygulamalariCozTenant, mukellefiyetCelismeleriniOku } from "../ebelge/ebelge-uygulamalari.service";
+import type { Prisma } from "@prisma/client";
+import { degisiklikleriBul } from "../core/denetim-farki";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import {
@@ -139,13 +141,19 @@ export class TenantController {
     if (!ayristirma.success) {
       throw new BadRequestException(ayristirma.error.issues.map((s) => s.message).join("; ") || "Geçersiz firma bilgisi");
     }
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const onceki = await tx.tenant.findUnique({ where: { id: tenantId }, select: FIRMA_ALANLARI });
       const tenant = await tx.tenant.update({
         where: { id: tenantId },
         data: ayristirma.data,
         select: FIRMA_ALANLARI,
       });
+      // Yönetim P1-4: firma kimliği (VKN, unvan, e-belge mükellefiyeti…) değişikliği izlenir.
+      const degisiklikler = degisiklikleriBul(onceki, tenant);
+      if (Object.keys(degisiklikler).length) {
+        await tx.auditLog.create({ data: { tenantId, userId, islem: "firma_bilgisi_degisti", varlik: "tenant", varlikId: tenantId, detay: { degisiklikler } as Prisma.InputJsonValue } });
+      }
 
       const logo = await tx.ek.findFirst({
         where: { sahipTur: "firma", sahipId: tenantId },

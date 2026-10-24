@@ -32,6 +32,7 @@ interface Kullanici {
   aktif: boolean;
   epostaDogrulandi: boolean;
   totpAktif: boolean;
+  sonGirisAt: string | null;
   maksIskontoYuzdesi: number | null;
   bayiCariId: string | null;
   bayiCari: { id: string; kod: string; unvan: string } | null;
@@ -108,6 +109,18 @@ export default function KullanicilarSayfasi() {
       setIkiAdimSifirlanan(null);
     } finally {
       setSifirlaniyor(false);
+    }
+  }
+
+  // Yönetim P2-4: kayıp cihaz ya da ayrılan çalışan için bütün oturumları kapatır.
+  async function oturumlariKapat(k: Kullanici) {
+    setHata("");
+    setBasari("");
+    try {
+      const s = await api<{ mesaj: string }>(`/kullanicilar/${k.id}/oturumlari-kapat`, { method: "POST" });
+      setBasari(s.mesaj);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Oturumlar kapatılamadı");
     }
   }
 
@@ -242,6 +255,7 @@ export default function KullanicilarSayfasi() {
               <th>Rol</th>
               <th>Durum</th>
               <th>2FA</th>
+              <th>Son giriş</th>
               <th>Bağlı Bayi / Cari</th>
               <th className="num">Maks. İskonto</th>
               <th className="center">İşlem</th>
@@ -249,7 +263,7 @@ export default function KullanicilarSayfasi() {
           </thead>
           <tbody>
             {kullanicilar.length === 0 ? (
-              <tr><td colSpan={8} className="empty">Kullanıcı bulunamadı.</td></tr>
+              <tr><td colSpan={9} className="empty">Kullanıcı bulunamadı.</td></tr>
             ) : (
               kullanicilar.map((k) => (
                 <tr key={k.id}>
@@ -272,12 +286,16 @@ export default function KullanicilarSayfasi() {
                       </div>
                     ) : <span className="subtle">—</span>}
                   </td>
+                  <td className="subtle" style={{ whiteSpace: "nowrap" }}>{k.sonGirisAt ? new Date(k.sonGirisAt).toLocaleString("tr-TR") : "Hiç girmedi"}</td>
                   <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <Select value={k.bayiCariId ?? ""} onChange={(e) => bayiCariDegistir(k.id, e.target.value)}><option value="">Atanmamış</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select> : <span className="subtle">—</span>}</td>
                   <td className="num">{k.maksIskontoYuzdesi === null ? <span className="subtle">Sınırsız</span> : `%${k.maksIskontoYuzdesi}`}</td>
                   <td className="center">
                     <div className="row-tight" style={{ justifyContent: "center", flexWrap: "nowrap" }}>
                       {k.id !== benId && (
                         <Button size="sm" onClick={() => sifirlamaAc(k)}>Parolayı Sıfırla</Button>
+                      )}
+                      {k.id !== benId && (
+                        <Button size="sm" onClick={() => void oturumlariKapat(k)}>Oturumları Kapat</Button>
                       )}
                       {k.id !== benId && (
                         <Button size="sm" variant={k.aktif ? "danger" : "ghost"} onClick={() => aktifDegistir(k)}>

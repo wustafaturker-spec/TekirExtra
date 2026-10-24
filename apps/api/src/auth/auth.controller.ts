@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
   Post,
   Query,
   Req,
@@ -45,6 +46,10 @@ function refreshCookieYaz(res: Response, token: string): void {
   }
 }
 
+function istemciBilgisi(req: Request) {
+  return { ip: req.ip ?? null, tarayici: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null };
+}
+
 @Controller("auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -53,6 +58,7 @@ export class AuthController {
   @Post("giris")
   async giris(
     @Body() govde: unknown,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const ayristirma = girisSemasi.safeParse(govde);
@@ -60,7 +66,7 @@ export class AuthController {
       throw new BadRequestException("E-posta ve parola zorunludur");
     }
     const { eposta, parola, totpKodu } = ayristirma.data;
-    const sonuc = await this.auth.giris(eposta, parola, totpKodu);
+    const sonuc = await this.auth.giris(eposta, parola, totpKodu, istemciBilgisi(req));
     refreshCookieYaz(res, sonuc.refreshToken);
     return { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici };
   }
@@ -69,7 +75,7 @@ export class AuthController {
   @Post("yenile")
   async yenile(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
-    const sonuc = await this.auth.yenile(token ?? "");
+    const sonuc = await this.auth.yenile(token ?? "", istemciBilgisi(req));
     refreshCookieYaz(res, sonuc.refreshToken);
     return { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici };
   }
@@ -108,6 +114,25 @@ export class AuthController {
     if (!govde.kod) throw new BadRequestException("Kod gerekli");
     const { kurtarmaKodlari } = await this.auth.totpEtkinlestir(govde.kod);
     return { durum: "ok", mesaj: "TOTP etkinleştirildi", kurtarmaKodlari };
+  }
+
+  /** Yönetim P2-4: açık oturumlar ve kapatma. */
+  @Get("oturumlar")
+  oturumlar(@Req() req: Request) {
+    return this.auth.oturumlarim((req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE]);
+  }
+
+  @Post("oturumlar/digerlerini-kapat")
+  @HttpCode(200)
+  digerOturumlariKapat(@Req() req: Request) {
+    return this.auth.digerOturumlariKapat((req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE]);
+  }
+
+  @Post("oturumlar/:id/kapat")
+  @HttpCode(200)
+  async oturumKapat(@Param("id") id: string) {
+    await this.auth.oturumKapat(id);
+    return { mesaj: "Oturum kapatıldı" };
   }
 
   @Get("totp/durum")

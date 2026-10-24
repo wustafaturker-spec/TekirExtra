@@ -5235,3 +5235,14 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 
 /* 2FA kurtarma kodları (Hesap Güvenliği) */
 .kurtarma-kodlari__liste { margin: 0; padding: 0.75rem 1rem 0.75rem 2.25rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.35rem 1.5rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; }
+
+/* Denetim İzi ayrıntı sütunu (yönetim P1-4) */
+.denetim-ayrinti { font-size: 0.82rem; max-width: 420px; }
+.denetim-ayrinti ul { margin: 0.15rem 0 0; padding-left: 1rem; }
+.denetim-ayrinti li { word-break: break-word; }
+
+/* Oturumlarım (Hesap Güvenliği, yönetim P2-4) */
+.oturum-listesi { list-style: none; margin: 0; padding: 0; }
+.oturum-listesi li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-top: 1px solid var(--border); }
+.oturum-listesi li:first-child { border-top: 0; }
+.oturum-listesi .subtle { font-size: 0.82rem; }

@@ -1860,3 +1860,32 @@ test("yönetici telefonunu kaybeden kullanıcının 2FA'sını sıfırlar (yöne
   expect(yol).toBe("/api/v1/kullanicilar/u2/iki-adim-sifirla");
   await expect(page.getByRole("combobox", { name: "Yönetici Kişi rolü" })).toBeDisabled();
 });
+
+test("denetim izi değişiklikleri eski → yeni gösterir (yönetim P1-4)", async ({ page }) => {
+  await page.route("**/api/v1/denetim/varliklar", (route) => route.fulfill({ json: ["user", "tenant"] }));
+  await page.route((url) => url.pathname.endsWith("/api/v1/denetim"), (route) => route.fulfill({ json: { sonrakiImlec: null, kayitlar: [
+    { id: "a1", islem: "kullanici_yetkisi_degisti", varlik: "user", varlikId: "u2", zaman: "2026-10-24T10:00:00Z", kullanici: { id: "u1", adSoyad: "Yönetici Kişi", eposta: "y@example.com" }, detay: { eposta: "ayse@example.com", degisiklikler: { rol: { eski: "muhasebe", yeni: "satis" } } } },
+    { id: "a2", islem: "giris_yapildi", varlik: "user", varlikId: "u2", zaman: "2026-10-24T09:00:00Z", kullanici: null, detay: { ip: "10.0.0.5", tarayici: null } },
+  ] } }));
+  await page.goto("/panel/ayarlar/denetim");
+  const satir = page.getByRole("row", { name: /Kullanıcı yetkisi değişti/ });
+  await expect(satir.getByText("muhasebe → satis")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Giriş yapıldı/ }).getByText("ip: 10.0.0.5")).toBeVisible();
+});
+
+test("oturumlarım bu cihazı işaretler, diğerlerini kapatır (yönetim P2-4)", async ({ page }) => {
+  let kapatildi = false;
+  const oturum = (id: string, bu: boolean, ua: string) => ({ id, girisAt: "2026-10-24T08:00:00Z", sonYenilemeAt: "2026-10-24T09:00:00Z", ip: "10.0.0.5", tarayici: ua, buOturum: bu });
+  await page.route("**/api/v1/auth/oturumlar", (route) => route.fulfill({ json: kapatildi
+    ? [oturum("o1", true, "Mozilla/5.0 (X11; Linux x86_64) Chrome/130")]
+    : [oturum("o1", true, "Mozilla/5.0 (X11; Linux x86_64) Chrome/130"), oturum("o2", false, "Mozilla/5.0 (iPhone; CPU iPhone OS 18) Safari/604")] }));
+  await page.route("**/api/v1/auth/oturumlar/digerlerini-kapat", async (route) => { kapatildi = true; await route.fulfill({ json: { kapatilan: 1 } }); });
+  await page.goto("/panel/ayarlar/hesap");
+  const liste = page.getByRole("list", { name: "Açık oturumlar" });
+  await expect(liste.getByText("Chrome · Linux")).toBeVisible();
+  await expect(liste.getByText("Safari · iOS")).toBeVisible();
+  await expect(liste.getByText("Bu cihaz")).toHaveCount(1);
+  await page.getByRole("button", { name: "Diğer oturumları kapat" }).click();
+  await expect(page.getByText("1 oturum kapatıldı; o cihazlar hemen çıkış yapar.")).toBeVisible();
+  await expect(liste.getByText("Safari · iOS")).toHaveCount(0);
+});

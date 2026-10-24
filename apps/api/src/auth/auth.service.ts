@@ -13,6 +13,7 @@ import { coz, sifrele } from "../core/kripto";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
 import { aktifBaglam } from "../core/istek-baglami";
+import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import type { JwtYuku } from "./auth.guard";
 
@@ -22,6 +23,21 @@ export interface GirisSonucu {
   accessToken: string;
   refreshToken: string;
   kullanici: { id: string; adSoyad: string; eposta: string; rol: string };
+}
+
+/** Yönetim P2-4: oturum listesinde gösterilen istemci bilgisi. */
+export interface Istemci {
+  ip?: string | null;
+  tarayici?: string | null;
+}
+
+export interface OturumGorunumu {
+  id: string;
+  girisAt: Date;
+  sonYenilemeAt: Date;
+  ip: string | null;
+  tarayici: string | null;
+  buOturum: boolean;
 }
 
 function tokenHashle(token: string): string {
@@ -34,9 +50,10 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly denemeler: GirisDenemeSayaci,
+    private readonly durum: KullaniciDurumService,
   ) {}
 
-  async giris(eposta: string, parola: string, totpKodu?: string): Promise<GirisSonucu> {
+  async giris(eposta: string, parola: string, totpKodu?: string, istemci: Istemci = {}): Promise<GirisSonucu> {
     // Yönetim P1-3: kilit, parola doğrulanmadan (argon2 maliyeti harcanmadan) uygulanır.
     if (await this.denemeler.kilitliMi(eposta)) {
       throw new HttpException(
@@ -79,11 +96,18 @@ export class AuthService {
     }
 
     await this.denemeler.temizle(eposta);
+    // Yönetim P2-4: son giriş ve giriş kaydı (denetim izi).
+    await this.prisma.tenantIslem(kullanici.tenantId, async (tx) => {
+      await tx.user.update({ where: { id: kullanici.id }, data: { sonGirisAt: new Date() } });
+      await tx.auditLog.create({
+        data: { tenantId: kullanici.tenantId, userId: kullanici.id, islem: "giris_yapildi", varlik: "user", varlikId: kullanici.id, detay: { ip: istemci.ip ?? null, tarayici: istemci.tarayici ?? null } },
+      });
+    });
 
     return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
-    });
+    }, istemci);
   }
 
   /** Kilit başladığında yöneticinin Denetim İzi'nde görmesi için. */
@@ -93,7 +117,7 @@ export class AuthService {
       .catch(() => undefined);
   }
 
-  async yenile(refreshToken: string): Promise<GirisSonucu> {
+  async yenile(refreshToken: string, istemci: Istemci = {}): Promise<GirisSonucu> {
     const oturum = await this.prisma.oturum.findUnique({
       where: { refreshTokenHash: tokenHashle(refreshToken) },
     });
@@ -111,7 +135,35 @@ export class AuthService {
     return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
+    }, istemci, oturum.girisAt);
+  }
+
+  /** Yönetim P2-4: kullanıcının açık oturumları (süresi geçenler hariç), bu oturum işaretli. */
+  async oturumlarim(refreshToken: string | undefined): Promise<OturumGorunumu[]> {
+    const { userId } = aktifBaglam();
+    const buHash = refreshToken ? tokenHashle(refreshToken) : null;
+    const kayitlar = await this.prisma.oturum.findMany({ where: { userId, gecerlilikSonu: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
+    return kayitlar.map((o) => ({ id: o.id, girisAt: o.girisAt, sonYenilemeAt: o.createdAt, ip: o.ip, tarayici: o.tarayici, buOturum: o.refreshTokenHash === buHash }));
+  }
+
+  /** Tek oturumu (yalnız kendi oturumu) kapatır. Elde kalan erişim token'ı en çok 15 dk yaşar. */
+  async oturumKapat(id: string): Promise<void> {
+    const { userId } = aktifBaglam();
+    const { count } = await this.prisma.oturum.deleteMany({ where: { id, userId } });
+    if (!count) throw new BadRequestException("Oturum bulunamadı");
+  }
+
+  /** Bu oturum dışındakileri kapatır; sürüm artar, diğer cihazların erişim token'ı da hemen düşer. */
+  async digerOturumlariKapat(refreshToken: string | undefined): Promise<{ kapatilan: number }> {
+    const { tenantId, userId } = aktifBaglam();
+    const buHash = refreshToken ? tokenHashle(refreshToken) : undefined;
+    const { count } = await this.prisma.oturum.deleteMany({ where: { userId, ...(buHash ? { NOT: { refreshTokenHash: buHash } } : {}) } });
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { oturumSurumu: { increment: 1 } } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "diger_oturumlar_kapatildi", varlik: "user", varlikId: userId, detay: { kapatilan: count } } });
     });
+    this.durum.unut(userId);
+    return { kapatilan: count };
   }
 
   async cikis(refreshToken: string | undefined): Promise<void> {
@@ -266,6 +318,8 @@ export class AuthService {
     rol: string,
     oturumSurumu: number,
     profil: { adSoyad: string; eposta: string },
+    istemci: Istemci = {},
+    girisAt: Date = new Date(),
   ): Promise<GirisSonucu> {
     const yuk: JwtYuku = { sub: userId, tenantId, rol: rol as JwtYuku["rol"], sv: oturumSurumu };
     const accessToken = await this.jwt.signAsync(yuk);
@@ -274,7 +328,10 @@ export class AuthService {
       Date.now() + REFRESH_GECERLILIK_GUN * 24 * 60 * 60 * 1000,
     );
     await this.prisma.oturum.create({
-      data: { tenantId, userId, refreshTokenHash: tokenHashle(refreshToken), gecerlilikSonu },
+      data: {
+        tenantId, userId, refreshTokenHash: tokenHashle(refreshToken), gecerlilikSonu, girisAt,
+        ip: istemci.ip?.slice(0, 64) ?? null, tarayici: istemci.tarayici?.slice(0, 200) ?? null,
+      },
     });
     return {
       accessToken,

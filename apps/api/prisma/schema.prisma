@@ -323,6 +323,8 @@ model User {
   totpKurtarmaOzetleri   String[]         @default([]) @map("totp_kurtarma_ozetleri")
   /// Yönetim P1-2: parola/2FA değişince artar; eski erişim token'ları reddedilir.
   oturumSurumu           Int              @default(0) @map("oturum_surumu")
+  /// Yönetim P2-4: son başarılı giriş (oturum yenileme sayılmaz).
+  sonGirisAt             DateTime?        @map("son_giris_at")
   maksIskontoYuzdesi     Decimal?         @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
   bayiCariId             String?          @map("bayi_cari_id") @db.Uuid
   /// PRS-21: çalışan rolünün bağlı olduğu personel kartı.
@@ -478,6 +480,10 @@ model Oturum {
   refreshTokenHash String   @unique @map("refresh_token_hash")
   gecerlilikSonu   DateTime @map("gecerlilik_sonu")
   createdAt        DateTime @default(now()) @map("created_at")
+  /// Yönetim P2-4: "Oturumlarım" listesi için; yenilemede taşınır.
+  girisAt          DateTime @default(now()) @map("giris_at")
+  ip               String?  @db.VarChar(64)
+  tarayici         String?  @db.VarChar(200)
 
   @@index([userId])
   @@map("oturumlar")

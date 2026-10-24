@@ -43,7 +43,7 @@ function kur() {
     oturum: { create: vi.fn(async () => ({})) },
   };
   const jwt = { signAsync: vi.fn(async () => "erisim-token") };
-  const service = new AuthService(prisma as unknown as PrismaService, jwt as never, GirisDenemeSayaci.bellekte());
+  const service = new AuthService(prisma as unknown as PrismaService, jwt as never, GirisDenemeSayaci.bellekte(), { unut: () => undefined } as never);
   const olarak = <T>(is: () => Promise<T>) => baglamlaCalistir({ tenantId: TENANT, userId: KULLANICI, rol: "muhasebe" }, is);
   const totpKodu = () => generateSync({ secret });
   return { k, secret, denetim, service, olarak, totpKodu };
@@ -73,7 +73,7 @@ describe("2FA kurtarma kodları (yönetim P1-1)", () => {
     const kod = t.kurtarmaKodlari[3].toLowerCase().replace("-", " ");
     await expect(t.service.giris(t.k.eposta, PAROLA, kod)).resolves.toMatchObject({ accessToken: "erisim-token" });
     expect(t.k.totpKurtarmaOzetleri).toHaveLength(KURTARMA_KODU_SAYISI - 1);
-    expect(t.denetim.at(-1)).toMatchObject({ islem: "kurtarma_kodu_kullanildi", detay: { kalan: 9 } });
+    expect(t.denetim.find((d) => d.islem === "kurtarma_kodu_kullanildi")).toMatchObject({ detay: { kalan: 9 } });
     await expect(t.service.giris(t.k.eposta, PAROLA, kod)).rejects.toThrow(/TOTP kodu geçersiz/);
   });
 

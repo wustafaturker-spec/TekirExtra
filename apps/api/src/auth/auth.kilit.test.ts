@@ -15,7 +15,7 @@ function kur() {
   const denetim: { islem: string; detay?: unknown }[] = [];
   const kullanici = { id: "u1", tenantId: "t1", eposta: EPOSTA, adSoyad: "Kişi", rol: "muhasebe", aktif: true, epostaDogrulandi: true, parolaHash: hash, totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [], oturumSurumu: 0 };
   const tx = {
-    user: { findUnique: vi.fn(async () => kullanici) },
+    user: { findUnique: vi.fn(async () => kullanici), update: vi.fn(async () => kullanici) },
     auditLog: { create: vi.fn(async ({ data }: { data: { islem: string; detay?: unknown } }) => { denetim.push(data); return data; }) },
   };
   const prisma = {
@@ -23,7 +23,7 @@ function kur() {
     authKimlik: { findUnique: vi.fn(async ({ where }: { where: { eposta: string } }) => (where.eposta === EPOSTA ? { tenantId: "t1", userId: "u1" } : null)) },
     oturum: { create: vi.fn(async () => ({})) },
   };
-  const service = new AuthService(prisma as unknown as PrismaService, { signAsync: async () => "erisim" } as never, GirisDenemeSayaci.bellekte());
+  const service = new AuthService(prisma as unknown as PrismaService, { signAsync: async () => "erisim" } as never, GirisDenemeSayaci.bellekte(), { unut: () => undefined } as never);
   return { service, denetim, kullanici };
 }
 

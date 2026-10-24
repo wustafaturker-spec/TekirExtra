@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import { degisiklikleriBul } from "../denetim-farki";
 import { aktifBaglam } from "../istek-baglami";
 import { PrismaService } from "../prisma.service";
 import { ayarTanimiAl } from "./ayar-kayit";
@@ -71,6 +72,7 @@ export class AyarlarService {
         const onceki = (await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul } }, select: { ayarlar: true } }))?.ayarlar as { acik?: boolean; acildiAt?: string | null } | undefined;
         dogrulanmis.acildiAt = dogrulanmis.acik ? (onceki?.acik && onceki.acildiAt ? onceki.acildiAt : new Date().toISOString()) : (onceki?.acildiAt ?? null);
       }
+      const oncekiAyar = (await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul } }, select: { ayarlar: true } }))?.ayarlar;
       const kayit = await tx.modulAyar.upsert({
         where: { tenantId_modul: { tenantId, modul } },
         create: { tenantId, modul, ayarlar: dogrulanmis as Prisma.InputJsonValue },
@@ -81,6 +83,12 @@ export class AyarlarService {
           tenantId, userId, islem: modul === IHTIYAC_MODULU ? "ihtiyac_modu_guncellendi" : modul === CRM_BELGE_MODULU ? "crm_belge_modu_guncellendi" : modul === MALIYET_KONTROL_MODULU ? "maliyet_kontrol_modu_guncellendi" : modul === TAHSILAT_OTOMASYONU ? "tahsilat_otomasyonu_guncellendi" : modul === TEKLIF_TALEBI_MODULU ? "teklif_talebi_taslagi_guncellendi" : "tahsilat_modu_guncellendi", varlik: "modul_ayar", varlikId: kayit.id,
           detay: dogrulanmis as Prisma.InputJsonValue,
         } });
+      } else {
+        // Yönetim P1-4: diğer modüllerde de neyin değiştiği yazılır (yalnız fark varsa).
+        const degisiklikler = degisiklikleriBul({ ...tanim.varsayilanlar, ...((oncekiAyar as Record<string, unknown> | null) ?? {}) }, dogrulanmis);
+        if (Object.keys(degisiklikler).length) {
+          await tx.auditLog.create({ data: { tenantId, userId, islem: "modul_ayari_degisti", varlik: "modul_ayar", varlikId: kayit.id, detay: { modul, degisiklikler } as Prisma.InputJsonValue } });
+        }
       }
     });
     return dogrulanmis;

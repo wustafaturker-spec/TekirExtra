@@ -17,6 +17,51 @@ interface DenetimKaydi {
   varlikId: string | null;
   zaman: string;
   kullanici: DenetimKullanicisi | null;
+  detay: unknown;
+}
+
+/** Yönetim P1-4/P2-4: adlandırılmış yönetim olaylarının okunur karşılıkları. */
+const ISLEM_ADI: Record<string, string> = {
+  giris_yapildi: "Giriş yapıldı",
+  giris_kilitlendi: "Giriş kilitlendi (çok fazla hatalı deneme)",
+  kullanici_yetkisi_degisti: "Kullanıcı yetkisi değişti",
+  kullanici_parolasi_sifirlandi: "Kullanıcı parolası sıfırlandı",
+  kullanici_2fa_sifirlandi: "Kullanıcının 2FA'sı sıfırlandı",
+  kullanici_oturumlari_kapatildi: "Kullanıcının oturumları kapatıldı",
+  parola_degistirildi: "Parola değiştirildi",
+  parola_baglantiyla_sifirlandi: "Parola e-posta bağlantısıyla sıfırlandı",
+  iki_adimli_dogrulama_acildi: "2FA açıldı",
+  iki_adimli_dogrulama_kapatildi: "2FA kapatıldı",
+  kurtarma_kodu_kullanildi: "2FA kurtarma kodu kullanıldı",
+  kurtarma_kodlari_yenilendi: "2FA kurtarma kodları yenilendi",
+  diger_oturumlar_kapatildi: "Diğer oturumlar kapatıldı",
+  firma_bilgisi_degisti: "Firma bilgisi değişti",
+  modul_ayari_degisti: "Modül ayarı değişti",
+  eposta_ayari_degisti: "E-posta ayarı değişti",
+  baglanti_eklendi: "Bağlantı eklendi",
+  baglanti_guncellendi: "Bağlantı güncellendi",
+  baglanti_etkinlestirildi: "Bağlantı etkinleştirildi",
+  baglanti_silindi: "Bağlantı silindi",
+};
+
+const goster = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v));
+
+function Ayrinti({ detay }: { detay: unknown }) {
+  if (!detay || typeof detay !== "object") return <span className="subtle">—</span>;
+  const { degisiklikler, ...diger } = detay as { degisiklikler?: Record<string, { eski: unknown; yeni: unknown }> } & Record<string, unknown>;
+  const ozet = Object.entries(diger).filter(([, v]) => v !== null && v !== undefined && typeof v !== "object");
+  return (
+    <div className="denetim-ayrinti">
+      {ozet.length > 0 && <div className="subtle">{ozet.map(([k, v]) => `${k}: ${goster(v)}`).join(" · ")}</div>}
+      {degisiklikler && (
+        <ul>
+          {Object.entries(degisiklikler).map(([alan, d]) => (
+            <li key={alan}><strong>{alan}</strong>: {goster(d.eski)} → {goster(d.yeni)}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 interface DenetimSayfasiVeri {
@@ -68,7 +113,7 @@ export default function DenetimIziSayfasi() {
 
   useEffect(() => {
     api<string[]>("/denetim/varliklar")
-      .then(setVarliklar)
+      .then((v) => setVarliklar(Array.isArray(v) ? v : []))
       .catch(() => setVarliklar([]));
   }, []);
 
@@ -124,6 +169,7 @@ export default function DenetimIziSayfasi() {
               <th>Kullanıcı</th>
               <th>Varlık</th>
               <th>İşlem</th>
+              <th>Ayrıntı</th>
               <th>Kayıt</th>
             </tr>
           </thead>
@@ -133,12 +179,13 @@ export default function DenetimIziSayfasi() {
                 <td>{new Date(k.zaman).toLocaleString("tr-TR")}</td>
                 <td>{k.kullanici?.adSoyad ?? "—"}</td>
                 <td>{k.varlik}</td>
-                <td>{k.islem}</td>
+                <td>{ISLEM_ADI[k.islem] ?? k.islem}</td>
+                <td><Ayrinti detay={k.detay} /></td>
                 <td className="subtle mono" style={{ fontSize: "0.8rem" }}>{k.varlikId ?? "—"}</td>
               </tr>
             ))}
             {kayitlar.length === 0 && !yukleniyor && (
-              <tr><td className="empty" colSpan={5}>Kayıt bulunamadı</td></tr>
+              <tr><td className="empty" colSpan={6}>Kayıt bulunamadı</td></tr>
             )}
           </tbody>
         </TableWrap>

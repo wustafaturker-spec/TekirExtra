@@ -14,6 +14,7 @@ import {
 import { BAGLANTI_AILELERI, BANKA_SAGLAYICILARI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI, SMS_SAGLAYICILARI } from "@tekirextra/shared";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
+import { degisiklikleriBul } from "../core/denetim-farki";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
@@ -208,7 +209,7 @@ export class BaglantilarService {
   }
 
   async olustur(girdi: z.infer<typeof baglantiOlusturSemasi>): Promise<BaglantiGorunumu> {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       if (girdi.aile === "banka" && girdi.saglayici === "webhook") {
         const hesap = await tx.bankaHesap.findUnique({ where: { id: girdi.config.bankaHesapId } });
@@ -222,7 +223,7 @@ export class BaglantilarService {
           `'${girdi.saglayici}' entegratörü zaten tanımlı; güncellemek için düzenleyin.`,
         );
       }
-      return tx.baglanti.create({
+      const yeni = await tx.baglanti.create({
         data: {
           tenantId,
           aile: girdi.aile,
@@ -230,6 +231,8 @@ export class BaglantilarService {
           sifreliConfig: sifrele(JSON.stringify(saklanacakConfig(girdi.saglayici, girdi.config))),
         },
       });
+      await this.denetimYaz(tx, tenantId, userId, "baglanti_eklendi", yeni);
+      return yeni;
     });
     return this.gorunum(kayit);
   }
@@ -243,7 +246,7 @@ export class BaglantilarService {
     id: string,
     girdi: z.infer<typeof baglantiGuncelleSemasi>,
   ): Promise<BaglantiGorunumu> {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.baglanti.findUnique({ where: { id } });
       if (!mevcut) throw new NotFoundException("Bağlantı bulunamadı");
@@ -262,13 +265,18 @@ export class BaglantilarService {
         if (onceki[alan]) config[alan] = onceki[alan];
       }
 
-      return tx.baglanti.update({
+      const yeniConfig = saklanacakConfig(mevcut.saglayici, config);
+      const guncel = await tx.baglanti.update({
         where: { id },
         data: {
-          sifreliConfig: sifrele(JSON.stringify(saklanacakConfig(mevcut.saglayici, config))),
+          sifreliConfig: sifrele(JSON.stringify(yeniConfig)),
           durum: "pasif",
         },
       });
+      await this.denetimYaz(tx, tenantId, userId, "baglanti_guncellendi", guncel, {
+        degisiklikler: degisiklikleriBul(onceki, yeniConfig, { gizli: GIZLI_ALANLAR }),
+      });
+      return guncel;
     });
     return this.gorunum(kayit);
   }
@@ -311,10 +319,12 @@ export class BaglantilarService {
       });
 
       // Hedef bağlantıyı aktif yap
-      return tx.baglanti.update({
+      const aktif = await tx.baglanti.update({
         where: { id },
         data: { durum: "aktif" },
       });
+      await this.denetimYaz(tx, tenantId, aktifBaglam().userId, "baglanti_etkinlestirildi", aktif);
+      return aktif;
     });
     return this.gorunum(kayit);
   }
@@ -358,11 +368,20 @@ export class BaglantilarService {
   }
 
   async sil(id: string): Promise<void> {
-    const { tenantId } = aktifBaglam();
-    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.baglanti.deleteMany({ where: { id } }),
-    );
-    if (silinen.count === 0) throw new NotFoundException("Bağlantı bulunamadı");
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hedef = await tx.baglanti.findUnique({ where: { id } });
+      if (!hedef) throw new NotFoundException("Bağlantı bulunamadı");
+      await tx.baglanti.delete({ where: { id } });
+      await this.denetimYaz(tx, tenantId, userId, "baglanti_silindi", hedef);
+    });
+  }
+
+  /** Yönetim P1-4: entegratör/banka/SMS bağlantısı değişiklikleri; gizli değerler yazılmaz. */
+  private async denetimYaz(tx: Prisma.TransactionClient, tenantId: string, userId: string, islem: string, k: Baglanti, ek: Record<string, unknown> = {}): Promise<void> {
+    await tx.auditLog.create({
+      data: { tenantId, userId, islem, varlik: "baglanti", varlikId: k.id, detay: { aile: k.aile, saglayici: k.saglayici, ...ek } as Prisma.InputJsonValue },
+    });
   }
 
   private gorunum(k: Baglanti): BaglantiGorunumu {

@@ -204,3 +204,17 @@ describe("yönetici 2FA sıfırlaması (yönetim P1-1)", () => {
     await expect(k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(HEDEF))).rejects.toThrow(/zaten kapalı/);
   });
 });
+
+describe("yönetici oturum kapatma (yönetim P2-4)", () => {
+  it("hedefin bütün oturumlarını kapatır, sürümü artırır; kendine uygulanamaz", async () => {
+    const k = kur();
+    await kullaniciEkle(k, YONETICI, "yonetici@ornek.com");
+    await kullaniciEkle(k, HEDEF, "hedef@ornek.com");
+    await k.olarak(YONETICI, () => k.service.yoneticiOturumlariKapat(HEDEF));
+    expect(k.oturumlar.filter((o) => o.userId === HEDEF)).toHaveLength(0);
+    expect(k.oturumlar.filter((o) => o.userId === YONETICI)).toHaveLength(2);
+    expect(k.kullanicilar.get(HEDEF)!.oturumSurumu).toBe(1);
+    expect(k.denetim.at(-1)).toMatchObject({ islem: "kullanici_oturumlari_kapatildi", varlikId: HEDEF });
+    await expect(k.olarak(YONETICI, () => k.service.yoneticiOturumlariKapat(YONETICI))).rejects.toThrow(/Hesap Güvenliği/);
+  });
+});

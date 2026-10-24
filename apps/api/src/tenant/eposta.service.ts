@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { createTransport, type Transporter } from "nodemailer";
 import { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { coz, sifrele } from "../core/kripto";
+import { degisiklikleriBul } from "../core/denetim-farki";
 
 export const epostaAyarlariSemasi = z.object({
   host: z.string().min(1).max(255), port: z.number().int().min(1).max(65535),
@@ -102,7 +104,12 @@ export class EpostaService {
       imapSifreliParola: girdi.imapParola ? sifrele(girdi.imapParola) : mevcut?.imapSifreliParola,
     };
     if (saklanan.kullaniciAdi && !saklanan.sifreliParola) throw new BadRequestException("SMTP parolası zorunludur");
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.modulAyar.upsert({ where: { tenantId_modul: { tenantId, modul: "eposta" } }, create: { tenantId, modul: "eposta", ayarlar: saklanan }, update: { ayarlar: saklanan } }));
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.modulAyar.upsert({ where: { tenantId_modul: { tenantId, modul: "eposta" } }, create: { tenantId, modul: "eposta", ayarlar: saklanan }, update: { ayarlar: saklanan } });
+      // Yönetim P1-4: SMTP/IMAP ayarı değişikliği; parolalar yalnız "değişti" olarak yazılır.
+      const degisiklikler = degisiklikleriBul(mevcut ?? {}, saklanan, { gizli: ["kullaniciAdi", "imapKullaniciAdi"] });
+      if (Object.keys(degisiklikler).length) await tx.auditLog.create({ data: { tenantId, userId: aktifBaglam().userId, islem: "eposta_ayari_degisti", varlik: "modul_ayar", detay: { degisiklikler } as Prisma.InputJsonValue } });
+    });
     return this.ayarlariGetir();
   }
   async baglantiTest(alici: string) { const { transport, from, replyTo } = await this.transporter(); try { await transport.verify(); await transport.sendMail({ from, replyTo, to: alici, subject: "TekirExtra e-posta bağlantı testi", text: "SMTP bağlantınız başarıyla yapılandırıldı. Bu ileti TekirExtra test ekranından gönderilmiştir." }); await this.kaydet(alici, "TekirExtra e-posta bağlantı testi", "test", "gonderildi", 0); return { basarili: true, mesaj: `Test e-postası ${alici} adresine gönderildi` }; } catch (hata) { await this.kaydet(alici, "TekirExtra e-posta bağlantı testi", "test", "basarisiz", 0, hata); throw new BadRequestException(hata instanceof Error ? `SMTP bağlantısı başarısız: ${hata.message}` : "SMTP bağlantısı başarısız"); } }

@@ -83,6 +83,20 @@ export class ParolaService {
     return { mesaj: `${hedef.adSoyad} için iki adımlı doğrulama kapatıldı; açık oturumları kapatıldı. Kullanıcı girişten sonra yeniden kurabilir.` };
   }
 
+  /** Yönetim P2-4: yönetici kullanıcının bütün oturumlarını kapatır (kayıp cihaz, ayrılan çalışan). */
+  async yoneticiOturumlariKapat(hedefId: string): Promise<{ mesaj: string }> {
+    const { tenantId, userId } = aktifBaglam();
+    if (hedefId === userId) throw new BadRequestException("Kendi oturumlarınızı Hesap Güvenliği ekranından kapatın");
+    const hedef = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kullanici = await tx.user.findUnique({ where: { id: hedefId }, select: { adSoyad: true, eposta: true } });
+      if (!kullanici) throw new NotFoundException("Kullanıcı bulunamadı");
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "kullanici_oturumlari_kapatildi", varlik: "user", varlikId: hedefId, detay: { eposta: kullanici.eposta } } });
+      return kullanici;
+    });
+    await this.kimlikTemizle(tenantId, hedefId);
+    return { mesaj: `${hedef.adSoyad} kullanıcısının bütün oturumları kapatıldı.` };
+  }
+
   /** KLN-11: kullanıcı mevcut parolasıyla kendi parolasını değiştirir; bu oturum açık kalır. */
   async degistir(govde: unknown, refreshToken: string | undefined): Promise<{ mesaj: string }> {
     const { mevcutParola, yeniParola } = ayristir(degistirmeSemasi, govde);

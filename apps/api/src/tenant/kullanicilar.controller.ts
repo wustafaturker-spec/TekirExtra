@@ -47,6 +47,7 @@ const KULLANICI_SECIMI = {
   aktif: true,
   epostaDogrulandi: true,
   totpAktif: true,
+  sonGirisAt: true,
   maksIskontoYuzdesi: true,
   bayiCariId: true,
   bayiCari: { select: { id: true, kod: true, unvan: true } },
@@ -133,6 +134,13 @@ export class KullanicilarController {
   @HttpCode(200)
   parolaSifirla(@Param("id") id: string, @Body() govde: unknown) {
     return this.parola.yoneticiSifirla(id, govde);
+  }
+
+  /** Yönetim P2-4: kullanıcının bütün oturumları kapanır. */
+  @Post(":id/oturumlari-kapat")
+  @HttpCode(200)
+  oturumlariKapat(@Param("id") id: string) {
+    return this.parola.yoneticiOturumlariKapat(id);
   }
 
   /** Yönetim P1-1: kullanıcının 2FA'sı kapatılır (telefon kaybı); oturumları kapanır. */
