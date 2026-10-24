@@ -138,6 +138,8 @@ export class EpostaService {
   }
   async gecmis(adet = 50) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.epostaGonderim.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(adet, 100) })); }
   dogrulamaGonder(eposta: string, adSoyad: string, link: string) { return this.gonder({ alici: eposta, konu: "TekirExtra — e-posta adresinizi doğrulayın", tur: "dogrulama", metin: `Merhaba ${adSoyad},\n\nTekirExtra kaydınızı tamamlamak için e-posta adresinizi doğrulayın:\n${link}\n\nBu link 24 saat geçerlidir.`, html: `<p>Merhaba ${adSoyad},</p><p><a href="${link}">E-postamı doğrula</a></p>` }); }
+  /** KLN-12: "Şifremi unuttum" bağlantısı. */
+  parolaSifirlamaGonder(eposta: string, adSoyad: string, link: string, dakika: number) { return this.gonder({ alici: eposta, konu: "TekirExtra — parola sıfırlama", tur: "parola_sifirlama", metin: `Merhaba ${adSoyad},\n\nTekirExtra hesabınız için parola sıfırlama istendi. Yeni parola belirlemek için:\n${link}\n\nBağlantı ${dakika} dakika geçerlidir ve bir kez kullanılabilir. Bu isteği siz yapmadıysanız e-postayı yok sayın; parolanız değişmez.`, html: `<p>Merhaba ${adSoyad},</p><p>TekirExtra hesabınız için parola sıfırlama istendi.</p><p><a href="${link}">Yeni parola belirle</a></p><p>Bağlantı ${dakika} dakika geçerlidir ve bir kez kullanılabilir. Bu isteği siz yapmadıysanız e-postayı yok sayın; parolanız değişmez.</p>` }); }
   /** Ödeme sözü günü gönderimi: sabit Message-ID, ayrı geçmiş türü. */
   odemeSozuHatirlat(girdi: { alici: string; konu: string; metin: string; messageId: string }) { return this.gonder({ ...girdi, tur: "odeme_sozu_hatirlatma" }); }
   iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string }) { return this.gonder(girdi); }

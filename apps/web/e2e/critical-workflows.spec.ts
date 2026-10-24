@@ -1727,3 +1727,83 @@ test("senaryo özeti kaydetmeden önce gönderilecek belgeyi gösterir", async (
   await expect(ozet).toContainText("Tevkifat sonrası tahsil edilecek");
   await expect(ozet).toContainText("1.020,00 TL");
 });
+
+test("şifremi unuttum bağlantısı sıfırlama isteğini gönderir (KLN-12)", async ({ page }) => {
+  let istek: unknown = null;
+  await page.route("**/api/v1/auth/parola/sifirlama-iste", async (route) => {
+    istek = route.request().postDataJSON();
+    await route.fulfill({ json: { mesaj: "Bu e-posta adresiyle kayıtlı etkin bir hesap varsa parola sıfırlama bağlantısı gönderildi." } });
+  });
+  await page.goto("/giris");
+  await page.getByRole("link", { name: "Şifremi Unuttum?" }).click();
+  await expect(page).toHaveURL(/\/parola-sifirla$/, { timeout: 30_000 });
+  await page.getByLabel("E-posta adresi").fill("kullanici@example.com");
+  await page.getByRole("button", { name: "Sıfırlama bağlantısı gönder" }).click();
+  await expect(page.getByText(/parola sıfırlama bağlantısı gönderildi/)).toBeVisible();
+  expect(istek).toEqual({ eposta: "kullanici@example.com" });
+});
+
+test("sıfırlama bağlantısı adres çubuğundan silinir ve yeni parolayı kaydeder (KLN-12)", async ({ page }) => {
+  let istek: unknown = null;
+  await page.route("**/api/v1/auth/parola/sifirla", async (route) => {
+    istek = route.request().postDataJSON();
+    await route.fulfill({ json: { mesaj: "Parolanız güncellendi; yeni parolanızla giriş yapabilirsiniz." } });
+  });
+  await page.goto("/parola-sifirla?token=e2e-sifirlama-anahtari-0123456789");
+  await expect(page.getByText("Yeni parola belirleyin")).toBeVisible();
+  await expect(page).toHaveURL(/\/parola-sifirla$/);
+  await page.getByLabel("Yeni parola (en az 10 karakter, harf ve rakam)").fill("YeniParola2026");
+  await page.getByLabel("Yeni parola (tekrar)").fill("BaskaParola2026");
+  await page.getByRole("button", { name: "Parolamı güncelle" }).click();
+  await expect(page.getByText("Parolalar birbirini tutmuyor")).toBeVisible();
+  expect(istek).toBeNull();
+  await page.getByLabel("Yeni parola (tekrar)").fill("YeniParola2026");
+  await page.getByRole("button", { name: "Parolamı güncelle" }).click();
+  await expect(page.getByText("Parolanız güncellendi; yeni parolanızla giriş yapabilirsiniz.")).toBeVisible();
+  expect(istek).toEqual({ token: "e2e-sifirlama-anahtari-0123456789", parola: "YeniParola2026" });
+});
+
+test("yönetici başka kullanıcıya geçici parola verir, kendi satırında düğme yoktur (KLN-10)", async ({ page }) => {
+  let istek: { yol: string; govde: unknown } | null = null;
+  await page.route("**/api/v1/kullanicilar**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (route.request().method() === "POST" && pathname.endsWith("/parola")) {
+      istek = { yol: pathname, govde: route.request().postDataJSON() };
+      await route.fulfill({ json: { mesaj: "Ayşe Muhasebe için yeni parola kaydedildi; açık oturumları kapatıldı." } });
+      return;
+    }
+    const satir = { epostaDogrulandi: true, totpAktif: false, maksIskontoYuzdesi: null, bayiCariId: null, bayiCari: null, aktif: true };
+    await route.fulfill({ json: [
+      { ...satir, id: "u1", eposta: "yonetici@example.com", adSoyad: "Yönetici Kişi", rol: "yonetici" },
+      { ...satir, id: "u2", eposta: "ayse@example.com", adSoyad: "Ayşe Muhasebe", rol: "muhasebe" },
+    ] });
+  });
+  await page.goto("/panel/ayarlar/kullanicilar");
+  const ayse = page.getByRole("row", { name: /Ayşe Muhasebe/ });
+  await expect(ayse.getByRole("button", { name: "Parolayı Sıfırla" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Yönetici Kişi/ }).getByRole("button", { name: "Parolayı Sıfırla" })).toHaveCount(0);
+  await ayse.getByRole("button", { name: "Parolayı Sıfırla" }).click();
+  const pencere = page.getByRole("dialog", { name: "Parolayı sıfırla" });
+  await pencere.getByLabel("Yeni parola (en az 10, harf + rakam)").fill("GeciciParola1");
+  await pencere.getByLabel("Yeni parola (tekrar)").fill("GeciciParola1");
+  await pencere.getByRole("button", { name: "Parolayı kaydet" }).click();
+  await expect(page.getByText(/Ayşe Muhasebe için yeni parola kaydedildi/)).toBeVisible();
+  await expect(pencere).toHaveCount(0);
+  expect(istek).toEqual({ yol: "/api/v1/kullanicilar/u2/parola", govde: { parola: "GeciciParola1" } });
+});
+
+test("kullanıcı Hesap Güvenliği ekranından kendi parolasını değiştirir (KLN-11)", async ({ page }) => {
+  let istek: unknown = null;
+  await page.route("**/api/v1/auth/parola/degistir", async (route) => {
+    istek = route.request().postDataJSON();
+    await route.fulfill({ json: { mesaj: "Parolanız değiştirildi; diğer cihazlardaki oturumlarınız kapatıldı." } });
+  });
+  await page.goto("/panel/ayarlar/hesap");
+  await page.getByLabel("Mevcut parola").fill("EskiParola2026");
+  await page.getByLabel("Yeni parola", { exact: true }).fill("YeniParola2026");
+  await page.getByLabel("Yeni parola (tekrar)").fill("YeniParola2026");
+  await page.getByRole("button", { name: "Parolayı değiştir" }).click();
+  await expect(page.getByText("Parolanız değiştirildi; diğer cihazlardaki oturumlarınız kapatıldı.")).toBeVisible();
+  expect(istek).toEqual({ mevcutParola: "EskiParola2026", yeniParola: "YeniParola2026" });
+  await expect(page.getByLabel("Mevcut parola")).toHaveValue("");
+});

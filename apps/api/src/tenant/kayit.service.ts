@@ -4,16 +4,13 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
 import { tenantKayitSemasi } from "@tekirextra/shared";
 import { z } from "zod";
+import { parolaSemasi } from "../auth/parola-kurali";
 import { PrismaService } from "../core/prisma.service";
 import { EpostaService } from "./eposta.service";
 
 /** Kayıt girdisi: paylaşılan onboarding şeması + parola politikası (KLN-01). */
 export const kayitSemasi = tenantKayitSemasi.extend({
-  parola: z
-    .string()
-    .min(10, "Parola en az 10 karakter olmalıdır")
-    .regex(/[a-zA-Z]/, "Parola harf içermelidir")
-    .regex(/\d/, "Parola rakam içermelidir"),
+  parola: parolaSemasi,
 });
 export type KayitGirdisi = z.infer<typeof kayitSemasi>;
 

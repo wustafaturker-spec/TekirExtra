@@ -9,6 +9,8 @@ import { ImapService } from "./imap.service";
 import { KayitService } from "./kayit.service";
 import { KullanicilarController } from "./kullanicilar.controller";
 import { KullanimController } from "./kullanim.controller";
+import { ParolaController } from "./parola.controller";
+import { ParolaService } from "./parola.service";
 import { TenantController } from "./tenant.controller";
 import { EpostaController } from "./eposta.controller";
 import { GelenEpostaController } from "./gelen-eposta.controller";
@@ -27,6 +29,7 @@ import { EpostaZamanlayiciService } from "./eposta-zamanlayici.service";
     EpostaController,
     GelenEpostaController,
     AbonelikController,
+    ParolaController,
   ],
   providers: [
     KayitService,
@@ -36,6 +39,7 @@ import { EpostaZamanlayiciService } from "./eposta-zamanlayici.service";
     BaglantilarService,
     BelgeTasarimlariService,
     AbonelikService,
+    ParolaService,
   ],
   exports: [BaglantilarService, EpostaService, ImapService, AbonelikService],
 })

@@ -218,9 +218,9 @@ export default function GirisSayfasi() {
                   <input type="checkbox" checked readOnly />
                   <span>Bu sekmede oturumu açık tut</span>
                 </label>
-                <a href="#sifre-sifirla" onClick={(e) => { e.preventDefault(); alert("Şifre sıfırlama bağlantısı yöneticinize iletilmiştir."); }} className="forgot-password">
+                <Link href="/parola-sifirla" className="forgot-password">
                   Şifremi Unuttum?
-                </a>
+                </Link>
               </div>
 
               <Button variant="primary" block type="submit" disabled={yukleniyor}>

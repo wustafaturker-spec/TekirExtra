@@ -493,6 +493,20 @@ model EpostaDogrulama {
   @@map("eposta_dogrulamalar")
 }
 
+/// KLN-12: "Şifremi unuttum" bağlantısı; kiracı bağlamı kurulmadan okunur (RLS bilinçli istisna).
+model ParolaSifirlama {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  tokenHash      String   @unique @map("token_hash")
+  gecerlilikSonu DateTime @map("gecerlilik_sonu")
+  kullanildi     Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("parola_sifirlamalar")
+}
+
 model EpostaGonderim {
   id         String   @id @default(uuid()) @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid

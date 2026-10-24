@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, GoneExcepti
 import { randomBytes, randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
 import { z } from "zod";
+import { parolaSemasi } from "../auth/parola-kurali";
 import { anahtarBicimiGecerli, anahtarOzeti, anahtarUret } from "../cari/cari-mutabakat";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -29,7 +30,7 @@ const BULUNAMADI = "Davet bağlantısı geçersiz ya da yenilendi; İK'dan yeni 
 
 export const davetSemasi = z.object({ epostaGonder: z.boolean().default(true) });
 export const parolaBelirleSemasi = z.object({
-  parola: z.string().min(10, "Parola en az 10 karakter olmalıdır").regex(/[a-zA-Z]/, "Parola harf içermelidir").regex(/\d/, "Parola rakam içermelidir"),
+  parola: parolaSemasi,
 });
 export const calisanIzinSemasi = z.object({
   izinTuruId: z.string().uuid(),

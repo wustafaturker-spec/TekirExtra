@@ -10,7 +10,7 @@ import { baglamAl } from "../core/istek-baglami";
 import { ROLLER_ANAHTAR } from "./roller.decorator";
 
 /** Çalışan rolünün @Roller("calisan") dışında erişebildiği hesap uçları. */
-export const CALISAN_ACIK_YOLLAR = ["/auth/ben", "/auth/totp", "/auth/cikis", "/bildirimler"];
+export const CALISAN_ACIK_YOLLAR = ["/auth/ben", "/auth/totp", "/auth/cikis", "/auth/parola", "/bildirimler"];
 
 /**
  * Bir rolün `@Roller` listesi verilen uca erişip erişemeyeceği. Çalışan rolü

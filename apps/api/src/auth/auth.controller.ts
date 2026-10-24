@@ -21,7 +21,7 @@ const girisSemasi = z.object({
   totpKodu: z.string().optional(),
 });
 
-const REFRESH_COOKIE = "tekir_refresh";
+export const REFRESH_COOKIE = "tekir_refresh";
 
 function refreshCookieYaz(res: Response, token: string): void {
   res.cookie(REFRESH_COOKIE, token, {

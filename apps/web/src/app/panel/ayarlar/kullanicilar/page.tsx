@@ -10,6 +10,8 @@ import {
   Card,
   Field,
   Input,
+  Modal,
+  ModalEylem,
   PageHeader,
   Select,
   Status,
@@ -65,6 +67,14 @@ export default function KullanicilarSayfasi() {
   const [maksIskonto, setMaksIskonto] = useState("");
   const [bayiCariId, setBayiCariId] = useState("");
 
+  // KLN-10: geçici parola verme penceresi
+  const [benId, setBenId] = useState("");
+  const [sifirlanan, setSifirlanan] = useState<Kullanici | null>(null);
+  const [geciciParola, setGeciciParola] = useState("");
+  const [geciciParolaTekrar, setGeciciParolaTekrar] = useState("");
+  const [sifirlamaHata, setSifirlamaHata] = useState("");
+  const [sifirlaniyor, setSifirlaniyor] = useState(false);
+
   const yukle = useCallback(async () => {
     setHata("");
     try {
@@ -82,6 +92,38 @@ export default function KullanicilarSayfasi() {
   useEffect(() => {
     if (tokenAl()) void yukle();
   }, [yukle]);
+
+  useEffect(() => {
+    if (tokenAl()) void api<{ userId: string }>("/auth/ben").then((b) => setBenId(b.userId)).catch(() => undefined);
+  }, []);
+
+  function sifirlamaAc(k: Kullanici) {
+    setSifirlanan(k);
+    setGeciciParola("");
+    setGeciciParolaTekrar("");
+    setSifirlamaHata("");
+  }
+
+  async function parolaSifirla(e: React.FormEvent) {
+    e.preventDefault();
+    if (!sifirlanan) return;
+    if (geciciParola !== geciciParolaTekrar) {
+      setSifirlamaHata("Parolalar birbirini tutmuyor");
+      return;
+    }
+    setSifirlamaHata("");
+    setSifirlaniyor(true);
+    try {
+      const s = await api<{ mesaj: string }>(`/kullanicilar/${sifirlanan.id}/parola`, { method: "POST", body: JSON.stringify({ parola: geciciParola }) });
+      setBasari(`${s.mesaj} Yeni parolayı kullanıcıya güvenli bir yoldan iletin.`);
+      setHata("");
+      setSifirlanan(null);
+    } catch (h) {
+      setSifirlamaHata(h instanceof Error ? h.message : "Parola sıfırlanamadı");
+    } finally {
+      setSifirlaniyor(false);
+    }
+  }
 
   async function olustur(e: React.FormEvent) {
     e.preventDefault();
@@ -219,9 +261,14 @@ export default function KullanicilarSayfasi() {
                   <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <Select value={k.bayiCariId ?? ""} onChange={(e) => bayiCariDegistir(k.id, e.target.value)}><option value="">Atanmamış</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select> : <span className="subtle">—</span>}</td>
                   <td className="num">{k.maksIskontoYuzdesi === null ? <span className="subtle">Sınırsız</span> : `%${k.maksIskontoYuzdesi}`}</td>
                   <td className="center">
-                    <Button size="sm" variant={k.aktif ? "danger" : "ghost"} onClick={() => aktifDegistir(k)}>
-                      {k.aktif ? "Pasife Al" : "Aktif Et"}
-                    </Button>
+                    <div className="row-tight" style={{ justifyContent: "center", flexWrap: "nowrap" }}>
+                      {k.id !== benId && (
+                        <Button size="sm" onClick={() => sifirlamaAc(k)}>Parolayı Sıfırla</Button>
+                      )}
+                      <Button size="sm" variant={k.aktif ? "danger" : "ghost"} onClick={() => aktifDegistir(k)}>
+                        {k.aktif ? "Pasife Al" : "Aktif Et"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -229,6 +276,25 @@ export default function KullanicilarSayfasi() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {sifirlanan && (
+        <Modal
+          baslik="Parolayı sıfırla"
+          aciklama={`${sifirlanan.adSoyad} (${sifirlanan.eposta}) için geçici parola belirleyin. Kullanıcının açık oturumları kapanır; parolayı daha sonra Hesap Güvenliği ekranından kendisi değiştirebilir.`}
+          onKapat={() => setSifirlanan(null)}
+        >
+          <form onSubmit={parolaSifirla} className="stack">
+            <Alert tone="error">{sifirlamaHata}</Alert>
+            <Field label="Yeni parola (en az 10, harf + rakam)">
+              <Input type="password" autoComplete="new-password" required minLength={10} autoFocus value={geciciParola} onChange={(e) => setGeciciParola(e.target.value)} />
+            </Field>
+            <Field label="Yeni parola (tekrar)">
+              <Input type="password" autoComplete="new-password" required minLength={10} value={geciciParolaTekrar} onChange={(e) => setGeciciParolaTekrar(e.target.value)} />
+            </Field>
+            <ModalEylem onVazgec={() => setSifirlanan(null)} isleniyor={sifirlaniyor} metin="Parolayı kaydet" />
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }

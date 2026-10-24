@@ -4,6 +4,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   Patch,
@@ -15,19 +16,17 @@ import { ROLLER } from "@tekirextra/shared";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
+import { parolaSemasi } from "../auth/parola-kurali";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AbonelikService } from "./abonelik.service";
+import { ParolaService } from "./parola.service";
 
 const kullaniciOlusturSemasi = z.object({
   eposta: z.email(),
   adSoyad: z.string().min(2).max(120),
   rol: z.enum(ROLLER),
-  parola: z
-    .string()
-    .min(10, "Parola en az 10 karakter olmalıdır")
-    .regex(/[a-zA-Z]/, "Parola harf içermelidir")
-    .regex(/\d/, "Parola rakam içermelidir"),
+  parola: parolaSemasi,
   maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
   bayiCariId: z.string().uuid().nullable().optional(),
 });
@@ -56,7 +55,7 @@ const KULLANICI_SECIMI = {
 @Controller("kullanicilar")
 @Roller("yonetici")
 export class KullanicilarController {
-  constructor(private readonly prisma: PrismaService, private readonly abonelik: AbonelikService) {}
+  constructor(private readonly prisma: PrismaService, private readonly abonelik: AbonelikService, private readonly parola: ParolaService) {}
 
   private async bayiCariDogrula(tenantId: string, bayiCariId?: string | null) {
     if (!bayiCariId) return;
@@ -121,6 +120,13 @@ export class KullanicilarController {
       data: { eposta: girdi.eposta, tenantId, userId },
     });
     return kullanici;
+  }
+
+  /** KLN-10: yönetici kullanıcıya geçici parola verir; kullanıcının oturumları kapanır. */
+  @Post(":id/parola")
+  @HttpCode(200)
+  parolaSifirla(@Param("id") id: string, @Body() govde: unknown) {
+    return this.parola.yoneticiSifirla(id, govde);
   }
 
   @Patch(":id")
