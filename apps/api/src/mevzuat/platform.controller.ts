@@ -9,7 +9,7 @@ import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
-import { PlatformFirmaService } from "./platform-firma.service";
+import { ODEME_SURELERI, PlatformFirmaService } from "./platform-firma.service";
 
 const tarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalıdır");
 const degisiklikSemasi = z.object({
@@ -209,6 +209,11 @@ export class PlatformAiController {
 const durumSemasi = z.object({ durum: z.enum(["askida", "aktif"]), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500) });
 const planSemasi = z.object({ planKodu: z.string().min(1).max(40), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500) });
 const kararSemasi = z.object({ onay: z.boolean(), not: z.string().trim().max(500).optional().nullable() });
+const odemeSemasi = z.object({
+  aySayisi: z.union(ODEME_SURELERI.map((a) => z.literal(a)) as [z.ZodLiteral<1>, z.ZodLiteral<3>, z.ZodLiteral<6>, z.ZodLiteral<12>], { message: "Süre 1, 3, 6 ya da 12 ay olmalı" }),
+  tutar: z.number({ message: "Tutar girin" }).nonnegative("Tutar eksi olamaz").max(10_000_000),
+  not: z.string().trim().max(500).optional().nullable(),
+});
 
 /** Platform P0-1 / P1-1: firma genel bakışı ve abonelik yönetimi. */
 @PlatformUcu()
@@ -236,6 +241,13 @@ export class PlatformFirmaController {
   plan(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
     const g = ayristir(planSemasi, govde);
     return this.firmalar.planDegistir(tenantId, g.planKodu, g.neden);
+  }
+
+  /** PLT-09: elle tahsilat; dönem uzar, durum değişmez. */
+  @Post(":tenantId/odeme")
+  odeme(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
+    const g = ayristir(odemeSemasi, govde);
+    return this.firmalar.odemeKaydet(tenantId, g.aySayisi, g.tutar, g.not || null);
   }
 
   @Post("talepler/:talepId/karar")

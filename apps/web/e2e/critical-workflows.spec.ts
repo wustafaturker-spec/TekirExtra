@@ -2035,3 +2035,25 @@ test("mevzuat editörü firma ve tavan menülerini görmez, o sayfalardan Deği�
   await expect(menu.getByRole("link", { name: "Yapay zekâ tavanı" })).toHaveCount(0);
   await expect(page.getByText("editor@tekirextra.com · Mevzuat editörü")).toBeVisible();
 });
+
+test("platform ödemesi geciken firmayı süzer ve elle ödemeyle dönemi uzatır (PLT-09)", async ({ page }) => {
+  let odeme: unknown = null;
+  await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
+  await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com", rol: "yonetici" } }));
+  const firma = (id: string, unvan: string, askiyaAlinacak: boolean) => ({ tenantId: id, unvan, vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "baslangic", planAdi: "Başlangıç", durum: "aktif", donemSonu: askiyaAlinacak ? "2026-10-01T00:00:00Z" : "2026-12-01T00:00:00Z", iptalTarihi: null, aktifKullanici: 2, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null, askiyaAlinacak, sonOdemeAt: null });
+  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [firma("t1", "Geciken A.Ş.", true), firma("t2", "Düzenli Ltd.", false)] }));
+  await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], odemeler: [] } }));
+  await page.route("**/api/v1/platform/firmalar/t1/odeme", async (route) => { odeme = route.request().postDataJSON(); await route.fulfill({ json: { mesaj: "Ödeme kaydedildi; dönem sonu 01.01.2027." } }); });
+  await page.goto("/platform/firmalar");
+  await page.getByLabel("Göster").selectOption("askiyaAlinacak");
+  await expect(page.getByRole("row", { name: /Geciken A\.Ş\./ }).getByText("Ödeme gecikti")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Düzenli Ltd\./ })).toHaveCount(0);
+  await page.getByRole("row", { name: /Geciken A\.Ş\./ }).getByRole("button", { name: "Yönet" }).click();
+  const pencere = page.getByRole("dialog", { name: "Geciken A.Ş." });
+  await pencere.getByLabel("Süre").selectOption("3");
+  await pencere.getByLabel("Tutar (TL)").fill("1.500,50".replace(".", ""));
+  await pencere.getByLabel("Not").fill("Havale");
+  await pencere.getByRole("button", { name: "Ödemeyi kaydet" }).click();
+  await expect(page.getByText("Ödeme kaydedildi; dönem sonu 01.01.2027.")).toBeVisible();
+  expect(odeme).toEqual({ aySayisi: 3, tutar: 1500.5, not: "Havale" });
+});

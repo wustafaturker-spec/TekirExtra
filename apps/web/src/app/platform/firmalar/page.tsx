@@ -9,12 +9,16 @@ interface Firma {
   planKodu: string; planAdi: string; durum: string; donemSonu: string | null; iptalTarihi: string | null;
   aktifKullanici: number; sonGiris: string | null; ebelgeSaglayici: string | null;
   bekleyenTalep: { id: string; istenenPlan: string; istenenPlanAdi: string } | null;
+  /** PLT-09: dönem sonundan 15 gün geçti, ödeme işaretlenmedi (otomatik askı yok). */
+  askiyaAlinacak?: boolean;
+  sonOdemeAt?: string | null;
 }
 interface Gecmis {
   degisiklikler: { zaman: string; oncekiPlan: string | null; yeniPlan: string; oncekiDurum: string | null; yeniDurum: string; neden: string | null }[];
   talepler: { id: string; zaman: string; mevcutPlan: string; istenenPlan: string; durum: string; aciklama: string | null; kararNotu: string | null }[];
 }
-type Suzgec = "hepsi" | "talep" | "askida" | "iptal";
+type Suzgec = "hepsi" | "talep" | "askiyaAlinacak" | "askida" | "iptal";
+const ODEME_SURELERI = [1, 3, 6, 12] as const;
 
 const PLANLAR = [{ kod: "baslangic", ad: "Başlangıç" }, { kod: "profesyonel", ad: "Profesyonel" }, { kod: "kurumsal", ad: "Kurumsal" }];
 const DURUM: Record<string, { ad: string; ton: "success" | "danger" | "neutral" | "warning" }> = {
@@ -44,13 +48,14 @@ export default function PlatformFirmalar() {
   const sayilar = useMemo(() => ({
     toplam: firmalar?.length ?? 0,
     talep: firmalar?.filter((f) => f.bekleyenTalep).length ?? 0,
+    askiyaAlinacak: firmalar?.filter((f) => f.askiyaAlinacak).length ?? 0,
     askida: firmalar?.filter((f) => f.durum === "askida").length ?? 0,
     iptal: firmalar?.filter((f) => f.durum === "iptal").length ?? 0,
   }), [firmalar]);
 
   const aranan = arama.trim().toLocaleLowerCase("tr-TR");
   const suzulen = (firmalar ?? []).filter((f) =>
-    (suzgec === "hepsi" || (suzgec === "talep" ? f.bekleyenTalep : f.durum === suzgec))
+    (suzgec === "hepsi" || (suzgec === "talep" ? f.bekleyenTalep : suzgec === "askiyaAlinacak" ? f.askiyaAlinacak : f.durum === suzgec))
     && (!aranan || f.unvan.toLocaleLowerCase("tr-TR").includes(aranan) || f.vkn.includes(aranan)));
 
   async function tamamlandi(mesaj: string) {
@@ -67,6 +72,7 @@ export default function PlatformFirmalar() {
     <StatGrid>
       <Stat label="Firma" value={sayilar.toplam} />
       <Stat label="Bekleyen plan talebi" value={sayilar.talep} tone={sayilar.talep ? "info" : undefined} />
+      <Stat label="Askıya alınacak" value={sayilar.askiyaAlinacak} tone={sayilar.askiyaAlinacak ? "accent" : undefined} />
       <Stat label="Askıda" value={sayilar.askida} tone={sayilar.askida ? "danger" : undefined} />
       <Stat label="İptal" value={sayilar.iptal} />
     </StatGrid>
@@ -76,6 +82,7 @@ export default function PlatformFirmalar() {
         <div style={{ minWidth: 200 }}><Field label="Göster"><Select value={suzgec} onChange={(e) => setSuzgec(e.target.value as Suzgec)}>
           <option value="hepsi">Tüm firmalar</option>
           <option value="talep">Bekleyen plan talebi</option>
+          <option value="askiyaAlinacak">Askıya alınacaklar (ödeme 15 günden fazla gecikti)</option>
           <option value="askida">Askıda</option>
           <option value="iptal">İptal</option>
         </Select></Field></div>
@@ -89,7 +96,7 @@ export default function PlatformFirmalar() {
             <tr key={f.tenantId}>
               <td><strong>{f.unvan}</strong><div className="subtle mono" style={{ fontSize: "0.8rem" }}>{f.vkn}</div></td>
               <td>{f.planAdi}{f.donemSonu && <div className="subtle" style={{ fontSize: "0.8rem" }}>Dönem sonu {tarih(f.donemSonu)}</div>}</td>
-              <td><Badge variant={DURUM[f.durum]?.ton ?? "neutral"}>{DURUM[f.durum]?.ad ?? f.durum}</Badge></td>
+              <td><Badge variant={DURUM[f.durum]?.ton ?? "neutral"}>{DURUM[f.durum]?.ad ?? f.durum}</Badge>{f.askiyaAlinacak && <div style={{ marginTop: 4 }}><Badge variant="warning">Ödeme gecikti</Badge></div>}</td>
               <td className="num">{f.aktifKullanici}</td>
               <td className="subtle">{f.sonGiris ? new Date(f.sonGiris).toLocaleString("tr-TR") : "Hiç"}</td>
               <td>{f.ebelgeSaglayici ?? <span className="subtle">—</span>}</td>
@@ -113,6 +120,10 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
   const [kararNotu, setKararNotu] = useState("");
   const [neden, setNeden] = useState("");
   const [plan, setPlan] = useState(firma.planKodu === "v1" ? "profesyonel" : firma.planKodu);
+  const [aySayisi, setAySayisi] = useState<(typeof ODEME_SURELERI)[number]>(1);
+  const [tutar, setTutar] = useState("");
+  const [odemeNotu, setOdemeNotu] = useState("");
+  const tutarSayi = Number(tutar.replace(",", "."));
 
   useEffect(() => {
     void platformApi<Gecmis>(`/platform/firmalar/${firma.tenantId}/gecmis`).then(setGecmis).catch((e) => setHata(e instanceof Error ? e.message : "Geçmiş yüklenemedi"));
@@ -142,6 +153,20 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
             </div>
           </Card>
         )}
+        <Card title="Ödeme alındı">
+          <div className="stack">
+            <p className="subtle" style={{ margin: 0 }}>
+              {firma.donemSonu ? `Dönem sonu ${tarih(firma.donemSonu)}; seçilen süre bu tarihe eklenir.` : "Dönem tanımlı değil; dönem bugünden başlar."}
+              {" "}Firmanın durumu değişmez{askida ? " — askıdan çıkarmak için aşağıdaki işlemi ayrıca yapın" : ""}.
+            </p>
+            <div className="row" style={{ alignItems: "flex-end" }}>
+              <div style={{ minWidth: 140 }}><Field label="Süre"><Select value={aySayisi} onChange={(e) => setAySayisi(Number(e.target.value) as (typeof ODEME_SURELERI)[number])}>{ODEME_SURELERI.map((a) => <option key={a} value={a}>{a} ay</option>)}</Select></Field></div>
+              <div style={{ minWidth: 140 }}><Field label="Tutar (TL)"><Input inputMode="decimal" value={tutar} onChange={(e) => setTutar(e.target.value)} placeholder="0,00" /></Field></div>
+              <div style={{ flex: 1, minWidth: 200 }}><Field label="Not"><Input value={odemeNotu} onChange={(e) => setOdemeNotu(e.target.value)} maxLength={500} placeholder="Örn. havale, dekont no" /></Field></div>
+              <Button variant="primary" disabled={islem || !tutar.trim() || !Number.isFinite(tutarSayi) || tutarSayi < 0} onClick={() => void calistir(() => post(`/platform/firmalar/${firma.tenantId}/odeme`, { aySayisi, tutar: tutarSayi, not: odemeNotu || null }))}>Ödemeyi kaydet</Button>
+            </div>
+          </div>
+        </Card>
         <Card title="Abonelik işlemi">
           <div className="stack">
             <Field label="Neden (zorunlu, geçmişe yazılır)"><Input value={neden} onChange={(e) => setNeden(e.target.value)} maxLength={500} placeholder="Örn. Ekim ödemesi 30 gün gecikti" /></Field>

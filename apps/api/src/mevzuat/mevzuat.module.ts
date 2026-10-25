@@ -9,6 +9,7 @@ import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { MevzuatHatirlatmaService } from "./mevzuat-hatirlatma.service";
+import { TahsilatHatirlatmaService } from "./tahsilat-hatirlatma.service";
 
 /**
  * Mevzuat Merkezi (MVZ). `MevzuatService` diğer modüllerin (fatura, e-belge,
@@ -18,7 +19,7 @@ import { MevzuatHatirlatmaService } from "./mevzuat-hatirlatma.service";
 @Global()
 @Module({
   controllers: [MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController],
-  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, PlatformFirmaService, GirisDenemeSayaci],
+  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, GirisDenemeSayaci],
   exports: [MevzuatService, PlatformPrismaService],
 })
 export class MevzuatModule {}

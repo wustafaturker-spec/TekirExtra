@@ -19,7 +19,12 @@ interface FirmaSatiri {
   ebelge_saglayici: string | null;
   bekleyen_talep_id: string | null;
   bekleyen_plan: string | null;
+  son_odeme_at: Date | null;
+  askiya_alinacak: boolean;
 }
+
+/** PLT-09: "ödeme alındı" ile dönem bu kadar ay uzar. */
+export const ODEME_SURELERI = [1, 3, 6, 12] as const;
 
 /**
  * Platform P0-1 / P1-1: firma genel bakışı ve abonelik yönetimi. Platform rolü
@@ -50,12 +55,26 @@ export class PlatformFirmaService {
       sonGiris: r.son_giris,
       ebelgeSaglayici: r.ebelge_saglayici,
       bekleyenTalep: r.bekleyen_talep_id ? { id: r.bekleyen_talep_id, istenenPlan: r.bekleyen_plan, istenenPlanAdi: planAdi(r.bekleyen_plan ?? "") } : null,
+      sonOdemeAt: r.son_odeme_at,
+      // PLT-09: dönem sonundan 15 gün geçti, ödeme işaretlenmedi. Otomatik askı yok; karar platformun.
+      askiyaAlinacak: r.askiya_alinacak,
     }));
   }
 
   async gecmis(tenantId: string) {
     const [satir] = await this.platform.db.$queryRaw<{ gecmis: unknown }[]>`SELECT platform_firma_abonelik_gecmisi(${tenantId}::uuid) AS gecmis`;
-    return satir?.gecmis ?? { degisiklikler: [], talepler: [] };
+    return satir?.gecmis ?? { degisiklikler: [], talepler: [], odemeler: [] };
+  }
+
+  /** PLT-09: elle alınan ödeme dönemi uzatır; tutar ve not abonelik geçmişine yazılır. */
+  async odemeKaydet(tenantId: string, aySayisi: (typeof ODEME_SURELERI)[number], tutar: number, not: string | null) {
+    const { kullaniciId, eposta } = aktifPlatformBaglam();
+    const [satir] = await this.cagir(() =>
+      this.platform.db.$queryRaw<{ yeni_donem_sonu: Date }[]>`SELECT platform_odeme_kaydet(${tenantId}::uuid, ${aySayisi}::int, ${tutar}::numeric, ${not}, ${kullaniciId}::uuid, ${eposta}) AS yeni_donem_sonu`,
+    );
+    await this.olay(kullaniciId, "abonelik_odemesi_alindi", { tenantId, aySayisi, tutar, not, yeniDonemSonu: satir.yeni_donem_sonu });
+    this.erisim.unut(tenantId);
+    return { mesaj: `Ödeme kaydedildi; dönem sonu ${satir.yeni_donem_sonu.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" })}.`, yeniDonemSonu: satir.yeni_donem_sonu };
   }
 
   /** Askıya alma ve geri açma; neden zorunlu ve firmanın abonelik geçmişine de yazılır. */

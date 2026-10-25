@@ -23,7 +23,7 @@ export interface SatirGirdisi { tur: string; anahtar: string; islem: "ekle" | "d
  * veritabanı tetikleyicisiyle de değiştirilemez.
  */
 /** PLT-06: yalnız platform yöneticisinin gördüğü olaylar (firma, abonelik, yapay zekâ tavanı). */
-export const PLATFORM_YONETIM_OLAYLARI = ["firma_askiya_alindi", "firma_askidan_cikarildi", "firma_plani_degisti", "plan_talebi_onaylandi", "plan_talebi_reddedildi", "ai_tavani_degisti"] as const;
+export const PLATFORM_YONETIM_OLAYLARI = ["firma_askiya_alindi", "firma_askidan_cikarildi", "firma_plani_degisti", "plan_talebi_onaylandi", "plan_talebi_reddedildi", "ai_tavani_degisti", "abonelik_odemesi_alindi", "tahsilat_hatirlatma", "tahsilat_ozeti"] as const;
 
 @Injectable()
 export class PlatformMevzuatService {
