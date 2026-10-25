@@ -19,6 +19,12 @@ export function platformTokenYaz(token: string | null): void {
   else window.sessionStorage.removeItem(ANAHTAR);
 }
 
+/** Çıkış: token'ı siler, rota koruması işaretini API'ye kaldırtır. */
+export async function platformCikis(): Promise<void> {
+  platformTokenYaz(null);
+  await fetch(`${API_URL}/platform/auth/cikis`, { method: "POST", credentials: "include" }).catch(() => undefined);
+}
+
 export class PlatformApiHata extends Error {
   constructor(message: string, readonly durum: number) {
     super(message);
@@ -29,6 +35,8 @@ export async function platformApi<T>(yol: string, secenek: RequestInit = {}): Pr
   const token = platformTokenAl();
   const yanit = await fetch(`${API_URL}${yol}`, {
     ...secenek,
+    // PLT-08: giriş yanıtı rota koruması işaretini çerez olarak koyar.
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(secenek.headers ?? {}) },
   });
   if (yanit.status === 401 && !yol.startsWith("/platform/auth/giris")) {

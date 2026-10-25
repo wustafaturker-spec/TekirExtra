@@ -1,8 +1,10 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { z } from "zod";
 import { MEVZUAT_TURLERI } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { PlatformUcu, Public } from "../auth/public.decorator";
+import { oturumIsaretiSirri, oturumIsaretiUret, PLATFORM_OTURUM_ISARETI_COOKIE, PLATFORM_OTURUM_ISARETI_SURESI_SN } from "../auth/oturum-isareti";
 import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
@@ -40,9 +42,28 @@ export class PlatformAuthController {
 
   @Public()
   @Post("giris")
-  giris(@Body() govde: unknown) {
+  async giris(@Body() govde: unknown, @Res({ passthrough: true }) res: Response) {
     const { eposta, parola, totpKodu } = ayristir(girisSemasi, govde);
-    return this.auth.giris(eposta, parola, totpKodu);
+    const sonuc = await this.auth.giris(eposta, parola, totpKodu);
+    // PLT-08: web middleware'i /platform sayfalarını bu işaret olmadan sunmaz.
+    const sir = oturumIsaretiSirri();
+    if (sir) {
+      res.cookie(PLATFORM_OTURUM_ISARETI_COOKIE, oturumIsaretiUret(sir, undefined, "p1"), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: PLATFORM_OTURUM_ISARETI_SURESI_SN * 1000,
+      });
+    }
+    return sonuc;
+  }
+
+  @Public()
+  @Post("cikis")
+  @HttpCode(204)
+  cikis(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
   }
 
   @PlatformUcu()

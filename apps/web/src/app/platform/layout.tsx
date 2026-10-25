@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui";
-import { platformApi, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
+import { platformApi, platformCikis, platformTokenAl } from "@/lib/platform-api";
 
 const MENU = [
   { href: "/platform/firmalar", baslik: "Firmalar" },
@@ -41,7 +41,7 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
         </nav>
         <div className="row-tight">
           {eposta && <span className="muted">{eposta}</span>}
-          <Button size="sm" onClick={() => { platformTokenYaz(null); yonlendir.replace("/platform/giris"); }}>Çıkış</Button>
+          <Button size="sm" onClick={() => { void platformCikis().then(() => yonlendir.replace("/platform/giris")); }}>Çıkış</Button>
         </div>
       </header>
       <main className="platform-main">{children}</main>

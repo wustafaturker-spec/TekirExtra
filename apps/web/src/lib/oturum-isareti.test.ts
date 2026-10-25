@@ -4,7 +4,7 @@ import { guvenliDonus, oturumIsaretiGecerli } from "./oturum-isareti";
 
 const SIR = "s".repeat(40);
 /** API'nin ürettiği biçim (apps/api/src/auth/oturum-isareti.ts) — iki taraf aynı imzayı kabul etmeli. */
-const apiUret = (bitis: number, sir = SIR) => `v1.${bitis}.${createHmac("sha256", sir).update(`v1.${bitis}`).digest("base64url")}`;
+const apiUret = (bitis: number, sir = SIR, tur = "v1") => `${tur}.${bitis}.${createHmac("sha256", sir).update(`${tur}.${bitis}`).digest("base64url")}`;
 
 describe("oturum işareti doğrulaması (web)", () => {
   it("API'nin ürettiği işareti süresi içinde kabul eder", async () => {
@@ -17,6 +17,12 @@ describe("oturum işareti doğrulaması (web)", () => {
     const imza = apiUret(2_000_000_000).split(".")[2];
     expect(await oturumIsaretiGecerli(`v1.2100000000.${imza}`, SIR, 1_900_000_000)).toBe(false);
     for (const bozuk of [undefined, "", "v1.x.y", "abc"]) expect(await oturumIsaretiGecerli(bozuk, SIR, 1_900_000_000)).toBe(false);
+  });
+
+  it("platform işaretini (PLT-08) yalnız platform türüyle kabul eder", async () => {
+    expect(await oturumIsaretiGecerli(apiUret(2_000_000_000, SIR, "p1"), SIR, 1_900_000_000, "p1")).toBe(true);
+    expect(await oturumIsaretiGecerli(apiUret(2_000_000_000, SIR, "p1"), SIR, 1_900_000_000)).toBe(false);
+    expect(await oturumIsaretiGecerli(apiUret(2_000_000_000), SIR, 1_900_000_000, "p1")).toBe(false);
   });
 
   it("dönüş adresi yalnız panel içi göreli yol olabilir", () => {

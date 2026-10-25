@@ -14,8 +14,10 @@ function oturumSirri(): string | undefined {
 }
 const sir = oturumSirri();
 const bitis = Math.floor(Date.now() / 1000) + 24 * 3600;
+const imzali = (tur: string) => `${tur}.${bitis}.${createHmac("sha256", sir ?? "").update(`${tur}.${bitis}`).digest("base64url")}`;
+// PLT-08: /platform sayfaları ayrı `tekir_platform_oturum` (p1) işareti ister.
 const oturumCerezi = sir && sir.length >= 32
-  ? [{ name: "tekir_oturum", value: `v1.${bitis}.${createHmac("sha256", sir).update(`v1.${bitis}`).digest("base64url")}`, domain: "localhost", path: "/", expires: bitis, httpOnly: true, secure: false, sameSite: "Lax" as const }]
+  ? [["tekir_oturum", "v1"], ["tekir_platform_oturum", "p1"]].map(([name, tur]) => ({ name, value: imzali(tur), domain: "localhost", path: "/", expires: bitis, httpOnly: true, secure: false, sameSite: "Lax" as const }))
   : [];
 
 /**

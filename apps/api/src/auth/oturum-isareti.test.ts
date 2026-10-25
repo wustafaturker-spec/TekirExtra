@@ -22,6 +22,16 @@ describe("oturum işareti (rota koruması)", () => {
     for (const bozuk of [undefined, "", "v1.1.x", "v2.1900000000." + imza, isaret + "a"]) expect(oturumIsaretiGecerli(bozuk, SIR, 1_800_000_001)).toBe(false);
   });
 
+  it("platform işareti (PLT-08) 30 dk geçerli; kiracı ve platform işaretleri birbirinin yerine geçmez", () => {
+    const simdi = 1_800_000_000;
+    const platform = oturumIsaretiUret(SIR, simdi, "p1");
+    expect(platform).toMatch(/^p1\.\d+\.[A-Za-z0-9_-]{43}$/);
+    expect(oturumIsaretiGecerli(platform, SIR, simdi + 29 * 60, "p1")).toBe(true);
+    expect(oturumIsaretiGecerli(platform, SIR, simdi + 31 * 60, "p1")).toBe(false);
+    expect(oturumIsaretiGecerli(platform, SIR, simdi + 60)).toBe(false);
+    expect(oturumIsaretiGecerli(oturumIsaretiUret(SIR, simdi), SIR, simdi + 60, "p1")).toBe(false);
+  });
+
   it("sır tanımsız ya da 32 karakterden kısaysa işaret üretilmez", () => {
     vi.stubEnv("OTURUM_ISARETI_SECRET", "");
     expect(oturumIsaretiSirri()).toBeNull();
