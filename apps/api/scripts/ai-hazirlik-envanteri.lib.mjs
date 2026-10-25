@@ -1,5 +1,5 @@
 /** P0-01: yalnız seçilmiş tenant için toplulaştırılmış veri hazırlığı kontrolü. */
-export const BILINCLI_RLS_ISTISNALARI = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "mevzuat_talepleri"]);
+export const BILINCLI_RLS_ISTISNALARI = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "eposta_degisimleri", "mevzuat_talepleri"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function argumanlariCoz(args) {

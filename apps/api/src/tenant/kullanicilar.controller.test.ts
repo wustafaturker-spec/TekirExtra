@@ -6,6 +6,7 @@ import type { PrismaService } from "../core/prisma.service";
 import type { AbonelikService } from "./abonelik.service";
 import { KullanicilarController } from "./kullanicilar.controller";
 import type { ParolaService } from "./parola.service";
+import type { EpostaDegisimiService } from "./eposta-degisimi.service";
 
 const TENANT = "00000000-0000-0000-0000-0000000000aa";
 interface Satir { id: string; eposta: string; rol: string; aktif: boolean; maksIskontoYuzdesi: Prisma.Decimal | null; bayiCariId: string | null }
@@ -31,7 +32,7 @@ function kur(satirlar: Satir[]) {
   const prisma = { tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)), oturum: { deleteMany: vi.fn(async () => ({ count: 0 })) } };
   const abonelik = { limitDogrula: vi.fn(async () => undefined) };
   const durum = { unut: vi.fn() };
-  const controller = new KullanicilarController(prisma as unknown as PrismaService, abonelik as unknown as AbonelikService, {} as ParolaService, durum as unknown as KullaniciDurumService);
+  const controller = new KullanicilarController(prisma as unknown as PrismaService, abonelik as unknown as AbonelikService, {} as ParolaService, durum as unknown as KullaniciDurumService, {} as EpostaDegisimiService);
   const olarak = <T>(userId: string, is: () => Promise<T>) => baglamlaCalistir({ tenantId: TENANT, userId, rol: "yonetici" }, is);
   return { kullanicilar, denetim, abonelik, controller, olarak, durum, prisma };
 }

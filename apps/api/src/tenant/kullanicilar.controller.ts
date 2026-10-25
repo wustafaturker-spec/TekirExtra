@@ -21,6 +21,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import { AbonelikService } from "./abonelik.service";
+import { EpostaDegisimiService } from "./eposta-degisimi.service";
 import { ParolaService } from "./parola.service";
 
 const kullaniciOlusturSemasi = z.object({
@@ -64,6 +65,7 @@ export class KullanicilarController {
     private readonly abonelik: AbonelikService,
     private readonly parola: ParolaService,
     private readonly durum: KullaniciDurumService,
+    private readonly epostaDegisimi: EpostaDegisimiService,
   ) {}
 
   private async bayiCariDogrula(tenantId: string, bayiCariId?: string | null) {
@@ -145,6 +147,13 @@ export class KullanicilarController {
   @HttpCode(200)
   parolaSifirla(@Param("id") id: string, @Body() govde: unknown) {
     return this.parola.yoneticiSifirla(id, govde);
+  }
+
+  /** KLN-23: yeni adrese doğrulama bağlantısı gider; kullanılınca giriş e-postası değişir. */
+  @Post(":id/eposta")
+  @HttpCode(200)
+  epostaDegistir(@Param("id") id: string, @Body() govde: unknown) {
+    return this.epostaDegisimi.yoneticiBaslat(id, govde);
   }
 
   /** Yönetim P2-4: kullanıcının bütün oturumları kapanır. */

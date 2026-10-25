@@ -8,6 +8,7 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import { createHash, randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
+import * as bwipjs from "bwip-js";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import { coz, sifrele } from "../core/kripto";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
@@ -192,8 +193,8 @@ export class AuthService {
     );
   }
 
-  /** TOTP kurulumu: şifreli secret kaydedilir, otpauth URL döner (KLN-05). */
-  async totpKur(): Promise<{ otpauthUrl: string; secret: string }> {
+  /** TOTP kurulumu: şifreli secret kaydedilir, otpauth URL ve karekodu döner (KLN-05, KLN-23). */
+  async totpKur(): Promise<{ otpauthUrl: string; secret: string; karekod: string }> {
     const { tenantId, userId } = aktifBaglam();
     const kullanici = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.user.findUnique({ where: { id: userId } }),
@@ -209,14 +210,13 @@ export class AuthService {
         data: { totpSecretSifreli: sifrele(secret), totpAktif: false },
       }),
     );
-    return {
-      otpauthUrl: generateURI({
-        secret,
-        issuer: "TekirExtra",
-        label: kullanici.eposta,
-      }),
+    const otpauthUrl = generateURI({
       secret,
-    };
+      issuer: "TekirExtra",
+      label: kullanici.eposta,
+    });
+    const svg = bwipjs.toSVG({ bcid: "qrcode", text: otpauthUrl });
+    return { otpauthUrl, secret, karekod: `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}` };
   }
 
   /** Kurulumdaki secret ile üretilen ilk kod doğrulanınca TOTP etkinleşir; kurtarma kodları bir kez döner. */

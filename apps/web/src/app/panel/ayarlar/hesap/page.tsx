@@ -8,6 +8,7 @@ import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/componen
 interface KurBilgi {
   otpauthUrl: string;
   secret: string;
+  karekod: string;
 }
 
 interface Oturum {
@@ -35,6 +36,10 @@ export default function HesapGuvenligiSayfasi() {
   const [basari, setBasari] = useState("");
   // Yönetim P2-4: açık oturumlar
   const [oturumlar, setOturumlar] = useState<Oturum[]>([]);
+  const [yeniEposta, setYeniEposta] = useState("");
+  const [epostaParola, setEpostaParola] = useState("");
+  const [epostaIsleniyor, setEpostaIsleniyor] = useState(false);
+  const [epostaMesaji, setEpostaMesaji] = useState<{ ton: "success" | "error"; metin: string } | null>(null);
   const [oturumMesaji, setOturumMesaji] = useState<{ ton: "success" | "error"; metin: string } | null>(null);
   const [mevcutParola, setMevcutParola] = useState("");
   const [yeniParola, setYeniParola] = useState("");
@@ -63,6 +68,21 @@ export default function HesapGuvenligiSayfasi() {
       setParolaHata(h instanceof Error ? h.message : "Parola değiştirilemedi");
     } finally {
       setParolaIsleniyor(false);
+    }
+  }
+
+  async function epostaDegistir(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setEpostaMesaji(null);
+    setEpostaIsleniyor(true);
+    try {
+      const s = await api<{ gonderildi: boolean; mesaj: string }>("/auth/eposta/degistir", { method: "POST", body: JSON.stringify({ eposta: yeniEposta, mevcutParola: epostaParola }) });
+      setEpostaMesaji({ ton: s.gonderildi ? "success" : "error", metin: s.mesaj });
+      if (s.gonderildi) { setYeniEposta(""); setEpostaParola(""); }
+    } catch (h) {
+      setEpostaMesaji({ ton: "error", metin: h instanceof Error ? h.message : "E-posta değiştirilemedi" });
+    } finally {
+      setEpostaIsleniyor(false);
     }
   }
 
@@ -150,7 +170,7 @@ export default function HesapGuvenligiSayfasi() {
     <div style={{ maxWidth: 640, margin: "0 auto" }}>
       <PageHeader
         title="Hesap Güvenliği"
-        subtitle="Parolanızı değiştirin ve iki adımlı doğrulama (2FA / TOTP) kurun — KLN-05, KLN-11."
+        subtitle="Parolanızı ve giriş e-postanızı değiştirin, iki adımlı doğrulama (2FA / TOTP) kurun — KLN-05, KLN-11, KLN-23."
       />
 
       <Card className="stack" style={{ marginBottom: "1.5rem" }}>
@@ -174,6 +194,26 @@ export default function HesapGuvenligiSayfasi() {
             <Input type="password" autoComplete="new-password" required minLength={10} value={yeniParolaTekrar} onChange={(e) => setYeniParolaTekrar(e.target.value)} />
           </Field>
           <div><Button variant="primary" type="submit" disabled={parolaIsleniyor}>{parolaIsleniyor ? "Kaydediliyor…" : "Parolayı değiştir"}</Button></div>
+        </form>
+      </Card>
+
+      <Card className="stack" style={{ marginBottom: "1.5rem" }}>
+        <div>
+          <h3 className="card__title" style={{ fontSize: "1.05rem" }}>✉️ Giriş E-postamı Değiştir</h3>
+          <p className="muted" style={{ fontSize: "0.9rem", margin: 0 }}>
+            Yeni adrese doğrulama bağlantısı, şu anki adresinize bilgilendirme gider. Bağlantıyı onaylayana kadar
+            mevcut adresinizle giriş yaparsınız.
+          </p>
+        </div>
+        {epostaMesaji && <Alert tone={epostaMesaji.ton}>{epostaMesaji.metin}</Alert>}
+        <form onSubmit={epostaDegistir} className="stack">
+          <Field label="Yeni e-posta">
+            <Input type="email" autoComplete="email" required value={yeniEposta} onChange={(e) => setYeniEposta(e.target.value)} />
+          </Field>
+          <Field label="Parolanız (onay için)">
+            <Input type="password" autoComplete="current-password" required value={epostaParola} onChange={(e) => setEpostaParola(e.target.value)} />
+          </Field>
+          <div><Button variant="primary" type="submit" disabled={epostaIsleniyor}>{epostaIsleniyor ? "Gönderiliyor…" : "Doğrulama bağlantısı gönder"}</Button></div>
         </form>
       </Card>
 
@@ -247,7 +287,8 @@ export default function HesapGuvenligiSayfasi() {
 
         {kurBilgi && (
           <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
-            <Field label="1) Gizli anahtar (authenticator uygulamanıza girin)">
+            <img src={kurBilgi.karekod} alt="İki adımlı doğrulama karekodu" width={180} height={180} style={{ background: "#fff", padding: 8, borderRadius: 8, border: "1px solid var(--border)" }} />
+            <Field label="1) Karekodu authenticator uygulamanızla okutun ya da gizli anahtarı elle girin">
               <Input readOnly value={kurBilgi.secret} className="mono" onFocus={(e) => e.currentTarget.select()} />
             </Field>
             <p className="subtle" style={{ fontSize: "0.8rem", margin: 0, wordBreak: "break-all" }}>

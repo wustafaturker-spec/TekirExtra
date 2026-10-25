@@ -66,6 +66,14 @@ export default function KullanicilarSayfasi() {
   const [sifirlaniyor, setSifirlaniyor] = useState(false);
   // Yönetim P1-1: telefonunu kaybeden kullanıcının 2FA'sını kapatma onayı
   const [ikiAdimSifirlanan, setIkiAdimSifirlanan] = useState<Kullanici | null>(null);
+  // KLN-23: rol değişikliği onay penceresiyle yapılır; vazgeçilirse seçim eski role döner.
+  const [rolDegisimi, setRolDegisimi] = useState<{ kullanici: Kullanici; yeniRol: Rol } | null>(null);
+  const [rolKaydediliyor, setRolKaydediliyor] = useState(false);
+  // KLN-23: giriş e-postası değişikliği; yeni adres bağlantıyla onaylanınca geçerli olur.
+  const [epostaDegisen, setEpostaDegisen] = useState<Kullanici | null>(null);
+  const [yeniEposta, setYeniEposta] = useState("");
+  const [epostaHata, setEpostaHata] = useState("");
+  const [epostaGonderiliyor, setEpostaGonderiliyor] = useState(false);
 
   const yukle = useCallback(async () => {
     setHata("");
@@ -191,14 +199,39 @@ export default function KullanicilarSayfasi() {
     }
   }
 
-  async function rolDegistir(id: string, yeniRol: Rol) {
+  async function rolDegistir(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rolDegisimi) return;
+    const { kullanici, yeniRol } = rolDegisimi;
     setHata("");
     setBasari("");
+    setRolKaydediliyor(true);
     try {
-      await api(`/kullanicilar/${id}`, { method: "PATCH", body: JSON.stringify({ rol: yeniRol }) });
+      await api(`/kullanicilar/${kullanici.id}`, { method: "PATCH", body: JSON.stringify({ rol: yeniRol }) });
+      setBasari(`${kullanici.adSoyad} artık ${rolAdi(yeniRol)}.`);
       await yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Rol güncellenemedi");
+    } finally {
+      setRolKaydediliyor(false);
+      setRolDegisimi(null);
+    }
+  }
+
+  async function epostaDegistir(e: React.FormEvent) {
+    e.preventDefault();
+    if (!epostaDegisen) return;
+    setEpostaHata("");
+    setEpostaGonderiliyor(true);
+    try {
+      const s = await api<{ gonderildi: boolean; mesaj: string }>(`/kullanicilar/${epostaDegisen.id}/eposta`, { method: "POST", body: JSON.stringify({ eposta: yeniEposta }) });
+      if (!s.gonderildi) { setEpostaHata(s.mesaj); return; }
+      setBasari(s.mesaj);
+      setEpostaDegisen(null);
+    } catch (h) {
+      setEpostaHata(h instanceof Error ? h.message : "E-posta değiştirilemedi");
+    } finally {
+      setEpostaGonderiliyor(false);
     }
   }
 
@@ -297,7 +330,7 @@ export default function KullanicilarSayfasi() {
                     {!k.epostaDogrulandi && <span className="subtle"> · davet bekliyor</span>}
                   </td>
                   <td style={{ minWidth: 150 }}>
-                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select aria-label={`${k.adSoyad} rolü`} disabled={k.id === benId} title={k.id === benId ? "Kendi rolünüzü başka bir yönetici değiştirebilir" : undefined} value={k.rol} onChange={(e) => rolDegistir(k.id, e.target.value as Rol)}>
+                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select aria-label={`${k.adSoyad} rolü`} disabled={k.id === benId} title={k.id === benId ? "Kendi rolünüzü başka bir yönetici değiştirebilir" : undefined} value={k.rol} onChange={(e) => { if (e.target.value !== k.rol) setRolDegisimi({ kullanici: k, yeniRol: e.target.value as Rol }); }}>
                       {ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}
                     </Select>}
                   </td>
@@ -321,6 +354,9 @@ export default function KullanicilarSayfasi() {
                       {k.aktif && !k.epostaDogrulandi && (
                         <Button size="sm" onClick={() => void davetiYenidenGonder(k)}>Daveti Yeniden Gönder</Button>
                       )}
+                      {k.id !== benId && k.aktif && (
+                        <Button size="sm" onClick={() => { setEpostaDegisen(k); setYeniEposta(""); setEpostaHata(""); setHata(""); setBasari(""); }}>E-postayı Değiştir</Button>
+                      )}
                       {k.id !== benId && (
                         <Button size="sm" onClick={() => void oturumlariKapat(k)}>Oturumları Kapat</Button>
                       )}
@@ -337,6 +373,34 @@ export default function KullanicilarSayfasi() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {epostaDegisen && (
+        <Modal
+          baslik="Giriş e-postasını değiştir"
+          aciklama={`${epostaDegisen.adSoyad} şu an ${epostaDegisen.eposta} ile giriş yapıyor. Yeni adrese doğrulama bağlantısı, eski adrese bilgilendirme gider; bağlantı kullanılana kadar eski adres geçerli kalır.`}
+          onKapat={() => setEpostaDegisen(null)}
+        >
+          <form onSubmit={epostaDegistir} className="stack">
+            <Alert tone="error">{epostaHata}</Alert>
+            <Field label="Yeni e-posta">
+              <Input type="email" required autoFocus value={yeniEposta} onChange={(e) => setYeniEposta(e.target.value)} placeholder="ayse@firma.com" />
+            </Field>
+            <ModalEylem onVazgec={() => setEpostaDegisen(null)} isleniyor={epostaGonderiliyor} metin="Doğrulama bağlantısı gönder" />
+          </form>
+        </Modal>
+      )}
+
+      {rolDegisimi && (
+        <Modal
+          baslik="Rolü değiştir"
+          aciklama={`${rolDegisimi.kullanici.adSoyad} (${rolDegisimi.kullanici.eposta}) kullanıcısının rolü ${rolAdi(rolDegisimi.kullanici.rol)} → ${rolAdi(rolDegisimi.yeniRol)} olacak. Yeni yetkiler hemen geçerli olur; değişiklik denetim izine yazılır.`}
+          onKapat={() => setRolDegisimi(null)}
+        >
+          <form onSubmit={rolDegistir}>
+            <ModalEylem onVazgec={() => setRolDegisimi(null)} isleniyor={rolKaydediliyor} metin="Rolü değiştir" />
+          </form>
+        </Modal>
+      )}
 
       {ikiAdimSifirlanan && (
         <Modal

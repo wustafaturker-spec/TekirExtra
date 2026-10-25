@@ -1967,3 +1967,56 @@ test("platform ekibi bekleyen plan talebini firmalar ekranından onaylar (platfo
   await expect(page.getByText("Talep onaylandı; yeni plan geçerli.")).toBeVisible();
   expect(karar).toEqual({ yol: "/api/v1/platform/firmalar/talepler/r1/karar", govde: { onay: true, not: "Ödeme alındı" } });
 });
+
+test("rol değişikliği onay penceresiyle yapılır, giriş e-postası doğrulama bağlantısıyla değişir (KLN-23)", async ({ page }) => {
+  const istekler: { yontem: string; yol: string; govde: unknown }[] = [];
+  await page.route("**/api/v1/kullanicilar**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const yontem = route.request().method();
+    if (yontem !== "GET") {
+      istekler.push({ yontem, yol: pathname, govde: route.request().postDataJSON() });
+      if (pathname.endsWith("/eposta")) return route.fulfill({ json: { gonderildi: true, mesaj: "ayse.yeni@example.com adresine doğrulama bağlantısı gönderildi (24 saat geçerli)." } });
+      return route.fulfill({ json: {} });
+    }
+    const satir = { epostaDogrulandi: true, totpAktif: false, maksIskontoYuzdesi: null, bayiCariId: null, bayiCari: null, aktif: true };
+    await route.fulfill({ json: [
+      { ...satir, id: "u1", eposta: "yonetici@example.com", adSoyad: "Yönetici Kişi", rol: "yonetici" },
+      { ...satir, id: "u2", eposta: "ayse@example.com", adSoyad: "Ayşe Muhasebe", rol: "muhasebe" },
+    ] });
+  });
+  await page.goto("/panel/ayarlar/kullanicilar");
+  const rol = page.getByRole("combobox", { name: "Ayşe Muhasebe rolü" });
+  await rol.selectOption("satis");
+  const pencere = page.getByRole("dialog", { name: "Rolü değiştir" });
+  await expect(pencere.getByText(/Muhasebe → Satış/)).toBeVisible();
+  await pencere.getByRole("button", { name: "Vazgeç" }).click();
+  await expect(pencere).toHaveCount(0);
+  await expect(rol).toHaveValue("muhasebe");
+  expect(istekler).toEqual([]);
+
+  await rol.selectOption("satis");
+  await page.getByRole("dialog", { name: "Rolü değiştir" }).getByRole("button", { name: "Rolü değiştir" }).click();
+  await expect(page.getByRole("dialog", { name: "Rolü değiştir" })).toHaveCount(0);
+  expect(istekler).toEqual([{ yontem: "PATCH", yol: "/api/v1/kullanicilar/u2", govde: { rol: "satis" } }]);
+
+  await expect(page.getByRole("row", { name: /Yönetici Kişi/ }).getByRole("button", { name: "E-postayı Değiştir" })).toHaveCount(0);
+  await page.getByRole("row", { name: /Ayşe Muhasebe/ }).getByRole("button", { name: "E-postayı Değiştir" }).click();
+  const eposta = page.getByRole("dialog", { name: "Giriş e-postasını değiştir" });
+  await eposta.getByLabel("Yeni e-posta").fill("ayse.yeni@example.com");
+  await eposta.getByRole("button", { name: "Doğrulama bağlantısı gönder" }).click();
+  await expect(page.getByText(/ayse.yeni@example.com adresine doğrulama bağlantısı gönderildi/)).toBeVisible();
+  expect(istekler[1]).toEqual({ yontem: "POST", yol: "/api/v1/kullanicilar/u2/eposta", govde: { eposta: "ayse.yeni@example.com" } });
+});
+
+test("2FA kurulumunda karekod ve gizli anahtar birlikte gösterilir (KLN-23)", async ({ page }) => {
+  await page.route("**/api/v1/auth/totp/durum", (route) => route.fulfill({ json: { aktif: false, kalanKurtarmaKodu: 0 } }));
+  await page.route("**/api/v1/auth/totp/kur", (route) => route.fulfill({ json: {
+    otpauthUrl: "otpauth://totp/TekirExtra:k%40ornek.com?secret=JBSWY3DPEHPK3PXP&issuer=TekirExtra",
+    secret: "JBSWY3DPEHPK3PXP",
+    karekod: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=",
+  } }));
+  await page.goto("/panel/ayarlar/hesap");
+  await page.getByRole("button", { name: "İki Adımlı Doğrulamayı Kur" }).click();
+  await expect(page.getByRole("img", { name: "İki adımlı doğrulama karekodu" })).toBeVisible();
+  await expect(page.getByLabel(/gizli anahtarı elle girin/)).toHaveValue("JBSWY3DPEHPK3PXP");
+});

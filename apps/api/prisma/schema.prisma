@@ -540,6 +540,23 @@ model ParolaSifirlama {
   @@map("parola_sifirlamalar")
 }
 
+/// KLN-23: e-posta (giriş adı) değişikliği bağlantıları. Bilinçli RLS
+/// istisnası (parola_sifirlamalar gibi): bağlantı kiracı bağlamı kurulmadan
+/// doğrulanır; yalnız token özeti saklanır.
+model EpostaDegisimi {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  yeniEposta     String   @map("yeni_eposta")
+  tokenHash      String   @unique @map("token_hash")
+  gecerlilikSonu DateTime @map("gecerlilik_sonu")
+  kullanildi     Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("eposta_degisimleri")
+}
+
 model EpostaGonderim {
   id         String   @id @default(uuid()) @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid

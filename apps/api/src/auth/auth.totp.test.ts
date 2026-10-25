@@ -99,3 +99,13 @@ describe("2FA kurtarma kodları (yönetim P1-1)", () => {
     await expect(t.service.giris(t.k.eposta, PAROLA, yeni[1])).resolves.toBeTruthy();
   });
 });
+
+describe("2FA kurulum karekodu (KLN-23)", () => {
+  it("kurulum otpauth adresini içeren SVG karekodu da döner; gizli anahtar metni kalır", async () => {
+    const t = kur();
+    const s = await t.olarak(() => t.service.totpKur());
+    expect(s.otpauthUrl).toContain(`secret=${s.secret}`);
+    expect(s.karekod).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(Buffer.from(s.karekod.split(",")[1], "base64").toString("utf8")).toContain("<svg");
+  });
+});

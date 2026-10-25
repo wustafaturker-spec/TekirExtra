@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { REFRESH_COOKIE } from "../auth/auth.controller";
 import { Public } from "../auth/public.decorator";
+import { EpostaDegisimiService } from "./eposta-degisimi.service";
 import { ParolaService } from "./parola.service";
 
 /**
@@ -30,5 +31,24 @@ export class ParolaController {
   @HttpCode(200)
   sifirla(@Body() govde: unknown) {
     return this.parola.sifirla(govde);
+  }
+}
+
+/** KLN-23: giriş e-postası değişikliği; onay bağlantısı oturum gerektirmez. */
+@Controller("auth/eposta")
+export class EpostaDegisimiController {
+  constructor(private readonly degisim: EpostaDegisimiService) {}
+
+  @Post("degistir")
+  @HttpCode(200)
+  degistir(@Body() govde: unknown) {
+    return this.degisim.kendiBaslat(govde);
+  }
+
+  @Public()
+  @Post("onayla")
+  @HttpCode(200)
+  onayla(@Body() govde: unknown) {
+    return this.degisim.onayla(govde);
   }
 }

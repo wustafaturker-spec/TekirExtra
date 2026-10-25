@@ -17,7 +17,7 @@ import { afterAll, describe, expect, it } from "vitest";
  * bildirimi gönderen kiracıyı not eder; uygulama rolünün bu tabloda yalnız
  * INSERT yetkisi vardır, okuyamaz (yetki migration 20261009120000'de).
  */
-const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "mevzuat_talepleri"]);
+const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "eposta_degisimleri", "mevzuat_talepleri"]);
 
 const prisma = new PrismaClient({
   datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL,
