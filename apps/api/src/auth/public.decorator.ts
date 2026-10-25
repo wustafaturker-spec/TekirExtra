@@ -12,6 +12,14 @@ export const PLATFORM_ANAHTAR = "platform";
  */
 export const PlatformUcu = () => SetMetadata(PLATFORM_ANAHTAR, true);
 
+export type PlatformRolu = "yonetici" | "mevzuat_editoru";
+export const PLATFORM_ROLLER_ANAHTAR = "platformRolleri";
+/**
+ * PLT-06: platform ucunu açan roller. İşaretsiz platform ucu yalnız platform
+ * yöneticisine açıktır (yeni uç unutulursa editöre kendiliğinden açılmasın).
+ */
+export const PlatformRolleri = (...roller: PlatformRolu[]) => SetMetadata(PLATFORM_ROLLER_ANAHTAR, roller);
+
 /**
  * Platform P0-1: yöntemi POST olsa da veri değiştirmeyen uç (rapor çalıştırma,
  * dışa aktarma, önizleme). Askıdaki (salt okunur) firmada da açık kalır.

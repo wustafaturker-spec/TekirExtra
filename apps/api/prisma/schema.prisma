@@ -6053,18 +6053,26 @@ model StokMaliyetDuzeltme {
 // mevzuat kayıtlarını ve yayınlanan değişiklikleri yalnız okur; yazma
 // platform rolüyle (tekir_platform, DATABASE_URL_PLATFORM) yapılır (MVZ-16).
 
+/// PLT-06: platform ekibi rolleri.
+enum PlatformRol {
+  yonetici
+  mevzuat_editoru
+}
+
 /// MVZ-04: platform ekibi kullanıcısı; kiracı kullanıcılarından ayrıdır, hiçbir kiracı verisine erişmez.
 model PlatformKullanici {
-  id                String    @id @default(uuid()) @db.Uuid
-  eposta            String    @unique
-  adSoyad           String    @map("ad_soyad")
-  parolaHash        String    @map("parola_hash")
+  id                String      @id @default(uuid()) @db.Uuid
+  eposta            String      @unique
+  adSoyad           String      @map("ad_soyad")
+  parolaHash        String      @map("parola_hash")
   /// İki adımlı doğrulama zorunludur; gizli anahtar şifreli saklanır.
-  totpSecretSifreli String    @map("totp_secret_sifreli")
-  aktif             Boolean   @default(true)
-  sonGiris          DateTime? @map("son_giris")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  totpSecretSifreli String      @map("totp_secret_sifreli")
+  /// PLT-06: yönetici her şeyi yapar; mevzuat editörü yalnız Mevzuat Merkezi'nde çalışır.
+  rol               PlatformRol @default(yonetici)
+  aktif             Boolean     @default(true)
+  sonGiris          DateTime?   @map("son_giris")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
 
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari PlatformAiTavani[]

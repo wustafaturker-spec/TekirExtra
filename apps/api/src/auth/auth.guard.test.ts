@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { AuthGuard } from "./auth.guard";
-import { PLATFORM_ANAHTAR } from "./public.decorator";
+import { PLATFORM_ANAHTAR, PLATFORM_ROLLER_ANAHTAR } from "./public.decorator";
 import { aktifPlatformBaglam, baglamAl, istekBaglami } from "../core/istek-baglami";
 
 const KIRACI = "kiraci-anahtari";
@@ -104,5 +104,39 @@ describe("kullanıcı durumu denetimi (yönetim P1-2)", () => {
     db.oturumSurumu = 1; // parola değişti; bu süreçte önbellek hâlâ 0 diyor
     await expect(dene(guard, await token({ sv: 1 }))).resolves.toBe(true);
     await expect(dene(guard, await token({ sv: 0 }))).rejects.toThrow(/güncel değil/);
+  });
+});
+
+describe("platform rolleri (PLT-06)", () => {
+  const jwt = new JwtService({});
+  let platformToken: string;
+  beforeEach(async () => {
+    process.env.JWT_SECRET = KIRACI;
+    process.env.PLATFORM_JWT_SECRET = PLATFORM;
+    platformToken = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform" }, { secret: PLATFORM });
+  });
+  afterEach(() => { delete process.env.PLATFORM_JWT_SECRET; });
+
+  const kurRollu = (token: string, roller: string[] | undefined, db?: { rol: string; aktif: boolean }) => {
+    const reflector = { getAllAndOverride: (anahtar: string) => (anahtar === PLATFORM_ANAHTAR ? true : anahtar === PLATFORM_ROLLER_ANAHTAR ? roller : false) } as unknown as Reflector;
+    const platformDb = db ? { db: { platformKullanici: { findUnique: async () => db } } } : undefined;
+    const guard = new AuthGuard(new JwtService({ secret: KIRACI }), reflector, undefined, platformDb as never);
+    const context = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ headers: { authorization: `Bearer ${token}` } }) }) } as never;
+    return istekBaglami.run({}, async () => ({ sonuc: await guard.canActivate(context), platform: aktifPlatformBaglam() }));
+  };
+
+  it("işaretsiz platform ucu yalnız yöneticiye açıktır; editör 403 alır", async () => {
+    await expect(kurRollu(platformToken, undefined, { rol: "yonetici", aktif: true })).resolves.toMatchObject({ sonuc: true, platform: { rol: "yonetici" } });
+    await expect(kurRollu(platformToken, undefined, { rol: "mevzuat_editoru", aktif: true })).rejects.toThrow(ForbiddenException);
+  });
+
+  it("mevzuat ucu editöre açıktır; güncel rol token'daki rolün önüne geçer", async () => {
+    const yoneticiTokeni = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform", rol: "yonetici" }, { secret: PLATFORM });
+    await expect(kurRollu(yoneticiTokeni, ["yonetici", "mevzuat_editoru"], { rol: "mevzuat_editoru", aktif: true })).resolves.toMatchObject({ platform: { rol: "mevzuat_editoru" } });
+    await expect(kurRollu(yoneticiTokeni, undefined, { rol: "mevzuat_editoru", aktif: true })).rejects.toThrow(ForbiddenException);
+  });
+
+  it("pasif hesap rolünden önce düşer", async () => {
+    await expect(kurRollu(platformToken, ["yonetici", "mevzuat_editoru"], { rol: "yonetici", aktif: false })).rejects.toThrow(UnauthorizedException);
   });
 });

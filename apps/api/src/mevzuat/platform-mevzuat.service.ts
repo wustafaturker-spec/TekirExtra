@@ -22,6 +22,9 @@ export interface SatirGirdisi { tur: string; anahtar: string; islem: "ekle" | "d
  * çevrilen değişiklik gerekçesiyle taslağa döner. Yayınlanan değişiklik
  * veritabanı tetikleyicisiyle de değiştirilemez.
  */
+/** PLT-06: yalnız platform yöneticisinin gördüğü olaylar (firma, abonelik, yapay zekâ tavanı). */
+export const PLATFORM_YONETIM_OLAYLARI = ["firma_askiya_alindi", "firma_askidan_cikarildi", "firma_plani_degisti", "plan_talebi_onaylandi", "plan_talebi_reddedildi", "ai_tavani_degisti"] as const;
+
 @Injectable()
 export class PlatformMevzuatService {
   constructor(
@@ -273,9 +276,10 @@ export class PlatformMevzuatService {
     return anahtar || !tarih ? liste : liste.filter((k) => yururluktedir(k, tarih));
   }
 
-  async olaylar(sayfa = 1) {
+  /** PLT-06: mevzuat editörü firma, abonelik ve yapay zekâ tavanı olaylarını görmez. */
+  async olaylar(sayfa = 1, yalnizMevzuat = false) {
     const take = 100;
-    const olaylar = await this.db.mevzuatOlay.findMany({ orderBy: { zaman: "desc" }, skip: (Math.max(1, sayfa) - 1) * take, take, include: { degisiklik: { select: { no: true, baslik: true } } } });
+    const olaylar = await this.db.mevzuatOlay.findMany({ where: yalnizMevzuat ? { olay: { notIn: [...PLATFORM_YONETIM_OLAYLARI] } } : undefined, orderBy: { zaman: "desc" }, skip: (Math.max(1, sayfa) - 1) * take, take, include: { degisiklik: { select: { no: true, baslik: true } } } });
     const kullanicilar = new Map((await this.db.platformKullanici.findMany({ select: { id: true, adSoyad: true } })).map((k) => [k.id, k.adSoyad]));
     return olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null }));
   }

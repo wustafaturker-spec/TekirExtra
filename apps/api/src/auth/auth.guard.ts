@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   Optional,
   UnauthorizedException,
@@ -12,7 +13,7 @@ import type { Rol } from "@tekirextra/shared";
 import { baglamKur, platformBaglamKur } from "../core/istek-baglami";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
-import { PLATFORM_ANAHTAR, PUBLIC_ANAHTAR } from "./public.decorator";
+import { PLATFORM_ANAHTAR, PLATFORM_ROLLER_ANAHTAR, PUBLIC_ANAHTAR, type PlatformRolu } from "./public.decorator";
 
 export interface JwtYuku {
   sub: string; // userId
@@ -29,6 +30,8 @@ export interface PlatformJwtYuku {
   sub: string;
   eposta: string;
   kapsam: "platform";
+  /** PLT-06: girişteki rol; guard güncel rolü veritabanından okur. */
+  rol?: PlatformRolu;
 }
 
 /** Platform anahtarı yoksa platform uçları kapalıdır (kiracı anahtarına düşülmez). */
@@ -52,19 +55,19 @@ export class AuthGuard implements CanActivate {
     @Optional() private readonly platformDb?: PlatformPrismaService,
   ) {}
 
-  /** Platform P1-2: pasife alınan platform kullanıcısı en geç 10 sn içinde düşer. */
-  private readonly platformAktif = new Map<string, { aktif: boolean; bitis: number }>();
+  /** Platform P1-2 / PLT-06: pasife alınan ya da rolü değişen platform kullanıcısı en geç 10 sn içinde etkilenir. */
+  private readonly platformDurum = new Map<string, { aktif: boolean; rol: PlatformRolu; bitis: number }>();
 
-  private async platformKullanicisiAktifMi(id: string): Promise<boolean> {
-    if (!this.platformDb) return true;
+  private async platformKullaniciDurumu(id: string, tokenRolu: PlatformRolu | undefined): Promise<{ aktif: boolean; rol: PlatformRolu }> {
+    if (!this.platformDb) return { aktif: true, rol: tokenRolu ?? "yonetici" };
     const simdi = Date.now();
-    const k = this.platformAktif.get(id);
-    if (k && k.bitis > simdi) return k.aktif;
-    const kayit = await this.platformDb.db.platformKullanici.findUnique({ where: { id }, select: { aktif: true } });
-    const aktif = Boolean(kayit?.aktif);
-    if (this.platformAktif.size > 1_000) this.platformAktif.clear();
-    this.platformAktif.set(id, { aktif, bitis: simdi + 10_000 });
-    return aktif;
+    const k = this.platformDurum.get(id);
+    if (k && k.bitis > simdi) return k;
+    const kayit = await this.platformDb.db.platformKullanici.findUnique({ where: { id }, select: { aktif: true, rol: true } });
+    const durum = { aktif: Boolean(kayit?.aktif), rol: (kayit?.rol ?? "mevzuat_editoru") as PlatformRolu };
+    if (this.platformDurum.size > 1_000) this.platformDurum.clear();
+    this.platformDurum.set(id, { ...durum, bitis: simdi + 10_000 });
+    return durum;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -94,8 +97,12 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
       }
       if (platformYuku.kapsam !== "platform") throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
-      if (!(await this.platformKullanicisiAktifMi(platformYuku.sub))) throw new UnauthorizedException("Platform hesabı pasif");
-      platformBaglamKur({ kullaniciId: platformYuku.sub, eposta: platformYuku.eposta });
+      const durum = await this.platformKullaniciDurumu(platformYuku.sub, platformYuku.rol);
+      if (!durum.aktif) throw new UnauthorizedException("Platform hesabı pasif");
+      const roller = this.reflector.getAllAndOverride<PlatformRolu[] | undefined>(PLATFORM_ROLLER_ANAHTAR, [context.getHandler(), context.getClass()]);
+      const izinli: PlatformRolu[] = Array.isArray(roller) ? roller : ["yonetici"];
+      if (!izinli.includes(durum.rol)) throw new ForbiddenException("Bu işlem için platform yöneticisi yetkisi gerekir");
+      platformBaglamKur({ kullaniciId: platformYuku.sub, eposta: platformYuku.eposta, rol: durum.rol });
       return true;
     }
 

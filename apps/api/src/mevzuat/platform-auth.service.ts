@@ -41,10 +41,10 @@ export class PlatformAuthService {
 
     await this.platform.db.platformKullanici.update({ where: { id: kullanici.id }, data: { sonGiris: new Date() } });
     await this.platform.db.mevzuatOlay.create({ data: { kullaniciId: kullanici.id, olay: "giris" } });
-    const yuk: PlatformJwtYuku = { sub: kullanici.id, eposta: kullanici.eposta, kapsam: "platform" };
+    const yuk: PlatformJwtYuku = { sub: kullanici.id, eposta: kullanici.eposta, kapsam: "platform", rol: kullanici.rol };
     return {
       accessToken: await this.jwt.signAsync(yuk, { secret: anahtar, expiresIn: "30m" }),
-      kullanici: { id: kullanici.id, eposta: kullanici.eposta, adSoyad: kullanici.adSoyad },
+      kullanici: { id: kullanici.id, eposta: kullanici.eposta, adSoyad: kullanici.adSoyad, rol: kullanici.rol },
     };
   }
 }

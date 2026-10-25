@@ -3,7 +3,7 @@ import type { Response } from "express";
 import { z } from "zod";
 import { MEVZUAT_TURLERI } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
-import { PlatformUcu, Public } from "../auth/public.decorator";
+import { PlatformRolleri, PlatformUcu, Public } from "../auth/public.decorator";
 import { oturumIsaretiSirri, oturumIsaretiUret, PLATFORM_OTURUM_ISARETI_COOKIE, PLATFORM_OTURUM_ISARETI_SURESI_SN } from "../auth/oturum-isareti";
 import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
@@ -67,14 +67,16 @@ export class PlatformAuthController {
   }
 
   @PlatformUcu()
+  @PlatformRolleri("yonetici", "mevzuat_editoru")
   @Get("ben")
   ben() {
     return aktifPlatformBaglam();
   }
 }
 
-/** MVZ-05…08: Mevzuat Merkezi yönetimi (yalnız platform token'ı). */
+/** MVZ-05…08: Mevzuat Merkezi yönetimi (yalnız platform token'ı). PLT-06: editör de çalışır; dört göz kuralı sürer. */
 @PlatformUcu()
+@PlatformRolleri("yonetici", "mevzuat_editoru")
 @Controller("platform/mevzuat")
 export class PlatformMevzuatController {
   constructor(private readonly mevzuat: PlatformMevzuatService) {}
@@ -163,7 +165,7 @@ export class PlatformMevzuatController {
 
   @Get("olaylar")
   olaylar(@Query("sayfa") sayfa?: string) {
-    return this.mevzuat.olaylar(Number(sayfa) || 1);
+    return this.mevzuat.olaylar(Number(sayfa) || 1, aktifPlatformBaglam().rol === "mevzuat_editoru");
   }
 
   /** MVZ-17: dönemsel değerlerin (bordro, kıdem tavanı, tevkifat alt sınırı) yayın takvimi. */

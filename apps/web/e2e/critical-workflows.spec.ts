@@ -2020,3 +2020,18 @@ test("2FA kurulumunda karekod ve gizli anahtar birlikte gösterilir (KLN-23)", a
   await expect(page.getByRole("img", { name: "İki adımlı doğrulama karekodu" })).toBeVisible();
   await expect(page.getByLabel(/gizli anahtarı elle girin/)).toHaveValue("JBSWY3DPEHPK3PXP");
 });
+
+test("mevzuat editörü firma ve tavan menülerini görmez, o sayfalardan Değişiklikler'e döner (PLT-06)", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
+  await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { kullaniciId: "p2", eposta: "editor@tekirextra.com", rol: "mevzuat_editoru" } }));
+  await page.route("**/api/v1/platform/mevzuat/**", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/platform/firmalar**", (route) => route.fulfill({ status: 403, json: { message: "Bu işlem için platform yöneticisi yetkisi gerekir" } }));
+  await page.goto("/platform/firmalar");
+  await expect(page).toHaveURL(/\/platform$/);
+  const menu = page.getByRole("navigation", { name: "Platform menüsü" });
+  await expect(menu.getByRole("link", { name: "Değişiklikler" })).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Denetim izi" })).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Firmalar" })).toHaveCount(0);
+  await expect(menu.getByRole("link", { name: "Yapay zekâ tavanı" })).toHaveCount(0);
+  await expect(page.getByText("editor@tekirextra.com · Mevzuat editörü")).toBeVisible();
+});

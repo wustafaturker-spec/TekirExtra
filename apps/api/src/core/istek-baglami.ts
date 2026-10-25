@@ -17,6 +17,8 @@ export interface IstekBaglami {
 export interface PlatformBaglami {
   kullaniciId: string;
   eposta: string;
+  /** PLT-06; eski çağrılarda yoksa yönetici sayılır. */
+  rol?: "yonetici" | "mevzuat_editoru";
 }
 
 interface BaglamTutucu {
