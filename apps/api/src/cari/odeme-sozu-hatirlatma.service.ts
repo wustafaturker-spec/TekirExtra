@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { baglamlaCalistir } from "../core/istek-baglami";
@@ -31,7 +32,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   private calisiyor = false;
   private kapandi = false;
   private sonBasariliTarama: number | null = null;
-  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly erisim?: AbonelikErisimService) {}
   onModuleInit() {
     if (process.env.TEKIR_ODEME_SOZU_WORKER !== "1") return;
     z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
@@ -83,6 +84,8 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   }
   async taraTenant(tenantId: string) {
     z.uuid().parse(tenantId);
+    // PLT-05: askıdaki firma müşterisine ödeme sözü e-postası göndermez.
+    if (await this.erisim?.otomasyonDurdu(tenantId)) return { gonderilen: 0, atlanan: 0, hatali: 0 };
     return baglamlaCalistir({ tenantId, userId: SISTEM, rol: "yonetici" }, async () => {
       const baslangic = await this.prisma.tenantIslem(tenantId, async tx => {
         const zaman = await this.zaman(tx);

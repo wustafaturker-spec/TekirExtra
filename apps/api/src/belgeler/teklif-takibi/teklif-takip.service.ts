@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import { ModuleRef } from "@nestjs/core";
 import { PrismaClient, type Prisma, type TeklifTakibi } from "@prisma/client";
 import { belgeNoMetni } from "@tekirextra/shared";
@@ -55,6 +56,7 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
     private readonly belgeler: BelgelerService,
     @Optional() private readonly eposta?: EpostaService,
     @Optional() private readonly moduleRef?: ModuleRef,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   onModuleInit(): void {
@@ -209,6 +211,8 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
       try { kiracilar = (await yonetim.teklifTakibi.findMany({ where: { durum: { in: ACIK_TAKIP } }, select: { tenantId: true }, distinct: ["tenantId"] })).map((x) => x.tenantId); }
       finally { await yonetim.$disconnect().catch(() => undefined); }
       for (const tenantId of kiracilar) {
+        // PLT-05: askıdaki firmada teklif takibi görev açmaz.
+        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
         try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.kiraciTara()); }
         catch (hata) { this.logger.error(`Teklif takibi taranamadı (${tenantId}): ${String(hata)}`); }
       }

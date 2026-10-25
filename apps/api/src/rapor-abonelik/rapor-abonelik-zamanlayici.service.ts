@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { MetricsService } from "../core/observability/metrics.service";
 import { RaporAbonelikService } from "./rapor-abonelik.service";
@@ -19,7 +20,7 @@ export class RaporAbonelikZamanlayiciService implements OnModuleInit, OnModuleDe
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly servis: RaporAbonelikService, private readonly metrics: MetricsService) {}
+  constructor(private readonly servis: RaporAbonelikService, private readonly metrics: MetricsService, @Optional() private readonly erisim?: AbonelikErisimService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -52,6 +53,8 @@ export class RaporAbonelikZamanlayiciService implements OnModuleInit, OnModuleDe
       const kayitlar = await this.vaktiGelenler();
       const sayac: Record<string, number> = {};
       for (const k of kayitlar) {
+        // PLT-05: askıdaki firmanın rapor aboneliği gönderilmez; firma açılınca sıradaki vakitte gider.
+        if (await this.erisim?.otomasyonDurdu(k.tenant_id)) continue;
         try {
           const sonuc = await this.servis.gonder(k.tenant_id, k.id);
           sayac[sonuc.durum] = (sayac[sonuc.durum] ?? 0) + 1;

@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { baglamlaCalistir } from "../core/istek-baglami";
@@ -51,6 +52,7 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
     private readonly prisma: PrismaService,
     private readonly doviz: DovizService,
     private readonly bildirimler: BildirimService,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   onModuleInit(): void {
@@ -102,6 +104,8 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
       const simdi = new Date(); const mevcutDonem = ayBasi(simdi);
       let toplam = 0;
       for (const tenantId of await this.tenantIdleriAl()) {
+        // PLT-05: askıdaki firmada kira masrafı tahakkuk etmez; açılınca eksik dönemler tamamlanır.
+        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
         await this.kurlariHazirla(tenantId, mevcutDonem);
         const kursuzlar: { id: string; baslik: string; dovizCinsi: string; donemler: string[] }[] = [];
         toplam += await this.prisma.tenantIslem(tenantId, async (tx) => {

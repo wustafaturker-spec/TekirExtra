@@ -12,6 +12,7 @@ vi.mock("bullmq", () => ({
   QueueEvents: class { on = vi.fn(); waitUntilReady = vi.fn(); close = vi.fn(); },
   Worker: class {},
   UnrecoverableError: class extends Error { name = "UnrecoverableError"; },
+  DelayedError: class extends Error { name = "DelayedError"; },
 }));
 
 describe("EbelgeKuyrukService", () => {
@@ -267,5 +268,33 @@ describe("EbelgeKuyrukService", () => {
     const ozet = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.ozet());
 
     expect(ozet.calisanWorker).toBeNull();
+  });
+
+  describe("askıdaki firma (PLT-05)", () => {
+    const erisim = { otomasyonDurdu: vi.fn(async (tenantId: string) => tenantId === "askida") };
+    const isle = (svc: EbelgeKuyrukService, is: unknown, token?: string) => (svc as unknown as { isle(is: unknown, token?: string): Promise<unknown> }).isle(is, token);
+    const veri = (tenantId: string) => ({ tenantId, userId: "user-1", rol: "muhasebe", faturaId: "fatura-1", correlationId: "c", kuyrugaAlinmaZamani: new Date().toISOString() });
+    beforeEach(() => { service = new EbelgeKuyrukService(ebelge as never, metrics as never, undefined, erisim as never); });
+
+    it("gönderim deneme hakkı harcanmadan ertelenir, entegratöre gidilmez", async () => {
+      const moveToDelayed = vi.fn();
+      const hata = await isle(service, { id: "j1", name: "ebelge-gonder", data: veri("askida"), moveToDelayed }, "tok").catch((e: Error) => e);
+      expect((hata as Error).name).toBe("DelayedError");
+      expect(moveToDelayed).toHaveBeenCalledWith(expect.any(Number), "tok");
+      expect((moveToDelayed.mock.calls[0][0] as number) - Date.now()).toBeGreaterThan(14 * 60_000);
+      expect(ebelge.gonder).not.toHaveBeenCalled();
+    });
+
+    it("gelen tarama atlanır; mükellef listesi ve açık firmanın işi sürer", async () => {
+      await expect(isle(service, { id: "j2", name: "gelen-belge-cek", data: veri("askida") })).resolves.toEqual({ atlandi: true, neden: "firma askıda" });
+      expect(ebelge.gelenBelgeleriCek).not.toHaveBeenCalled();
+      const mukellef = vi.fn(async () => ({ eklenen: 0 }));
+      (ebelge as Record<string, unknown>).mukellefListesiSenkronEt = mukellef;
+      await isle(service, { id: "j3", name: "gib-mukellef-senkron", data: veri("askida") });
+      expect(mukellef).toHaveBeenCalled();
+      ebelge.gonder.mockResolvedValue({ basarili: true });
+      await isle(service, { id: "j4", name: "ebelge-gonder", data: veri("acik") });
+      expect(ebelge.gonder).toHaveBeenCalledWith("fatura-1");
+    });
   });
 });

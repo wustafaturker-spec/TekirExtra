@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
@@ -19,7 +20,7 @@ export class BankaSenkronZamanlayiciService implements OnModuleInit, OnModuleDes
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly entegrasyon: BankaEntegrasyonService) {}
+  constructor(private readonly entegrasyon: BankaEntegrasyonService, @Optional() private readonly erisim?: AbonelikErisimService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -53,6 +54,8 @@ export class BankaSenkronZamanlayiciService implements OnModuleInit, OnModuleDes
     this.calisiyor = true;
     try {
       for (const tenantId of await this.adayKiracilar()) {
+        // PLT-05: askıdaki firmada banka hareketi çekilmez.
+        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
         try {
           const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.entegrasyon.vadesiGelenleriCek());
           if (sonuc.denenen) this.logger.log(JSON.stringify({ event: "bank_sync_auto", tenantId, ...sonuc }));

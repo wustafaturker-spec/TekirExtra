@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
@@ -14,7 +15,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly duzeltmeler: DuzeltmelerService, private readonly metrics: MetricsService) {}
+  constructor(private readonly duzeltmeler: DuzeltmelerService, private readonly metrics: MetricsService, @Optional() private readonly erisim?: AbonelikErisimService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -42,6 +43,8 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     try {
       let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0; const tenantIdleri = await this.tenantIdleriAl();
       for (const tenantId of tenantIdleri) {
+        // PLT-05: askıdaki firmada düzeltme kaydı üretilmez.
+        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
         try {
           const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
           bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;

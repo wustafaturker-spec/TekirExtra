@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import { PrismaClient, type TenantAiGorev } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
@@ -49,6 +50,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     private readonly uc: UcCagirici,
     private readonly bildirimler: BildirimService,
     private readonly icgoru: AiIcgoruService,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   onModuleInit(): void {
@@ -208,6 +210,8 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         const gorevler = await yonetim.tenantAiGorev.findMany({ where: { aktif: true } });
         const simdi = trSimdi();
         for (const g of gorevler.filter((x) => gorevZamaniGeldiMi(x, simdi))) {
+          // PLT-05: askıdaki firmada yapay zekâ görevleri ve günlük brifing çalışmaz; sahiplenilmediği için açılınca ilk turda çalışır.
+          if (await this.erisim?.otomasyonDurdu(g.tenantId)) continue;
           const calisma = await this.sahiplen(yonetim, g, simdi);
           if (!calisma) continue;
           try {

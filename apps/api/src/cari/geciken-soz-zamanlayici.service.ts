@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -16,7 +17,7 @@ export class GecikenSozZamanlayiciService implements OnModuleInit, OnModuleDestr
   private ilk?: NodeJS.Immediate;
   private calisiyor = false;
   private kapandi = false;
-  constructor(private readonly prisma: PrismaService, private readonly takip: TahsilatTakibiService) {}
+  constructor(private readonly prisma: PrismaService, private readonly takip: TahsilatTakibiService, @Optional() private readonly erisim?: AbonelikErisimService) {}
   onModuleInit() {
     if (process.env.TEKIR_WORKER !== "1") return;
     this.ilk = setImmediate(() => void this.calistir());
@@ -69,6 +70,8 @@ export class GecikenSozZamanlayiciService implements OnModuleInit, OnModuleDestr
         const tenantlar: { id: string }[] = await yonetim.tenant.findMany({ select: { id: true }, orderBy: { id: "asc" }, take: 100, ...(imlec ? { where: { id: { gt: imlec } } } : {}) });
         for (const { id } of tenantlar) {
           if (this.kapandi) break;
+          // PLT-05: askıdaki firmada otomatik tahsilat takibi açılmaz.
+          if (await this.erisim?.otomasyonDurdu(id)) continue;
           try { const sonuc = await this.taraTenant(id); this.logger.debug(JSON.stringify({ event: "overdue_promise_scan", tenantId: id, ...sonuc })); }
           catch (hata) { this.logger.error(JSON.stringify({ event: "overdue_promise_tenant_failed", tenantId: id, error: hata instanceof Error ? hata.message : String(hata) })); }
         }

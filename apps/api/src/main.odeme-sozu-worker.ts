@@ -3,11 +3,12 @@ import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { createServer } from "node:http";
+import { AbonelikErisimService } from "./core/abonelik-erisim.service";
 import { PrismaService } from "./core/prisma.service";
 import { EpostaService } from "./tenant/eposta.service";
 import { OdemeSozuHatirlatmaService } from "./cari/odeme-sozu-hatirlatma.service";
 
-@Module({ providers: [PrismaService, EpostaService, OdemeSozuHatirlatmaService] })
+@Module({ providers: [PrismaService, EpostaService, OdemeSozuHatirlatmaService, AbonelikErisimService] })
 class OdemeSozuWorkerModule {}
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();

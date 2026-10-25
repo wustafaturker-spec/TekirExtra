@@ -1,7 +1,8 @@
-import { BadRequestException, Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, ServiceUnavailableException, forwardRef } from "@nestjs/common";
-import { Job, Queue, QueueEvents, UnrecoverableError, Worker } from "bullmq";
+import { BadRequestException, Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, Optional, ServiceUnavailableException, forwardRef } from "@nestjs/common";
+import { DelayedError, Job, Queue, QueueEvents, UnrecoverableError, Worker } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { uygulamaAcik, type EbelgeUygulamalari, type Rol } from "@tekirextra/shared";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { redisBaglantisi } from "../core/redis-baglantisi";
@@ -50,6 +51,8 @@ const gelenTaramaAralikMs = () => Number(process.env.EBLG_GELEN_ARALIK_MS || 60 
  * süresi dolunca planlayıcıca, kullanıcı isteyince hemen temizlenir.
  */
 const PERIYODIK_ISLER = new Set<string>([GELEN_ISI, DURUM_TOPLU_ISI, EIRSALIYE_DURUM_TOPLU_ISI, EIRSALIYE_GELEN_ISI, MUKELLEF_SENKRON_ISI]);
+/** PLT-05: askıdaki firmanın belge işi bu süre sonra yeniden denenir; deneme hakkı harcanmaz. */
+const askiErtelemeMs = () => Number(process.env.EBELGE_ASKI_ERTELEME_MS || 15 * 60 * 1_000);
 const deadLetterBeklemeMs = () => Number(process.env.EBELGE_DEAD_LETTER_BEKLEME_MS || 60 * 60 * 1_000);
 
 export interface EbelgeKuyrukVerisi {
@@ -95,6 +98,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => EbelgeService)) private readonly ebelgeService: EbelgeService,
     private readonly metrics: MetricsService,
     private readonly eirsaliyeService?: EirsaliyeService,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   async onModuleInit() {
@@ -104,7 +108,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     this.kuyrukOlaylari.on("error", (hata) => this.logger.error(`e-Belge kuyruk olayları hatası: ${hata.message}`));
     await this.kuyrukOlaylari.waitUntilReady();
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.worker = new Worker<EbelgeKuyrukVerisi>(KUYRUK_ADI, (is) => this.isle(is), {
+    this.worker = new Worker<EbelgeKuyrukVerisi>(KUYRUK_ADI, (is, token) => this.isle(is, token), {
       connection: redisBaglantisi(), concurrency: Number(process.env.EBELGE_WORKER_CONCURRENCY || 4), lockDuration: 120_000,
     });
     this.worker.on("completed", (is) => this.logger.log(JSON.stringify({ event: "ebelge_job_completed", jobId: is.id, tenantId: is.data.tenantId, faturaId: is.data.faturaId })));
@@ -300,10 +304,22 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     return (veri.isTuru || is.name) === DURUM_ISI ? this.durumSorgulaKuyrugaEkle(veri.faturaId) : this.kuyrugaEkle(veri.faturaId);
   }
 
-  private async isle(is: Job<EbelgeKuyrukVerisi>) {
+  private async isle(is: Job<EbelgeKuyrukVerisi>, token?: string) {
     if (await this.deadLetter.getJob(`dead-${is.id}`)) {
       this.logger.warn(JSON.stringify({ event: "ebelge_job_skipped_dead_letter_exists", jobId: is.id, tenantId: is.data.tenantId }));
       return { atlandi: true, neden: "dead-letter kaydı mevcut" };
+    }
+    // PLT-05: askıdaki firmada periyodik tarama atlanır (askı kalkınca sonraki
+    // turda yeniden açılır); belge işi kaybolmasın diye ertelenir. Mükellef
+    // listesi kiracıdan bağımsızdır, durmaz.
+    if (is.name !== MUKELLEF_SENKRON_ISI && (await this.erisim?.otomasyonDurdu(is.data.tenantId))) {
+      if (PERIYODIK_ISLER.has(is.name)) {
+        this.logger.warn(JSON.stringify({ event: "ebelge_kiraci_isi_atlandi", jobId: is.id, tenantId: is.data.tenantId, type: is.name, neden: "firma askıda" }));
+        return { atlandi: true, neden: "firma askıda" };
+      }
+      await is.moveToDelayed(Date.now() + askiErtelemeMs(), token);
+      this.logger.warn(JSON.stringify({ event: "ebelge_job_delayed_suspended", jobId: is.id, tenantId: is.data.tenantId, type: is.name }));
+      throw new DelayedError();
     }
     return baglamlaCalistir({ tenantId: is.data.tenantId, userId: is.data.userId, rol: is.data.rol }, async () => {
       // EBLG-98: kiracı işinde bizim tarafın reddi (ör. bağlantı bu arada
@@ -441,6 +457,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       }
 
       for (const tenant of tenantlar) {
+        // PLT-05: askıdaki firmada gelen tarama ve durum sorguları açılmaz.
+        if (await this.erisim?.otomasyonDurdu(tenant.id)) continue;
         const tenantUygulamalari = uygulamalar.get(tenant.id);
         await baglamlaCalistir({ tenantId: tenant.id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, async () => {
           // Gelen belge taraması kursörle ilerler; aralık dolmadan yeni iş

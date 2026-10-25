@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import { Prisma, PrismaClient, type EpostaTeklifIslemi } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -85,6 +86,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     private readonly yurutucu: AracYurutucu,
     private readonly bildirimler: BildirimService,
     @Optional() private readonly hafiza?: HafizaService,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   /** Testlerde değiştirilebilir; çağrılar "teklif" özelliğiyle sayılır ve bütçeye tabidir. */
@@ -555,18 +557,23 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
         await yonetim.$disconnect().catch(() => undefined);
       }
       // Onay bekleyen cariler özellik kapalıyken de izlenir (elle başlatılan talepler).
+      // PLT-05: askıdaki firmada e-postadan teklif hattı (yapay zekâ dahil) durur.
+      const durdu = async (tenantId: string) => Boolean(await this.erisim?.otomasyonDurdu(tenantId));
       for (const tenantId of bekleyenKiracilar) {
+        if (await durdu(tenantId)) continue;
         try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.bekleyenCarileriIzle()); }
         catch (hata) { this.logger.error(`Cari onayı izlenemedi (${tenantId}): ${hataMetni(hata)}`); }
       }
       // AI-61: onaylanan tekliflerden öğrenme (özellik kapalıyken de; elle hazırlananlar dahil).
       for (const tenantId of ogrenecekKiracilar) {
+        if (await durdu(tenantId)) continue;
         try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.hafiza!.tekliftenOgren()); }
         catch (hata) { this.logger.error(`Tekliften öğrenilemedi (${tenantId}): ${hataMetni(hata)}`); }
       }
       for (const k of kiracilar) {
         const ayar = teklifTalebiAyariSemasi.safeParse(k.ayarlar);
         if (!ayar.success || !ayar.data.acik || !ayar.data.sorumluUserId || !ayar.data.acildiAt) continue;
+        if (await durdu(k.tenantId)) continue;
         try { await this.kiraciTara(k.tenantId, ayar.data); }
         catch (hata) { this.logger.error(`Teklif talebi taraması başarısız (${k.tenantId}): ${hataMetni(hata)}`); }
       }

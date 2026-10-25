@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { CariMutabakatService } from "./cari-mutabakat.service";
@@ -16,7 +17,7 @@ export class MutabakatZamanlayiciService implements OnModuleInit, OnModuleDestro
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly mutabakat: CariMutabakatService) {}
+  constructor(private readonly mutabakat: CariMutabakatService, @Optional() private readonly erisim?: AbonelikErisimService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -36,6 +37,8 @@ export class MutabakatZamanlayiciService implements OnModuleInit, OnModuleDestro
       const tenantlar = await yonetim.tenant.findMany({ select: { id: true } });
       let gonderilen = 0;
       for (const { id: tenantId } of tenantlar) {
+        // PLT-05: askıdaki firma cariye mutabakat hatırlatması göndermez.
+        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
         try {
           gonderilen += await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.mutabakat.hatirlatmalariGonder());
         } catch (hata) {

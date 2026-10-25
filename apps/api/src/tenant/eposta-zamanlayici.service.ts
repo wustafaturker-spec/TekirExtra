@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { ImapService } from "./imap.service";
 
@@ -13,7 +14,7 @@ export class EpostaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly imapService: ImapService) {}
+  constructor(private readonly imapService: ImapService, @Optional() private readonly erisim?: AbonelikErisimService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -45,6 +46,8 @@ export class EpostaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
     try {
       const kiracilar = await this.imapAktifKiracilar();
       for (const k of kiracilar) {
+        // PLT-05: askıdaki firmanın gelen kutusu eşitlenmez.
+        if (await this.erisim?.otomasyonDurdu(k.tenant_id)) continue;
         try {
           const res = await this.imapService.senkronizeEt(k.tenant_id);
           if (res.senkronizeEdildi > 0) {

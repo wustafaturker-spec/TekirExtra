@@ -54,6 +54,20 @@ export class AbonelikErisimService {
     return erisim;
   }
 
+  /**
+   * PLT-05: kısıtlı (askıdaki / iptal dönemi bitmiş) firmada veri yazan ya da
+   * maliyet doğuran zamanlanmış işler durur; bildirim ve mevzuat hatırlatması
+   * sürer. Erişim okunamazsa iş durdurulmaz (geçici DB hatası otomasyonu
+   * kesmesin). Firma açılınca işler bir sonraki turda kaldıkları yerden sürer.
+   */
+  async otomasyonDurdu(tenantId: string): Promise<boolean> {
+    try {
+      return (await this.getir(tenantId)).kisitli;
+    } catch {
+      return false;
+    }
+  }
+
   unut(tenantId: string): void {
     this.onbellek.delete(tenantId);
   }
