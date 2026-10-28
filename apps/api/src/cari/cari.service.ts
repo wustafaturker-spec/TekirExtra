@@ -1215,6 +1215,25 @@ export class CariService {
         yuruyenBakiye: bakiye.toFixed(2),
       };
     });
+    // KSB-25: mahsup bakiyeyi değiştirmez; ekstrede tutarı sıfır bilgi satırı olarak tarih sırasına girer.
+    const mahsuplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariMahsup.findMany({
+      where: { cariId, geriAlindiAt: null, tarih: { ...(baslangicTarihi ? { gte: baslangicTarihi } : {}), ...(bitisTarihi ? { lte: bitisTarihi } : {}) } },
+      orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
+      include: { kapamalar: { select: { tutar: true, fatura: { select: { no: true, dovizCinsi: true } } } } },
+    }));
+    for (const m of mahsuplar) {
+      const gun = m.tarih.toISOString().slice(0, 10);
+      let yer = satirlar.findIndex((r) => r.tarih > gun);
+      if (yer < 0) yer = satirlar.length;
+      const onceki = yer > 0 ? satirlar[yer - 1].yuruyenBakiye : devirBakiyesi.toFixed(2);
+      satirlar.splice(yer, 0, {
+        id: m.id, tarih: gun, vadeTarihi: null, tip: "alacak", hareketTuru: m.otomatik ? "Otomatik alış–satış mahsubu (bilgi)" : "Alış–satış mahsubu (bilgi)",
+        belgeNo: null, odemeSekli: null,
+        aciklama: `${m.tutar.toFixed(2)} ${m.dovizCinsi} mahsup: ${m.kapamalar.map((k) => `${k.fatura.no ?? "fatura"} ${k.tutar.toFixed(2)} ${k.fatura.dovizCinsi}`).join(", ")}`,
+        kaynakTur: "cari_mahsup", iptal: false, makbuzYolu: null, odemeYontemi: null,
+        dovizCinsi: m.dovizCinsi as (typeof satirlar)[number]["dovizCinsi"], tutar: "0.00", kur: "1.0000", tutarTry: "0.00", yuruyenBakiye: onceki,
+      });
+    }
     // TL önce, dövizler alfabetik.
     const dovizOzet = [...dovizOzetleri.entries()].sort(([a], [b]) => (a === "TRY" ? -1 : b === "TRY" ? 1 : a.localeCompare(b))).map(([dovizCinsi, ozet]) => ({
       dovizCinsi,

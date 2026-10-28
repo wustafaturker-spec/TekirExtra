@@ -37,7 +37,7 @@ export const YETKI_MODULLERI: readonly YetkiModulu[] = [
   { kod: "satis", ad: "Satış (teklif/sipariş/CRM)", api: ["belgeler", "crm", "is-kutusu", "ai/teklif-talepleri", "fiyat-listeleri", "b2b", "pazaryeri", "eposta/gelen"], panel: ["/panel/satis", "/panel/belgeler", "/panel/crm", "/panel/is-kutusu", "/panel/pazaryeri", "/panel/eposta", "/panel/stok/fiyat-listeleri"] },
   { kod: "fatura", ad: "Fatura", api: ["fatura", "kur-farki"], panel: ["/panel/fatura", "/panel/kasa-banka/kur-farki"] },
   { kod: "ebelge", ad: "e-Belge", api: ["ebelge"], panel: ["/panel/ebelge"] },
-  { kod: "cari", ad: "Cari", api: ["cari", "mutabakat"], panel: ["/panel/cari"] },
+  { kod: "cari", ad: "Cari", api: ["cari", "cari-mahsuplari", "mutabakat"], panel: ["/panel/cari"] },
   { kod: "kasa_banka", ad: "Kasa-Banka (kredi, kart, çek-senet, ödeme talimatı)", api: ["kasa-banka", "pos"], panel: ["/panel/kasa-banka"] },
   { kod: "masraf_gelir", ad: "Masraf ve Gelir", api: ["masraflar", "gelirler"], panel: ["/panel/masraflar", "/panel/gelirler"] },
   { kod: "satin_alma", ad: "Satın Alma", api: ["satin-alma"], panel: ["/panel/satin-alma"] },

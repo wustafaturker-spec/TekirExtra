@@ -11,6 +11,7 @@ import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
 import { ElleHareketFormu } from "./elle-hareket";
 import { BabsMutabakatPaneli } from "./babs-mutabakat";
+import { MahsupPaneli } from "./mahsup-paneli";
 import { MutabakatPaneli } from "./mutabakat-paneli";
 import { TeminatlarPaneli } from "./teminatlar";
 import { DenklestirmePaneli } from "./denklestirme-paneli";
@@ -257,7 +258,9 @@ const ADRES_TIP_ETIKETI: Record<string, string> = {
   depo: "📦 Depo",
 };
 
-type Sekme = "genel" | "crm" | "tahsilat" | "ekstre" | "adresler" | "kisiler" | "bankalar";
+type Sekme = "genel" | "crm" | "tahsilat" | "mahsup" | "ekstre" | "adresler" | "kisiler" | "bankalar";
+/** KSB-25: mahsup sekmesi, API'deki görüntüleme rolleriyle aynı (cari finans ayrıntıları). */
+const MAHSUP_GOREN_ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir"];
 type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 
 /** CARI-36: bakiye süzgeci ve sıralama sunucuda, güncel kurla TL bakiyeye göre. */
@@ -1239,6 +1242,7 @@ export default function CariSayfasi() {
                 { deger: "ekstre", baslik: "Ekstre" },
                 { deger: "crm", baslik: "CRM" },
                 ...(finansalOzetGorebilir(rol) ? [{ deger: "tahsilat" as Sekme, baslik: "Tahsilat" }] : []),
+                ...(rol && MAHSUP_GOREN_ROLLER.includes(rol) ? [{ deger: "mahsup" as Sekme, baslik: "Alış–satış mahsubu" }] : []),
                 { deger: "adresler", baslik: "Adresler" },
                 { deger: "kisiler", baslik: "İlgili Kişiler" },
                 { deger: "bankalar", baslik: "Banka Hesapları" },
@@ -1481,6 +1485,12 @@ export default function CariSayfasi() {
               <OdemeSozleri key={detay.id} cariId={detay.id} rol={rol} />
               <TahsilatTakipleri key={`takip:${detay.id}`} cariId={detay.id} rol={rol} />
             </div>
+          )}
+
+          {aktifSekme === "mahsup" && rol && MAHSUP_GOREN_ROLLER.includes(rol) && (
+            <Card aria-labelledby="cari-detay-tab-mahsup" id="cari-detay-panel-mahsup" role="tabpanel" tabIndex={0}>
+              <MahsupPaneli key={detay.id} cariId={detay.id} rol={rol} onMesaj={babsMesaji} />
+            </Card>
           )}
 
           {aktifSekme === "ekstre" && (

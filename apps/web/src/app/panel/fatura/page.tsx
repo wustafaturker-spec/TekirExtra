@@ -234,7 +234,7 @@ interface FaturaDetay extends Fatura {
       id: string;
       tutar: string;
       otomatik: boolean;
-      kaynakTur: "kasa_banka" | "kredi_karti" | "cek_senet" | "iade_fatura" | "kapatilan_fatura" | "bilinmiyor";
+      kaynakTur: "kasa_banka" | "kredi_karti" | "cek_senet" | "iade_fatura" | "kapatilan_fatura" | "mahsup" | "bilinmiyor";
       kaynakId: string | null;
       tarih: string | null;
       etiket: string;
@@ -242,7 +242,7 @@ interface FaturaDetay extends Fatura {
   };
 }
 
-const KAPAMA_KAYNAGI: Record<string, string> = { kasa_banka: "Tahsilat/ödeme", kredi_karti: "Kredi kartı", cek_senet: "Çek/senet", iade_fatura: "İade faturası", kapatilan_fatura: "Kapattığı fatura", bilinmiyor: "Kapama" };
+const KAPAMA_KAYNAGI: Record<string, string> = { kasa_banka: "Tahsilat/ödeme", kredi_karti: "Kredi kartı", cek_senet: "Çek/senet", iade_fatura: "İade faturası", kapatilan_fatura: "Kapattığı fatura", mahsup: "Alış–satış mahsubu", bilinmiyor: "Kapama" };
 
 interface KesinlestirmeOzeti {
   fatura: FaturaDetay;

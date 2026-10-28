@@ -262,3 +262,25 @@ describe("demirbaş fişleri (DMR-02/08/09)", () => {
     expect(fisler[0].tarih).toBe("2026-12-31");
   });
 });
+
+describe("alış–satış mahsubu fişi (KSB-25)", () => {
+  const mahsup = { id: "mh", cariId: "m", tarih: "2026-09-20", dovizCinsi: "TRY", tutar: D(500), satisTry: D(500), alisTry: D(500), faturaNolari: ["SNC1", "ALS1"] };
+
+  it("TL mahsup: 320 borç / 120 alacak (cari alt hesabı iki tarafta), fiş dengeli", () => {
+    const { fisler } = fisleriUret(girdi({ cariMahsuplari: [mahsup] }));
+    expect(fisler).toHaveLength(1);
+    expect(fisler[0].tur).toBe("mahsup");
+    expect(ozet(fisler[0])).toEqual(["320.01.M001 B 500.00", "120.01.M001 A 500.00"]);
+    expect(dengeli(fisler[0])).toBe(true);
+  });
+
+  it("dövizli mahsupta tarafların kur farkı 646/656'ya gider", () => {
+    const usd = { ...mahsup, dovizCinsi: "USD", tutar: D(100), satisTry: D(3900), alisTry: D(4000) };
+    const { fisler } = fisleriUret(girdi({ cariMahsuplari: [usd] }));
+    expect(ozet(fisler[0])).toEqual(["320.01.M001 B 4000.00", "120.01.M001 A 3900.00", "646 A 100.00"]);
+    expect(dengeli(fisler[0])).toBe(true);
+    const ters = fisleriUret(girdi({ cariMahsuplari: [{ ...usd, satisTry: D(4100) }] })).fisler[0];
+    expect(ozet(ters)).toEqual(["320.01.M001 B 4000.00", "120.01.M001 A 4100.00", "656 B 100.00"]);
+    expect(dengeli(ters)).toBe(true);
+  });
+});

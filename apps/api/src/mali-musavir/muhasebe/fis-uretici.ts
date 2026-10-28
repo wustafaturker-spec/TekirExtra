@@ -26,7 +26,7 @@ export interface FisSatiri {
 }
 
 export interface Kaynak {
-  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas";
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas" | "cari_mahsup";
   id: string;
   etiket: string;
 }
@@ -132,6 +132,17 @@ export interface CariDuzeltmeGirdisi {
 }
 
 /**
+ * KSB-25: alış–satış mahsubu. Taraflar fatura kurlarıyla TL'ye çevrilir:
+ * satış tarafı (satış faturası, alış iadesi) 120'den, alış tarafı (alış
+ * faturası, satış iadesi) 320'den kapanır; dövizli mahsupta iki tarafın kur
+ * farkı 646/656'ya gider.
+ */
+export interface CariMahsupGirdisi {
+  id: string; cariId: string; tarih: string; dovizCinsi: string; tutar: Prisma.Decimal;
+  satisTry: Prisma.Decimal; alisTry: Prisma.Decimal; faturaNolari: string[];
+}
+
+/**
  * PRS-19 (P3-1): onaylı bordronun tahakkuk fişi; tarih dönem sonu (cari
  * tahakkukla aynı). Tutarlar bordroda saklanan kalem ve hesap özetinden okunur.
  */
@@ -168,6 +179,7 @@ export interface UreticiGirdisi {
   personelCarileri?: Map<string, string>;
   amortismanlar?: AmortismanGirdisi[];
   demirbasCikislari?: DemirbasCikisGirdisi[];
+  cariMahsuplari?: CariMahsupGirdisi[];
   baslangic: string;
   bitis: string;
 }
@@ -562,6 +574,18 @@ function cariDuzeltmeFisi(h: CariDuzeltmeGirdisi, c: HesapCozucu): Fis {
   return { tarih: h.tarih, tur: "mahsup", aciklama: `Cari düzeltme ${aciklama}`, belgeNo: null, kaynak, satirlar };
 }
 
+function cariMahsupFisi(m: CariMahsupGirdisi, c: HesapCozucu): Fis {
+  const cariAd = c.cariAdi(m.cariId);
+  const kaynak: Kaynak = { tur: "cari_mahsup", id: m.id, etiket: `Alış–satış mahsubu ${cariAd}`.trim() };
+  const aciklama = `${cariAd} · mahsup ${m.faturaNolari.join(", ")}`.slice(0, 200);
+  const doviz = m.dovizCinsi === "TRY" ? undefined : dovizBilgisi(m.dovizCinsi, m.tutar, m.tutar.gt(0) ? m.alisTry.div(m.tutar).toDecimalPlaces(4) : new Prisma.Decimal(1));
+  const satirlar = [borc(c.cari(m.cariId, "satici"), aciklama, m.alisTry, doviz), alacak(c.cari(m.cariId, "alici"), aciklama, m.satisTry, doviz)];
+  const fark = m.alisTry.sub(m.satisTry);
+  if (fark.gt(0)) satirlar.push(alacak(c.kod("kur_farki_gelir"), aciklama, fark));
+  if (fark.lt(0)) satirlar.push(borc(c.kod("kur_farki_gider"), aciklama, fark.neg()));
+  return { tarih: m.tarih, tur: "mahsup", aciklama: `Alış–satış mahsubu ${aciklama}`, belgeNo: null, kaynak, satirlar };
+}
+
 const SGK_KESINTILERI = new Set(["sgk_isci", "issizlik_isci"]);
 const VERGI_KESINTILERI = new Set(["gelir_vergisi", "damga_vergisi"]);
 const TAZMINATLAR = new Set(["kidem_tazminati", "ihbar_tazminati"]);
@@ -651,7 +675,8 @@ export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kon
   for (const b of g.bordrolar ?? []) ekle(bordroFisi(b, c, kontroller));
   for (const a of g.amortismanlar ?? []) ekle(amortismanFisi(a, c));
   for (const d of g.demirbasCikislari ?? []) ekle(demirbasCikisFisi(d, c));
-  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, bordro: 7, hareket: 8, demirbas: 9, amortisman: 10 };
+  for (const m of g.cariMahsuplari ?? []) ekle(cariMahsupFisi(m, c));
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, cari_mahsup: 7, bordro: 8, hareket: 9, demirbas: 10, amortisman: 11 };
   fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
   return { fisler, kontroller };
 }

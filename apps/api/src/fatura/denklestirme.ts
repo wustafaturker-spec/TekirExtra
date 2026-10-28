@@ -6,6 +6,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { denklestir, type AcikFatura, type FaturaTipi, type OdemeKaynagi, type YeniKapama } from "./denklestirme-hesap";
+import { otomatikMahsupUygula } from "./mahsup";
 
 type Tx = Prisma.TransactionClient;
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -29,7 +30,7 @@ const ekle = (m: Map<string, Prisma.Decimal>, k: string, v: Prisma.Decimal) => m
 
 export async function cariDenklestir(tx: Tx, tenantId: string, cariId: string, secenek: DenklestirmeSecenegi = {}): Promise<DenklestirmeSonucu> {
   await tx.$queryRaw`SELECT id FROM cari_hesaplar WHERE id = ${cariId}::uuid FOR UPDATE`;
-  const cari = await tx.cariHesap.findUnique({ where: { id: cariId }, select: { denklestirmeBaslangic: true } });
+  const cari = await tx.cariHesap.findUnique({ where: { id: cariId }, select: { denklestirmeBaslangic: true, otomatikMahsup: true } });
   if (!cari) return { kapamalar: [] };
   const baslangic = secenek.tumu ? null : cari.denklestirmeBaslangic;
   const uygun = (createdAt: Date) => !baslangic || createdAt >= baslangic;
@@ -125,6 +126,8 @@ export async function cariDenklestir(tx: Tx, tenantId: string, cariId: string, s
     });
   }
   if (secenek.tumu && cari.denklestirmeBaslangic) await tx.cariHesap.update({ where: { id: cariId }, data: { denklestirmeBaslangic: null } });
+  // KSB-25: ödemelerden sonra kalan açık alış ve satış faturaları birbirine karşı kapanır.
+  if (cari.otomatikMahsup) await otomatikMahsupUygula(tx, tenantId, cariId);
   return { kapamalar: sonuc };
 }
 
@@ -166,11 +169,13 @@ export function kapamaKaynagi(k: {
   krediKartiHareket: { id: string; tarih: Date; aciklama: string } | null;
   cekSenet: { id: string; tur: string; portfoyNo: string; islemTarihi: Date } | null;
   iadeFatura: { id: string; no: string | null; tarih: Date } | null;
+  mahsup?: { id: string; tarih: Date; otomatik: boolean } | null;
 }) {
   const gun = (d: Date) => d.toISOString().slice(0, 10);
   if (k.kasaBankaHareket) return { kaynakTur: "kasa_banka" as const, kaynakId: k.kasaBankaHareket.id, tarih: gun(k.kasaBankaHareket.tarih), etiket: k.kasaBankaHareket.makbuzNo ?? k.kasaBankaHareket.aciklama ?? (k.kasaBankaHareket.tip === "tahsilat" ? "Tahsilat" : "Tediye") };
   if (k.krediKartiHareket) return { kaynakTur: "kredi_karti" as const, kaynakId: k.krediKartiHareket.id, tarih: gun(k.krediKartiHareket.tarih), etiket: k.krediKartiHareket.aciklama };
   if (k.cekSenet) return { kaynakTur: "cek_senet" as const, kaynakId: k.cekSenet.id, tarih: gun(k.cekSenet.islemTarihi), etiket: `${k.cekSenet.tur === "cek" ? "Çek" : "Senet"} ${k.cekSenet.portfoyNo}` };
+  if (k.mahsup) return { kaynakTur: "mahsup" as const, kaynakId: k.mahsup.id, tarih: gun(k.mahsup.tarih), etiket: k.mahsup.otomatik ? "Otomatik alış–satış mahsubu" : "Alış–satış mahsubu" };
   if (k.iadeFatura) return { kaynakTur: "iade_fatura" as const, kaynakId: k.iadeFatura.id, tarih: gun(k.iadeFatura.tarih), etiket: k.iadeFatura.no ?? "İade faturası" };
   return { kaynakTur: "bilinmiyor" as const, kaynakId: null, tarih: null, etiket: "—" };
 }

@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { denklestir, type AcikFatura, type OdemeKaynagi } from "./denklestirme-hesap";
+import { denklestir, mahsupEsle, type AcikFatura, type OdemeKaynagi } from "./denklestirme-hesap";
 
 const D = (n: number) => new Prisma.Decimal(n);
 const t = (g: string) => new Date(`2026-${g}T00:00:00Z`);
@@ -66,5 +66,25 @@ describe("vadeye göre denkleştirme (KSB-16)", () => {
     const r = denklestir([f("F1", "satis", 50, "01-01"), f("A1", "alis", 50, "01-01")], [o("T1", "A", 100, "01-02"), o("O1", "B", 200, "01-03")]);
     // Geri ödenen 150 tahsilatın tamamını götürür; satış açık kalır, alış kapanır.
     expect(ozet(r)).toEqual(["O1→A1:50"]);
+  });
+});
+
+describe("alış–satış mahsubu eşleştirme (KSB-25)", () => {
+  const f = (id: string, tip: "satis" | "alis" | "satis_iade" | "alis_iade", vade: string, kalan: string) =>
+    ({ id, no: id, tip, tarih: new Date(vade), vadeTarihi: new Date(vade), createdAt: new Date(vade), kalan: new Prisma.Decimal(kalan) });
+
+  it("tutar iki tarafın açık toplamının küçüğüdür; her taraf vade sırasıyla kapanır", () => {
+    const r = mahsupEsle([f("s2", "satis", "2026-10-20", "300"), f("s1", "satis", "2026-10-01", "100"), f("a1", "alis", "2026-10-05", "250")]);
+    expect(r.tutar.toFixed(2)).toBe("250.00");
+    expect(r.satis.map((x) => [x.faturaId, x.tutar.toFixed(2)])).toEqual([["s1", "100.00"], ["s2", "150.00"]]);
+    expect(r.alis.map((x) => [x.faturaId, x.tutar.toFixed(2)])).toEqual([["a1", "250.00"]]);
+  });
+
+  it("alış iadesi satış tarafında, satış iadesi alış tarafında sayılır; tek taraf boşsa mahsup yok", () => {
+    const r = mahsupEsle([f("ai", "alis_iade", "2026-10-01", "40"), f("si", "satis_iade", "2026-10-02", "60")]);
+    expect(r.tutar.toFixed(2)).toBe("40.00");
+    expect(r.satis[0].faturaId).toBe("ai");
+    expect(r.alis[0].faturaId).toBe("si");
+    expect(mahsupEsle([f("s1", "satis", "2026-10-01", "100")]).tutar.toFixed(2)).toBe("0.00");
   });
 });

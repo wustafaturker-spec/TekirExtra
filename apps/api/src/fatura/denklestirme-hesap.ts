@@ -104,3 +104,33 @@ function kirp(kaynaklar: OdemeKaynagi[], miktar: Prisma.Decimal): OdemeKaynagi[]
     return { ...k, tutar: k.tutar.sub(dus) };
   });
 }
+
+/** KSB-25: mahsupta satış tarafı (tahsilatla kapanan) ve alış tarafı (ödemeyle kapanan). */
+export const MAHSUP_SATIS_TARAFI: readonly FaturaTipi[] = ["satis", "alis_iade"];
+export const MAHSUP_ALIS_TARAFI: readonly FaturaTipi[] = ["alis", "satis_iade"];
+
+export interface MahsupSatiri { faturaId: string; tutar: Prisma.Decimal }
+
+/**
+ * KSB-25: iki taraftaki açık faturaları vade sırasıyla birbirine karşı
+ * kapatır (aynı döviz). Mahsup tutarı iki tarafın açık toplamının küçüğüdür;
+ * her taraf kendi içinde en erken vadeden başlayarak kapanır.
+ */
+export function mahsupEsle(faturalar: AcikFatura[]): { tutar: Prisma.Decimal; satis: MahsupSatiri[]; alis: MahsupSatiri[] } {
+  const acik = faturalar.filter((f) => f.kalan.gt(0)).sort(faturaSirasi);
+  const satis = acik.filter((f) => MAHSUP_SATIS_TARAFI.includes(f.tip));
+  const alis = acik.filter((f) => MAHSUP_ALIS_TARAFI.includes(f.tip));
+  const tutar = Prisma.Decimal.min(toplam(satis.map((f) => f.kalan)), toplam(alis.map((f) => f.kalan)));
+  const doldur = (liste: AcikFatura[]) => {
+    let kalan = tutar;
+    const satirlar: MahsupSatiri[] = [];
+    for (const f of liste) {
+      if (!kalan.gt(0)) break;
+      const t = Prisma.Decimal.min(kalan, f.kalan);
+      satirlar.push({ faturaId: f.id, tutar: t });
+      kalan = kalan.sub(t);
+    }
+    return satirlar;
+  };
+  return { tutar, satis: doldur(satis), alis: doldur(alis) };
+}

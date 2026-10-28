@@ -4,7 +4,7 @@ import type {
   AmortismanGirdisi,
   BordroGirdisi,
   CariBilgi,
-  CariDuzeltmeGirdisi,
+  CariDuzeltmeGirdisi, CariMahsupGirdisi,
   CekGirdisi,
   DemirbasCikisGirdisi,
   DovizIslemGirdisi,
@@ -61,6 +61,11 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   ]);
   // CARI-28: elle cari düzeltmesi fişlenir; açılış bakiyesi (acilis) fişlenmez.
   const cariDuzeltmeleri = await tx.cariHareket.findMany({ where: { tarih: aralik, kaynakTur: "manuel" }, orderBy: { tarih: "asc" } });
+  // KSB-25: geri alınmamış alış–satış mahsupları; taraflar fatura kurlarıyla TL'ye çevrilir.
+  const mahsuplar = await tx.cariMahsup.findMany({
+    where: { tarih: aralik, geriAlindiAt: null }, orderBy: { tarih: "asc" },
+    include: { kapamalar: { select: { tutar: true, fatura: { select: { no: true, tip: true, kur: true, dovizCinsi: true } } } } },
+  });
   // PRS-19: onaylı bordrolar (tahakkuk tarihi dönem sonu) ve personel carileri.
   const personeller = await tx.personel.findMany({ select: { personelNo: true, cariId: true } });
   const donemler: Array<{ donemYil: number; donemAy: number }> = [];
@@ -241,6 +246,14 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     kartHareketleri: kartHareketleri.map(kartGirdisi),
     ekKartHareketleri: new Map(tumKartHam.map((k) => [k.id, kartGirdisi(k)])),
     dovizIslemleri: dovizGirdileri,
+    cariMahsuplari: mahsuplar.map((m): CariMahsupGirdisi => {
+      const tl = (tipler: string[]) => m.kapamalar.filter((k) => tipler.includes(k.fatura.tip))
+        .reduce((t, k) => t.add(k.tutar.mul(k.fatura.dovizCinsi === "TRY" ? 1 : k.fatura.kur).toDecimalPlaces(2)), new Prisma.Decimal(0));
+      return {
+        id: m.id, cariId: m.cariId, tarih: gun(m.tarih), dovizCinsi: m.dovizCinsi, tutar: m.tutar,
+        satisTry: tl(["satis", "alis_iade"]), alisTry: tl(["alis", "satis_iade"]), faturaNolari: m.kapamalar.map((k) => k.fatura.no ?? "—"),
+      };
+    }),
     cariDuzeltmeleri: cariDuzeltmeleri.map((h): CariDuzeltmeGirdisi => ({
       id: h.id, cariId: h.cariId, tip: h.tip, tarih: gun(h.tarih), tutar: h.tutar, dovizCinsi: h.dovizCinsi, kur: h.kur, tutarTry: h.tutarTry,
       aciklama: h.aciklama, karsiHesapKodu: h.karsiHesapKodu,

@@ -219,7 +219,7 @@ describe("FaturaService.taslagaGeriAl (FTR-29)", () => {
     await expect(kur({ id: "eb1", tur: "efatura", durum: "hata", entegratorRef: "u" }).service.taslagaGeriAl("f1")).rejects.toThrow("reddedilmiş");
     const { service, tx } = kur(null);
     tx.kasaBankaHareket.count.mockResolvedValue(1);
-    await expect(service.taslagaGeriAl("f1")).rejects.toThrow("Tahsilat veya ödeme");
+    await expect(service.taslagaGeriAl("f1")).rejects.toThrow("Tahsilat, ödeme ya da mahsup");
   });
 });
 

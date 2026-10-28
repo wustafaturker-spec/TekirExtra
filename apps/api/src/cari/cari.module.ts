@@ -1,5 +1,6 @@
 import "./cari.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
+import { CariMahsupController } from "./cari-mahsup.controller";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { CariController } from "./cari.controller";
 import { VadeHatirlatmaController } from "./vade-hatirlatma.controller";
@@ -30,7 +31,7 @@ import { GecikenSozZamanlayiciService } from "./geciken-soz-zamanlayici.service"
 @Module({
   imports: [TenantModule, EklerModule, BildirimlerModule],
   // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/...", "cari/mutabakatlar/...", "cari/mukerrer/..." `:id` kalıplarına düşmesin.
-  controllers: [TahsilatTakibiController, OdemeSozuController, VadeHatirlatmaController, CariTopluController, CariBirlestirmeController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariController],
+  controllers: [TahsilatTakibiController, OdemeSozuController, VadeHatirlatmaController, CariTopluController, CariBirlestirmeController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariMahsupController, CariController],
   providers: [GecikenSozZamanlayiciService, TahsilatTakibiService, OdemeSozuService, TahsilatRiskiService, CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariBirlestirmeService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
   exports: [CariService],
 })

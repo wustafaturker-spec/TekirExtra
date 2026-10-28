@@ -508,6 +508,7 @@ export class FaturaService {
               krediKartiHareket: { select: { id: true, tarih: true, aciklama: true } },
               cekSenet: { select: { id: true, tur: true, portfoyNo: true, islemTarihi: true } },
               iadeFatura: { select: { id: true, no: true, tarih: true } },
+              mahsup: { select: { id: true, tarih: true, otomatik: true } },
             },
           },
           iadeKapamalari: { include: { fatura: { select: { id: true, no: true, tarih: true } } } },
@@ -1114,7 +1115,7 @@ export class FaturaService {
         tx.faturaKapama.count({ where: { faturaId: id, otomatik: false } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
-        throw new BadRequestException("Tahsilat veya ödeme bağlı fatura doğrudan iptal edilemez; önce finans hareketini geri alın veya iade faturası düzenleyin");
+        throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura doğrudan iptal edilemez; önce finans hareketini ya da mahsubu geri alın veya iade faturası düzenleyin");
       }
 
       // Entegratördeki iptal bu işlemin içinde yapılır: başarısız olursa
@@ -1216,7 +1217,7 @@ export class FaturaService {
         tx.faturaKapama.count({ where: { faturaId: id, otomatik: false } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
-        throw new BadRequestException("Tahsilat veya ödeme bağlı fatura taslağa geri alınamaz; önce finans hareketini geri alın");
+        throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura taslağa geri alınamaz; önce finans hareketini ya da mahsubu geri alın");
       }
 
       if (fatura.ebelge) {

@@ -167,6 +167,7 @@ model Tenant {
   abonelikOdemeleri         AbonelikOdemesi[]
   destekIzinleri            DestekIzni[]
   ozelRoller                OzelRol[]
+  cariMahsuplari            CariMahsup[]
   destekOturumlari          DestekOturumu[]
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
@@ -422,6 +423,8 @@ model User {
   tahsilatSorumluluklari TahsilatTakibi[]
   verdigiDestekIzinleri    DestekIzni[]    @relation("DestekIzniVeren")
   geriAldigiDestekIzinleri DestekIzni[]    @relation("DestekIzniGeriAlan")
+  olusturduguMahsuplar     CariMahsup[]    @relation("MahsupOlusturan")
+  geriAldigiMahsuplar      CariMahsup[]    @relation("MahsupGeriAlan")
   id                     String           @id @default(uuid()) @db.Uuid
   tenantId               String           @map("tenant_id") @db.Uuid
   eposta                 String
@@ -1134,6 +1137,8 @@ model FaturaKapama {
   /// KSB-22: elle bağlamanın kur farkı (fişe bağlı tek faturalı ödemede kasa hareketindeki alanlar kullanılır).
   kurFarkiFaturaId    String?  @map("kur_farki_fatura_id") @db.Uuid
   kurFarkiKapandi     Boolean  @default(false) @map("kur_farki_kapandi")
+  /// KSB-25: alış–satış mahsubu kapaması (iki taraftaki faturaya ayrı satır).
+  mahsupId            String?  @map("mahsup_id") @db.Uuid
   createdAt           DateTime @default(now()) @map("created_at")
 
   cari              CariHesap          @relation(fields: [cariId], references: [id], onDelete: Cascade)
@@ -1142,6 +1147,7 @@ model FaturaKapama {
   krediKartiHareket KrediKartiHareket? @relation(fields: [krediKartiHareketId], references: [id], onDelete: Cascade)
   cekSenet          CekSenet?          @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)
   iadeFatura        Fatura?            @relation("IadeKaynagi", fields: [iadeFaturaId], references: [id], onDelete: Cascade)
+  mahsup            CariMahsup?        @relation(fields: [mahsupId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, faturaId])
   @@index([tenantId, cariId])
@@ -1149,7 +1155,33 @@ model FaturaKapama {
   @@index([krediKartiHareketId])
   @@index([cekSenetId])
   @@index([iadeFaturaId])
+  @@index([mahsupId])
   @@map("fatura_kapamalari")
+}
+
+/// KSB-25: aynı carinin alış ve satış faturalarının birbirine karşı mahsubu. Geri alınan kayıt iz için kalır.
+model CariMahsup {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  cariId          String    @map("cari_id") @db.Uuid
+  tarih           DateTime  @db.Date
+  dovizCinsi      String    @map("doviz_cinsi") @db.VarChar(3)
+  tutar           Decimal   @db.Decimal(15, 2)
+  aciklama        String?   @db.VarChar(500)
+  otomatik        Boolean   @default(false)
+  olusturanUserId String?   @map("olusturan_user_id") @db.Uuid
+  geriAlindiAt    DateTime? @map("geri_alindi_at")
+  geriAlanUserId  String?   @map("geri_alan_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cari      CariHesap      @relation(fields: [cariId], references: [id], onDelete: Cascade)
+  olusturan User?          @relation("MahsupOlusturan", fields: [olusturanUserId], references: [id], onDelete: SetNull)
+  geriAlan  User?          @relation("MahsupGeriAlan", fields: [geriAlanUserId], references: [id], onDelete: SetNull)
+  kapamalar FaturaKapama[]
+
+  @@index([tenantId, cariId, tarih])
+  @@map("cari_mahsuplari")
 }
 
 model RaporTercihi {
@@ -1523,6 +1555,9 @@ model CariHesap {
   /// KSB-16: bu tarihten önce girilmiş ödeme/iadeler otomatik dağıtılmaz (göç öncesi veri);
   /// "vadeye göre yeniden denkleştir" boşaltır. Yeni carilerde boş (hepsi).
   denklestirmeBaslangic DateTime?      @map("denklestirme_baslangic")
+  /// KSB-25: denkleştirmeden sonra kalan açık alış ve satış faturalarını birbirine karşı mahsup et.
+  otomatikMahsup        Boolean        @default(false) @map("otomatik_mahsup")
+  mahsuplar             CariMahsup[]
   /// CARI-60: başka karta birleştirildiyse ana kart; kart pasiftir, listede ve önerilerde çıkmaz.
   birlestigiCariId      String?        @map("birlestigi_cari_id") @db.Uuid
   kapamalar             FaturaKapama[]
