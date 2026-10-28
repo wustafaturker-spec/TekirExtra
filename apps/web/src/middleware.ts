@@ -8,12 +8,13 @@ import { OTURUM_ISARETI_COOKIE, PLATFORM_OTURUM_ISARETI_COOKIE, oturumIsaretiGec
  * `OTURUM_ISARETI_SECRET` tanımlı değilse üretimde panel kapalıdır (kapalı
  * varsayılır), geliştirmede uyarıyla açılır.
  *
- * PLT-08: `/platform/*` (giriş sayfası hariç) aynı yöntemle, platform
+ * PLT-08: `/platform/*` (giriş ve davet sayfaları hariç) aynı yöntemle, platform
  * girişinin koyduğu ayrı işaretle korunur; yönlendirme platform girişinedir.
  */
 export async function middleware(istek: NextRequest) {
   const platform = istek.nextUrl.pathname === "/platform" || istek.nextUrl.pathname.startsWith("/platform/");
-  if (platform && istek.nextUrl.pathname === "/platform/giris") return NextResponse.next();
+  // PLT-07: davet sayfası oturumsuz açılır (bağlantıdaki tek kullanımlık anahtarla).
+  if (platform && (istek.nextUrl.pathname === "/platform/giris" || istek.nextUrl.pathname === "/platform/davet")) return NextResponse.next();
   const sir = process.env.OTURUM_ISARETI_SECRET?.trim();
   if (!sir || sir.length < 32) {
     if (process.env.NODE_ENV !== "production") {

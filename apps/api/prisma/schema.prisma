@@ -6087,18 +6087,22 @@ enum PlatformRol {
 
 /// MVZ-04: platform ekibi kullanıcısı; kiracı kullanıcılarından ayrıdır, hiçbir kiracı verisine erişmez.
 model PlatformKullanici {
-  id                String      @id @default(uuid()) @db.Uuid
-  eposta            String      @unique
-  adSoyad           String      @map("ad_soyad")
-  parolaHash        String      @map("parola_hash")
+  id                 String      @id @default(uuid()) @db.Uuid
+  eposta             String      @unique
+  adSoyad            String      @map("ad_soyad")
+  parolaHash         String      @map("parola_hash")
   /// İki adımlı doğrulama zorunludur; gizli anahtar şifreli saklanır.
-  totpSecretSifreli String      @map("totp_secret_sifreli")
+  totpSecretSifreli  String      @map("totp_secret_sifreli")
   /// PLT-06: yönetici her şeyi yapar; mevzuat editörü yalnız Mevzuat Merkezi'nde çalışır.
-  rol               PlatformRol @default(yonetici)
-  aktif             Boolean     @default(true)
-  sonGiris          DateTime?   @map("son_giris")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
+  rol                PlatformRol @default(yonetici)
+  aktif              Boolean     @default(true)
+  sonGiris           DateTime?   @map("son_giris")
+  /// PLT-07: bekleyen kurulum — "hesap" (parola + 2FA) ya da "iki_adim" (yalnız 2FA). Doluyken giriş yapılamaz.
+  davetTuru          String?     @map("davet_turu")
+  davetAnahtarOzeti  String?     @unique @map("davet_anahtar_ozeti")
+  davetSonGecerlilik DateTime?   @map("davet_son_gecerlilik")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
 
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari PlatformAiTavani[]

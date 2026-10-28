@@ -1,5 +1,7 @@
 /**
  * MVZ-04: platform ekibi kullanıcısı açar (Mevzuat Merkezi paneli).
+ * PLT-07: yalnız ilk kurulum içindir; sonraki kullanıcılar platform panelindeki
+ * Kullanıcılar ekranından davetle açılır.
  *
  *   node --env-file=.env dist/platform-kullanici-olustur.js <eposta> "<Ad Soyad>" [yonetici|mevzuat_editoru]
  *

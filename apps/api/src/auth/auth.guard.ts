@@ -56,7 +56,7 @@ export class AuthGuard implements CanActivate {
     @Optional() private readonly platformDb?: PlatformPrismaService,
   ) {}
 
-  /** Platform P1-2 / PLT-06: pasife alınan ya da rolü değişen platform kullanıcısı en geç 10 sn içinde etkilenir. */
+  /** Platform P1-2 / PLT-06 / PLT-07: pasife alınan, rolü değişen ya da 2FA'sı sıfırlanan platform kullanıcısı en geç 10 sn içinde etkilenir. */
   private readonly platformDurum = new Map<string, { aktif: boolean; rol: PlatformRolu; bitis: number }>();
 
   private async platformKullaniciDurumu(id: string, tokenRolu: PlatformRolu | undefined): Promise<{ aktif: boolean; rol: PlatformRolu }> {
@@ -64,8 +64,9 @@ export class AuthGuard implements CanActivate {
     const simdi = Date.now();
     const k = this.platformDurum.get(id);
     if (k && k.bitis > simdi) return k;
-    const kayit = await this.platformDb.db.platformKullanici.findUnique({ where: { id }, select: { aktif: true, rol: true } });
-    const durum = { aktif: Boolean(kayit?.aktif), rol: (kayit?.rol ?? "mevzuat_editoru") as PlatformRolu };
+    const kayit = await this.platformDb.db.platformKullanici.findUnique({ where: { id }, select: { aktif: true, rol: true, davetTuru: true } });
+    // PLT-07: 2FA'sı sıfırlanıp yeniden kurulumu bekleyen hesabın eldeki token'ı da düşer.
+    const durum = { aktif: Boolean(kayit?.aktif) && !kayit?.davetTuru, rol: (kayit?.rol ?? "mevzuat_editoru") as PlatformRolu };
     if (this.platformDurum.size > 1_000) this.platformDurum.clear();
     this.platformDurum.set(id, { ...durum, bitis: simdi + 10_000 });
     return durum;

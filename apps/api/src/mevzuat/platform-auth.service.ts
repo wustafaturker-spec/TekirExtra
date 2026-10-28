@@ -9,7 +9,8 @@ import { PlatformPrismaService } from "./platform-prisma.service";
 
 /**
  * MVZ-04: platform ekibi girişi. Parola + iki adımlı doğrulama kodu birlikte
- * zorunludur; kullanıcılar `platform-kullanici-olustur` betiğiyle açılır.
+ * zorunludur; ilk kullanıcı `platform-kullanici-olustur` betiğiyle, sonrakiler
+ * Platform kullanıcıları ekranından davetle açılır (PLT-07).
  * Oturum kısa ömürlüdür (30 dk), yenileme yoktur.
  */
 @Injectable()
@@ -35,6 +36,8 @@ export class PlatformAuthService {
       return new UnauthorizedException("E-posta, parola ya da doğrulama kodu hatalı");
     };
     if (!kullanici || !kullanici.aktif) throw await hatali(kullanici ? "pasif" : "hesap_yok");
+    // PLT-07: davet ya da 2FA sıfırlaması bekleyen hesap bağlantıyla kurulmadan giremez.
+    if (kullanici.davetTuru) throw await hatali("kurulum_bekliyor");
     if (!(await argon2.verify(kullanici.parolaHash, parola))) throw await hatali("parola");
     if (!verifySync({ secret: coz(kullanici.totpSecretSifreli), token: totpKodu }).valid) throw await hatali("dogrulama_kodu");
     await this.denemeler.temizle(sayacAnahtari, ["platform"]);

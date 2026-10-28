@@ -1,7 +1,8 @@
 import { Global, Module } from "@nestjs/common";
 import { MevzuatController } from "./mevzuat.controller";
 import { MevzuatService } from "./mevzuat.service";
-import { PlatformAiController, PlatformAuthController, PlatformFirmaController, PlatformMevzuatController } from "./platform.controller";
+import { PlatformAiController, PlatformAuthController, PlatformFirmaController, PlatformKullanicilarController, PlatformMevzuatController } from "./platform.controller";
+import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
 import { PlatformFirmaService } from "./platform-firma.service";
 import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
@@ -18,8 +19,8 @@ import { TahsilatHatirlatmaService } from "./tahsilat-hatirlatma.service";
  */
 @Global()
 @Module({
-  controllers: [MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController],
-  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, GirisDenemeSayaci],
+  controllers: [MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
+  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci],
   exports: [MevzuatService, PlatformPrismaService],
 })
 export class MevzuatModule {}

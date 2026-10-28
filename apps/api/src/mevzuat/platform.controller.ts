@@ -10,6 +10,7 @@ import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
 import { ODEME_SURELERI, PlatformFirmaService } from "./platform-firma.service";
+import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
 
 const tarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalıdır");
 const degisiklikSemasi = z.object({
@@ -35,10 +36,32 @@ function ayristir<T>(sema: z.ZodType<T>, govde: unknown): T {
   return sonuc.data;
 }
 
+const davetAnahtariSemasi = z.object({ anahtar: z.string().min(20).max(200) });
+const davetTamamlaSemasi = davetAnahtariSemasi.extend({ parola: z.string().min(1).max(200), kod: z.string().regex(/^\d{6}$/, "Doğrulama kodu 6 hane olmalıdır") });
+
 /** MVZ-04: platform ekibi girişi; kiracı oturumundan ayrıdır. */
 @Controller("platform/auth")
 export class PlatformAuthController {
-  constructor(private readonly auth: PlatformAuthService) {}
+  constructor(
+    private readonly auth: PlatformAuthService,
+    private readonly kullanicilar: PlatformKullanicilarService,
+  ) {}
+
+  /** PLT-07: davet / 2FA yeniden kurulum bağlantısı; anahtar URL yerine gövdede gelir (erişim kaydına düşmez). */
+  @Public()
+  @Post("davet/bilgi")
+  @HttpCode(200)
+  davetBilgisi(@Body() govde: unknown) {
+    return this.kullanicilar.davetBilgisi(ayristir(davetAnahtariSemasi, govde).anahtar);
+  }
+
+  @Public()
+  @Post("davet/tamamla")
+  @HttpCode(200)
+  async davetTamamla(@Body() govde: unknown) {
+    const g = ayristir(davetTamamlaSemasi, govde);
+    return this.kullanicilar.davetTamamla(g.anahtar, { parola: g.parola, kod: g.kod });
+  }
 
   @Public()
   @Post("giris")
@@ -254,5 +277,46 @@ export class PlatformFirmaController {
   karar(@Param("talepId", ParseUUIDPipe) talepId: string, @Body() govde: unknown) {
     const g = ayristir(kararSemasi, govde);
     return this.firmalar.talepKarar(talepId, g.onay, g.not ?? null);
+  }
+}
+
+const platformKullaniciSemasi = z.object({
+  eposta: z.email("Geçerli bir e-posta girin"),
+  adSoyad: z.string().trim().min(2, "Ad soyad en az 2 karakter").max(120),
+  rol: z.enum(["yonetici", "mevzuat_editoru"]),
+});
+const platformKullaniciGuncelleSemasi = z.object({ rol: z.enum(["yonetici", "mevzuat_editoru"]).optional(), aktif: z.boolean().optional() });
+
+/** PLT-07: platform kullanıcıları — yalnız platform yöneticisi. */
+@PlatformUcu()
+@Controller("platform/kullanicilar")
+export class PlatformKullanicilarController {
+  constructor(private readonly kullanicilar: PlatformKullanicilarService) {}
+
+  @Get()
+  listele() {
+    return this.kullanicilar.listele();
+  }
+
+  @Post()
+  olustur(@Body() govde: unknown) {
+    return this.kullanicilar.olustur(ayristir(platformKullaniciSemasi, govde));
+  }
+
+  @Patch(":id")
+  guncelle(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    return this.kullanicilar.guncelle(id, ayristir(platformKullaniciGuncelleSemasi, govde));
+  }
+
+  @Post(":id/davet")
+  @HttpCode(200)
+  davetYenile(@Param("id", ParseUUIDPipe) id: string) {
+    return this.kullanicilar.davetYenile(id);
+  }
+
+  @Post(":id/iki-adim-sifirla")
+  @HttpCode(200)
+  ikiAdimSifirla(@Param("id", ParseUUIDPipe) id: string) {
+    return this.kullanicilar.ikiAdimSifirla(id);
   }
 }

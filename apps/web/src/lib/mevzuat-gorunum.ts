@@ -8,5 +8,10 @@ export const OLAY_ADI: Record<string, string> = {
   onaya_gonderildi: "Onaya gönderdi", taslaga_cekildi: "Taslağa çekti", geri_cevrildi: "Geri çevirdi", yayinlandi: "Yayınladı",
   silindi: "Taslağı sildi", talep_guncellendi: "Talebi güncelledi", platform_kullanicisi_kuruldu: "Platform kullanıcısı kuruldu",
   kabul_senaryolari_guncellendi: "Kabul senaryolarını güncelledi", ilk_dolum: "İlk dolum", dayanak_notu: "Dayanak notu",
+  // PLT-07: platform kullanıcıları
+  platform_kullanicisi_acildi: "Platform kullanıcısı davet etti", platform_daveti_yenilendi: "Kurulum bağlantısını yeniden gönderdi",
+  platform_daveti_kabul_edildi: "Daveti kabul etti", platform_rolu_degisti: "Platform rolünü değiştirdi",
+  platform_kullanicisi_pasife_alindi: "Platform kullanıcısını pasife aldı", platform_kullanicisi_aktif_edildi: "Platform kullanıcısını aktif etti",
+  platform_2fa_sifirlandi: "Platform kullanıcısının 2FA'sını sıfırladı", platform_2fa_yeniden_kuruldu: "2FA'yı yeniden kurdu", giris_basarisiz: "Başarısız giriş",
 };
 export const tarihTR = (gun: string | null) => (gun ? new Date(`${gun.slice(0, 10)}T12:00:00`).toLocaleDateString("tr-TR") : "—");

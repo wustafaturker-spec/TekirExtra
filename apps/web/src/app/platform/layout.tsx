@@ -16,6 +16,7 @@ const MENU = [
   { href: "/platform/talepler", baslik: "Talepler" },
   { href: "/platform/denetim", baslik: "Denetim izi" },
   { href: "/platform/yapay-zeka", baslik: "Yapay zekâ tavanı", yalnizYonetici: true },
+  { href: "/platform/kullanicilar", baslik: "Kullanıcılar", yalnizYonetici: true },
 ];
 
 const ROL_ADI: Record<PlatformRolu, string> = { yonetici: "Platform yöneticisi", mevzuat_editoru: "Mevzuat editörü" };
@@ -28,7 +29,8 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   const yol = usePathname();
   const yonlendir = useRouter();
   const [ben, setBen] = useState<{ eposta: string; rol: PlatformRolu } | null>(null);
-  const girisSayfasi = yol === "/platform/giris";
+  // PLT-07: davet sayfası da oturumsuz, panel çerçevesi olmadan açılır.
+  const girisSayfasi = yol === "/platform/giris" || yol === "/platform/davet";
 
   useEffect(() => {
     if (girisSayfasi) return;
