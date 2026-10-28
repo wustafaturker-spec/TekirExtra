@@ -11,9 +11,10 @@ import { JwtService } from "@nestjs/jwt";
 import type { Request } from "express";
 import type { Rol } from "@tekirextra/shared";
 import { baglamKur, platformBaglamKur } from "../core/istek-baglami";
-import { KullaniciDurumService } from "../core/kullanici-durum.service";
+import { KullaniciDurumService, type KullaniciDurumu } from "../core/kullanici-durum.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
-import { PLATFORM_ANAHTAR, PLATFORM_ROLLER_ANAHTAR, PUBLIC_ANAHTAR, type PlatformRolu } from "./public.decorator";
+import { IKI_ADIM_KURULUMU_GEREKLI } from "../core/guvenlik-politikasi";
+import { IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR, PLATFORM_ANAHTAR, PLATFORM_ROLLER_ANAHTAR, PUBLIC_ANAHTAR, type PlatformRolu } from "./public.decorator";
 
 export interface JwtYuku {
   sub: string; // userId
@@ -117,8 +118,17 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
     }
 
-    if (this.durum && !(await this.guncelMi(yuk))) {
-      throw new UnauthorizedException("Oturumunuz güncel değil; yeniden giriş yapın");
+    if (this.durum) {
+      const durum = await this.guncelDurum(yuk);
+      if (!durum) throw new UnauthorizedException("Oturumunuz güncel değil; yeniden giriş yapın");
+      // KLN-21: zorunlu 2FA kurulmadan yalnız Hesap Güvenliği uçları açıktır.
+      if (durum.ikiAdimEksik && !this.reflector.getAllAndOverride<boolean>(IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR, [context.getHandler(), context.getClass()])) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          kod: IKI_ADIM_KURULUMU_GEREKLI,
+          message: "Firmanız bu rol için iki adımlı doğrulamayı zorunlu tuttu; devam etmek için Hesap Güvenliği'nden kurun.",
+        });
+      }
     }
 
     baglamKur({
@@ -129,12 +139,14 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
-  /** Pasif, rolü değişmiş ya da parolası/2FA'sı sıfırlanmış kullanıcının token'ı geçmez. */
-  private async guncelMi(yuk: JwtYuku): Promise<boolean> {
-    const uyar = (d: { aktif: boolean; rol: string | null; oturumSurumu: number }) =>
+  /** Pasif, rolü değişmiş ya da parolası/2FA'sı sıfırlanmış kullanıcının token'ı geçmez (null). */
+  private async guncelDurum(yuk: JwtYuku): Promise<KullaniciDurumu | null> {
+    const uyar = (d: KullaniciDurumu) =>
       d.aktif && d.rol === yuk.rol && d.oturumSurumu === (yuk.sv ?? 0);
-    if (uyar(await this.durum!.getir(yuk.tenantId, yuk.sub))) return true;
+    const onbellekte = await this.durum!.getir(yuk.tenantId, yuk.sub);
+    if (uyar(onbellekte)) return onbellekte;
     // Önbellek bayat olabilir (ör. token az önce yeni sürümle yenilendi): bir kez taze oku.
-    return uyar(await this.durum!.getir(yuk.tenantId, yuk.sub, true));
+    const taze = await this.durum!.getir(yuk.tenantId, yuk.sub, true);
+    return uyar(taze) ? taze : null;
   }
 }

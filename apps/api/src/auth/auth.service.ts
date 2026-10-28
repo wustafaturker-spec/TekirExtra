@@ -14,16 +14,21 @@ import { coz, sifrele } from "../core/kripto";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
 import { aktifBaglam } from "../core/istek-baglami";
+import { ikiAdimEksikMi, type GuvenlikPolitikasi } from "../core/guvenlik-politikasi";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import type { JwtYuku } from "./auth.guard";
 
-const REFRESH_GECERLILIK_GUN = 30;
+const GUN_MS = 24 * 60 * 60 * 1000;
+/** KLN-22: hareketsizlik denetiminde istemci saatine ve ağ gecikmesine pay. */
+const HAREKETSIZLIK_PAYI_MS = 60_000;
 
 export interface GirisSonucu {
   accessToken: string;
   refreshToken: string;
-  kullanici: { id: string; adSoyad: string; eposta: string; rol: string };
+  /** KLN-22: yenileme çerezi en geç bu anda düşer. */
+  gecerlilikSonu: Date;
+  kullanici: { id: string; adSoyad: string; eposta: string; rol: string; ikiAdimKurulumuGerekli: boolean };
 }
 
 /** Yönetim P2-4: oturum listesinde gösterilen istemci bilgisi. */
@@ -105,10 +110,20 @@ export class AuthService {
       });
     });
 
+    const politika = await this.politikaGetir(kullanici.tenantId);
     return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
-    }, istemci);
+      ikiAdimKurulumuGerekli: ikiAdimEksikMi(politika, kullanici.rol, kullanici.totpAktif),
+    }, istemci, new Date(), politika);
+  }
+
+  /** KLN-21/22: firmanın oturum ve 2FA politikası (kayıt yoksa varsayılanlar). */
+  async politikaGetir(tenantId: string): Promise<GuvenlikPolitikasi> {
+    const t = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { ikiAdimZorunluRoller: true, oturumSuresiGun: true, hareketsizlikDk: true } }),
+    );
+    return t ?? { ikiAdimZorunluRoller: [], oturumSuresiGun: 30, hareketsizlikDk: null };
   }
 
   /** Kilit başladığında yöneticinin Denetim İzi'nde görmesi için. */
@@ -131,12 +146,23 @@ export class AuthService {
     if (!kullanici || !kullanici.aktif) {
       throw new UnauthorizedException("Oturum geçersiz; yeniden giriş yapın");
     }
+    // KLN-22: politika mevcut oturuma bu yenilemede uygulanır. Satır her yenilemede
+    // yeniden yazıldığı için createdAt son yenileme anıdır.
+    const politika = await this.politikaGetir(oturum.tenantId);
+    const simdi = Date.now();
+    const sureDoldu = oturum.girisAt.getTime() + politika.oturumSuresiGun * GUN_MS < simdi;
+    const hareketsiz = politika.hareketsizlikDk !== null && oturum.createdAt.getTime() + politika.hareketsizlikDk * 60_000 + HAREKETSIZLIK_PAYI_MS < simdi;
+    if (sureDoldu || hareketsiz) {
+      await this.prisma.oturum.delete({ where: { id: oturum.id } }).catch(() => undefined);
+      throw new UnauthorizedException(hareketsiz ? "Uzun süre işlem yapılmadığı için oturum kapandı; yeniden giriş yapın" : "Oturum süresi doldu; yeniden giriş yapın");
+    }
     // Rotasyon: eski refresh token tek kullanımlıktır
     await this.prisma.oturum.delete({ where: { id: oturum.id } });
     return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
-    }, istemci, oturum.girisAt);
+      ikiAdimKurulumuGerekli: ikiAdimEksikMi(politika, kullanici.rol, kullanici.totpAktif),
+    }, istemci, oturum.girisAt, politika);
   }
 
   /** Yönetim P2-4: kullanıcının açık oturumları (süresi geçenler hariç), bu oturum işaretli. */
@@ -236,6 +262,8 @@ export class AuthService {
       await tx.user.update({ where: { id: userId }, data: { totpAktif: true, totpKurtarmaOzetleri: ozetler } });
       await tx.auditLog.create({ data: { tenantId, userId, islem: "iki_adimli_dogrulama_acildi", varlik: "user", varlikId: userId } });
     });
+    // KLN-21: zorunlu 2FA'yı kuran kullanıcı beklemeden diğer ekranlara geçer.
+    this.durum.unut(userId);
     return { kurtarmaKodlari: kodlar };
   }
 
@@ -250,12 +278,17 @@ export class AuthService {
 
   /** Kullanıcı geçerli bir 2FA kodu (ya da kurtarma kodu) ile kendi 2FA'sını kapatır. */
   async totpKapat(kod: string): Promise<void> {
-    const { tenantId, userId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
+    // KLN-21: zorunlu roldeki kullanıcı 2FA'sını kapatamaz (telefon kaybında yönetici sıfırlar).
+    if ((await this.politikaGetir(tenantId)).ikiAdimZorunluRoller.includes(rol)) {
+      throw new BadRequestException("Firmanız rolünüz için iki adımlı doğrulamayı zorunlu tuttuğundan kapatılamaz; telefonunuzu kaybettiyseniz yöneticiniz sıfırlayabilir");
+    }
     await this.totpKoduDogrula(tenantId, userId, kod, true);
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [] } });
       await tx.auditLog.create({ data: { tenantId, userId, islem: "iki_adimli_dogrulama_kapatildi", varlik: "user", varlikId: userId } });
     });
+    this.durum.unut(userId);
   }
 
   /** Eski kurtarma kodlarını geçersiz kılıp yenilerini verir; yalnız uygulamadaki kodla. */
@@ -317,16 +350,16 @@ export class AuthService {
     userId: string,
     rol: string,
     oturumSurumu: number,
-    profil: { adSoyad: string; eposta: string },
-    istemci: Istemci = {},
-    girisAt: Date = new Date(),
+    profil: { adSoyad: string; eposta: string; ikiAdimKurulumuGerekli: boolean },
+    istemci: Istemci,
+    girisAt: Date,
+    politika: GuvenlikPolitikasi,
   ): Promise<GirisSonucu> {
     const yuk: JwtYuku = { sub: userId, tenantId, rol: rol as JwtYuku["rol"], sv: oturumSurumu };
     const accessToken = await this.jwt.signAsync(yuk);
     const refreshToken = randomBytes(48).toString("base64url");
-    const gecerlilikSonu = new Date(
-      Date.now() + REFRESH_GECERLILIK_GUN * 24 * 60 * 60 * 1000,
-    );
+    // KLN-22: açık kalma süresi girişten sayılır; yenileme onu uzatmaz.
+    const gecerlilikSonu = new Date(girisAt.getTime() + politika.oturumSuresiGun * GUN_MS);
     await this.prisma.oturum.create({
       data: {
         tenantId, userId, refreshTokenHash: tokenHashle(refreshToken), gecerlilikSonu, girisAt,
@@ -336,6 +369,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
+      gecerlilikSonu,
       kullanici: { id: userId, ...profil, rol },
     };
   }

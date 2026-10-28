@@ -138,6 +138,12 @@ model Tenant {
   efaturaMukellefi        Boolean?                @map("efatura_mukellefi")
   earsivMukellefi         Boolean?                @map("earsiv_mukellefi")
   eirsaliyeMukellefi      Boolean?                @map("eirsaliye_mukellefi")
+  /// KLN-21: 2FA'nın zorunlu olduğu roller; boşsa zorunluluk yok.
+  ikiAdimZorunluRoller    String[]                @default([]) @map("iki_adim_zorunlu_roller")
+  /// KLN-22: oturum girişten itibaren en çok bu kadar gün açık kalır (1–30).
+  oturumSuresiGun         Int                     @default(30) @map("oturum_suresi_gun")
+  /// KLN-22: son yenilemesi bu kadar dakikadan eski oturum yenilenmez; null = kapalı.
+  hareketsizlikDk         Int?                    @map("hareketsizlik_dk")
   /// Yolcu beraberi (tax-free): KDV iadesini yapan aracı kurumun varsayılanı;
   /// sihirbazda faturaya özel değiştirilir.
   araciKurumVkn           String?                 @map("araci_kurum_vkn")

@@ -36,6 +36,43 @@ export class ApiHata extends Error {
 
 let yenilemeIstegi: Promise<string | null> | null = null;
 
+/**
+ * KLN-22: firma hareketsizlik süresi seçtiyse sunucu, son yenilemesi süreden
+ * eski oturumu yenilemez. Arka plan yoklamaları (bildirim, sayaç) kullanıcı
+ * hareketsizken oturumu uzatmasın diye yenileme yalnız son etkinlik süre
+ * içindeyse yapılır; etkin kullanıcının oturumu `oturumuTazele` ile tazelenir.
+ */
+const SON_ETKINLIK_ANAHTARI = "tekir_son_etkinlik";
+let hareketsizlikMs: number | null = null;
+let sonYenilemeAt = Date.now();
+
+export function hareketsizlikAyarla(dakika: number | null): void {
+  hareketsizlikMs = dakika ? dakika * 60_000 : null;
+}
+
+/** Sekmeler arası ortak: başka sekmede çalışan kullanıcı bu sekmede de etkindir. */
+export function sonEtkinlikAl(): number {
+  try {
+    const kayit = Number(window.localStorage.getItem(SON_ETKINLIK_ANAHTARI));
+    if (Number.isFinite(kayit) && kayit > 0) return kayit;
+  } catch { /* depo erişilemezse sayfa açılışı esas alınır */ }
+  return sonYenilemeAt;
+}
+
+export function sonEtkinlikKaydet(an = Date.now()): void {
+  try { window.localStorage.setItem(SON_ETKINLIK_ANAHTARI, String(an)); } catch { /* yalnız bu sekmede izlenir */ }
+}
+
+function hareketsizMi(): boolean {
+  return hareketsizlikMs !== null && Date.now() - sonEtkinlikAl() >= hareketsizlikMs;
+}
+
+/** Etkin kullanıcının oturumunu, son yenilemeden en az `enAzMs` geçtiyse tazeler. */
+export async function oturumuTazele(enAzMs: number): Promise<void> {
+  if (Date.now() - sonYenilemeAt < enAzMs || hareketsizMi()) return;
+  await accessTokenYenile();
+}
+
 async function accessTokenYenile(): Promise<string | null> {
   if (!yenilemeIstegi) {
     yenilemeIstegi = fetch(`${API_URL}/auth/yenile`, {
@@ -48,6 +85,7 @@ async function accessTokenYenile(): Promise<string | null> {
         const govde = (await yanit.json()) as { accessToken?: string };
         if (!govde.accessToken) return null;
         tokenYaz(govde.accessToken);
+        sonYenilemeAt = Date.now();
         return govde.accessToken;
       })
       .catch(() => null)
@@ -56,11 +94,11 @@ async function accessTokenYenile(): Promise<string | null> {
   return yenilemeIstegi;
 }
 
-function giriseYonlendir(): Promise<never> {
+function giriseYonlendir(neden = "sona-erdi"): Promise<never> {
   tokenYaz(null);
   if (typeof window !== "undefined") {
     const donus = `${window.location.pathname}${window.location.search}`;
-    window.location.replace(`/giris?oturum=sona-erdi&donus=${encodeURIComponent(donus)}`);
+    window.location.replace(`/giris?oturum=${neden}&donus=${encodeURIComponent(donus)}`);
   }
   // Sayfa yönlendirilirken mevcut React effect'lerinin hata üretmesini önler.
   return new Promise<never>(() => undefined);
@@ -148,6 +186,17 @@ async function idempotencyBilgisi(method: string, yol: string, body: BodyInit | 
   }
 }
 
+export const IKI_ADIM_KURULUMU_GEREKLI = "IKI_ADIM_KURULUMU_GEREKLI";
+export const IKI_ADIM_KURULUM_YOLU = "/panel/ayarlar/hesap";
+/** Hesap Güvenliği'nde 2FA etkinleşince yayılır; panel kısıtı kaldırır. */
+export const IKI_ADIM_KURULDU_OLAYI = "tekir:iki-adim-kuruldu";
+
+/** KLN-22: hareketsizlik süresi dolunca oturum sunucuda da kapatılır, giriş ekranına dönülür. */
+export async function hareketsizlikleCik(): Promise<never> {
+  await fetch(`${API_URL}/auth/cikis`, { method: "POST", credentials: "include" }).catch(() => undefined);
+  return giriseYonlendir("hareketsizlik");
+}
+
 export async function api<T>(
   yol: string,
   secenekler: RequestInit = {},
@@ -166,6 +215,7 @@ export async function api<T>(
   }
   let yanit = await istekYap(yol, kullanilacakSecenekler, tokenAl());
   if (yanit.status === 401 && !yol.startsWith("/auth/")) {
+    if (hareketsizMi()) return hareketsizlikleCik();
     const yeniToken = await accessTokenYenile();
     if (!yeniToken) return giriseYonlendir();
     yanit = await istekYap(yol, kullanilacakSecenekler, yeniToken);
@@ -175,6 +225,11 @@ export async function api<T>(
   if (!yanit.ok) {
     if (yanit.status >= 400 && yanit.status < 500 && yanit.status !== 409 && saklamaAnahtari) {
       try { window.sessionStorage.removeItem(saklamaAnahtari); } catch { /* storage erişimi isteği etkilemez */ }
+    }
+    // KLN-21: zorunlu 2FA kurulmadan yalnız Hesap Güvenliği açıktır.
+    if (yanit.status === 403 && govde.kod === IKI_ADIM_KURULUMU_GEREKLI && typeof window !== "undefined" && window.location.pathname !== IKI_ADIM_KURULUM_YOLU) {
+      window.location.replace(`${IKI_ADIM_KURULUM_YOLU}?iki-adim=zorunlu`);
+      return new Promise<never>(() => undefined);
     }
     const mesaj = Array.isArray(govde.message)
       ? govde.message.join("; ")

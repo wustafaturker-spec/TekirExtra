@@ -15,6 +15,8 @@ function kur() {
   const denetim: { islem: string; detay?: unknown }[] = [];
   const kullanici = { id: "u1", tenantId: "t1", eposta: EPOSTA, adSoyad: "Kişi", rol: "muhasebe", aktif: true, epostaDogrulandi: true, parolaHash: hash, totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [], oturumSurumu: 0 };
   const tx = {
+    // KLN-21/22: politika kaydı yok → varsayılanlar.
+    tenant: { findUnique: vi.fn(async () => null) },
     user: { findUnique: vi.fn(async () => kullanici), update: vi.fn(async () => kullanici) },
     auditLog: { create: vi.fn(async ({ data }: { data: { islem: string; detay?: unknown } }) => { denetim.push(data); return data; }) },
   };

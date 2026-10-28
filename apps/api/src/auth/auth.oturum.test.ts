@@ -17,6 +17,8 @@ function kur() {
   const oturumlar: Oturum[] = [];
   const denetim: { islem: string; detay?: unknown }[] = [];
   const tx = {
+    // KLN-21/22: politika kaydı yok → varsayılanlar.
+    tenant: { findUnique: vi.fn(async () => null) },
     user: {
       findUnique: vi.fn(async () => kullanici),
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {

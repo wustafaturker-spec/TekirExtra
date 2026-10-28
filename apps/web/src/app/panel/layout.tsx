@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { api, tokenAl, tokenYaz } from "@/lib/api";
+import { api, IKI_ADIM_KURULDU_OLAYI, IKI_ADIM_KURULUM_YOLU, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { ebelgeYoluGorunur } from "@/lib/ebelge-yollari";
 import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
 import { AsistanPenceresi } from "@/components/asistan-penceresi";
+import { HareketsizlikIzleyici } from "@/components/hareketsizlik-izleyici";
 import { ASISTAN_AC_OLAYI, ekranKaydi, type AsistanBaglami } from "@/lib/asistan-baglami";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings, Sparkles } from "lucide-react";
@@ -77,6 +78,9 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [rol, setRol] = useState<string | null>(null);
   // Platform P0-1: askıdaki ya da süresi biten abonelikte firma salt okunurdur; neden her sayfada üstte.
   const [abonelikKisiti, setAbonelikKisiti] = useState<string | null>(null);
+  // KLN-21/22: firma güvenlik politikası (/auth/ben'den).
+  const [ikiAdimKurulumuGerekli, setIkiAdimKurulumuGerekli] = useState(false);
+  const [hareketsizlikDk, setHareketsizlikDk] = useState<number | null>(null);
   // EBLG-77: firma kayıtlı olmadığı e-belge uygulamasının ekranlarını görmez.
   const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
   const [menuAcik, setMenuAcik] = useState(false);
@@ -146,10 +150,14 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (tokenAl()) {
-      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null }>("/auth/ben")
+      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null; ikiAdimKurulumuGerekli?: boolean; hareketsizlikDk?: number | null }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
           setAbonelikKisiti(b.abonelik?.kisitli ? b.abonelik.neden ?? "Aboneliğiniz salt okunur." : null);
+          setHareketsizlikDk(b.hareketsizlikDk ?? null);
+          // KLN-21: zorunlu 2FA kurulana kadar yalnız Hesap Güvenliği açıktır; diğer uçlar 403 döner.
+          setIkiAdimKurulumuGerekli(Boolean(b.ikiAdimKurulumuGerekli));
+          if (b.ikiAdimKurulumuGerekli) return;
           // Kapalı uygulamanın ekranları menüden kalkar (EBLG-77); istek
           // düşerse menü olduğu gibi kalır, uçları guard korur.
           if (b.rol !== "calisan") void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
@@ -172,6 +180,15 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   }, [router]);
 
   useEffect(() => { setBildirimlerAcik(false); setGeriBildirimAcik(false); }, [pathname]);
+  useEffect(() => {
+    if (ikiAdimKurulumuGerekli && pathname !== IKI_ADIM_KURULUM_YOLU) router.replace(`${IKI_ADIM_KURULUM_YOLU}?iki-adim=zorunlu`);
+  }, [ikiAdimKurulumuGerekli, pathname, router]);
+  // Hesap Güvenliği'nde kurulum bitince panel beklemeden açılır.
+  useEffect(() => {
+    const kuruldu = () => setIkiAdimKurulumuGerekli(false);
+    window.addEventListener(IKI_ADIM_KURULDU_OLAYI, kuruldu);
+    return () => window.removeEventListener(IKI_ADIM_KURULDU_OLAYI, kuruldu);
+  }, []);
 
   // AI-51: Teklif İş Kutusu rozeti — yalnız kendi açık işleri; açılışta, sayfa değişince ve 2 dakikada bir.
   const [isKutusuSayisi, setIsKutusuSayisi] = useState(0);
@@ -470,6 +487,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </aside>
       )}
 
+      <HareketsizlikIzleyici dakika={hareketsizlikDk} />
       <KomutPaleti acik={paletAcik} ebelgeUygulamalari={ebelgeUygulamalari} rol={rol} setAcik={setPaletAcik} />
       <AsistanPenceresi acik={aiAsistanAcik} baglam={aiBaglam} onBaglamKaldir={() => setAiBaglam(null)} onKapat={() => setAiAsistanAcik(false)} />
 
@@ -484,6 +502,10 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           {rol === null ? (
             <section className="card empty-state" role="status" aria-live="polite">
               <p>Oturum ve erişim yetkileri doğrulanıyor…</p>
+            </section>
+          ) : ikiAdimKurulumuGerekli && pathname !== IKI_ADIM_KURULUM_YOLU ? (
+            <section className="card empty-state" role="status" aria-live="polite">
+              <p>İki adımlı doğrulama kurulumu gerekli; Hesap Güvenliği ekranına yönlendiriliyorsunuz…</p>
             </section>
           ) : sayfaYetkili ? children : (
             <section aria-labelledby="yetkisiz-baslik" className="card empty-state" role="alert">

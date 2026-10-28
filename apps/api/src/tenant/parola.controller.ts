@@ -1,7 +1,7 @@
 import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { REFRESH_COOKIE } from "../auth/auth.controller";
-import { Public } from "../auth/public.decorator";
+import { IkiAdimKurulumundaAcik, Public } from "../auth/public.decorator";
 import { EpostaDegisimiService } from "./eposta-degisimi.service";
 import { ParolaService } from "./parola.service";
 
@@ -13,6 +13,7 @@ import { ParolaService } from "./parola.service";
 export class ParolaController {
   constructor(private readonly parola: ParolaService) {}
 
+  @IkiAdimKurulumundaAcik()
   @Post("degistir")
   @HttpCode(200)
   degistir(@Body() govde: unknown, @Req() req: Request) {
@@ -39,6 +40,7 @@ export class ParolaController {
 export class EpostaDegisimiController {
   constructor(private readonly degisim: EpostaDegisimiService) {}
 
+  @IkiAdimKurulumundaAcik()
   @Post("degistir")
   @HttpCode(200)
   degistir(@Body() govde: unknown) {

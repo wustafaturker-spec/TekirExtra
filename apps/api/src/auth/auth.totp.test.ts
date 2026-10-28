@@ -24,6 +24,8 @@ function kur() {
   };
   const denetim: { islem: string; detay?: unknown }[] = [];
   const tx = {
+    // KLN-21/22: politika kaydı yok → varsayılanlar.
+    tenant: { findUnique: vi.fn(async () => null) },
     user: {
       findUnique: vi.fn(async () => ({ ...k, totpKurtarmaOzetleri: [...k.totpKurtarmaOzetleri] })),
       update: vi.fn(async ({ data }: { data: Partial<typeof k> }) => Object.assign(k, data)),

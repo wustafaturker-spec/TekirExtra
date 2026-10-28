@@ -77,11 +77,17 @@ export class KullanicilarController {
   }
 
   @Get()
-  listele() {
+  async listele() {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.user.findMany({ select: KULLANICI_SECIMI, orderBy: { createdAt: "asc" } }),
+    const [kullanicilar, politika] = await this.prisma.tenantIslem(tenantId, (tx) =>
+      Promise.all([
+        tx.user.findMany({ select: KULLANICI_SECIMI, orderBy: { createdAt: "asc" } }),
+        tx.tenant.findUnique({ where: { id: tenantId }, select: { ikiAdimZorunluRoller: true } }),
+      ]),
     );
+    // KLN-21: ekranda "2FA zorunlu ama kurulmamış" gösterilir.
+    const zorunlu = politika?.ikiAdimZorunluRoller ?? [];
+    return kullanicilar.map((k) => ({ ...k, ikiAdimZorunlu: zorunlu.includes(k.rol) }));
   }
 
   @Post()

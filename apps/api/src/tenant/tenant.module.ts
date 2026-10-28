@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { EklerModule } from "../ekler/ekler.module";
 import { AiModule } from "../ai/ai.module";
 import { BaglantilarService } from "./baglantilar.service";
+import { GuvenlikPolitikasiController } from "./guvenlik-politikasi.controller";
 import { BelgeTasarimlariService } from "./belge-tasarimlari.service";
 import { DenetimController } from "./denetim.controller";
 import { EpostaService } from "./eposta.service";
@@ -32,6 +33,7 @@ import { EpostaZamanlayiciService } from "./eposta-zamanlayici.service";
     AbonelikController,
     ParolaController,
     EpostaDegisimiController,
+    GuvenlikPolitikasiController,
   ],
   providers: [
     KayitService,

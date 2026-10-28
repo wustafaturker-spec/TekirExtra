@@ -32,6 +32,8 @@ interface Kullanici {
   aktif: boolean;
   epostaDogrulandi: boolean;
   totpAktif: boolean;
+  /** KLN-21: rolü için firma 2FA'yı zorunlu tutuyor. */
+  ikiAdimZorunlu: boolean;
   sonGirisAt: string | null;
   maksIskontoYuzdesi: number | null;
   bayiCariId: string | null;
@@ -341,7 +343,7 @@ export default function KullanicilarSayfasi() {
                         <Badge variant="success">Etkin</Badge>
                         {k.id !== benId && <Button size="sm" variant="ghost" onClick={() => setIkiAdimSifirlanan(k)}>Sıfırla</Button>}
                       </div>
-                    ) : <span className="subtle">—</span>}
+                    ) : k.ikiAdimZorunlu && k.aktif ? <Badge variant="warning">Zorunlu, kurulmamış</Badge> : <span className="subtle">—</span>}
                   </td>
                   <td className="subtle" style={{ whiteSpace: "nowrap" }}>{k.sonGirisAt ? new Date(k.sonGirisAt).toLocaleString("tr-TR") : "Hiç girmedi"}</td>
                   <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <Select value={k.bayiCariId ?? ""} onChange={(e) => bayiCariDegistir(k.id, e.target.value)}><option value="">Atanmamış</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select> : <span className="subtle">—</span>}</td>

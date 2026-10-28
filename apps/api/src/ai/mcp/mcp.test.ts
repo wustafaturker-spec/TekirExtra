@@ -12,6 +12,8 @@ const olarak = <T>(fn: () => Promise<T>, rol = "satis", userId = KULLANICI) => i
 
 function anahtarServisi(kayit: Record<string, unknown> | null = null, etkin = 0) {
   const tx = {
+    // KLN-21/22: politika kaydı yok → varsayılanlar.
+    tenant: { findUnique: vi.fn(async () => null) },
     aiMcpAnahtari: {
       count: vi.fn().mockResolvedValue(etkin),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "k1", createdAt: new Date(), ...data })),

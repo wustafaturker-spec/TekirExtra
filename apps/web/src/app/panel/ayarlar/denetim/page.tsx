@@ -36,6 +36,7 @@ const ISLEM_ADI: Record<string, string> = {
   kurtarma_kodlari_yenilendi: "2FA kurtarma kodları yenilendi",
   diger_oturumlar_kapatildi: "Diğer oturumlar kapatıldı",
   firma_bilgisi_degisti: "Firma bilgisi değişti",
+  guvenlik_politikasi_degisti: "Güvenlik politikası değişti",
   modul_ayari_degisti: "Modül ayarı değişti",
   eposta_ayari_degisti: "E-posta ayarı değişti",
   baglanti_eklendi: "Bağlantı eklendi",

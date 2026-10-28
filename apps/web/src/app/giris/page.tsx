@@ -4,7 +4,7 @@ import { guvenliDonus } from "@/lib/oturum-isareti";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { api, ApiHata, tokenYaz } from "@/lib/api";
+import { api, ApiHata, IKI_ADIM_KURULUM_YOLU, sonEtkinlikKaydet, tokenYaz } from "@/lib/api";
 import { Alert, Button, Field, Input } from "@/components/ui";
 
 export default function GirisSayfasi() {
@@ -16,6 +16,13 @@ export default function GirisSayfasi() {
   const [parolaGoster, setParolaGoster] = useState(false);
   const [eposta, setEposta] = useState("");
   const [parola, setParola] = useState("");
+  // KLN-22: hareketsizlik nedeniyle kapanan oturum kullanıcıya söylenir.
+  const [bilgi, setBilgi] = useState("");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("oturum") === "hareketsizlik") {
+      setBilgi("Uzun süre işlem yapılmadığı için oturumunuz güvenlik amacıyla kapatıldı. Lütfen yeniden giriş yapın.");
+    }
+  }, []);
 
   useEffect(() => {
     // Rota koruması panelden buraya yönlendirdiyse ve yenileme çerezi geçerliyse oturum
@@ -43,7 +50,7 @@ export default function GirisSayfasi() {
     setHata("");
     setYukleniyor(true);
     try {
-      const sonuc = await api<{ accessToken: string }>("/auth/giris", {
+      const sonuc = await api<{ accessToken: string; kullanici?: { ikiAdimKurulumuGerekli?: boolean } }>("/auth/giris", {
         method: "POST",
         body: JSON.stringify({
           eposta: epostaVal,
@@ -52,6 +59,12 @@ export default function GirisSayfasi() {
         }),
       });
       tokenYaz(sonuc.accessToken);
+      sonEtkinlikKaydet();
+      // KLN-21: zorunlu 2FA kurulmamışsa doğrudan kurulum ekranına.
+      if (sonuc.kullanici?.ikiAdimKurulumuGerekli) {
+        yonlendir.push(`${IKI_ADIM_KURULUM_YOLU}?iki-adim=zorunlu`);
+        return;
+      }
       // Rota koruması giriş sayfasına yönlendirdiyse kullanıcı istediği panel sayfasına döner.
       yonlendir.push(guvenliDonus(new URLSearchParams(window.location.search).get("donus")));
     } catch (h) {
@@ -130,6 +143,7 @@ export default function GirisSayfasi() {
             </div>
 
             {hata && <Alert tone="error">{hata}</Alert>}
+            {!hata && bilgi && <Alert tone="warning">{bilgi}</Alert>}
 
             <form onSubmit={gonder} className="auth-form">
               <Field label="E-posta Adresi">

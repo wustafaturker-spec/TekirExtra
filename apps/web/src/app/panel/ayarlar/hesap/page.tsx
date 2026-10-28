@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, IKI_ADIM_KURULDU_OLAYI } from "@/lib/api";
 import { tarayiciAdi } from "@/lib/tarayici-adi";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/components/ui";
 
@@ -47,6 +47,9 @@ export default function HesapGuvenligiSayfasi() {
   const [parolaHata, setParolaHata] = useState("");
   const [parolaBasari, setParolaBasari] = useState("");
   const [parolaIsleniyor, setParolaIsleniyor] = useState(false);
+  // KLN-21: panel, zorunlu 2FA kurulmamışsa buraya `?iki-adim=zorunlu` ile yönlendirir.
+  const [ikiAdimZorunlu, setIkiAdimZorunlu] = useState(false);
+  useEffect(() => { setIkiAdimZorunlu(new URLSearchParams(window.location.search).get("iki-adim") === "zorunlu"); }, []);
 
   // KLN-11: bu oturum açık kalır, diğer cihazlardaki oturumlar kapanır.
   async function parolaDegistir(e: React.FormEvent) {
@@ -140,6 +143,8 @@ export default function HesapGuvenligiSayfasi() {
       const s = await api<{ kurtarmaKodlari: string[] }>("/auth/totp/etkinlestir", { method: "POST", body: JSON.stringify({ kod }) });
       setKurtarmaKodlari(s.kurtarmaKodlari);
       setBasari("İki adımlı doğrulama etkinleştirildi. Bir sonraki girişte doğrulama kodu istenecek.");
+      window.dispatchEvent(new Event(IKI_ADIM_KURULDU_OLAYI));
+      setIkiAdimZorunlu(false);
       setKurBilgi(null);
       setKod("");
       await durumYukle();
@@ -172,6 +177,14 @@ export default function HesapGuvenligiSayfasi() {
         title="Hesap Güvenliği"
         subtitle="Parolanızı ve giriş e-postanızı değiştirin, iki adımlı doğrulama (2FA / TOTP) kurun — KLN-05, KLN-11, KLN-23."
       />
+      {ikiAdimZorunlu && !durum?.aktif && (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <Alert tone="warning">
+            Firmanız rolünüz için iki adımlı doğrulamayı zorunlu tuttu. Aşağıdaki <strong>İki Adımlı Doğrulama</strong> bölümünden
+            kurulumu bitirene kadar diğer ekranlar açılmaz.
+          </Alert>
+        </div>
+      )}
 
       <Card className="stack" style={{ marginBottom: "1.5rem" }}>
         <div>

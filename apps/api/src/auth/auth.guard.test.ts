@@ -68,7 +68,7 @@ describe("kullanıcı durumu denetimi (yönetim P1-2)", () => {
   // Gerçek önbellekli servis, sahte Prisma üstünde.
   const kurGuard = async () => {
     const { KullaniciDurumService } = await import("../core/kullanici-durum.service");
-    const prisma = { tenantIslem: async (_t: string, fn: (tx: unknown) => Promise<unknown>) => fn({ user: { findUnique: async () => { okuma++; return { ...db }; } } }) };
+    const prisma = { tenantIslem: async (_t: string, fn: (tx: unknown) => Promise<unknown>) => fn({ user: { findUnique: async () => { okuma++; return { ...db }; } }, tenant: { findUnique: async () => null } }) };
     return new AuthGuard(jwt, reflector, new KullaniciDurumService(prisma as never));
   };
   const dene = (guard: AuthGuard, token: string) => {

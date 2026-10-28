@@ -26,3 +26,10 @@ export const PlatformRolleri = (...roller: PlatformRolu[]) => SetMetadata(PLATFO
  */
 export const SALT_OKUMA_ANAHTAR = "saltOkumadaAcik";
 export const SaltOkumadaAcik = () => SetMetadata(SALT_OKUMA_ANAHTAR, true);
+
+/**
+ * KLN-21: 2FA zorunlu rolde kurulumu bitmemiş kullanıcıya da açık uç
+ * (Hesap Güvenliği ekranının kullandıkları). Diğer uçlar 403 döner.
+ */
+export const IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR = "ikiAdimKurulumundaAcik";
+export const IkiAdimKurulumundaAcik = () => SetMetadata(IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR, true);

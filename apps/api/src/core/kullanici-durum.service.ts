@@ -1,10 +1,13 @@
 import { Injectable } from "@nestjs/common";
+import { ikiAdimEksikMi } from "./guvenlik-politikasi";
 import { PrismaService } from "./prisma.service";
 
 export interface KullaniciDurumu {
   aktif: boolean;
   rol: string | null;
   oturumSurumu: number;
+  /** KLN-21: rolü 2FA zorunlu ama kullanıcı kurmamış. */
+  ikiAdimEksik: boolean;
 }
 
 /** Guard her istekte DB'ye gitmesin; değişiklik en geç bu sürede tüm süreçlere yansır. */
@@ -24,10 +27,15 @@ export class KullaniciDurumService {
     const simdi = Date.now();
     const kayit = this.onbellek.get(userId);
     if (!taze && kayit && kayit.bitis > simdi) return kayit.durum;
-    const k = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.user.findUnique({ where: { id: userId }, select: { aktif: true, rol: true, oturumSurumu: true } }),
+    const [k, politika] = await this.prisma.tenantIslem(tenantId, (tx) =>
+      Promise.all([
+        tx.user.findUnique({ where: { id: userId }, select: { aktif: true, rol: true, oturumSurumu: true, totpAktif: true } }),
+        tx.tenant.findUnique({ where: { id: tenantId }, select: { ikiAdimZorunluRoller: true } }),
+      ]),
     );
-    const durum: KullaniciDurumu = k ? { aktif: k.aktif, rol: k.rol, oturumSurumu: k.oturumSurumu } : { aktif: false, rol: null, oturumSurumu: -1 };
+    const durum: KullaniciDurumu = k
+      ? { aktif: k.aktif, rol: k.rol, oturumSurumu: k.oturumSurumu, ikiAdimEksik: ikiAdimEksikMi(politika ?? { ikiAdimZorunluRoller: [] }, k.rol, k.totpAktif) }
+      : { aktif: false, rol: null, oturumSurumu: -1, ikiAdimEksik: false };
     if (this.onbellek.size > 10_000) this.onbellek.clear();
     this.onbellek.set(userId, { durum, bitis: simdi + DURUM_ONBELLEK_MS });
     return durum;
@@ -36,5 +44,10 @@ export class KullaniciDurumService {
   /** Bu süreçte yapılan değişiklik beklemeden görünsün. */
   unut(userId: string): void {
     this.onbellek.delete(userId);
+  }
+
+  /** KLN-21: firma politikası değişince bu süreçteki herkes beklemeden yeniden okunur. */
+  hepsiniUnut(): void {
+    this.onbellek.clear();
   }
 }
