@@ -785,7 +785,7 @@ describe("R0 kritik regresyon — kesin fatura iptali ters kayıt üretir", () =
       jeton,
     });
     expect(iptal.durum).toBe(400);
-    expect(iptal.veri.message).toContain("önce finans hareketini geri alın veya iade faturası düzenleyin");
+    expect(iptal.veri.message).toContain("önce finans hareketini ya da mahsubu geri alın veya iade faturası düzenleyin");
     expect(await stokMiktari(jeton, stokId)).toBe(2);
     expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(0, 2);
   });
