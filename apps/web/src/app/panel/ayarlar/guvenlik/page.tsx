@@ -49,7 +49,7 @@ export default function GuvenlikPolitikasiSayfasi() {
 
   const yukle = useCallback(async () => {
     const [p, o] = await Promise.all([api<Politika>("/guvenlik-politikasi"), api<{ id: string; ad: string; aktif: boolean }[]>("/ozel-roller").catch(() => [])]);
-    setOzelRoller(o);
+    setOzelRoller(Array.isArray(o) ? o : []);
     setPolitika(p);
     setRoller(new Set(p.ikiAdimZorunluRoller));
     setGun(p.oturumSuresiGun);

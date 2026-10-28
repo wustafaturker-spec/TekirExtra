@@ -92,7 +92,9 @@ export default function KullanicilarSayfasi() {
         api<{ kayitlar: Cari[] }>("/cari?adet=200"),
       ]);
       setKullanicilar(kullanicilarVerisi);
-      setOzelRoller(await api<OzelRolOzeti[]>("/ozel-roller").catch(() => []));
+      // KLN-20: özel rol listesi isteğe bağlıdır; gelmezse yalnız hazır roller gösterilir.
+      const ozel = await api<OzelRolOzeti[]>("/ozel-roller").catch(() => []);
+      setOzelRoller(Array.isArray(ozel) ? ozel : []);
       setCariler(cariVerisi.kayitlar);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kullanıcılar yüklenemedi (yalnızca yönetici görebilir)");
