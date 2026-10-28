@@ -5,8 +5,9 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import type { Rol } from "@tekirextra/shared";
+import { ozelRolIstegiKapali, type Rol } from "@tekirextra/shared";
 import { baglamAl } from "../core/istek-baglami";
+import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, SALT_OKUMA_ANAHTAR } from "./public.decorator";
 import { ROLLER_ANAHTAR } from "./roller.decorator";
 
 /** Çalışan rolünün @Roller("calisan") dışında erişebildiği hesap uçları. */
@@ -43,7 +44,16 @@ export class RollerGuard implements CanActivate {
       throw new ForbiddenException("Bu işlem için yetkiniz yok");
     }
     if (!baglam) return true; // @Public uçlar — AuthGuard zaten karar verdi
-    if (rolUcaYetkili(baglam.rol, gerekli)) return true;
-    throw new ForbiddenException("Bu işlem için yetkiniz yok");
+    if (!rolUcaYetkili(baglam.rol, gerekli)) throw new ForbiddenException("Bu işlem için yetkiniz yok");
+    // KLN-20: özel rol şablonun yetkisini yalnız daraltır.
+    if (baglam.ozelRol?.kapali.length) {
+      const istek = context.switchToHttp().getRequest<{ method: string; path?: string }>();
+      const hedefler = [context.getHandler(), context.getClass()];
+      const saltOkuma = Boolean(this.reflector.getAllAndOverride<boolean>(SALT_OKUMA_ANAHTAR, hedefler) || this.reflector.getAllAndOverride<boolean>(DESTEK_OTURUMUNDA_ACIK_ANAHTAR, hedefler));
+      if (ozelRolIstegiKapali(baglam.ozelRol.kapali, istek.method, String(istek.path ?? ""), saltOkuma)) {
+        throw new ForbiddenException("Rolünüzde bu işlem kapalı");
+      }
+    }
+    return true;
   }
 }

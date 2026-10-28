@@ -1,3 +1,5 @@
+import { ozelRolPanelYoluKapali } from "@tekirextra/shared";
+
 // AI-04/05: asistan ve onay talepleri (/panel/ai) her iç role açık; araçlar rolün yetkisine göre süzülür.
 const ROL_YOLLARI: Record<string, string[]> = {
   muhasebe: ["/panel", "/panel/bildirimler", "/panel/ai", "/panel/is-kutusu", "/panel/eposta", "/panel/islemler", "/panel/donem-kapatma", "/panel/nakit-akisi", "/panel/butce", "/panel/cari", "/panel/fatura", "/panel/ebelge", "/panel/belgeler", "/panel/satin-alma", "/panel/masraflar", "/panel/gelirler", "/panel/kasa-banka", "/panel/demirbas", "/panel/araclar", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/mali-musavir", "/panel/personel", "/panel/pazaryeri", "/panel/ayarlar/depolar", "/panel/ayarlar/doviz-kurlari", "/panel/ayarlar/araclar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
@@ -40,9 +42,19 @@ export function finansalOzetGorebilir(rol: string | null): boolean {
   return rol === "yonetici" || (rol !== null && FINANS_ROLLERI.includes(rol));
 }
 
+/**
+ * KLN-20: oturumdaki kullanıcının özel rolünün kapattığı kutular (/auth/ben).
+ * Panel yerleşimi yazar; menü, komut paleti ve sayfa erişimi aynı kuralı okur.
+ */
+let ozelRolKapali: string[] = [];
+export function ozelRolKapaliAyarla(kapali: string[]): void {
+  ozelRolKapali = kapali;
+}
+
 export function rolMenuYoluGorebilir(rol: string | null, href: string): boolean {
   if (!rol) return false;
   const yol = href.split("?")[0];
+  if (ozelRolPanelYoluKapali(ozelRolKapali, yol)) return false;
   // PRS-21: self-servis yalnız çalışan rolünün menüsünde (yöneticinin kartı yoktur).
   if (yol === "/panel/self-servis" || yol.startsWith("/panel/self-servis/")) return rol === "calisan";
   if (rol === "yonetici") return true;

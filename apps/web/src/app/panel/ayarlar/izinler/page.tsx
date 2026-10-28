@@ -31,7 +31,8 @@ export default function RolYetkileriSayfasi() {
         actions={<Link className="btn btn--ghost" href="/panel/ayarlar/kullanicilar">← Kullanıcılar</Link>}
       />
       <Alert tone="warning">
-        Rollerin yetkileri sabittir ve bu ekrandan değiştirilemez. Yönetici her ekrana girer. Ekranın içindeki işlemler (onaylama, silme gibi) ayrıca sunucuda rolle denetlenir.
+        Hazır rollerin yetkileri sabittir ve bu ekrandan değiştirilemez. Yönetici her ekrana girer. Ekranın içindeki işlemler (onaylama, silme gibi) ayrıca sunucuda rolle denetlenir.
+        Bir hazır rolün bazı yetkilerini kapatmak için <Link href="/panel/ayarlar/ozel-roller">Özel Roller</Link> ekranından özel rol tanımlayın (KLN-20).
       </Alert>
       <Card className="stack">
         <div className="row" style={{ alignItems: "flex-end" }}>

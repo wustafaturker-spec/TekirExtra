@@ -38,7 +38,12 @@ interface Kullanici {
   maksIskontoYuzdesi: number | null;
   bayiCariId: string | null;
   bayiCari: { id: string; kod: string; unvan: string } | null;
+  /** KLN-20: özel rolü varsa `rol` onun şablonudur. */
+  ozelRolId: string | null;
+  ozelRol: { id: string; ad: string } | null;
 }
+
+interface OzelRolOzeti { id: string; ad: string; sablonRol: Rol; aktif: boolean }
 
 interface Cari { id: string; kod: string; unvan: string }
 
@@ -52,7 +57,9 @@ export default function KullanicilarSayfasi() {
   // Yeni kullanıcı formu
   const [eposta, setEposta] = useState("");
   const [adSoyad, setAdSoyad] = useState("");
-  const [rol, setRol] = useState<Rol>("satis");
+  // KLN-20: hazır rol kodu ya da "ozel:<id>".
+  const [rol, setRol] = useState<string>("satis");
+  const [ozelRoller, setOzelRoller] = useState<OzelRolOzeti[]>([]);
   const [parola, setParola] = useState("");
   // Yönetim P2-3: varsayılan davet; parolayı kullanıcı belirler, yöneticide kalmaz.
   const [davetle, setDavetle] = useState(true);
@@ -69,7 +76,7 @@ export default function KullanicilarSayfasi() {
   // Yönetim P1-1: telefonunu kaybeden kullanıcının 2FA'sını kapatma onayı
   const [ikiAdimSifirlanan, setIkiAdimSifirlanan] = useState<Kullanici | null>(null);
   // KLN-23: rol değişikliği onay penceresiyle yapılır; vazgeçilirse seçim eski role döner.
-  const [rolDegisimi, setRolDegisimi] = useState<{ kullanici: Kullanici; yeniRol: Rol } | null>(null);
+  const [rolDegisimi, setRolDegisimi] = useState<{ kullanici: Kullanici; yeniRol: string } | null>(null);
   const [rolKaydediliyor, setRolKaydediliyor] = useState(false);
   // KLN-23: giriş e-postası değişikliği; yeni adres bağlantıyla onaylanınca geçerli olur.
   const [epostaDegisen, setEpostaDegisen] = useState<Kullanici | null>(null);
@@ -85,6 +92,7 @@ export default function KullanicilarSayfasi() {
         api<{ kayitlar: Cari[] }>("/cari?adet=200"),
       ]);
       setKullanicilar(kullanicilarVerisi);
+      setOzelRoller(await api<OzelRolOzeti[]>("/ozel-roller").catch(() => []));
       setCariler(cariVerisi.kayitlar);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kullanıcılar yüklenemedi (yalnızca yönetici görebilir)");
@@ -169,6 +177,30 @@ export default function KullanicilarSayfasi() {
     }
   }
 
+  // KLN-20: rol seçimi hazır rol ya da özel rol ("ozel:<id>"); özel rolde rol şablonundan gelir.
+  const kullaniciSecimi = (k: Kullanici) => (k.ozelRolId ? `ozel:${k.ozelRolId}` : k.rol);
+  const secimAdi = (secim: string) => {
+    if (!secim.startsWith("ozel:")) return rolAdi(secim);
+    const o = ozelRoller.find((r) => r.id === secim.slice(5));
+    return o ? `${o.ad} (özel rol)` : "Özel rol";
+  };
+  function rolGovdesi(secim: string): { rol: Rol; ozelRolId?: string | null } {
+    if (!secim.startsWith("ozel:")) return { rol: secim as Rol };
+    const o = ozelRoller.find((r) => r.id === secim.slice(5));
+    return { rol: (o?.sablonRol ?? "salt_okunur"), ozelRolId: secim.slice(5) };
+  }
+  /** Pasif özel rol yalnız onu taşıyan kullanıcının satırında görünür. */
+  const rolSecenekleri = (mevcutOzelId?: string | null) => (
+    <>
+      {ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}
+      {ozelRoller.some((o) => o.aktif || o.id === mevcutOzelId) && (
+        <optgroup label="Özel roller">
+          {ozelRoller.filter((o) => o.aktif || o.id === mevcutOzelId).map((o) => (<option key={o.id} value={`ozel:${o.id}`}>{o.ad}{o.aktif ? "" : " (pasif)"}</option>))}
+        </optgroup>
+      )}
+    </>
+  );
+
   async function olustur(e: React.FormEvent) {
     e.preventDefault();
     setHata("");
@@ -179,7 +211,7 @@ export default function KullanicilarSayfasi() {
         body: JSON.stringify({
           eposta,
           adSoyad,
-          rol,
+          ...rolGovdesi(rol),
           ...(davetle ? { davet: true } : { parola }),
           maksIskontoYuzdesi: maksIskonto ? Number(maksIskonto) : undefined,
           bayiCariId: rol === "b2b_bayi" ? bayiCariId || undefined : undefined,
@@ -209,8 +241,8 @@ export default function KullanicilarSayfasi() {
     setBasari("");
     setRolKaydediliyor(true);
     try {
-      await api(`/kullanicilar/${kullanici.id}`, { method: "PATCH", body: JSON.stringify({ rol: yeniRol }) });
-      setBasari(`${kullanici.adSoyad} artık ${rolAdi(yeniRol)}.`);
+      await api(`/kullanicilar/${kullanici.id}`, { method: "PATCH", body: JSON.stringify(rolGovdesi(yeniRol)) });
+      setBasari(`${kullanici.adSoyad} artık ${secimAdi(yeniRol)}.`);
       await yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Rol güncellenemedi");
@@ -268,6 +300,9 @@ export default function KullanicilarSayfasi() {
             <Link className="btn btn--ghost" href="/panel/ayarlar/izinler">
               🛡️ Rol Yetkileri
             </Link>
+            <Link className="btn btn--ghost" href="/panel/ayarlar/ozel-roller">
+              Özel Roller
+            </Link>
             <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
               {formAcik ? "Vazgeç" : "➕ Yeni Kullanıcı"}
             </Button>
@@ -287,7 +322,7 @@ export default function KullanicilarSayfasi() {
               <div style={{ flex: 1, minWidth: 200 }}><Field label="E-posta *"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} required placeholder="ayse@firma.com" /></Field></div>
             </div>
             <div className="row">
-              <div style={{ flex: 1, minWidth: 160 }}><Field label="Rol"><Select value={rol} onChange={(e) => setRol(e.target.value as Rol)}>{ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}</Select></Field></div>
+              <div style={{ flex: 1, minWidth: 160 }}><Field label="Rol"><Select value={rol} onChange={(e) => setRol(e.target.value)}>{rolSecenekleri()}</Select></Field></div>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <Field label="Giriş">
                   <Select aria-label="Giriş yöntemi" value={davetle ? "davet" : "parola"} onChange={(e) => setDavetle(e.target.value === "davet")}>
@@ -332,8 +367,8 @@ export default function KullanicilarSayfasi() {
                     {!k.epostaDogrulandi && <span className="subtle"> · davet bekliyor</span>}
                   </td>
                   <td style={{ minWidth: 150 }}>
-                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select aria-label={`${k.adSoyad} rolü`} disabled={k.id === benId} title={k.id === benId ? "Kendi rolünüzü başka bir yönetici değiştirebilir" : undefined} value={k.rol} onChange={(e) => { if (e.target.value !== k.rol) setRolDegisimi({ kullanici: k, yeniRol: e.target.value as Rol }); }}>
-                      {ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}
+                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select aria-label={`${k.adSoyad} rolü`} disabled={k.id === benId} title={k.id === benId ? "Kendi rolünüzü başka bir yönetici değiştirebilir" : undefined} value={kullaniciSecimi(k)} onChange={(e) => { if (e.target.value !== kullaniciSecimi(k)) setRolDegisimi({ kullanici: k, yeniRol: e.target.value }); }}>
+                      {rolSecenekleri(k.ozelRolId)}
                     </Select>}
                   </td>
                   <td><Status tone={k.aktif ? "ok" : "danger"}>{k.aktif ? "Aktif" : "Pasif"}</Status></td>
@@ -395,7 +430,7 @@ export default function KullanicilarSayfasi() {
       {rolDegisimi && (
         <Modal
           baslik="Rolü değiştir"
-          aciklama={`${rolDegisimi.kullanici.adSoyad} (${rolDegisimi.kullanici.eposta}) kullanıcısının rolü ${rolAdi(rolDegisimi.kullanici.rol)} → ${rolAdi(rolDegisimi.yeniRol)} olacak. Yeni yetkiler hemen geçerli olur; değişiklik denetim izine yazılır.`}
+          aciklama={`${rolDegisimi.kullanici.adSoyad} (${rolDegisimi.kullanici.eposta}) kullanıcısının rolü ${secimAdi(kullaniciSecimi(rolDegisimi.kullanici))} → ${secimAdi(rolDegisimi.yeniRol)} olacak. Yeni yetkiler hemen geçerli olur; değişiklik denetim izine yazılır.`}
           onKapat={() => setRolDegisimi(null)}
         >
           <form onSubmit={rolDegistir}>

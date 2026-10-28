@@ -47,7 +47,7 @@ export class McpController {
       res.setHeader("WWW-Authenticate", 'Bearer realm="TekirExtra MCP"');
       throw new UnauthorizedException("Geçerli bir MCP erişim anahtarı gerekli (Asistan ve Onaylar → MCP erişim anahtarları).");
     }
-    baglamKur({ tenantId: kimlik.tenantId, userId: kimlik.userId, rol: kimlik.rol });
+    baglamKur({ tenantId: kimlik.tenantId, userId: kimlik.userId, rol: kimlik.rol, ...(kimlik.ozelRol ? { ozelRol: kimlik.ozelRol } : {}) });
 
     const istekler = Array.isArray(govde) ? (govde as JsonRpcIstek[]) : [govde as JsonRpcIstek];
     const yanitlar = [];

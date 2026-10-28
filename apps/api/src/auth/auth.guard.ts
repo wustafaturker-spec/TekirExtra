@@ -139,10 +139,13 @@ export class AuthGuard implements CanActivate {
       }
     }
 
+    // KLN-20: özel rol kutuları önbellekteki durumdan (en geç 10 sn).
+    const ozelRol = this.durum ? (await this.durum.getir(yuk.tenantId, yuk.sub)).ozelRol : null;
     baglamKur({
       tenantId: yuk.tenantId,
       userId: yuk.sub,
       rol: yuk.rol,
+      ...(ozelRol ? { ozelRol } : {}),
     });
     return true;
   }

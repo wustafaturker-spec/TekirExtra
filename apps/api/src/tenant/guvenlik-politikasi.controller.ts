@@ -10,7 +10,8 @@ import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 
 const politikaSemasi = z.object({
-  ikiAdimZorunluRoller: z.array(z.enum(ROLLER)).max(ROLLER.length).transform((r) => [...new Set(r)].sort()),
+  // KLN-20: özel rol "ozel:<id>" ile seçilir.
+  ikiAdimZorunluRoller: z.array(z.union([z.enum(ROLLER), z.string().regex(/^ozel:[0-9a-f-]{36}$/)])).max(200).transform((r) => [...new Set(r)].sort()),
   oturumSuresiGun: z.number().int().min(1).max(OTURUM_SURESI_EN_COK_GUN),
   hareketsizlikDk: z.number().int().refine((d) => (HAREKETSIZLIK_SECENEKLERI as readonly number[]).includes(d), "15, 30, 60 ya da 240 dakika olmalı").nullable(),
 });
@@ -33,10 +34,15 @@ export class GuvenlikPolitikasiController {
       Promise.all([
         tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: SECIM }),
         // Kaydetmeden önce kaç kişinin kuruluma yönleneceği görünsün.
-        tx.user.groupBy({ by: ["rol"], where: { aktif: true, totpAktif: false }, _count: { _all: true } }),
+        tx.user.groupBy({ by: ["rol", "ozelRolId"], where: { aktif: true, totpAktif: false }, _count: { _all: true } }),
       ]),
     );
-    return { ...politika, ikiAdimsizKullanicilar: Object.fromEntries(eksikler.map((e) => [e.rol, e._count._all])) };
+    const sayilar: Record<string, number> = {};
+    for (const e of eksikler) {
+      sayilar[e.rol] = (sayilar[e.rol] ?? 0) + e._count._all;
+      if (e.ozelRolId) sayilar[`ozel:${e.ozelRolId}`] = (sayilar[`ozel:${e.ozelRolId}`] ?? 0) + e._count._all;
+    }
+    return { ...politika, ikiAdimsizKullanicilar: sayilar };
   }
 
   @Put()
@@ -45,6 +51,10 @@ export class GuvenlikPolitikasiController {
     if (!s.success) throw new BadRequestException(s.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
     const { tenantId, userId } = aktifBaglam();
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const ozelIdler = s.data.ikiAdimZorunluRoller.filter((r) => r.startsWith("ozel:")).map((r) => r.slice(5));
+      if (ozelIdler.length && (await tx.ozelRol.count({ where: { id: { in: ozelIdler } } })) !== ozelIdler.length) {
+        throw new BadRequestException("Seçilen özel rollerden biri bulunamadı");
+      }
       const onceki = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: SECIM });
       const guncel = await tx.tenant.update({ where: { id: tenantId }, data: s.data, select: SECIM });
       const degisiklikler = degisiklikleriBul(

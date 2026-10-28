@@ -70,14 +70,20 @@ export class RaporAbonelikService {
     private readonly eposta: EpostaService,
   ) {}
 
-  /** Raporu görebilen etkin firma kullanıcıları (alıcı seçici). */
+  /**
+   * Raporu görebilen etkin firma kullanıcıları (alıcı seçici). KLN-20: özel
+   * rolü raporları kapatan kullanıcı aday değildir; rol adı (özel rol dahil)
+   * ekranda role göre toplu seçim için döner.
+   */
   async aliciAdaylari(raporKod: string) {
     const tanim = raporTanimiAl(raporKod);
     if (!tanim) throw new NotFoundException(`'${raporKod}' raporu bulunamadı`);
     const { tenantId } = aktifBaglam();
     const kullanicilar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.user.findMany({ where: { aktif: true }, select: { id: true, adSoyad: true, eposta: true, rol: true }, orderBy: { adSoyad: "asc" } }));
-    return kullanicilar.filter((k) => raporErisilebilir(tanim, k.rol as Rol)).map(({ rol: _r, ...k }) => k);
+      tx.user.findMany({ where: { aktif: true }, select: { id: true, adSoyad: true, eposta: true, rol: true, ozelRol: { select: { id: true, ad: true, kapaliKutular: true } } }, orderBy: { adSoyad: "asc" } }));
+    return kullanicilar
+      .filter((k) => raporErisilebilir(tanim, k.rol as Rol) && !k.ozelRol?.kapaliKutular.includes("raporlar.goruntule"))
+      .map(({ ozelRol, ...k }) => ({ ...k, ozelRol: ozelRol ? { id: ozelRol.id, ad: ozelRol.ad } : null }));
   }
 
   /** Kullanıcının abonelikleri; yönetici firmadakilerin hepsini görür. */

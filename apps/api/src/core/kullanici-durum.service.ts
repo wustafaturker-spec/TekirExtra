@@ -8,6 +8,8 @@ export interface KullaniciDurumu {
   oturumSurumu: number;
   /** KLN-21: rolü 2FA zorunlu ama kullanıcı kurmamış. */
   ikiAdimEksik: boolean;
+  /** KLN-20: özel rol ve kapattığı kutular (yoksa null). */
+  ozelRol: { id: string; kapali: string[] } | null;
 }
 
 /** Guard her istekte DB'ye gitmesin; değişiklik en geç bu sürede tüm süreçlere yansır. */
@@ -29,13 +31,17 @@ export class KullaniciDurumService {
     if (!taze && kayit && kayit.bitis > simdi) return kayit.durum;
     const [k, politika] = await this.prisma.tenantIslem(tenantId, (tx) =>
       Promise.all([
-        tx.user.findUnique({ where: { id: userId }, select: { aktif: true, rol: true, oturumSurumu: true, totpAktif: true } }),
+        tx.user.findUnique({ where: { id: userId }, select: { aktif: true, rol: true, oturumSurumu: true, totpAktif: true, ozelRolId: true, ozelRol: { select: { kapaliKutular: true } } } }),
         tx.tenant.findUnique({ where: { id: tenantId }, select: { ikiAdimZorunluRoller: true } }),
       ]),
     );
     const durum: KullaniciDurumu = k
-      ? { aktif: k.aktif, rol: k.rol, oturumSurumu: k.oturumSurumu, ikiAdimEksik: ikiAdimEksikMi(politika ?? { ikiAdimZorunluRoller: [] }, k.rol, k.totpAktif) }
-      : { aktif: false, rol: null, oturumSurumu: -1, ikiAdimEksik: false };
+      ? {
+          aktif: k.aktif, rol: k.rol, oturumSurumu: k.oturumSurumu,
+          ikiAdimEksik: ikiAdimEksikMi(politika ?? { ikiAdimZorunluRoller: [] }, k.rol, k.totpAktif, k.ozelRolId),
+          ozelRol: k.ozelRolId ? { id: k.ozelRolId, kapali: k.ozelRol?.kapaliKutular ?? [] } : null,
+        }
+      : { aktif: false, rol: null, oturumSurumu: -1, ikiAdimEksik: false, ozelRol: null };
     if (this.onbellek.size > 10_000) this.onbellek.clear();
     this.onbellek.set(userId, { durum, bitis: simdi + DURUM_ONBELLEK_MS });
     return durum;

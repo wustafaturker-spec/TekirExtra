@@ -16,6 +16,8 @@ export interface IstekBaglami {
    * (DESTEK_KULLANICI_ID); veritabanı işlemleri salt okunur açılır.
    */
   destek?: { oturumId: string; ad: string; eposta: string };
+  /** KLN-20: kullanıcının özel rolü; `rol` şablondur, `kapali` kutular ayrıca kapanır. */
+  ozelRol?: { id: string; kapali: string[] };
 }
 
 /** PLT-10: destek oturumunun kullanıcı kimliği; hiçbir kullanıcıyla eşleşmez. */

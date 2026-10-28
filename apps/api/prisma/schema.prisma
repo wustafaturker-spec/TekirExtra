@@ -166,6 +166,7 @@ model Tenant {
   abonelikTalepleri         AbonelikTalebi[]
   abonelikOdemeleri         AbonelikOdemesi[]
   destekIzinleri            DestekIzni[]
+  ozelRoller                OzelRol[]
   destekOturumlari          DestekOturumu[]
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
@@ -338,6 +339,24 @@ model AbonelikTalebi {
   @@map("abonelik_talepleri")
 }
 
+/// KLN-20: şablondan türetilen, yalnız yetki kapatan özel rol. `kapaliKutular`: "modul.islem".
+model OzelRol {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  ad            String   @db.VarChar(80)
+  sablonRol     Rol      @map("sablon_rol")
+  kapaliKutular String[] @default([]) @map("kapali_kutular")
+  aktif         Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kullanicilar User[]
+
+  @@unique([tenantId, ad])
+  @@map("ozel_roller")
+}
+
 /// KLN-24: firma yöneticisinin TekirExtra ekibine verdiği süreli destek izni.
 model DestekIzni {
   id             String    @id @default(uuid()) @db.Uuid
@@ -409,6 +428,9 @@ model User {
   parolaHash             String           @map("parola_hash")
   adSoyad                String           @map("ad_soyad")
   rol                    Rol
+  /// KLN-20: özel rol; `rol` şablon rolüdür, özel rol yalnız kutu kapatır.
+  ozelRolId              String?          @map("ozel_rol_id") @db.Uuid
+  ozelRol                OzelRol?         @relation(fields: [ozelRolId], references: [id], onDelete: Restrict)
   aktif                  Boolean          @default(true)
   epostaDogrulandi       Boolean          @default(false) @map("eposta_dogrulandi")
   /// TOTP gizli anahtarı AES-256-GCM ile şifreli saklanır (KLN-05)
@@ -465,6 +487,7 @@ model User {
   @@unique([tenantId, eposta])
   @@index([tenantId])
   @@index([tenantId, bayiCariId])
+  @@index([ozelRolId])
   @@map("users")
 }
 

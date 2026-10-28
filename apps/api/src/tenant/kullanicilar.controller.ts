@@ -18,6 +18,7 @@ import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { aktifBaglam } from "../core/istek-baglami";
+import { ikiAdimEksikMi } from "../core/guvenlik-politikasi";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import { AbonelikService } from "./abonelik.service";
@@ -33,10 +34,14 @@ const kullaniciOlusturSemasi = z.object({
   parola: parolaSemasi.optional(),
   maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
   bayiCariId: z.string().uuid().nullable().optional(),
+  // KLN-20: verilirse rol özel rolün şablonu olur.
+  ozelRolId: z.string().uuid().nullable().optional(),
 }).refine((g) => g.davet || g.parola, { message: "Parola girin ya da davet e-postası seçin", path: ["parola"] });
 
 const kullaniciGuncelleSemasi = z.object({
   rol: z.enum(ROLLER).optional(),
+  /** KLN-20: özel rol atanırsa rol şablonuna eşitlenir; null ya da yalnız rol verilirse özel rol kalkar. */
+  ozelRolId: z.string().uuid().nullable().optional(),
   aktif: z.boolean().optional(),
   maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
   bayiCariId: z.string().uuid().nullable().optional(),
@@ -54,6 +59,8 @@ const KULLANICI_SECIMI = {
   maksIskontoYuzdesi: true,
   bayiCariId: true,
   bayiCari: { select: { id: true, kod: true, unvan: true } },
+  ozelRolId: true,
+  ozelRol: { select: { id: true, ad: true } },
 } as const;
 
 /** Firma içi kullanıcı yönetimi (KLN-02) — yalnızca yönetici. */
@@ -67,6 +74,14 @@ export class KullanicilarController {
     private readonly durum: KullaniciDurumService,
     private readonly epostaDegisimi: EpostaDegisimiService,
   ) {}
+
+  /** KLN-20: atanacak özel rol bu firmada ve aktif olmalı. */
+  private async ozelRolCoz(tenantId: string, ozelRolId: string) {
+    const r = await this.prisma.tenantIslem(tenantId, (tx) => tx.ozelRol.findUnique({ where: { id: ozelRolId }, select: { sablonRol: true, aktif: true } }));
+    if (!r) throw new BadRequestException("Özel rol bulunamadı");
+    if (!r.aktif) throw new BadRequestException("Pasif özel rol atanamaz");
+    return r;
+  }
 
   private async bayiCariDogrula(tenantId: string, bayiCariId?: string | null) {
     if (!bayiCariId) return;
@@ -87,7 +102,7 @@ export class KullanicilarController {
     );
     // KLN-21: ekranda "2FA zorunlu ama kurulmamış" gösterilir.
     const zorunlu = politika?.ikiAdimZorunluRoller ?? [];
-    return kullanicilar.map((k) => ({ ...k, ikiAdimZorunlu: zorunlu.includes(k.rol) }));
+    return kullanicilar.map((k) => ({ ...k, ikiAdimZorunlu: ikiAdimEksikMi({ ikiAdimZorunluRoller: zorunlu }, k.rol, false, k.ozelRolId) }));
   }
 
   @Post()
@@ -99,6 +114,7 @@ export class KullanicilarController {
       );
     }
     const girdi = ayristirma.data;
+    if (girdi.ozelRolId) girdi.rol = (await this.ozelRolCoz(aktifBaglam().tenantId, girdi.ozelRolId)).sablonRol;
     if (girdi.rol === "calisan") throw new BadRequestException("Çalışan hesabı personel kartından self-servis davetiyle açılır");
     await this.abonelik.limitDogrula("kullanici");
     const { tenantId } = aktifBaglam();
@@ -124,6 +140,7 @@ export class KullanicilarController {
           eposta: girdi.eposta,
           adSoyad: girdi.adSoyad,
           rol: girdi.rol,
+          ozelRolId: girdi.ozelRolId ?? null,
           parolaHash,
           epostaDogrulandi: !girdi.davet,
           maksIskontoYuzdesi: girdi.maksIskontoYuzdesi !== undefined && girdi.maksIskontoYuzdesi !== null
@@ -185,10 +202,13 @@ export class KullanicilarController {
     const girdi = ayristirma.data;
     const { tenantId, userId } = aktifBaglam();
     await this.bayiCariDogrula(tenantId, girdi.bayiCariId);
+    // KLN-20: özel rol şablonunu rol olarak taşır; yalnız rol değişirse özel rol kalkar.
+    if (girdi.ozelRolId) girdi.rol = (await this.ozelRolCoz(tenantId, girdi.ozelRolId)).sablonRol;
+    else if (girdi.rol !== undefined && girdi.ozelRolId === undefined) girdi.ozelRolId = null;
     if (id === userId && girdi.aktif === false) {
       throw new BadRequestException("Kendi hesabınızı pasifleştiremezsiniz");
     }
-    if (id === userId && girdi.rol !== undefined) {
+    if (id === userId && (girdi.rol !== undefined || girdi.ozelRolId !== undefined)) {
       throw new BadRequestException("Kendi rolünüzü değiştiremezsiniz; başka bir yönetici değiştirebilir");
     }
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -196,7 +216,7 @@ export class KullanicilarController {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${tenantId}:kullanici-yetki`}, 0))::text`;
       const mevcut = await tx.user.findUnique({
         where: { id },
-        select: { rol: true, aktif: true, maksIskontoYuzdesi: true, bayiCariId: true, eposta: true },
+        select: { rol: true, aktif: true, maksIskontoYuzdesi: true, bayiCariId: true, eposta: true, ozelRol: { select: { ad: true } } },
       });
       if (!mevcut) throw new NotFoundException("Kullanıcı bulunamadı");
       // PRS-21: çalışan hesabı personel kartına bağlıdır; rolü buradan değişmez, başka hesap çalışan yapılmaz.
@@ -232,6 +252,7 @@ export class KullanicilarController {
         if (String(eski ?? "") !== String(yeni ?? "")) degisiklikler[alan] = { eski: eski ?? null, yeni: yeni ?? null };
       };
       karsilastir("rol", mevcut.rol, guncel.rol);
+      karsilastir("ozelRol", mevcut.ozelRol?.ad, guncel.ozelRol?.ad);
       karsilastir("aktif", mevcut.aktif, guncel.aktif);
       karsilastir("maksIskontoYuzdesi", mevcut.maksIskontoYuzdesi?.toString(), guncel.maksIskontoYuzdesi?.toString());
       karsilastir("bayiCariId", mevcut.bayiCariId, guncel.bayiCariId);

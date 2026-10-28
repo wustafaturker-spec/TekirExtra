@@ -114,8 +114,14 @@ export class AuthService {
     return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
-      ikiAdimKurulumuGerekli: ikiAdimEksikMi(politika, kullanici.rol, kullanici.totpAktif),
+      ikiAdimKurulumuGerekli: ikiAdimEksikMi(politika, kullanici.rol, kullanici.totpAktif, kullanici.ozelRolId),
     }, istemci, new Date(), politika);
+  }
+
+  /** KLN-20: menüde gösterilen özel rol adı. */
+  async ozelRolAdi(tenantId: string, id: string): Promise<string | null> {
+    const r = await this.prisma.tenantIslem(tenantId, (tx) => tx.ozelRol.findUnique({ where: { id }, select: { ad: true } }));
+    return r?.ad ?? null;
   }
 
   /** KLN-21/22: firmanın oturum ve 2FA politikası (kayıt yoksa varsayılanlar). */
@@ -161,7 +167,7 @@ export class AuthService {
     return this.oturumAc(kullanici.tenantId, kullanici.id, kullanici.rol, kullanici.oturumSurumu, {
       adSoyad: kullanici.adSoyad,
       eposta: kullanici.eposta,
-      ikiAdimKurulumuGerekli: ikiAdimEksikMi(politika, kullanici.rol, kullanici.totpAktif),
+      ikiAdimKurulumuGerekli: ikiAdimEksikMi(politika, kullanici.rol, kullanici.totpAktif, kullanici.ozelRolId),
     }, istemci, oturum.girisAt, politika);
   }
 
@@ -278,9 +284,9 @@ export class AuthService {
 
   /** Kullanıcı geçerli bir 2FA kodu (ya da kurtarma kodu) ile kendi 2FA'sını kapatır. */
   async totpKapat(kod: string): Promise<void> {
-    const { tenantId, userId, rol } = aktifBaglam();
+    const { tenantId, userId, rol, ozelRol } = aktifBaglam();
     // KLN-21: zorunlu roldeki kullanıcı 2FA'sını kapatamaz (telefon kaybında yönetici sıfırlar).
-    if ((await this.politikaGetir(tenantId)).ikiAdimZorunluRoller.includes(rol)) {
+    if (ikiAdimEksikMi(await this.politikaGetir(tenantId), rol, false, ozelRol?.id)) {
       throw new BadRequestException("Firmanız rolünüz için iki adımlı doğrulamayı zorunlu tuttuğundan kapatılamaz; telefonunuzu kaybettiyseniz yöneticiniz sıfırlayabilir");
     }
     await this.totpKoduDogrula(tenantId, userId, kod, true);

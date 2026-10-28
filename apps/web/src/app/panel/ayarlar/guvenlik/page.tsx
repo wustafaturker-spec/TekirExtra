@@ -7,11 +7,12 @@ import { ROL_ADI } from "@/lib/rol-adlari";
 import { Alert, Badge, Button, Card, Field, PageHeader, Select, TableWrap } from "@/components/ui";
 
 interface Politika {
-  ikiAdimZorunluRoller: Rol[];
+  /** Hazır rol kodu ya da KLN-20 özel rolü "ozel:<id>". */
+  ikiAdimZorunluRoller: string[];
   oturumSuresiGun: number;
   hareketsizlikDk: number | null;
   /** Rol → 2FA'sı kurulmamış aktif kullanıcı sayısı. */
-  ikiAdimsizKullanicilar: Partial<Record<Rol, number>>;
+  ikiAdimsizKullanicilar: Record<string, number>;
 }
 
 const HAREKETSIZLIK = [
@@ -35,7 +36,8 @@ const KAPANIS_NEDENI: Record<string, string> = { izin_geri_alindi: "izin geri al
 /** KLN-21/22: firma genelinde 2FA zorunluluğu ve oturum süresi. */
 export default function GuvenlikPolitikasiSayfasi() {
   const [politika, setPolitika] = useState<Politika | null>(null);
-  const [roller, setRoller] = useState<Set<Rol>>(new Set());
+  const [roller, setRoller] = useState<Set<string>>(new Set());
+  const [ozelRoller, setOzelRoller] = useState<{ id: string; ad: string; aktif: boolean }[]>([]);
   const [gun, setGun] = useState(30);
   const [hareketsizlik, setHareketsizlik] = useState("");
   const [hata, setHata] = useState("");
@@ -46,7 +48,8 @@ export default function GuvenlikPolitikasiSayfasi() {
   const [destekMesaji, setDestekMesaji] = useState<{ ton: "success" | "error"; metin: string } | null>(null);
 
   const yukle = useCallback(async () => {
-    const p = await api<Politika>("/guvenlik-politikasi");
+    const [p, o] = await Promise.all([api<Politika>("/guvenlik-politikasi"), api<{ id: string; ad: string; aktif: boolean }[]>("/ozel-roller").catch(() => [])]);
+    setOzelRoller(o);
     setPolitika(p);
     setRoller(new Set(p.ikiAdimZorunluRoller));
     setGun(p.oturumSuresiGun);
@@ -67,7 +70,7 @@ export default function GuvenlikPolitikasiSayfasi() {
     }
   }
 
-  function rolDegistir(rol: Rol, secili: boolean) {
+  function rolDegistir(rol: string, secili: boolean) {
     setRoller((onceki) => {
       const yeni = new Set(onceki);
       if (secili) yeni.add(rol);
@@ -116,12 +119,12 @@ export default function GuvenlikPolitikasiSayfasi() {
               </p>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.5rem" }}>
-              {ROLLER.map((rol) => {
-                const eksik = politika.ikiAdimsizKullanicilar[rol] ?? 0;
+              {[...ROLLER.map((r) => ({ kod: r as string, ad: ROL_ADI[r] })), ...ozelRoller.filter((o) => o.aktif || roller.has(`ozel:${o.id}`)).map((o) => ({ kod: `ozel:${o.id}`, ad: `${o.ad} (özel rol)` }))].map(({ kod, ad }) => {
+                const eksik = politika.ikiAdimsizKullanicilar[kod] ?? 0;
                 return (
-                  <label key={rol} className="check-row">
-                    <input type="checkbox" checked={roller.has(rol)} onChange={(e) => rolDegistir(rol, e.target.checked)} />{" "}
-                    {ROL_ADI[rol]} {eksik > 0 && <Badge variant="neutral">{eksik} kişide 2FA yok</Badge>}
+                  <label key={kod} className="check-row">
+                    <input type="checkbox" checked={roller.has(kod)} onChange={(e) => rolDegistir(kod, e.target.checked)} />{" "}
+                    {ad} {eksik > 0 && <Badge variant="neutral">{eksik} kişide 2FA yok</Badge>}
                   </label>
                 );
               })}

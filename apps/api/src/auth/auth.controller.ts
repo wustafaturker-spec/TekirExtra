@@ -112,7 +112,7 @@ export class AuthController {
   @IkiAdimKurulumundaAcik()
   @Get("ben")
   async ben() {
-    const { userId, tenantId, rol, destek } = aktifBaglam();
+    const { userId, tenantId, rol, destek, ozelRol } = aktifBaglam();
     const [abonelik, durum, politika, destekBagli] = await Promise.all([
       // Platform P0-1: panel salt okunur firmada üstte nedenini gösterir.
       this.abonelikErisim ? this.abonelikErisim.getir(tenantId) : null,
@@ -130,6 +130,8 @@ export class AuthController {
       destekBagli,
       // PLT-10: destek oturumundaki görüntüleyen (salt okunur).
       destek: destek ? { ad: destek.ad } : null,
+      // KLN-20: menü özel rolün görüntülemeyi kapattığı modülleri gizler.
+      ozelRol: ozelRol ? { id: ozelRol.id, ad: await this.auth.ozelRolAdi(tenantId, ozelRol.id), kapali: ozelRol.kapali } : null,
     };
   }
 

@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { BildirimOnemi, BildirimTuru, Prisma } from "@prisma/client";
-import type { Rol } from "@tekirextra/shared";
+import { ozelRolPanelYoluKapali, type Rol } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -74,8 +74,10 @@ export class BildirimService {
       const [kullanicilar, tercihler, mevcutTeslimatlar] = await Promise.all([
         tx.user.findMany({
           where: girdi.kullaniciIdler ? { id: { in: girdi.kullaniciIdler }, aktif: true } : { rol: { in: girdi.roller }, aktif: true },
-          select: { id: true },
-        }),
+          select: { id: true, ozelRol: { select: { kapaliKutular: true } } },
+        }).then((liste) =>
+          // KLN-20: özel rolü hedef ekranın modülünü görmeyen kullanıcıya düşmez.
+          liste.filter((k) => !girdi.hedefYol || !k.ozelRol || !ozelRolPanelYoluKapali(k.ozelRol.kapaliKutular, girdi.hedefYol))),
         tx.bildirimTercihi.findMany({ where: { tur: girdi.tur }, select: { userId: true, uygulamaIci: true, eposta: true } }),
         tx.bildirimTeslimati.findMany({ where: { bildirimId: bildirim.id }, select: { userId: true } }),
       ]);

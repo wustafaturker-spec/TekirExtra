@@ -25,6 +25,7 @@ export interface McpKimligi {
   userId: string;
   rol: Rol;
   anahtarId: string;
+  ozelRol?: { id: string; kapali: string[] };
 }
 
 /**
@@ -83,17 +84,19 @@ export class McpAnahtarService {
     const tenantId = kiraciCoz(anahtar);
     if (!tenantId) return null;
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const k = await tx.aiMcpAnahtari.findUnique({ where: { ozet: ozetle(anahtar) }, include: { user: { select: { rol: true, aktif: true, totpAktif: true } } } });
+      const k = await tx.aiMcpAnahtari.findUnique({ where: { ozet: ozetle(anahtar) }, include: { user: { select: { rol: true, aktif: true, totpAktif: true, ozelRolId: true, ozelRol: { select: { kapaliKutular: true } } } } } });
       if (!k || k.tenantId !== tenantId || k.iptalAt || !k.user.aktif) return null;
       const rol = k.user.rol as Rol;
       if (MCP_KAPALI_ROLLER.includes(rol)) return null;
       // KLN-21: 2FA zorunlu rolde kurulumu bitmemiş kullanıcının anahtarı da çalışmaz.
       const politika = await tx.tenant.findUnique({ where: { id: tenantId }, select: { ikiAdimZorunluRoller: true } });
-      if (politika && ikiAdimEksikMi(politika, rol, k.user.totpAktif)) return null;
+      if (politika && ikiAdimEksikMi(politika, rol, k.user.totpAktif, k.user.ozelRolId)) return null;
       if (!k.sonKullanim || Date.now() - k.sonKullanim.getTime() > 60_000) {
         await tx.aiMcpAnahtari.update({ where: { id: k.id }, data: { sonKullanim: new Date() } });
       }
-      return { tenantId, userId: k.userId, rol, anahtarId: k.id };
+      // KLN-20: özel rolün kapattığı kutular MCP araçlarında da geçerli.
+      const ozelRol = k.user.ozelRolId ? { id: k.user.ozelRolId, kapali: k.user.ozelRol?.kapaliKutular ?? [] } : undefined;
+      return { tenantId, userId: k.userId, rol, anahtarId: k.id, ...(ozelRol ? { ozelRol } : {}) };
     });
   }
 }

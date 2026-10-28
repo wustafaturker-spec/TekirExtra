@@ -2,9 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { ROL_ADI } from "@/lib/rol-adlari";
 import { Alert, Field, Input, Modal, ModalEylem, Segmented, Select } from "@/components/ui";
 
 /** RPR-24: zamanlanmış rapor e-postası — abonelik formu. */
+
+/** KLN-20: aday kullanıcı; özel rolü varsa onun adıyla gruplanır. */
+interface AliciAdayi { id: string; adSoyad: string; eposta: string; rol: string; ozelRol: { id: string; ad: string } | null }
+const rolAnahtari = (k: AliciAdayi) => (k.ozelRol ? `ozel:${k.ozelRol.id}` : k.rol);
+function rolGruplari(adaylar: AliciAdayi[]) {
+  const gruplar = new Map<string, { anahtar: string; ad: string; sayi: number }>();
+  for (const k of adaylar) {
+    const anahtar = rolAnahtari(k);
+    const g = gruplar.get(anahtar) ?? { anahtar, ad: k.ozelRol ? `${k.ozelRol.ad} (özel rol)` : ROL_ADI[k.rol as keyof typeof ROL_ADI] ?? k.rol, sayi: 0 };
+    g.sayi++;
+    gruplar.set(anahtar, g);
+  }
+  return [...gruplar.values()].sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
+}
 
 export type Siklik = "gunluk" | "haftalik" | "aylik";
 export type Donem = "dun" | "gecen_hafta" | "gecen_ay" | "bu_ay" | "bu_yil" | "gorunum";
@@ -64,12 +79,12 @@ export function AbonelikPenceresi({
   const [bicim, setBicim] = useState<Bicim>(kayit?.bicim ?? "excel");
   const [bosGonder, setBosGonder] = useState(kayit?.bosGonder ?? false);
   const [alicilar, setAlicilar] = useState<string[]>(kayit?.aliciIdler ?? []);
-  const [adaylar, setAdaylar] = useState<{ id: string; adSoyad: string; eposta: string }[]>([]);
+  const [adaylar, setAdaylar] = useState<AliciAdayi[]>([]);
   const [hata, setHata] = useState("");
   const [isleniyor, setIsleniyor] = useState(false);
 
   useEffect(() => {
-    void api<{ id: string; adSoyad: string; eposta: string }[]>(`/rapor-abonelikleri/alici-adaylari?rapor=${encodeURIComponent(raporKod)}`)
+    void api<AliciAdayi[]>(`/rapor-abonelikleri/alici-adaylari?rapor=${encodeURIComponent(raporKod)}`)
       .then((liste) => {
         setAdaylar(liste);
         // Yeni abonelikte varsayılan alıcı kurandır (listedeyse).
@@ -146,6 +161,13 @@ export function AbonelikPenceresi({
           <Segmented<Bicim> items={[{ deger: "excel", baslik: "Excel" }, { deger: "pdf", baslik: "PDF" }, { deger: "ikisi", baslik: "İkisi" }]} value={bicim} onChange={setBicim} />
         </Field>
         <Field label="Alıcılar (raporu görebilen firma kullanıcıları)">
+          {/* KLN-20: hazır ya da özel role göre toplu ekleme. */}
+          {rolGruplari(adaylar).length > 1 && (
+            <Select aria-label="Role göre ekle" value="" onChange={(e) => { const ids = adaylar.filter((k) => rolAnahtari(k) === e.target.value).map((k) => k.id); setAlicilar((a) => [...new Set([...a, ...ids])]); }}>
+              <option value="">Role göre ekle…</option>
+              {rolGruplari(adaylar).map((g) => <option key={g.anahtar} value={g.anahtar}>{g.ad} ({g.sayi})</option>)}
+            </Select>
+          )}
           <div className="stack" style={{ gap: "0.3rem", maxHeight: 180, overflowY: "auto" }}>
             {!adaylar.length && <span className="muted">Uygun kullanıcı bulunamadı.</span>}
             {adaylar.map((k) => (

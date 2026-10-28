@@ -215,6 +215,7 @@ export const MENU: MenuAlani[] = [
 export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/firma", ikon: Building2, baslik: "Firma Ayarları", eslesme: "tam" },
   { href: "/panel/ayarlar/kullanicilar", ikon: Users, baslik: "Kullanıcılar", eslesme: "tam", esanlamlilar: ["rol", "yetki", "bayi"] },
+  { href: "/panel/ayarlar/ozel-roller", ikon: Users, baslik: "Özel Roller", eslesme: "tam", esanlamlilar: ["rol", "yetki matrisi", "özel yetki", "kısıtlı rol"] },
   { href: "/panel/ayarlar/guvenlik", ikon: Lock, baslik: "Güvenlik Politikası", eslesme: "tam", esanlamlilar: ["2fa zorunlu", "iki adımlı zorunlu", "oturum süresi", "hareketsizlik", "otomatik çıkış", "destek erişimi", "destek izni"] },
   { href: "/panel/ayarlar/fatura-serileri", ikon: FileText, baslik: "Fatura Serileri", eslesme: "tam" },
   { href: "/panel/ayarlar/belge-gorunumu", ikon: Palette, baslik: "Belge Görünümü", eslesme: "tam", esanlamlilar: ["şablon", "tasarım", "logo", "kaşe", "imza", "renk", "yabancı dil", "proforma", "teklif çıktısı"] },

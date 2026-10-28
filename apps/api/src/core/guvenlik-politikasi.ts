@@ -8,9 +8,10 @@ export interface GuvenlikPolitikasi {
   hareketsizlikDk: number | null;
 }
 
-/** KLN-21: rol 2FA zorunlu listede ve kullanıcı kurmamışsa yalnız Hesap Güvenliği açıktır. */
-export function ikiAdimEksikMi(politika: Pick<GuvenlikPolitikasi, "ikiAdimZorunluRoller">, rol: string, totpAktif: boolean): boolean {
-  return !totpAktif && politika.ikiAdimZorunluRoller.includes(rol);
+/** KLN-21: rol 2FA zorunlu listede ve kullanıcı kurmamışsa yalnız Hesap Güvenliği açıktır. KLN-20: özel rol "ozel:<id>" ile seçilir. */
+export function ikiAdimEksikMi(politika: Pick<GuvenlikPolitikasi, "ikiAdimZorunluRoller">, rol: string, totpAktif: boolean, ozelRolId?: string | null): boolean {
+  if (totpAktif) return false;
+  return politika.ikiAdimZorunluRoller.includes(rol) || Boolean(ozelRolId && politika.ikiAdimZorunluRoller.includes(`ozel:${ozelRolId}`));
 }
 
 export const IKI_ADIM_KURULUMU_GEREKLI = "IKI_ADIM_KURULUMU_GEREKLI";

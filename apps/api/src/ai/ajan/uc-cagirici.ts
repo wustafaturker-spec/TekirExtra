@@ -1,10 +1,11 @@
 import { ForbiddenException, Injectable, Logger, type CanActivate, type Type } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { ModuleRef, Reflector } from "@nestjs/core";
-import type { EbelgeUygulamaKodu, Rol } from "@tekirextra/shared";
+import { ozelRolIstegiKapali, type EbelgeUygulamaKodu, type Rol } from "@tekirextra/shared";
+import { SALT_OKUMA_ANAHTAR } from "../../auth/public.decorator";
 import { ROLLER_ANAHTAR } from "../../auth/roller.decorator";
 import { rolUcaYetkili } from "../../auth/roller.guard";
-import { aktifBaglam } from "../../core/istek-baglami";
+import { aktifBaglam, baglamAl } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { EbelgeUygulamalariService } from "../../ebelge/ebelge-uygulamalari.service";
 import { ebelgeUygulamasiDenetle } from "../../ebelge/ebelge-uygulamasi.guard";
@@ -59,7 +60,13 @@ export class UcCagirici {
   /** Rol bu uca ekranda erişebiliyor mu (araç listesini süzmek için). */
   yetkiliMi(uc: UcTanimi, rol: Rol): boolean {
     const gerekli = this.reflector.getAllAndOverride<Rol[] | undefined>(ROLLER_ANAHTAR, [this.handler(uc), uc.denetleyici]);
-    return rolUcaYetkili(rol, gerekli);
+    if (!rolUcaYetkili(rol, gerekli)) return false;
+    // KLN-20: özel rolün kapattığı kutuya düşen araç modele sunulmaz, çağrılamaz (ekranla aynı matris).
+    const kapali = baglamAl()?.ozelRol?.kapali ?? [];
+    if (!kapali.length) return true;
+    const [yontem, yol] = uc.yol.split(" ");
+    const saltOkuma = Boolean(this.reflector.getAllAndOverride<boolean>(SALT_OKUMA_ANAHTAR, [this.handler(uc), uc.denetleyici]));
+    return !ozelRolIstegiKapali(kapali, yontem, yol ?? "", saltOkuma);
   }
 
   private readonly korumalar = new Map<unknown, Promise<CanActivate>>();
