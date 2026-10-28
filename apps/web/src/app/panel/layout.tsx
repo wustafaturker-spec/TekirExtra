@@ -170,7 +170,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           if (b.ikiAdimKurulumuGerekli) return;
           // Kapalı uygulamanın ekranları menüden kalkar (EBLG-77); istek
           // düşerse menü olduğu gibi kalır, uçları guard korur.
-          if (b.rol !== "calisan") void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
+          if (b.rol !== "calisan" && b.rol !== "b2b_bayi") void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
           const [ozet, liste] = await Promise.all([
             api<BildirimOzeti>("/bildirimler/ozet"),
             api<{ kayitlar: BildirimTeslimati[] }>("/bildirimler?limit=8"),

@@ -10,16 +10,23 @@ import { baglamAl } from "../core/istek-baglami";
 import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, SALT_OKUMA_ANAHTAR } from "./public.decorator";
 import { ROLLER_ANAHTAR } from "./roller.decorator";
 
-/** Çalışan rolünün @Roller("calisan") dışında erişebildiği hesap uçları. */
+/** Çalışan ve B2B bayinin @Roller'da adı geçmeyen uçlardan yalnız erişebildiği hesap uçları. */
 export const CALISAN_ACIK_YOLLAR = ["/auth/ben", "/auth/totp", "/auth/cikis", "/auth/parola", "/auth/oturumlar", "/bildirimler"];
 
 /**
- * Bir rolün `@Roller` listesi verilen uca erişip erişemeyeceği. Çalışan rolü
- * yalnız adının açıkça geçtiği uçlara girer (PRS-21); hesap yolu istisnaları
+ * Firma içi geniş erişimi olmayan roller: çalışan (PRS-21, yalnız kendi
+ * kartı) ve B2B bayi (firmanın müşterisi, yalnız kendi cari hesabı). Rol
+ * kısıtı olmayan genel uçlar (cari, fatura, stok listeleri…) onlara kapalıdır.
+ */
+const DAR_ROLLER: readonly Rol[] = ["calisan", "b2b_bayi"];
+
+/**
+ * Bir rolün `@Roller` listesi verilen uca erişip erişemeyeceği. Dar roller
+ * yalnız adlarının açıkça geçtiği uçlara girer; hesap yolu istisnaları
  * guard'dadır. Yapay zekâ araçları da ucu bu kuralla denetler (AI-02).
  */
 export function rolUcaYetkili(rol: Rol, gerekli: Rol[] | undefined): boolean {
-  if (rol === "calisan") return Boolean(gerekli?.includes("calisan"));
+  if (DAR_ROLLER.includes(rol)) return Boolean(gerekli?.includes(rol));
   if (!gerekli || gerekli.length === 0) return true;
   return rol === "yonetici" || gerekli.includes(rol);
 }
@@ -35,10 +42,10 @@ export class RollerGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
     const baglam = baglamAl();
-    // PRS-21: çalışan rolü yalnız adının açıkça geçtiği uçlara ve hesabının
-    // oturum/bildirim uçlarına erişir; @Roller taşımayan genel uçlar ona kapalı.
-    if (baglam?.rol === "calisan") {
-      if (gerekli?.includes("calisan")) return true;
+    // PRS-21 / B2B: çalışan ve bayi yalnız adlarının açıkça geçtiği uçlara ve
+    // hesaplarının oturum/bildirim uçlarına erişir; @Roller taşımayan genel uçlar onlara kapalı.
+    if (baglam && DAR_ROLLER.includes(baglam.rol)) {
+      if (gerekli?.includes(baglam.rol)) return true;
       const yol = String(context.switchToHttp().getRequest<{ path?: string }>()?.path ?? "").replace(/^\/api\/v\d+/, "");
       if (CALISAN_ACIK_YOLLAR.some((onek) => yol === onek || yol.startsWith(`${onek}/`))) return true;
       throw new ForbiddenException("Bu işlem için yetkiniz yok");

@@ -49,3 +49,14 @@ describe("özel rol kutuları (KLN-20)", () => {
     expect(ozelle("muhasebe", undefined, "POST", "/api/v1/raporlar/x/calistir", ["raporlar.duzenle"], true)).toBe(true);
   });
 });
+
+describe("B2B bayi rol kapısı", () => {
+  it("bayi rol kısıtı olmayan genel uçlara (cari, fatura, stok) erişemez; kendi portal ve hesap uçları açık", () => {
+    expect(() => baglamla("b2b_bayi", undefined, "/api/v1/cari")).toThrow(/yetkiniz yok/);
+    expect(() => baglamla("b2b_bayi", undefined, "/api/v1/fatura")).toThrow(/yetkiniz yok/);
+    expect(() => baglamla("b2b_bayi", ["muhasebe"], "/api/v1/stok")).toThrow(/yetkiniz yok/);
+    expect(baglamla("b2b_bayi", ["b2b_bayi", "muhasebe", "satis"], "/api/v1/b2b/profil")).toBe(true);
+    expect(baglamla("b2b_bayi", undefined, "/api/v1/auth/ben")).toBe(true);
+    expect(baglamla("b2b_bayi", undefined, "/api/v1/bildirimler/ozet")).toBe(true);
+  });
+});
