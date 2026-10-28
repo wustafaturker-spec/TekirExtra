@@ -13,10 +13,10 @@ function ayristir<T>(sema: ZodType<T>, govde: unknown): T {
 @Controller("masraflar")
 export class MasraflarController {
   constructor(private readonly service: MasraflarService) {}
-  @Get("kategoriler") kategoriListele() { return this.service.kategoriListele(); }
+  @Get("kategoriler") @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") kategoriListele() { return this.service.kategoriListele(); }
   @Post("kategoriler") @Roller("muhasebe") kategoriOlustur(@Body() g: unknown) { return this.service.kategoriOlustur(ayristir(kategoriOlusturSemasi, g)); }
   @Patch("kategoriler/:id") @Roller("muhasebe") kategoriGuncelle(@Param("id") id: string, @Body() g: unknown) { return this.service.kategoriGuncelle(id, ayristir(kategoriGuncelleSemasi, g)); }
-  @Get("kiralar") kiraListele() { return this.service.kiraSozlesmeListele(); }
+  @Get("kiralar") @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") kiraListele() { return this.service.kiraSozlesmeListele(); }
   @Post("kiralar") @Roller("muhasebe") kiraOlustur(@Body() g: unknown) { return this.service.kiraSozlesmeOlustur(ayristir(kiraSozlesmeOlusturSemasi, g)); }
   @Patch("kiralar/:id") @Roller("muhasebe") kiraGuncelle(@Param("id") id: string, @Body() g: unknown) { return this.service.kiraSozlesmeGuncelle(id, ayristir(kiraSozlesmeGuncelleSemasi, g)); }
   @Delete("kiralar/:id") @Roller("muhasebe") @HttpCode(204) kiraSil(@Param("id") id: string) { return this.service.kiraSozlesmeSil(id); }
@@ -25,8 +25,8 @@ export class MasraflarController {
     if (typeof (g as { aktif?: unknown })?.aktif !== "boolean") throw new BadRequestException("aktif alanı boolean olmalıdır");
     return this.service.kiraSozlesmeAktiflik(id, (g as { aktif: boolean }).aktif);
   }
-  @Get() listele(@Query() q: Record<string, string>) { return this.service.listele(q); }
-  @Get(":id") getir(@Param("id") id: string) { return this.service.getir(id); }
+  @Get() @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") listele(@Query() q: Record<string, string>) { return this.service.listele(q); }
+  @Get(":id") @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") getir(@Param("id") id: string) { return this.service.getir(id); }
   @Post() @Roller("muhasebe") olustur(@Body() g: unknown) { return this.service.olustur(ayristir(masrafOlusturSemasi, g)); }
   @Patch(":id") @Roller("muhasebe") guncelle(@Param("id") id: string, @Body() g: unknown) { return this.service.guncelle(id, ayristir(masrafGuncelleSemasi, g)); }
   @Post(":id/onayla") @Roller("muhasebe") onayla(@Param("id") id: string) { return this.service.onayla(id); }

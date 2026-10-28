@@ -26,6 +26,7 @@ export const FINANS_ROLLERI = ["muhasebe", "mali_musavir", "salt_okunur"];
  */
 const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
   { yol: "/panel/cari/tahsilat", roller: FINANS_ROLLERI },
+  { yol: "/panel/cari/mutabakatlar", roller: FINANS_ROLLERI }, // API cari/mutabakatlar ile aynı roller.
   { yol: "/panel/ai/hafiza", roller: ["muhasebe", "satis"] }, // AI-59: API ile aynı roller.
   { yol: "/panel/raporlar/maliyet-eksikleri", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },
   { yol: "/panel/raporlar/tahmin-isabeti", roller: FINANS_ROLLERI },

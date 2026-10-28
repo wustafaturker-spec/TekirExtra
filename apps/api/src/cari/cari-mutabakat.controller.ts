@@ -32,11 +32,13 @@ function dosyaGonder(res: Response, d: { dosyaAdi: string; mime: string; icerik:
 export class CariMutabakatController {
   constructor(private readonly servis: CariMutabakatService) {}
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get()
   listele(@Query("cariId") cariId?: string, @Query("durum") durum?: string, @Query("ay") ay?: string) {
     return this.servis.listele(filtre(cariId, durum, ay));
   }
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get("excel")
   async excel(@Res() res: Response, @Query("cariId") cariId?: string, @Query("durum") durum?: string, @Query("ay") ay?: string) {
     dosyaGonder(res, { dosyaAdi: `mutabakatlar-${new Date().toISOString().slice(0, 10)}.xlsx`, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icerik: await this.servis.excel(filtre(cariId, durum, ay)) });
@@ -73,11 +75,13 @@ export class CariMutabakatController {
     return this.servis.itirazKapat(id, ayristir(itirazKapatSemasi, govde).not);
   }
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get(":id/ekstre")
   async ekstre(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     dosyaGonder(res, await this.servis.ekstreIndir(id));
   }
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get(":id/ek")
   async ek(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     dosyaGonder(res, await this.servis.ekIndir(id));

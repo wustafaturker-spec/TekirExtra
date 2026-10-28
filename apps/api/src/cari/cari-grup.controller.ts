@@ -25,6 +25,7 @@ export class CariGrupController {
     return this.servis.getir(id);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur")
   @Get(":id/excel")
   async excel(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     const { dosyaAdi, buffer } = await this.servis.excel(id);

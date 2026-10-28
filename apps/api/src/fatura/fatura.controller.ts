@@ -77,11 +77,13 @@ export class FaturaController {
     return this.faturaService.isKuyruguOzeti();
   }
 
+  @Roller("satis", "muhasebe", "salt_okunur", "mali_musavir")
   @Get("satis-ozeti")
   async satisOzeti() {
     return this.faturaService.satisOzeti();
   }
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get("alis-ozeti")
   async alisOzeti() {
     return this.faturaService.alisOzeti();

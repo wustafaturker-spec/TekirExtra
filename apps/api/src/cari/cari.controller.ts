@@ -314,9 +314,11 @@ export class CariController {
   async crmGetir(@Param("id") id: string) { return this.cariService.crmGetir(id); }
 
   /** CARI-43: Cari Durum Paneli; bölümler rolün görebildiğine göre döner (CARI-46). */
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/durum")
   async durum(@Param("id") id: string) { return this.cariService.durum(id); }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/davranis-analizi")
   async davranisAnalizi(@Param("id") id: string) { return this.cariService.davranisAnalizi(id); }
 
@@ -344,6 +346,7 @@ export class CariController {
     return this.cariService.crmGorevDurum(id, gorevId, sonuc.data.durum);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/ekstre")
   async ekstre(
     @Param("id") id: string,
@@ -399,6 +402,7 @@ export class CariController {
     return file.buffer;
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/ekstre/pdf")
   async ekstrePdf(
     @Param("id") id: string,
@@ -417,6 +421,7 @@ export class CariController {
     res.send(buffer);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/ekstre/excel")
   async ekstreExcel(
     @Param("id") id: string,
@@ -450,6 +455,7 @@ export class CariController {
 
   // ─── CARI-39: teminatlar ─────────────────────────────────────────────────
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/teminatlar")
   async teminatlar(@Param("id") id: string) {
     return this.cariService.teminatlar(id);
@@ -484,12 +490,14 @@ export class CariController {
 
   // ─── CARI-37: Form BA/BS mutabakatı ──────────────────────────────────────
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get(":id/babs")
   async babs(@Param("id") id: string, @Query("yil") yil?: string, @Query("ay") ay?: string) {
     const d = babsDonemi(yil, ay);
     return this.cariService.babsMutabakati(id, d.yil, d.ay);
   }
 
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get(":id/babs/pdf")
   async babsPdf(@Param("id") id: string, @Res() res: Response, @Query("yil") yil?: string, @Query("ay") ay?: string) {
     const d = babsDonemi(yil, ay);
