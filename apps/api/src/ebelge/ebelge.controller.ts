@@ -49,12 +49,14 @@ export class EbelgeController {
 
   /** EBLG-27: gelen belgenin PDF görünümü; kaynak saklanan UBL'dir. */
   @EbelgeUygulamasi("efatura")
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get("gelen/:id/pdf")
   async gelenPdf(@Param("id") id: string, @Res() res: Response) {
     this.pdfYanitla(res, await this.gorunumService.gelenPdf(id));
   }
 
   /** EBLG-27: kestiğimiz belgenin alıcıya giden görünümü. */
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get("giden/:faturaId/pdf")
   async gidenPdf(@Param("faturaId") faturaId: string, @Res() res: Response) {
     this.pdfYanitla(res, await this.gorunumService.gidenPdf(faturaId));
@@ -323,6 +325,7 @@ export class EbelgeController {
   }
 
   @EbelgeUygulamasi("efatura")
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get("gelen")
   async gelenListele(@Query("durum") durum?: string) {
     if (durum && !GELEN_DURUMLARI.includes(durum as GelenEbelgeDurum)) {
@@ -334,6 +337,7 @@ export class EbelgeController {
   }
 
   @EbelgeUygulamasi("efatura")
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get("gelen/:id")
   async gelenGetir(@Param("id") id: string) {
     return this.ebelgeService.gelenGetir(id);

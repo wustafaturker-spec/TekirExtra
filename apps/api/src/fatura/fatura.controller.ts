@@ -49,6 +49,7 @@ export class FaturaController {
 
   // ─── FATURA BELGE UÇLARI ──────────────────────────────────────────────────
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get("tekrarlayanlar")
   async tekrarlayanListele() { return this.faturaService.tekrarlayanListele(); }
 
@@ -105,6 +106,7 @@ export class FaturaController {
     res.send(buffer);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get()
   async listele(
     @Query("arama") arama?: string,
@@ -125,11 +127,13 @@ export class FaturaController {
   }
 
   /** EBLG-35: fatura, e-Belge ve alıcı yanıtı durum geçmişi. */
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/durum-gecmisi")
   async durumGecmisi(@Param("id") id: string) {
     return this.faturaService.durumGecmisi(id);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id")
   async getir(@Param("id") id: string) {
     return this.faturaService.getir(id);
@@ -206,6 +210,7 @@ export class FaturaController {
     return this.faturaService.kopyala(id);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
   @Get(":id/pdf")
   async pdfUret(@Param("id") id: string, @Query("kopya") kopya: string | undefined, @Res() res: Response) {
     // FTR-42: ?kopya=1 belgeye "KOPYA" damgası basar.

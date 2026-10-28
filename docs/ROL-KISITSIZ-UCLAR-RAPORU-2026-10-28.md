@@ -16,7 +16,7 @@ Bayi firmanın müşterisidir. Rolsüz uçlar ona da açıktı. Canlı denemede 
 
 **Düzeltme:** bayi de çalışan gibi yalnız adının açıkça geçtiği uçlara (`b2b/*`) ve hesap/bildirim uçlarına erişir; asistan araç süzgeci aynı kuralı kullanır. Düzeltmeden sonra aynı uçların hepsi 403, portal uçları (`b2b/profil`, `katalog`, `ekstre`) 200.
 
-## Personel rolleri için öneriler (A, B, C onaylandı ve uygulandı; E ikinci tur)
+## Personel rolleri için öneriler (A, B, C, E uygulandı)
 
 İlke: API'deki rol listesi, ucu kullanan **ekranlara giren rollerin** birleşimi olur. Formlarda ortak kullanılan arama/seçim uçları açık kalır.
 
@@ -52,7 +52,7 @@ Bugün bu uçlar üretim planlama/operatör, depo, kalite, maliyet muhasebesi ve
 - `stok`, `stok/:id`, `stok/barkod/:barkod`, `stok/:id/fiyatlar`, `stok/:id/tavsiye-fiyat`, `stok/:id/depo-bakiyeleri`, `stok/:id/partiler`, `stok/kategoriler`, `depo`, `depo/:id`, `fiyat-listeleri` — ürün seçimi ve stok ekranları (satış, depo, üretim).
 - `belgeler`, `belgeler/:id` (+pdf, sürümler, durum geçmişi), `fatura/seriler`, `fatura/sablon-onizleme`, `sevkiyat/araclar`, `sevkiyat/soforler`, `ebelge/uygulamalar` — belge formları ve görüntüleme.
 
-### E. İkinci tur (öneri: ayrı inceleme)
+### E. İkinci tur — ekran ekran doğrulandı ve uygulandı
 
 - `fatura`, `fatura/:id` (+pdf, durum geçmişi), `fatura/tekrarlayanlar`: fatura listesi tutarları üretim/kalite/İK rollerine de açık; ama irsaliye–fatura bağlama ve sevkiyat ekranları da kullanıyor. Kısıtlamadan önce ekran ekran doğrulama gerekir.
 - `ebelge/gelen`, `ebelge/irsaliye/*` okuma uçları: e-Belge ekranları muhasebe (+ satış için giden irsaliye, depo için gelen irsaliye eşleştirme). Aynı doğrulama gerekir.
@@ -77,3 +77,17 @@ Geçici firmada rol başına canlı istek (200 = açık, 403 = kapalı):
 | `stok` | 200 | 200 | 200 | 200 | 200 |
 
 Web: cari kartındaki BA/BS ve mutabakat panelleri ile `/panel/cari/mutabakatlar` sayfası yalnız bu rollere görünür.
+
+## E maddesi uygulaması (2026-10-28)
+
+Her uç, onu çağıran ekranların rolleriyle sınırlandı (çağıranlar zaten rol koşuluna bağlı: ana sayfa gelen e-belge sayacı finans rollerinde, komut paleti fatura araması fatura sayfasına girebilenlerde).
+
+| Uç | Kullanan ekranlar | Roller (+yönetici) |
+|---|---|---|
+| `fatura`, `fatura/:id` (+pdf, durum geçmişi), `fatura/tekrarlayanlar`, `ebelge/gelen` (+:id, pdf), `ebelge/giden/:faturaId/pdf` | Fatura, Satış, Kasa-Banka, Cari (ödeme sözleri) | muhasebe, satış, salt okunur, mali müşavir |
+| `ebelge/irsaliye/gelen` (+:id, pdf) | e-İrsaliye gelen | muhasebe, salt okunur, mali müşavir |
+| `ebelge/irsaliye/giden` (+:id, pdf, entegratör geçmişi) | e-İrsaliye giden, Belgeler | muhasebe, satış, salt okunur |
+| `ebelge/irsaliye/numara-bosluklari` (+taslak) | e-İrsaliye giden | muhasebe, satış |
+| `stok/sayimlar*`, `stok/:id/hareketler`, `depo/transferler*`, `depo/:id/bakiyeler` | Stok ekranları | muhasebe, salt okunur, üretim planlama, depo, maliyet muhasebesi |
+
+Canlı rol denemesi: fatura listesi depo/üretim operatörü/kalite/İK'ya 403, satış ve mali müşavire 200; stok sayımı ve depo transferi satış/üretim operatörü/kalite/İK/mali müşavire 403, depoya 200. Ortak arama uçları (`cari`, `stok`, `belgeler`) bütün iç rollere açık kaldı. Rolsüz okuma ucu sayısı 112 → 68 (kalanlar oturum, bildirim, asistan, ayar okumaları ve ortak arama/seçim uçları).

@@ -88,12 +88,14 @@ export class StokController {
 
   // ─── SAYIM UÇLARI ────────────────────────────────────────────────────────
 
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get("sayimlar")
   async sayimListesi() {
     return this.sayimService.liste();
   }
 
   /** STK-29…31: sayım formu için deponun sayım tarihindeki miktarları. */
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get("sayimlar/sistem")
   async sayimSistemi(@Query("depoId") depoId?: string, @Query("tarih") tarih?: string) {
     if (!tarih || !/^\d{4}-\d{2}-\d{2}$/.test(tarih)) throw new BadRequestException("Sayım tarihi (YYYY-AA-GG) zorunludur");
@@ -101,6 +103,7 @@ export class StokController {
     return this.sayimService.sistemListesi(depoId, tarih);
   }
 
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get("sayimlar/:id")
   async sayimGetir(@Param("id") id: string) {
     return this.sayimService.getir(id);
@@ -368,6 +371,7 @@ export class StokController {
   @HttpCode(204)
   async fiyatSil(@Param("id") id: string, @Param("fiyatId") fiyatId: string) { await this.stokService.fiyatSil(id, fiyatId); }
 
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get(":id/hareketler")
   async hareketListele(
     @Param("id") id: string,

@@ -22,6 +22,7 @@ export class EirsaliyeController {
   constructor(private readonly service: EirsaliyeService, private readonly gorunum: EbelgeGorunumService) {}
 
   /** EBLG-33: gelen e-İrsaliyenin PDF görünümü; kaynak saklanan UBL'dir. */
+  @Roller("muhasebe", "salt_okunur", "mali_musavir")
   @Get("gelen/:id/pdf")
   async gelenPdf(@Param("id") id: string, @Res() res: Response) {
     const pdf = await this.gorunum.gelenIrsaliyePdf(id);
@@ -30,12 +31,14 @@ export class EirsaliyeController {
     res.send(pdf.buffer);
   }
   /** EBLG-93: giden seride boşta kalan numaralar. */
+  @Roller("muhasebe", "satis")
   @Get("numara-bosluklari")
   async numaraBosluklari(@Query("yil") yil?: string) {
     return (await this.service.numaraBosluklari(yilCoz(yil))).veri;
   }
 
   /** EBLG-93: GİB'e verilecek dilekçe ve iç tutanak taslağı (PDF). */
+  @Roller("muhasebe", "satis")
   @Get("numara-bosluklari/taslak")
   async numaraBoslukTaslak(@Query("yil") yil: string | undefined, @Res() res: Response) {
     const { veri, firma } = await this.service.numaraBosluklari(yilCoz(yil));
@@ -47,6 +50,7 @@ export class EirsaliyeController {
   }
 
   /** EBLG-85: giden e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */
+  @Roller("muhasebe", "satis", "salt_okunur")
   @Get("giden/:belgeId/pdf")
   async gidenPdf(@Param("belgeId") belgeId: string, @Res() res: Response) {
     const pdf = await this.gorunum.gidenIrsaliyePdf(belgeId);
@@ -59,13 +63,13 @@ export class EirsaliyeController {
   @Post("gelenleri-cek") @Roller("muhasebe") gelenleriCek() { return this.service.gelenleriCek(); }
 
   // ─── Giden e-İrsaliyeler (EBLG-41…43) ─────────────────────────────────────
-  @Get("giden") gidenListele(@Query("durum") durum?: string) { return this.service.gidenListele(gidenDurumSemasi.parse(durum)); }
-  @Get("giden/:belgeId/entegrator-gecmisi") gidenEntegratorGecmisi(@Param("belgeId") belgeId: string) { return this.service.gidenEntegratorGecmisi(belgeId); }
-  @Get("giden/:belgeId") gidenDetay(@Param("belgeId") belgeId: string) { return this.service.gidenDetay(belgeId); }
+  @Get("giden") @Roller("muhasebe", "satis", "salt_okunur") gidenListele(@Query("durum") durum?: string) { return this.service.gidenListele(gidenDurumSemasi.parse(durum)); }
+  @Get("giden/:belgeId/entegrator-gecmisi") @Roller("muhasebe", "satis", "salt_okunur") gidenEntegratorGecmisi(@Param("belgeId") belgeId: string) { return this.service.gidenEntegratorGecmisi(belgeId); }
+  @Get("giden/:belgeId") @Roller("muhasebe", "satis", "salt_okunur") gidenDetay(@Param("belgeId") belgeId: string) { return this.service.gidenDetay(belgeId); }
   @Post("giden/toplu-gonder") @Roller("muhasebe") topluGonder(@Body() govde: unknown) { return this.service.topluGonder(topluGonderSemasi.parse(govde).belgeIdler); }
   @Post("giden/:belgeId/taslak-gonder") @Roller("muhasebe") taslakGonder(@Param("belgeId") belgeId: string, @Body() govde: unknown) { return this.service.taslakGonder(belgeId, taslakGonderSemasi.parse(govde)); }
   @SaltOkumadaAcik() @Post("giden/durumlari-sorgula") @Roller("muhasebe") durumlariSorgula() { return this.service.durumlariTopluSorgula(); }
-  @Get("gelen") gelenListele(@Query("durum") durum?: string) { if (durum && !["yeni", "kabul", "ret"].includes(durum)) throw new BadRequestException("Geçersiz gelen e-İrsaliye durumu"); return this.service.gelenListele(durum as GelenEirsaliyeDurum | undefined); }
-  @Get("gelen/:id") gelenDetay(@Param("id") id: string) { return this.service.gelenDetay(id); }
+  @Get("gelen") @Roller("muhasebe", "salt_okunur", "mali_musavir") gelenListele(@Query("durum") durum?: string) { if (durum && !["yeni", "kabul", "ret"].includes(durum)) throw new BadRequestException("Geçersiz gelen e-İrsaliye durumu"); return this.service.gelenListele(durum as GelenEirsaliyeDurum | undefined); }
+  @Get("gelen/:id") @Roller("muhasebe", "salt_okunur", "mali_musavir") gelenDetay(@Param("id") id: string) { return this.service.gelenDetay(id); }
   @Post("gelen/:id/yanit") @Roller("muhasebe") gelenYanit(@Param("id") id: string, @Body() body: { yanit?: "kabul" | "ret"; gerekce?: string }) { if (!body?.yanit || !["kabul", "ret"].includes(body.yanit)) throw new BadRequestException("Yanıt kabul veya ret olmalıdır"); return this.service.gelenYanit(id, body.yanit, body.gerekce); }
 }

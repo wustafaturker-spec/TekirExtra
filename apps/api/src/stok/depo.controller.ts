@@ -29,11 +29,13 @@ export class DepoController {
 
   // ─── TRANSFER UÇLARI (önce tanımlanmalı) ─────────────────────────────────
 
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get("transferler")
   async transferListele() {
     return this.transferService.listele();
   }
 
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get("transferler/:id")
   async transferGetir(@Param("id") id: string) {
     return this.transferService.getir(id);
@@ -77,6 +79,7 @@ export class DepoController {
   }
 
   /** Deponun ürün bazlı bakiyeleri (sayım ve transfer ekranlarını besler). */
+  @Roller("muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi")
   @Get(":id/bakiyeler")
   async bakiyeler(@Param("id") id: string) {
     return this.depoService.bakiyeler(id);
