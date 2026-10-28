@@ -11,7 +11,7 @@ import {
   type Rol,
 } from "@tekirextra/shared";
 import { z } from "zod";
-import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, SALT_OKUMA_ANAHTAR } from "../auth/public.decorator";
+import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, PLATFORM_ANAHTAR, PUBLIC_ANAHTAR, SALT_OKUMA_ANAHTAR } from "../auth/public.decorator";
 import { ROLLER_ANAHTAR, Roller } from "../auth/roller.decorator";
 import { rolUcaYetkili } from "../auth/roller.guard";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -69,6 +69,8 @@ export class SablonMatrisiService {
         const yol = [onek, String(Reflect.getMetadata(PATH_METADATA, handler) ?? "")].filter(Boolean).join("/");
         const modul = yolModulu(yol);
         if (!modul) continue;
+        // Oturumsuz uçlar (POS geri çağırma, makbuz, mutabakat portalı…) ve platform uçları rol denetimine girmez; matrise sayılmaz.
+        if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ANAHTAR, [handler as never, sinif]) || this.reflector.getAllAndOverride<boolean>(PLATFORM_ANAHTAR, [handler as never, sinif])) continue;
         const saltOkuma = Boolean(this.reflector.getAllAndOverride<boolean>(SALT_OKUMA_ANAHTAR, [handler as never, sinif]) || this.reflector.getAllAndOverride<boolean>(DESTEK_OTURUMUNDA_ACIK_ANAHTAR, [handler as never, sinif]));
         const islem = yolIslemi(RequestMethod[yontemKodu], yol, saltOkuma);
         if (islem === "goruntule" && modul.yalnizYazma) continue;
