@@ -39,6 +39,8 @@ export class PrismaService
     secenek?: { timeout?: number; isolationLevel?: Prisma.TransactionIsolationLevel },
   ): Promise<T> {
     return this.$transaction(async (tx) => {
+      // PLT-10: destek oturumu hiçbir şey yazamaz; ilk komut olmalıdır.
+      if (baglamAl()?.destek) await tx.$executeRaw`SET TRANSACTION READ ONLY`;
       // EBLG-35: durum geçmişi tetikleyicisi değiştiren kullanıcıyı `app.user_id`'den okur.
       const kullanici = baglamAl()?.userId ?? "";
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true), set_config('app.user_id', ${kullanici}, true)`;

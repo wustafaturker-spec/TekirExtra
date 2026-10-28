@@ -11,7 +11,15 @@ export interface IstekBaglami {
   tenantId: string;
   userId: string;
   rol: Rol;
+  /**
+   * PLT-10: TekirExtra destek oturumu. userId gerçek bir kullanıcı değildir
+   * (DESTEK_KULLANICI_ID); veritabanı işlemleri salt okunur açılır.
+   */
+  destek?: { oturumId: string; ad: string; eposta: string };
 }
+
+/** PLT-10: destek oturumunun kullanıcı kimliği; hiçbir kullanıcıyla eşleşmez. */
+export const DESTEK_KULLANICI_ID = "00000000-0000-0000-0000-000000000000";
 
 /** MVZ-04: platform ekibi kimliği; kiracı bağlamıyla aynı istekte bulunmaz. */
 export interface PlatformBaglami {

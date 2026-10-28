@@ -15,9 +15,10 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifBaglam } from "../core/istek-baglami";
+import { DestekOturumService } from "../core/destek-oturum.service";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { AuthService } from "./auth.service";
-import { IkiAdimKurulumundaAcik, Public } from "./public.decorator";
+import { DestekOturumundaAcik, IkiAdimKurulumundaAcik, Public } from "./public.decorator";
 import { OTURUM_ISARETI_COOKIE, OTURUM_ISARETI_SURESI_SN, oturumIsaretiSirri, oturumIsaretiUret } from "./oturum-isareti";
 
 const girisSemasi = z.object({
@@ -61,6 +62,7 @@ export class AuthController {
     private readonly auth: AuthService,
     @Optional() private readonly abonelikErisim?: AbonelikErisimService,
     @Optional() private readonly durum?: KullaniciDurumService,
+    @Optional() private readonly destek?: DestekOturumService,
   ) {}
 
   @Public()
@@ -110,20 +112,51 @@ export class AuthController {
   @IkiAdimKurulumundaAcik()
   @Get("ben")
   async ben() {
-    const { userId, tenantId, rol } = aktifBaglam();
-    const [abonelik, durum, politika] = await Promise.all([
+    const { userId, tenantId, rol, destek } = aktifBaglam();
+    const [abonelik, durum, politika, destekBagli] = await Promise.all([
       // Platform P0-1: panel salt okunur firmada üstte nedenini gösterir.
       this.abonelikErisim ? this.abonelikErisim.getir(tenantId) : null,
-      this.durum?.getir(tenantId, userId),
+      destek ? undefined : this.durum?.getir(tenantId, userId),
       this.auth.politikaGetir(tenantId),
+      // KLN-24: firma kullanıcıları açık destek oturumunu panelde görür.
+      this.destek ? this.destek.bagliMi(tenantId) : false,
     ]);
     return {
       userId, tenantId, rol, abonelik,
       // KLN-21: panel kurulum bitene kadar Hesap Güvenliği'ne yönlendirir.
       ikiAdimKurulumuGerekli: Boolean(durum?.ikiAdimEksik),
-      // KLN-22: ekran süre dolmadan uyarır, hareketsizken oturumu tazelemez.
-      hareketsizlikDk: politika.hareketsizlikDk,
+      // KLN-22: ekran süre dolmadan uyarır, hareketsizken oturumu tazelemez. Destek oturumu kendi süresiyle biter.
+      hareketsizlikDk: destek ? null : politika.hareketsizlikDk,
+      destekBagli,
+      // PLT-10: destek oturumundaki görüntüleyen (salt okunur).
+      destek: destek ? { ad: destek.ad } : null,
     };
+  }
+
+  /**
+   * PLT-10: platformdan açılan destek sekmesi rota koruması işaretini alır;
+   * işaret destek oturumunun bitişinde düşer. Yenileme çerezi verilmez.
+   */
+  @DestekOturumundaAcik()
+  @Post("destek/baslat")
+  @HttpCode(200)
+  destekBaslat(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { destek } = aktifBaglam();
+    if (!destek) throw new BadRequestException("Yalnız destek oturumu içindir");
+    const sir = oturumIsaretiSirri();
+    const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
+    const exp = Number((JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString() || "{}") as { exp?: number }).exp ?? 0);
+    const kalanSn = Math.max(0, exp - Math.floor(Date.now() / 1000));
+    if (sir && kalanSn > 0) {
+      res.cookie(OTURUM_ISARETI_COOKIE, oturumIsaretiUret(sir), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: kalanSn * 1000,
+      });
+    }
+    return { ad: destek.ad, bitis: new Date(exp * 1000) };
   }
 
   @IkiAdimKurulumundaAcik()

@@ -74,6 +74,7 @@ export async function oturumuTazele(enAzMs: number): Promise<void> {
 }
 
 async function accessTokenYenile(): Promise<string | null> {
+  if (destekSekmesiMi()) return null;
   if (!yenilemeIstegi) {
     yenilemeIstegi = fetch(`${API_URL}/auth/yenile`, {
       method: "POST",
@@ -94,7 +95,23 @@ async function accessTokenYenile(): Promise<string | null> {
   return yenilemeIstegi;
 }
 
+/** PLT-10: bu sekme TekirExtra destek oturumu; yenileme yoktur, süre dolunca kapanır. */
+const DESTEK_ANAHTARI = "tekir_destek";
+export function destekSekmesiMi(): boolean {
+  try { return typeof window !== "undefined" && window.sessionStorage.getItem(DESTEK_ANAHTARI) === "1"; } catch { return false; }
+}
+export function destekSekmesiYaz(acik: boolean): void {
+  try { if (acik) window.sessionStorage.setItem(DESTEK_ANAHTARI, "1"); else window.sessionStorage.removeItem(DESTEK_ANAHTARI); } catch { /* sekme depolaması yoksa yönlendirme yine çalışır */ }
+}
+
 function giriseYonlendir(neden = "sona-erdi"): Promise<never> {
+  // Destek sekmesi tarayıcıdaki başka bir firma oturumuna (yenileme çerezi) düşmez.
+  if (destekSekmesiMi()) {
+    tokenYaz(null);
+    destekSekmesiYaz(false);
+    window.location.replace("/destek?bitti=1");
+    return new Promise<never>(() => undefined);
+  }
   tokenYaz(null);
   if (typeof window !== "undefined") {
     const donus = `${window.location.pathname}${window.location.search}`;
@@ -214,6 +231,8 @@ export async function api<T>(
     kullanilacakSecenekler.headers = basliklar;
   }
   let yanit = await istekYap(yol, kullanilacakSecenekler, tokenAl());
+  // PLT-10: destek sekmesinde her 401 (panelin /auth/ben yoklaması dahil) oturumun bittiği demektir.
+  if (yanit.status === 401 && destekSekmesiMi()) return giriseYonlendir();
   if (yanit.status === 401 && !yol.startsWith("/auth/")) {
     if (hareketsizMi()) return hareketsizlikleCik();
     const yeniToken = await accessTokenYenile();

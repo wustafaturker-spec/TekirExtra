@@ -13,5 +13,7 @@ export const OLAY_ADI: Record<string, string> = {
   platform_daveti_kabul_edildi: "Daveti kabul etti", platform_rolu_degisti: "Platform rolünü değiştirdi",
   platform_kullanicisi_pasife_alindi: "Platform kullanıcısını pasife aldı", platform_kullanicisi_aktif_edildi: "Platform kullanıcısını aktif etti",
   platform_2fa_sifirlandi: "Platform kullanıcısının 2FA'sını sıfırladı", platform_2fa_yeniden_kuruldu: "2FA'yı yeniden kurdu", giris_basarisiz: "Başarısız giriş",
+  // PLT-10: destek erişimi
+  destek_oturumu_acildi: "Destek oturumu açtı", destek_oturumu_kapatildi: "Destek oturumu kapandı", destek_istegi: "Destek oturumunda istek",
 };
 export const tarihTR = (gun: string | null) => (gun ? new Date(`${gun.slice(0, 10)}T12:00:00`).toLocaleDateString("tr-TR") : "—");

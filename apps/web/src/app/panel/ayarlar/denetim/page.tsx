@@ -20,6 +20,10 @@ interface DenetimKaydi {
   detay: unknown;
 }
 
+/** KLN-24: destek oturumu kayıtları kullanıcıya değil destek kişisine aittir. */
+const destekKisisi = (detay: unknown) =>
+  detay && typeof detay === "object" && typeof (detay as { destekKisi?: unknown }).destekKisi === "string" ? (detay as { destekKisi: string }).destekKisi : null;
+
 /** Yönetim P1-4/P2-4: adlandırılmış yönetim olaylarının okunur karşılıkları. */
 const ISLEM_ADI: Record<string, string> = {
   giris_yapildi: "Giriş yapıldı",
@@ -37,6 +41,11 @@ const ISLEM_ADI: Record<string, string> = {
   diger_oturumlar_kapatildi: "Diğer oturumlar kapatıldı",
   firma_bilgisi_degisti: "Firma bilgisi değişti",
   guvenlik_politikasi_degisti: "Güvenlik politikası değişti",
+  destek_izni_verildi: "Destek erişimi izni verildi",
+  destek_izni_geri_alindi: "Destek erişimi izni geri alındı",
+  destek_oturumu_acildi: "Destek oturumu açıldı",
+  destek_oturumu_kapatildi: "Destek oturumu kapatıldı",
+  destek_istegi: "Destek oturumu isteği",
   modul_ayari_degisti: "Modül ayarı değişti",
   eposta_ayari_degisti: "E-posta ayarı değişti",
   baglanti_eklendi: "Bağlantı eklendi",
@@ -178,7 +187,7 @@ export default function DenetimIziSayfasi() {
             {kayitlar.map((k) => (
               <tr key={k.id}>
                 <td>{new Date(k.zaman).toLocaleString("tr-TR")}</td>
-                <td>{k.kullanici?.adSoyad ?? "—"}</td>
+                <td>{k.kullanici?.adSoyad ?? (destekKisisi(k.detay) ? `TekirExtra desteği: ${destekKisisi(k.detay)}` : "—")}</td>
                 <td>{k.varlik}</td>
                 <td>{ISLEM_ADI[k.islem] ?? k.islem}</td>
                 <td><Ayrinti detay={k.detay} /></td>

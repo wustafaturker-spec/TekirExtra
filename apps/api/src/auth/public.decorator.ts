@@ -31,5 +31,9 @@ export const SaltOkumadaAcik = () => SetMetadata(SALT_OKUMA_ANAHTAR, true);
  * KLN-21: 2FA zorunlu rolde kurulumu bitmemiş kullanıcıya da açık uç
  * (Hesap Güvenliği ekranının kullandıkları). Diğer uçlar 403 döner.
  */
+/** PLT-10: destek oturumunda da çağrılabilen, veri yazmayan POST ucu (oturum işaretini koyma). */
+export const DESTEK_OTURUMUNDA_ACIK_ANAHTAR = "destekOturumundaAcik";
+export const DestekOturumundaAcik = () => SetMetadata(DESTEK_OTURUMUNDA_ACIK_ANAHTAR, true);
+
 export const IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR = "ikiAdimKurulumundaAcik";
 export const IkiAdimKurulumundaAcik = () => SetMetadata(IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR, true);

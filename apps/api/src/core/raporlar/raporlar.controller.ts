@@ -13,7 +13,7 @@ import {
 import { Response } from "express";
 import { z } from "zod";
 import { RaporlarService } from "./raporlar.service";
-import { SaltOkumadaAcik } from "../../auth/public.decorator";
+import { DestekOturumundaAcik, SaltOkumadaAcik } from "../../auth/public.decorator";
 
 const girdiSemasi = z.object({
   filtreler: z
@@ -66,12 +66,14 @@ export class RaporlarController {
   }
 
   @SaltOkumadaAcik()
+  @DestekOturumundaAcik()
   @Post(":kod/calistir")
   async calistir(@Param("kod") kod: string, @Body() govde: unknown) {
     return this.raporlarService.calistir(kod, ayristir(girdiSemasi, govde ?? {}));
   }
 
   @SaltOkumadaAcik()
+  @DestekOturumundaAcik()
   @Post(":kod/excel")
   async excel(
     @Param("kod") kod: string,
@@ -94,6 +96,7 @@ export class RaporlarController {
   }
 
   @SaltOkumadaAcik()
+  @DestekOturumundaAcik()
   @Post(":kod/pdf")
   async pdf(
     @Param("kod") kod: string,

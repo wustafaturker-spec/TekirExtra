@@ -81,6 +81,9 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   // KLN-21/22: firma güvenlik politikası (/auth/ben'den).
   const [ikiAdimKurulumuGerekli, setIkiAdimKurulumuGerekli] = useState(false);
   const [hareketsizlikDk, setHareketsizlikDk] = useState<number | null>(null);
+  // KLN-24 / PLT-10: açık destek oturumu (firma kullanıcısı) ya da bu sekme destek oturumu.
+  const [destekBagli, setDestekBagli] = useState(false);
+  const [destekKisi, setDestekKisi] = useState<string | null>(null);
   // EBLG-77: firma kayıtlı olmadığı e-belge uygulamasının ekranlarını görmez.
   const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
   const [menuAcik, setMenuAcik] = useState(false);
@@ -150,11 +153,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (tokenAl()) {
-      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null; ikiAdimKurulumuGerekli?: boolean; hareketsizlikDk?: number | null }>("/auth/ben")
+      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null; ikiAdimKurulumuGerekli?: boolean; hareketsizlikDk?: number | null; destekBagli?: boolean; destek?: { ad: string } | null }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
           setAbonelikKisiti(b.abonelik?.kisitli ? b.abonelik.neden ?? "Aboneliğiniz salt okunur." : null);
           setHareketsizlikDk(b.hareketsizlikDk ?? null);
+          setDestekBagli(Boolean(b.destekBagli));
+          setDestekKisi(b.destek?.ad ?? null);
           // KLN-21: zorunlu 2FA kurulana kadar yalnız Hesap Güvenliği açıktır; diğer uçlar 403 döner.
           setIkiAdimKurulumuGerekli(Boolean(b.ikiAdimKurulumuGerekli));
           if (b.ikiAdimKurulumuGerekli) return;
@@ -493,6 +498,16 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">
+          {destekKisi ? (
+            <div className="destek-isareti" role="status">
+              <strong>TekirExtra destek oturumu ({destekKisi}):</strong> panel salt okunurdur; değişiklik yapılamaz ve her istek firmanın denetim izine yazılır.
+            </div>
+          ) : destekBagli && (
+            <div className="destek-isareti" role="status">
+              <strong>TekirExtra desteği bağlı:</strong> destek ekibi panelinizi şu an salt okunur görüntülüyor.
+              {rol === "yonetici" && <Link href="/panel/ayarlar/guvenlik">İzni yönet</Link>}
+            </div>
+          )}
           {abonelikKisiti && (
             <div className="abonelik-kisiti" role="status">
               <strong>Salt okunur:</strong> {abonelikKisiti}{" "}

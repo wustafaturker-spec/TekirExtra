@@ -12,6 +12,8 @@ interface Firma {
   /** PLT-09: dönem sonundan 15 gün geçti, ödeme işaretlenmedi (otomatik askı yok). */
   askiyaAlinacak?: boolean;
   sonOdemeAt?: string | null;
+  /** PLT-10: firma KLN-24 ile destek izni verdiyse. */
+  destek?: { izinBitis: string; acikOturum: { id: string; bitis: string; kisi: string } | null } | null;
 }
 interface Gecmis {
   degisiklikler: { zaman: string; oncekiPlan: string | null; yeniPlan: string; oncekiDurum: string | null; yeniDurum: string; neden: string | null }[];
@@ -58,6 +60,38 @@ export default function PlatformFirmalar() {
     (suzgec === "hepsi" || (suzgec === "talep" ? f.bekleyenTalep : suzgec === "askiyaAlinacak" ? f.askiyaAlinacak : f.durum === suzgec))
     && (!aranan || f.unvan.toLocaleLowerCase("tr-TR").includes(aranan) || f.vkn.includes(aranan)));
 
+  /**
+   * PLT-10: izinli firmanın paneli yeni sekmede salt okunur açılır. Sekme
+   * tıklamayla hemen açılır (açılır pencere engeline takılmasın), token gelince
+   * adres # ile verilir; sunucuya gitmez.
+   */
+  async function destekAc(f: Firma) {
+    setHata("");
+    setBasari("");
+    const sekme = window.open("", "_blank");
+    try {
+      const s = await platformApi<{ token: string; bitis: string }>(`/platform/firmalar/${f.tenantId}/destek-oturumu`, { method: "POST" });
+      if (sekme) {
+        sekme.opener = null;
+        sekme.location.href = `/destek#t=${encodeURIComponent(s.token)}`;
+      }
+      setBasari(`${f.unvan} için destek oturumu açıldı; ${new Date(s.bitis).toLocaleTimeString("tr-TR")} saatinde kapanır.`);
+      await yukle();
+    } catch (e) {
+      sekme?.close();
+      setHata(e instanceof Error ? e.message : "Destek oturumu açılamadı");
+    }
+  }
+
+  async function destekKapat(oturumId: string) {
+    try {
+      setBasari((await platformApi<{ mesaj: string }>(`/platform/firmalar/destek-oturumlari/${oturumId}/kapat`, { method: "POST" })).mesaj);
+      await yukle();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Destek oturumu kapatılamadı");
+    }
+  }
+
   async function tamamlandi(mesaj: string) {
     setBasari(mesaj);
     setHata("");
@@ -90,7 +124,7 @@ export default function PlatformFirmalar() {
     </Card>
     <Card pad={false}>
       <TableWrap>
-        <thead><tr><th>Firma</th><th>Plan</th><th>Durum</th><th className="num">Kullanıcı</th><th>Son giriş</th><th>e-Belge</th><th>Talep</th><th /></tr></thead>
+        <thead><tr><th>Firma</th><th>Plan</th><th>Durum</th><th className="num">Kullanıcı</th><th>Son giriş</th><th>e-Belge</th><th>Talep</th><th>Destek</th><th /></tr></thead>
         <tbody>
           {suzulen.slice(0, GORUNEN_EN_COK).map((f) => (
             <tr key={f.tenantId}>
@@ -101,10 +135,20 @@ export default function PlatformFirmalar() {
               <td className="subtle">{f.sonGiris ? new Date(f.sonGiris).toLocaleString("tr-TR") : "Hiç"}</td>
               <td>{f.ebelgeSaglayici ?? <span className="subtle">—</span>}</td>
               <td>{f.bekleyenTalep ? <Badge variant="info">{f.bekleyenTalep.istenenPlanAdi} istiyor</Badge> : <span className="subtle">—</span>}</td>
+              <td style={{ minWidth: 170 }}>
+                {f.destek ? (
+                  <div className="stack" style={{ gap: 4 }}>
+                    <span className="subtle" style={{ fontSize: "0.8rem" }}>İzin {new Date(f.destek.izinBitis).toLocaleString("tr-TR")}&apos;e kadar</span>
+                    {f.destek.acikOturum
+                      ? <div className="row-tight"><Badge variant="warning">Bağlı: {f.destek.acikOturum.kisi}</Badge><Button size="sm" onClick={() => void destekKapat(f.destek!.acikOturum!.id)}>Kapat</Button></div>
+                      : <Button size="sm" onClick={() => void destekAc(f)}>Destek oturumu aç</Button>}
+                  </div>
+                ) : <span className="subtle">İzin yok</span>}
+              </td>
               <td><Button size="sm" onClick={() => setSecili(f)}>Yönet</Button></td>
             </tr>
           ))}
-          {firmalar && suzulen.length === 0 && <tr><td colSpan={8} className="empty">Eşleşen firma yok.</td></tr>}
+          {firmalar && suzulen.length === 0 && <tr><td colSpan={9} className="empty">Eşleşen firma yok.</td></tr>}
         </tbody>
       </TableWrap>
       {suzulen.length > GORUNEN_EN_COK && <p className="subtle" style={{ padding: "0.75rem 1rem", margin: 0 }}>{suzulen.length} firmadan ilk {GORUNEN_EN_COK} tanesi gösteriliyor; aramayı daraltın.</p>}

@@ -273,6 +273,18 @@ export class PlatformFirmaController {
     return this.firmalar.odemeKaydet(tenantId, g.aySayisi, g.tutar, g.not || null);
   }
 
+  /** PLT-10: izinli firmada salt okunur destek oturumu. */
+  @Post(":tenantId/destek-oturumu")
+  destekOturumuAc(@Param("tenantId", ParseUUIDPipe) tenantId: string) {
+    return this.firmalar.destekOturumuAc(tenantId);
+  }
+
+  @Post("destek-oturumlari/:oturumId/kapat")
+  @HttpCode(200)
+  destekOturumuKapat(@Param("oturumId", ParseUUIDPipe) oturumId: string) {
+    return this.firmalar.destekOturumuKapat(oturumId);
+  }
+
   @Post("talepler/:talepId/karar")
   karar(@Param("talepId", ParseUUIDPipe) talepId: string, @Body() govde: unknown) {
     const g = ayristir(kararSemasi, govde);

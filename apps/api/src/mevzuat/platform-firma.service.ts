@@ -1,7 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { Prisma } from "@prisma/client";
+import type { JwtYuku } from "../auth/auth.guard";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
-import { aktifPlatformBaglam } from "../core/istek-baglami";
+import { aktifPlatformBaglam, DESTEK_KULLANICI_ID } from "../core/istek-baglami";
 import { ABONELIK_PLANLARI } from "../tenant/abonelik.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 
@@ -23,6 +25,14 @@ interface FirmaSatiri {
   askiya_alinacak: boolean;
 }
 
+interface DestekSatiri {
+  tenant_id: string;
+  izin_bitis: Date;
+  acik_oturum_id: string | null;
+  acik_oturum_bitis: Date | null;
+  acik_oturum_kisi: string | null;
+}
+
 /** PLT-09: "ödeme alındı" ile dönem bu kadar ay uzar. */
 export const ODEME_SURELERI = [1, 3, 6, 12] as const;
 
@@ -37,10 +47,15 @@ export class PlatformFirmaService {
   constructor(
     private readonly platform: PlatformPrismaService,
     private readonly erisim: AbonelikErisimService,
+    private readonly jwt: JwtService,
   ) {}
 
   async listele() {
-    const satirlar = await this.platform.db.$queryRaw<FirmaSatiri[]>`SELECT * FROM platform_firma_ozeti()`;
+    const [satirlar, destekler] = await Promise.all([
+      this.platform.db.$queryRaw<FirmaSatiri[]>`SELECT * FROM platform_firma_ozeti()`,
+      this.platform.db.$queryRaw<DestekSatiri[]>`SELECT * FROM platform_destek_durumu()`,
+    ]);
+    const destek = new Map(destekler.map((d) => [d.tenant_id, d]));
     return satirlar.map((r) => ({
       tenantId: r.tenant_id,
       unvan: r.unvan.trim(),
@@ -58,7 +73,36 @@ export class PlatformFirmaService {
       sonOdemeAt: r.son_odeme_at,
       // PLT-09: dönem sonundan 15 gün geçti, ödeme işaretlenmedi. Otomatik askı yok; karar platformun.
       askiyaAlinacak: r.askiya_alinacak,
+      // PLT-10: firma KLN-24 ile izin verdiyse bitişi ve açık destek oturumu.
+      destek: destek.has(r.tenant_id) ? destekGorunumu(destek.get(r.tenant_id)!) : null,
     }));
+  }
+
+  /**
+   * PLT-10: yalnız izin veren firmada ve izin süresince; en çok 30 dk, yenilemesiz.
+   * Dönen token kiracı token'ıdır (destek işaretli); kiracı API'si onu salt
+   * okunur kabul eder ve her isteği iki kayda yazar.
+   */
+  async destekOturumuAc(tenantId: string) {
+    const { kullaniciId, eposta } = aktifPlatformBaglam();
+    const kisi = await this.platform.db.platformKullanici.findUnique({ where: { id: kullaniciId }, select: { adSoyad: true } });
+    const ad = kisi?.adSoyad ?? eposta;
+    const [satir] = await this.cagir(() =>
+      this.platform.db.$queryRaw<{ oturum_id: string; bitis: Date }[]>`SELECT * FROM platform_destek_oturumu_ac(${tenantId}::uuid, ${kullaniciId}::uuid, ${ad}, ${eposta})`,
+    );
+    const sureSn = Math.max(1, Math.floor((satir.bitis.getTime() - Date.now()) / 1000));
+    const yuk: JwtYuku = { sub: DESTEK_KULLANICI_ID, tenantId, rol: "yonetici", destek: { oid: satir.oturum_id, ad, ep: eposta, pid: kullaniciId } };
+    const token = await this.jwt.signAsync(yuk, { secret: process.env.JWT_SECRET, expiresIn: sureSn });
+    await this.olay(kullaniciId, "destek_oturumu_acildi", { tenantId, oturumId: satir.oturum_id, bitis: satir.bitis });
+    return { token, oturumId: satir.oturum_id, bitis: satir.bitis };
+  }
+
+  async destekOturumuKapat(oturumId: string) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    const [satir] = await this.platform.db.$queryRaw<{ tenant_id: string | null }[]>`SELECT platform_destek_oturumu_kapat(${oturumId}::uuid, 'platform_kapatti') AS tenant_id`;
+    if (!satir?.tenant_id) throw new NotFoundException("Açık destek oturumu bulunamadı");
+    await this.olay(kullaniciId, "destek_oturumu_kapatildi", { tenantId: satir.tenant_id, oturumId, neden: "platform_kapatti" });
+    return { mesaj: "Destek oturumu kapatıldı; açık sekme en geç 10 saniyede düşer." };
   }
 
   async gecmis(tenantId: string) {
@@ -115,10 +159,18 @@ export class PlatformFirmaService {
     } catch (hata) {
       const mesaj = hata instanceof Error ? hata.message : String(hata);
       if (mesaj.includes("firma_yok")) throw new NotFoundException("Firma bulunamadı");
+      if (mesaj.includes("izin_yok")) throw new BadRequestException("Firma destek izni vermemiş ya da izin süresi dolmuş");
       if (mesaj.includes("talep_bekliyor_degil")) throw new ConflictException("Talep artık beklemiyor (karar verilmiş ya da geri çekilmiş)");
       throw hata;
     }
   }
+}
+
+function destekGorunumu(d: DestekSatiri) {
+  return {
+    izinBitis: d.izin_bitis,
+    acikOturum: d.acik_oturum_id ? { id: d.acik_oturum_id, bitis: d.acik_oturum_bitis, kisi: d.acik_oturum_kisi } : null,
+  };
 }
 
 function planAdi(kod: string): string {

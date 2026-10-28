@@ -165,6 +165,8 @@ model Tenant {
   abonelikDegisiklikleri    AbonelikDegisikligi[]
   abonelikTalepleri         AbonelikTalebi[]
   abonelikOdemeleri         AbonelikOdemesi[]
+  destekIzinleri            DestekIzni[]
+  destekOturumlari          DestekOturumu[]
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
   pazaryeriKesintileri      PazaryeriKesinti[]
@@ -336,6 +338,48 @@ model AbonelikTalebi {
   @@map("abonelik_talepleri")
 }
 
+/// KLN-24: firma yöneticisinin TekirExtra ekibine verdiği süreli destek izni.
+model DestekIzni {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  verenUserId    String    @map("veren_user_id") @db.Uuid
+  /// 1 | 24 | 168
+  sureSaat       Int       @map("sure_saat")
+  baslangic      DateTime  @default(now())
+  bitis          DateTime
+  geriAlanUserId String?   @map("geri_alan_user_id") @db.Uuid
+  geriAlindiAt   DateTime? @map("geri_alindi_at")
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  veren      User            @relation("DestekIzniVeren", fields: [verenUserId], references: [id], onDelete: Restrict)
+  geriAlan   User?           @relation("DestekIzniGeriAlan", fields: [geriAlanUserId], references: [id], onDelete: SetNull)
+  oturumlar  DestekOturumu[]
+
+  @@index([tenantId, bitis])
+  @@map("destek_izinleri")
+}
+
+/// PLT-10: platform yöneticisinin izinli firmada açtığı salt okunur destek oturumu.
+/// Platform yalnız SECURITY DEFINER işlevleriyle açar/kapatır.
+model DestekOturumu {
+  id                      String    @id @default(uuid()) @db.Uuid
+  tenantId                String    @map("tenant_id") @db.Uuid
+  izinId                  String    @map("izin_id") @db.Uuid
+  platformKullaniciId     String    @map("platform_kullanici_id") @db.Uuid
+  platformKullaniciAdi    String    @map("platform_kullanici_adi")
+  platformKullaniciEposta String    @map("platform_kullanici_eposta")
+  acilis                  DateTime  @default(now())
+  bitis                   DateTime
+  kapanis                 DateTime?
+  kapanisNedeni           String?   @map("kapanis_nedeni")
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  izin   DestekIzni @relation(fields: [izinId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, acilis])
+  @@map("destek_oturumlari")
+}
+
 /// PLT-09: platformun elle işaretlediği abonelik ödemesi; dönem sonunu uzatır.
 model AbonelikOdemesi {
   id                  String    @id @default(uuid()) @db.Uuid
@@ -357,6 +401,8 @@ model AbonelikOdemesi {
 
 model User {
   tahsilatSorumluluklari TahsilatTakibi[]
+  verdigiDestekIzinleri    DestekIzni[]    @relation("DestekIzniVeren")
+  geriAldigiDestekIzinleri DestekIzni[]    @relation("DestekIzniGeriAlan")
   id                     String           @id @default(uuid()) @db.Uuid
   tenantId               String           @map("tenant_id") @db.Uuid
   eposta                 String

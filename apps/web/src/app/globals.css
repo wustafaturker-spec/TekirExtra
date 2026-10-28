@@ -5250,3 +5250,6 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 /* Salt okunur firma uyarısı (platform P0-1) */
 .abonelik-kisiti { margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 10px; border: 1px solid var(--danger); background: var(--danger-soft, var(--surface-2)); color: var(--text); font-size: 0.92rem; }
 .abonelik-kisiti a { margin-left: 0.25rem; font-weight: 600; }
+/* KLN-24 / PLT-10: destek oturumu işareti (firma kullanıcısına ve destek görüntüleyene). */
+.destek-isareti { margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft, var(--surface-2)); color: var(--text); font-size: 0.92rem; }
+.destek-isareti a { margin-left: 0.25rem; font-weight: 600; }
