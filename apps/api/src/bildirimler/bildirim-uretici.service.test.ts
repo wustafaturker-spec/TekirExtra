@@ -94,6 +94,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },
     sayim: { count: vi.fn().mockResolvedValue(secenek.taslakSayim ?? 0) },
     maliDonem: { findMany: vi.fn().mockResolvedValue(secenek.donemler ?? []) },
+    faturaKapama: { findMany: vi.fn().mockResolvedValue([]) },
     bildirim: { findMany: vi.fn().mockResolvedValue(secenek.yukseltmeAdaylari ?? []), update: bildirimUpdate },
     bildirimTeslimati: { findMany: vi.fn().mockResolvedValue(secenek.mevcutTeslimatlar ?? []), createMany: teslimatCreateMany },
     user: { findMany: vi.fn().mockResolvedValue(secenek.yoneticiler ?? []) },

@@ -1139,6 +1139,8 @@ model FaturaKapama {
   kurFarkiKapandi     Boolean  @default(false) @map("kur_farki_kapandi")
   /// KSB-25: alış–satış mahsubu kapaması (iki taraftaki faturaya ayrı satır).
   mahsupId            String?  @map("mahsup_id") @db.Uuid
+  /// KSB-29: kur farkı faturasını kapatan "kur farkı karşılığı" cari hareketi.
+  cariHareketId       String?  @map("cari_hareket_id") @db.Uuid
   createdAt           DateTime @default(now()) @map("created_at")
 
   cari              CariHesap          @relation(fields: [cariId], references: [id], onDelete: Cascade)
@@ -1148,6 +1150,9 @@ model FaturaKapama {
   cekSenet          CekSenet?          @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)
   iadeFatura        Fatura?            @relation("IadeKaynagi", fields: [iadeFaturaId], references: [id], onDelete: Cascade)
   mahsup            CariMahsup?        @relation(fields: [mahsupId], references: [id], onDelete: Cascade)
+  cariHareket       CariHareket?       @relation(fields: [cariHareketId], references: [id], onDelete: Cascade)
+  /// KSB-22/26: kalemin faturalandığı (biz) ya da eşleştiği (gelen) kur farkı faturası.
+  kurFarkiFatura    Fatura?            @relation("KapamaKurFarkiFaturasi", fields: [kurFarkiFaturaId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, faturaId])
   @@index([tenantId, cariId])
@@ -1156,6 +1161,7 @@ model FaturaKapama {
   @@index([cekSenetId])
   @@index([iadeFaturaId])
   @@index([mahsupId])
+  @@index([cariHareketId])
   @@map("fatura_kapamalari")
 }
 
@@ -1881,6 +1887,7 @@ model CariHareket {
   karsiHesapKodu String?        @map("karsi_hesap_kodu")
   createdAt      DateTime       @default(now()) @map("created_at")
 
+  kapamalar FaturaKapama[]
   cari CariHesap @relation(fields: [cariId], references: [id])
 
   @@index([tenantId, cariId, tarih])
@@ -3229,6 +3236,7 @@ model Fatura {
   kasaBankaHarekets     KasaBankaHareket[]         @relation("HareketFaturasi")
   /// KSB-07: bu kur farkı faturasının kapattığı ödeme kur farkları.
   kurFarkiOdemeleri     KasaBankaHareket[]         @relation("KurFarkiFaturasi")
+  kurFarkiKapamalari    FaturaKapama[]             @relation("KapamaKurFarkiFaturasi")
   zincirBelgeleri       Belge[]
   ekstreSatirlari       BankaEkstreSatir[]
   tekrarlayanSablon     TekrarlayanFatura[]        @relation("TekrarlayanFaturaSablon")

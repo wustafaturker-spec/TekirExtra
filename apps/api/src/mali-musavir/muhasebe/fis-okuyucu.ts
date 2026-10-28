@@ -4,7 +4,7 @@ import type {
   AmortismanGirdisi,
   BordroGirdisi,
   CariBilgi,
-  CariDuzeltmeGirdisi, CariMahsupGirdisi,
+  CariDuzeltmeGirdisi, CariMahsupGirdisi, KurFarkiKapamaGirdisi,
   CekGirdisi,
   DemirbasCikisGirdisi,
   DovizIslemGirdisi,
@@ -16,6 +16,7 @@ import type {
   MasrafGirdisi,
   UreticiGirdisi,
 } from "./fis-uretici";
+import { kurFarkiKalemleri } from "../../fatura/kur-farki-kalem";
 
 /**
  * MUH-04: dönemin kaynak kayıtlarını fiş üreticinin düz girdisine çevirir.
@@ -61,6 +62,8 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   ]);
   // CARI-28: elle cari düzeltmesi fişlenir; açılış bakiyesi (acilis) fişlenmez.
   const cariDuzeltmeleri = await tx.cariHareket.findMany({ where: { tarih: aralik, kaynakTur: "manuel" }, orderBy: { tarih: "asc" } });
+  // KSB-28: faturası kesilmeden kapatılan kur farkları (yurt dışı ya da önemsiz) 646/656'ya gider.
+  const kapatilanKurFarklari = (await kurFarkiKalemleri(tx, tenantId, { durum: "islenen", baslangic, bitis })).filter((k) => k.kapandi);
   // KSB-25: geri alınmamış alış–satış mahsupları; taraflar fatura kurlarıyla TL'ye çevrilir.
   const mahsuplar = await tx.cariMahsup.findMany({
     where: { tarih: aralik, geriAlindiAt: null }, orderBy: { tarih: "asc" },
@@ -106,7 +109,11 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
         satirlar: { select: { id: true, matrah: true, ekVergiTutari: true, stok: { select: { tip: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } },
       },
     }),
-    tx.kasaBankaHareket.findMany({ where: { kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } }),
+    // KSB-22/26: kur farkı faturası bağları hem eski hareket düzeyinde hem kapamada durur.
+    Promise.all([
+      tx.kasaBankaHareket.findMany({ where: { kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } }),
+      tx.faturaKapama.findMany({ where: { kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } }),
+    ]).then(([a, b]) => [...a, ...b]),
     tx.kasaBankaHareket.findMany({ where: { tarih: aralik, kaynakTur: { notIn: KAPSAM_DISI_HAREKET } }, select: HAREKET_SECIMI }),
     tx.masraf.findMany({ where: { durum: "onaylandi", tarih: aralik, id: { notIn: [...kambiyoMasraflari] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } }),
     tx.gelirKaydi.findMany({ where: { tarih: aralik, id: { notIn: [...kambiyoGelirleri] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } } } }),
@@ -246,6 +253,10 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     kartHareketleri: kartHareketleri.map(kartGirdisi),
     ekKartHareketleri: new Map(tumKartHam.map((k) => [k.id, kartGirdisi(k)])),
     dovizIslemleri: dovizGirdileri,
+    kurFarkiKapamalari: kapatilanKurFarklari.map((k): KurFarkiKapamaGirdisi => ({
+      id: k.hareketId, cariId: k.cari.id, taraf: k.fatura.tip === "satis" || k.fatura.tip === "alis_iade" ? "alici" : "satici",
+      tarih: k.tarih, tutar: new Prisma.Decimal(k.kurFarkiTry).abs(), lehimize: k.yon === "biz_keseriz", faturaNo: k.fatura.no,
+    })),
     cariMahsuplari: mahsuplar.map((m): CariMahsupGirdisi => {
       const tl = (tipler: string[]) => m.kapamalar.filter((k) => tipler.includes(k.fatura.tip))
         .reduce((t, k) => t.add(k.tutar.mul(k.fatura.dovizCinsi === "TRY" ? 1 : k.fatura.kur).toDecimalPlaces(2)), new Prisma.Decimal(0));

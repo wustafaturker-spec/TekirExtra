@@ -18,6 +18,7 @@ describe("DuzeltmelerService", () => {
     sayim: { findMany: vi.fn() },
     cekSenet: { findMany: vi.fn() },
     fatura: { findMany: vi.fn() },
+    faturaKapama: { findMany: vi.fn().mockResolvedValue([]) },
     duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
     duzeltmeOlayi: { create: vi.fn(), createMany: vi.fn() },
     user: { findMany: vi.fn(), findFirst: vi.fn() },

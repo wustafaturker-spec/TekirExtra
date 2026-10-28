@@ -41,6 +41,7 @@ import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim
 import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from "./teslim-yeri";
 import { cariDenklestir, faturaKapamalariniCoz, kapamaKaynagi } from "./denklestirme";
+import { kurFarkiKarsiligiYaz, kurFarkiKarsiliginiCoz } from "./kur-farki-karsilik";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, kurFarkiTry, odemeOzetiGorunumu } from "./odeme-durumu";
 import { cariIslemDenetle, riskLimitiDenetle } from "../cari/cari-islem-denetimi";
 import type {
@@ -509,6 +510,7 @@ export class FaturaService {
               cekSenet: { select: { id: true, tur: true, portfoyNo: true, islemTarihi: true } },
               iadeFatura: { select: { id: true, no: true, tarih: true } },
               mahsup: { select: { id: true, tarih: true, otomatik: true } },
+              cariHareket: { select: { id: true, tarih: true } },
             },
           },
           iadeKapamalari: { include: { fatura: { select: { id: true, no: true, tarih: true } } } },
@@ -1112,7 +1114,8 @@ export class FaturaService {
         tx.posTahsilat.count({ where: { faturaId: id } }),
         tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
         // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
-        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false } }),
+        // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
+        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, cariHareketId: null } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
         throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura doğrudan iptal edilemez; önce finans hareketini ya da mahsubu geri alın veya iade faturası düzenleyin");
@@ -1176,6 +1179,8 @@ export class FaturaService {
           },
         });
       }
+      // KSB-29: kur farkı karşılığı ters kayıtla kapanır.
+      await kurFarkiKarsiliginiCoz(tx, tenantId, id);
       // KSB-16: iptal edilen faturanın kapamaları (elle dahil) çözülür; ödemeler avansa döner ve yeniden dağılır.
       await faturaKapamalariniCoz(tx, id);
       const iptalEdilen = await tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
@@ -1214,7 +1219,8 @@ export class FaturaService {
         tx.posTahsilat.count({ where: { faturaId: id } }),
         tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
         // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
-        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false } }),
+        // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
+        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, cariHareketId: null } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
         throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura taslağa geri alınamaz; önce finans hareketini ya da mahsubu geri alın");
@@ -1275,6 +1281,7 @@ export class FaturaService {
       const bagliBelgeler = await tx.belge.findMany({ where: { faturaId: id }, select: { id: true } });
       await this.belgelerService.zincirEtkisiniCoz(tx, bagliBelgeler.map((b) => b.id), 1);
 
+      await kurFarkiKarsiliginiCoz(tx, tenantId, id);
       await faturaKapamalariniCoz(tx, id);
       const taslak = await tx.fatura.update({ where: { id }, data: { durum: "taslak" } });
       await cariDenklestir(tx, tenantId, fatura.cariId);
@@ -1665,6 +1672,8 @@ export class FaturaService {
           depoId: kullanilanDepoId,
         },
       });
+      // KSB-29: kur farkı faturası ödenmez; karşılık hareketiyle kendiliğinden kapanır.
+      await kurFarkiKarsiligiYaz(tx, tenantId, id);
       // KSB-16: carinin bekleyen avansı ve iadeleri yeni faturayı vadesine göre kapatır.
       await cariDenklestir(tx, tenantId, fatura.cariId);
 

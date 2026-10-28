@@ -19,6 +19,7 @@ type Yon = "biz_keseriz" | "karsi_taraf_keser";
 
 interface KurFarkiKalemi {
   hareketId: string;
+  kaynakTur: "kasa_banka" | "kredi_karti" | "cek_senet" | "mahsup";
   tarih: string;
   tip: string;
   hesap: string;
@@ -32,6 +33,7 @@ interface KurFarkiKalemi {
   yon: Yon;
   kdvOrani: string;
   gibIstisnaKodu: string | null;
+  yurtDisi: boolean;
   kapandi: boolean;
   kurFarkiFaturasi: { id: string; no: string | null; tip: "satis" | "alis"; durum: "taslak" | "kesin"; tarih: string } | null;
 }
@@ -69,6 +71,7 @@ type Pencere = null | "fatura" | "eslestir" | "kapat";
 
 const YON_ADI: Record<Yon, string> = { biz_keseriz: "Biz keseriz", karsi_taraf_keser: "Karşı taraf keser" };
 const toplamTl = (liste: KurFarkiKalemi[]) => liste.reduce((t, k) => t + Math.abs(Number(k.kurFarkiTry)), 0);
+const KAYNAK_ADI: Record<KurFarkiKalemi["kaynakTur"], string> = { kasa_banka: "", kredi_karti: "Kredi kartı", cek_senet: "Çek/senet", mahsup: "Mahsup" };
 const faturaBaglantisi = (f: { id: string; tip: string }) => `/panel/fatura/yeni?ac=${f.id}${f.tip.startsWith("alis") ? "&yon=alis" : ""}`;
 
 export default function KurFarkiSayfasi() {
@@ -151,6 +154,7 @@ function KalemSekmesi({ durum }: { durum: "bekleyen" | "islenen" }) {
   const seciliKalemler = kalemler.filter((k) => secili.has(k.hareketId));
   const tekCari = new Set(seciliKalemler.map((k) => k.cari.id)).size === 1;
   const yonler = new Set(seciliKalemler.map((k) => k.yon));
+  const yurtDisiVar = seciliKalemler.some((k) => k.yurtDisi);
   const engel = !seciliKalemler.length ? "" : !tekCari ? "Faturalama ve eşleştirme için tek bir carinin kalemlerini seçin" : yonler.size > 1 ? "Seçimde iki yön karışık; aynı yöndeki kalemleri seçin" : "";
 
   function degistir(ids: string[], ekle: boolean) {
@@ -225,7 +229,7 @@ function KalemSekmesi({ durum }: { durum: "bekleyen" | "islenen" }) {
               <>
                 <Button size="sm" onClick={() => setPencere("kapat")}>Kapat (fatura gerekmiyor)</Button>
                 {!engel && yonler.has("karsi_taraf_keser") && <Button size="sm" variant="primary" onClick={() => setPencere("eslestir")}>Gelen faturayla eşleştir</Button>}
-                {!engel && yonler.has("biz_keseriz") && <Button size="sm" variant="primary" onClick={() => setPencere("fatura")}>Kur farkı faturası oluştur</Button>}
+                {!engel && !yurtDisiVar && yonler.has("biz_keseriz") && <Button size="sm" variant="primary" onClick={() => setPencere("fatura")}>Kur farkı faturası oluştur</Button>}
               </>
             ) : (
               <Button size="sm" disabled={isleniyor} onClick={() => void islem("/kur-farki/geri-ac", { hareketIdleri }, (s) => `${s.acilan} kalem bekleyenlere geri alındı`)}>Bekleyenlere geri al</Button>
@@ -277,7 +281,7 @@ function KalemSekmesi({ durum }: { durum: "bekleyen" | "islenen" }) {
                         <small className="muted"> · {k.fatura.dovizCinsi}</small>
                       </td>
                       <td>
-                        {k.tip === "tahsilat" ? "Tahsilat" : "Ödeme"} · {k.hesap}
+                        {KAYNAK_ADI[k.kaynakTur] || (k.tip === "tahsilat" ? "Tahsilat" : "Ödeme")} · {k.hesap}
                         <small className="muted"> · <Para deger={k.tutar} dovizCinsi={k.dovizCinsi} /></small>
                       </td>
                       <td className="num"><Para deger={k.mahsup} dovizCinsi={k.fatura.dovizCinsi} /></td>
@@ -285,7 +289,9 @@ function KalemSekmesi({ durum }: { durum: "bekleyen" | "islenen" }) {
                       <td className={`num ${fark > 0 ? "fx-up" : "fx-down"}`}>{fark > 0 ? "+" : "−"}<Para deger={Math.abs(fark)} dovizCinsi="TRY" /></td>
                       <td>
                         {bekleyen ? (
-                          <Badge variant={k.yon === "biz_keseriz" ? "success" : "warning"}>{YON_ADI[k.yon]}</Badge>
+                          k.yurtDisi
+                            ? <span title="Yurt dışı işlemde kur farkı faturası kesilmez; kapatın, 646/656 fişi olur"><Badge variant="neutral">Yurt dışı · faturasız kapat</Badge></span>
+                            : <Badge variant={k.yon === "biz_keseriz" ? "success" : "warning"}>{YON_ADI[k.yon]}</Badge>
                         ) : k.kurFarkiFaturasi ? (
                           <a href={faturaBaglantisi(k.kurFarkiFaturasi)} onClick={(e) => e.stopPropagation()}>
                             {k.kurFarkiFaturasi.tip === "satis" ? "Faturalandı" : "Gelen fatura"} · {k.kurFarkiFaturasi.no ?? "taslak"}
@@ -315,8 +321,9 @@ function KalemSekmesi({ durum }: { durum: "bekleyen" | "islenen" }) {
           <KalemOzeti kalemler={seciliKalemler} />
           <p className="fx-note">
             <strong>{seciliKalemler[0]?.cari.unvan}</strong> adına bugün tarihli <strong>TL satış faturası</strong> taslağı oluşturulur. Kur farkı KDV dahil
-            bedel sayılır; matrah asıl faturanın KDV oranıyla iç yüzde ayrılır, “KUR-FARKI” hizmet kartı kullanılır. Taslağı kesinleştirmeden önce
-            inceleyip düzenleyebilirsiniz; taslağı silerseniz kalemler bu listeye geri döner.
+            bedel sayılır; asıl faturanın KDV oranı, istisna ve tevkifat gruplarına tutarları oranında bölünür ve her grup için matrah iç yüzdeyle ayrılır,
+            “KUR-FARKI” hizmet kartı kullanılır. Fatura ödenmez: kesinleşince “kur farkı karşılığı” kaydıyla kendiliğinden kapanır, carinin bakiyesi ve
+            riski değişmez. Taslağı silerseniz kalemler bu listeye geri döner.
           </p>
         </OnayPenceresi>
       )}
@@ -338,7 +345,7 @@ function KalemSekmesi({ durum }: { durum: "bekleyen" | "islenen" }) {
           isleniyor={isleniyor}
         >
           <KalemOzeti kalemler={seciliKalemler} />
-          <p className="fx-note">Seçilen kur farkları için fatura kesilmeyecek ve bekleyenler listesinden çıkacak (ör. önemsiz kuruş farkları). İşlenenler sekmesinden geri alabilirsiniz.</p>
+          <p className="fx-note">Seçilen kur farkları için fatura kesilmeyecek ve bekleyenler listesinden çıkacak (yurt dışı işlemler ya da önemsiz kuruş farkları). Fark muhasebe aktarımında kur farkı geliri (646) ya da gideri (656) fişi olur. İşlenenler sekmesinden geri alabilirsiniz.</p>
         </OnayPenceresi>
       )}
     </>

@@ -284,3 +284,18 @@ describe("alış–satış mahsubu fişi (KSB-25)", () => {
     expect(dengeli(ters)).toBe(true);
   });
 });
+
+describe("faturasız kapatılan kur farkı (KSB-28)", () => {
+  const kalem = { id: "kf", cariId: "m", taraf: "alici" as const, tarih: "2026-10-20", tutar: D(120), lehimize: true, faturaNo: "SNC1" };
+
+  it("lehimize fark müşteriden 120 borç / 646 alacak, aleyhimize fark tedarikçide 656 borç / 320 alacak", () => {
+    const leh = fisleriUret(girdi({ kurFarkiKapamalari: [kalem] })).fisler;
+    expect(leh).toHaveLength(1);
+    expect(leh[0].kaynak.tur).toBe("kur_farki");
+    expect(ozet(leh[0])).toEqual(["120.01.M001 B 120.00", "646 A 120.00"]);
+    expect(dengeli(leh[0])).toBe(true);
+    const aleyh = fisleriUret(girdi({ kurFarkiKapamalari: [{ ...kalem, taraf: "satici", lehimize: false }] })).fisler[0];
+    expect(ozet(aleyh)).toEqual(["656 B 120.00", "320.01.M001 A 120.00"]);
+    expect(dengeli(aleyh)).toBe(true);
+  });
+});

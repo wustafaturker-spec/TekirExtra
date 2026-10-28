@@ -26,7 +26,7 @@ export interface FisSatiri {
 }
 
 export interface Kaynak {
-  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas" | "cari_mahsup";
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas" | "cari_mahsup" | "kur_farki";
   id: string;
   etiket: string;
 }
@@ -137,6 +137,15 @@ export interface CariDuzeltmeGirdisi {
  * faturası, satış iadesi) 320'den kapanır; dövizli mahsupta iki tarafın kur
  * farkı 646/656'ya gider.
  */
+/**
+ * KSB-28: faturası kesilmeden kapatılan kur farkı (yurt dışı işlem ya da
+ * önemsiz fark). Carinin TL artığı 646 (lehimize) ya da 656 (aleyhimize)
+ * ile kapanır.
+ */
+export interface KurFarkiKapamaGirdisi {
+  id: string; cariId: string; taraf: "alici" | "satici"; tarih: string; tutar: Prisma.Decimal; lehimize: boolean; faturaNo: string | null;
+}
+
 export interface CariMahsupGirdisi {
   id: string; cariId: string; tarih: string; dovizCinsi: string; tutar: Prisma.Decimal;
   satisTry: Prisma.Decimal; alisTry: Prisma.Decimal; faturaNolari: string[];
@@ -180,6 +189,7 @@ export interface UreticiGirdisi {
   amortismanlar?: AmortismanGirdisi[];
   demirbasCikislari?: DemirbasCikisGirdisi[];
   cariMahsuplari?: CariMahsupGirdisi[];
+  kurFarkiKapamalari?: KurFarkiKapamaGirdisi[];
   baslangic: string;
   bitis: string;
 }
@@ -586,6 +596,17 @@ function cariMahsupFisi(m: CariMahsupGirdisi, c: HesapCozucu): Fis {
   return { tarih: m.tarih, tur: "mahsup", aciklama: `Alış–satış mahsubu ${aciklama}`, belgeNo: null, kaynak, satirlar };
 }
 
+function kurFarkiKapamaFisi(k: KurFarkiKapamaGirdisi, c: HesapCozucu): Fis {
+  const cariAd = c.cariAdi(k.cariId);
+  const kaynak: Kaynak = { tur: "kur_farki", id: k.id, etiket: `Kur farkı ${k.faturaNo ?? ""} ${cariAd}`.trim() };
+  const aciklama = `${cariAd} · ${k.faturaNo ?? "fatura"} kur farkı (faturasız kapatıldı)`.slice(0, 200);
+  const cariKodu = c.cari(k.cariId, k.taraf);
+  const satirlar = k.lehimize
+    ? [borc(cariKodu, aciklama, k.tutar), alacak(c.kod("kur_farki_gelir"), aciklama, k.tutar)]
+    : [borc(c.kod("kur_farki_gider"), aciklama, k.tutar), alacak(cariKodu, aciklama, k.tutar)];
+  return { tarih: k.tarih, tur: "mahsup", aciklama: `Kur farkı ${aciklama}`, belgeNo: null, kaynak, satirlar };
+}
+
 const SGK_KESINTILERI = new Set(["sgk_isci", "issizlik_isci"]);
 const VERGI_KESINTILERI = new Set(["gelir_vergisi", "damga_vergisi"]);
 const TAZMINATLAR = new Set(["kidem_tazminati", "ihbar_tazminati"]);
@@ -676,7 +697,8 @@ export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kon
   for (const a of g.amortismanlar ?? []) ekle(amortismanFisi(a, c));
   for (const d of g.demirbasCikislari ?? []) ekle(demirbasCikisFisi(d, c));
   for (const m of g.cariMahsuplari ?? []) ekle(cariMahsupFisi(m, c));
-  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, cari_mahsup: 7, bordro: 8, hareket: 9, demirbas: 10, amortisman: 11 };
+  for (const k of g.kurFarkiKapamalari ?? []) ekle(kurFarkiKapamaFisi(k, c));
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, cari_mahsup: 7, kur_farki: 8, bordro: 9, hareket: 10, demirbas: 11, amortisman: 12 };
   fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
   return { fisler, kontroller };
 }

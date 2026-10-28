@@ -20,6 +20,7 @@ import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { coz } from "../core/kripto";
 import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
+import { kurFarkiKalemleri } from "../fatura/kur-farki-kalem";
 import { tasarimVergiKodlariEski, vergiKodImzasi, VERGILI_TASARIM_TURLERI } from "../ebelge/firma-tasarimi/vergi-kodlari";
 import { TASARIM_ALANI } from "../tenant/belge-tasarimlari.service";
 import { gecerliYukumlulukler, sonrakiBakim, yukumlulukDurumu } from "../arac-takip/arac-hesap";
@@ -124,6 +125,7 @@ export class BildirimUreticiService {
       ...(await this.vadeOzetleri()),
       ...(await this.stokOzetleri()),
       ...(await this.donemKontrolleri()),
+      ...(await this.kurFarkiHatirlatmasi()),
       ...(await this.satinAlmaOnaylari()),
       ...(await this.bankaEntegrasyonu()),
       ...(await this.personelBildirimleri()),
@@ -1027,6 +1029,35 @@ export class BildirimUreticiService {
       });
     }
     return girdiler;
+  }
+
+  /**
+   * KSB-30: ay sonundan 3 gün önce bekleyen kur farkları hatırlatılır; kur
+   * farkı faturası ödemenin yapıldığı ay içinde kesilmelidir. Ay değişince ya
+   * da kalemler işlenince bildirim kapanır.
+   */
+  private async kurFarkiHatirlatmasi(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const [yil, ay, gun] = bugun.split("-").map(Number);
+    const aySonu = new Date(Date.UTC(yil, ay, 0)).getUTCDate();
+    if (aySonu - gun > 3) return [];
+    const kalemler = await this.prisma.tenantIslem(tenantId, (tx) => kurFarkiKalemleri(tx, tenantId, { durum: "bekleyen" }));
+    if (!kalemler.length) return [];
+    const biz = kalemler.filter((k) => k.yon === "biz_keseriz" && !k.yurtDisi);
+    const toplam = biz.reduce((t, k) => t + Math.abs(Number(k.kurFarkiTry)), 0);
+    return [{
+      tur: "donem",
+      onem: "uyari",
+      baslik: `${kalemler.length} kur farkı işlenmeyi bekliyor`,
+      aciklama: (biz.length
+        ? `${biz.length} kalem için kur farkı faturası kesilmeli (${toplam.toFixed(2)} TL); süresinde kesilmeyen fatura için fatura başına %10 özel usulsüzlük cezası riski var. `
+        : "") + "Gelen faturaları eşleştirin, yurt dışı ya da önemsiz farkları kapatın.",
+      birlesimAnahtari: `donem:kur-farki:${yil}-${ay}`,
+      kaynakTur: "kur_farki",
+      hedefYol: "/panel/kasa-banka/kur-farki",
+      roller: HEDEF_ROLLER.donem,
+    }];
   }
 
   private async donemKontrolleri(): Promise<BildirimGirdisi[]> {

@@ -13,6 +13,10 @@ vi.mock("./denklestirme", async (orijinal) => ({
   kaynakKapamalariniCoz: vi.fn(async () => undefined),
   faturaKapamalariniCoz: vi.fn(async () => undefined),
 }));
+vi.mock("./kur-farki-karsilik", () => ({
+  kurFarkiKarsiligiYaz: vi.fn(async () => false),
+  kurFarkiKarsiliginiCoz: vi.fn(async () => undefined),
+}));
 
 
 vi.mock("../core/istek-baglami", () => ({

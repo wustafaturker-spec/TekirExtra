@@ -170,12 +170,14 @@ export function kapamaKaynagi(k: {
   cekSenet: { id: string; tur: string; portfoyNo: string; islemTarihi: Date } | null;
   iadeFatura: { id: string; no: string | null; tarih: Date } | null;
   mahsup?: { id: string; tarih: Date; otomatik: boolean } | null;
+  cariHareket?: { id: string; tarih: Date } | null;
 }) {
   const gun = (d: Date) => d.toISOString().slice(0, 10);
   if (k.kasaBankaHareket) return { kaynakTur: "kasa_banka" as const, kaynakId: k.kasaBankaHareket.id, tarih: gun(k.kasaBankaHareket.tarih), etiket: k.kasaBankaHareket.makbuzNo ?? k.kasaBankaHareket.aciklama ?? (k.kasaBankaHareket.tip === "tahsilat" ? "Tahsilat" : "Tediye") };
   if (k.krediKartiHareket) return { kaynakTur: "kredi_karti" as const, kaynakId: k.krediKartiHareket.id, tarih: gun(k.krediKartiHareket.tarih), etiket: k.krediKartiHareket.aciklama };
   if (k.cekSenet) return { kaynakTur: "cek_senet" as const, kaynakId: k.cekSenet.id, tarih: gun(k.cekSenet.islemTarihi), etiket: `${k.cekSenet.tur === "cek" ? "Çek" : "Senet"} ${k.cekSenet.portfoyNo}` };
   if (k.mahsup) return { kaynakTur: "mahsup" as const, kaynakId: k.mahsup.id, tarih: gun(k.mahsup.tarih), etiket: k.mahsup.otomatik ? "Otomatik alış–satış mahsubu" : "Alış–satış mahsubu" };
+  if (k.cariHareket) return { kaynakTur: "kur_farki_karsiligi" as const, kaynakId: k.cariHareket.id, tarih: gun(k.cariHareket.tarih), etiket: "Kur farkı karşılığı (ödenmez)" };
   if (k.iadeFatura) return { kaynakTur: "iade_fatura" as const, kaynakId: k.iadeFatura.id, tarih: gun(k.iadeFatura.tarih), etiket: k.iadeFatura.no ?? "İade faturası" };
   return { kaynakTur: "bilinmiyor" as const, kaynakId: null, tarih: null, etiket: "—" };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { icYuzdeMatrah, kurFarkiSatirlari, kurFarkiYonu } from "./kur-farki-kural";
+import { icYuzdeMatrah, kurFarkiSatirlari, kurFarkiYonu, matrahBul } from "./kur-farki-kural";
 
 describe("kur farkı yönü", () => {
   it("tahsilatta artı fark lehimize, faturayı biz keseriz", () => {
@@ -33,17 +33,34 @@ describe("iç yüzde matrah", () => {
   });
 });
 
-describe("kur farkı fatura satırları", () => {
+const grup = (kdvOrani: string, agirlik: string, ek: { istisna?: string; tevkifatKodu?: string; tevkifatOrani?: string } = {}) =>
+  ({ kdvOrani, gibIstisnaKodu: ek.istisna ?? null, tevkifatKodu: ek.tevkifatKodu ?? null, tevkifatOrani: ek.tevkifatOrani ?? "0", agirlik });
+
+describe("kur farkı fatura satırları (KSB-27)", () => {
   it("aynı oran/istisna kodu tek satırda, mutlak değerle toplanır", () => {
     const satirlar = kurFarkiSatirlari([
-      { kurFarkiTry: "60.00", kdvOrani: "20", gibIstisnaKodu: null },
-      { kurFarkiTry: "-60.00", kdvOrani: "20.00", gibIstisnaKodu: null },
-      { kurFarkiTry: "40.00", kdvOrani: "0", gibIstisnaKodu: "301" },
+      { kurFarkiTry: "60.00", gruplar: [grup("20", "1")] },
+      { kurFarkiTry: "-60.00", gruplar: [grup("20.00", "1")] },
+      { kurFarkiTry: "40.00", gruplar: [grup("0", "1", { istisna: "301" })] },
     ]);
     expect(satirlar).toHaveLength(2);
     expect(satirlar[0].kdvDahil.toFixed(2)).toBe("120.00");
     expect(satirlar[0].matrah.toFixed(2)).toBe("100.00");
     expect(satirlar[1]).toMatchObject({ gibIstisnaKodu: "301" });
     expect(satirlar[1].matrah.toFixed(2)).toBe("40.00");
+  });
+
+  it("çok oranlı faturada fark ödenecek tutar ağırlığıyla bölünür", () => {
+    // %20'lik 1000 (ödenecek 1200) ve %10'luk 1000 (ödenecek 1100) matrah.
+    const satirlar = kurFarkiSatirlari([{ kurFarkiTry: "230.00", gruplar: [grup("20", "1200"), grup("10", "1100")] }]);
+    expect(satirlar.map((s) => [s.kdvOrani.toFixed(0), s.kdvDahil.toFixed(2), s.matrah.toFixed(2)])).toEqual([["20", "120.00", "100.00"], ["10", "110.00", "100.00"]]);
+  });
+
+  it("tevkifatlı grupta matrah, ödenecek tutar (matrah + KDV − tevkifat) tutacak biçimde bulunur", () => {
+    // %20 KDV, 5/10 tevkifat: 100 matrah → 20 KDV → 10 tevkifat → ödenecek 110.
+    const [s] = kurFarkiSatirlari([{ kurFarkiTry: "110.00", gruplar: [grup("20", "1", { tevkifatKodu: "601", tevkifatOrani: "0.5" })] }]);
+    expect(s).toMatchObject({ tevkifatKodu: "601" });
+    expect(s.matrah.toFixed(2)).toBe("100.00");
+    expect(matrahBul("110.00", "20", "0.5").toFixed(2)).toBe("100.00");
   });
 });

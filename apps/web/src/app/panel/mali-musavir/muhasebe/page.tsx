@@ -16,7 +16,7 @@ import { DosyaProfili } from "./dosya-profili";
 
 type Sekme = "fisler" | "hesap-plani" | "alt-hesaplar" | "profil";
 
-interface Kaynak { tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas"; id: string; etiket: string }
+interface Kaynak { tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas" | "cari_mahsup" | "kur_farki"; id: string; etiket: string }
 interface Onizleme {
   baslangic: string;
   bitis: string;
@@ -46,6 +46,8 @@ const KAYNAK_YOLU: Record<Kaynak["tur"], (id: string) => string> = {
   bordro: (id) => `/panel/personel/bordrolar/${id}`,
   amortisman: () => "/panel/demirbas/amortisman",
   demirbas: (id) => `/panel/demirbas/${id}`,
+  cari_mahsup: () => "/panel/cari",
+  kur_farki: () => "/panel/kasa-banka/kur-farki",
 };
 const FIS_TURU = { mahsup: "Mahsup", tahsil: "Tahsil", tediye: "Tediye" };
 const SAYFA = 40;

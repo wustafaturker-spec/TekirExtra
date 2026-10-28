@@ -11,6 +11,7 @@ import type { duzeltmeListeSemasi } from "./duzeltmeler.semalar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { stokTutarlilikHesapla } from "../stok/stok-tutarlilik.service";
 import { kartBazinda, tutarlilikOzeti } from "../stok/stok-tutarlilik";
+import { kurFarkiKalemleri } from "../fatura/kur-farki-kalem";
 
 type ListeGirdisi = z.infer<typeof duzeltmeListeSemasi>;
 type Tespit = {
@@ -153,6 +154,13 @@ export class DuzeltmelerService {
         const odenen = Number(faturaOdemeDurumu(fatura).odenen);
         return odenen > Number(fatura.genelToplam) + 0.01 ? [{ ...fatura, odenen }] : [];
       });
+      // KSB-30: faturalanmamış/kapatılmamış kur farkları, cari başına tek kayıt.
+      const kurFarklari = new Map<string, { unvan: string; adet: number; toplam: number }>();
+      for (const k of await kurFarkiKalemleri(tx, tenantId, { durum: "bekleyen" })) {
+        const c = kurFarklari.get(k.cari.id) ?? { unvan: k.cari.unvan, adet: 0, toplam: 0 };
+        c.adet++; c.toplam += Math.abs(Number(k.kurFarkiTry));
+        kurFarklari.set(k.cari.id, c);
+      }
       const farkliTaslakSayimlar = sayimlar.flatMap((sayim) => {
         const farkliKalem = sayim.kalemler.filter((kalem) => !kalem.fiiliMiktar.equals(kalem.sistemMiktar));
         return farkliKalem.length ? [{ ...sayim, farkliKalem: farkliKalem.length }] : [];
@@ -169,6 +177,7 @@ export class DuzeltmelerService {
         ...farkliTaslakSayimlar.map((sayim) => ({ tur: "stok" as const, onem: "uyari" as const, kaynakTur: "stok_sayim", kaynakRef: sayim.id, nedenKodu: "SAYIM_FARKI_ONAYSIZ", aciklama: `${sayim.depo.ad} deposundaki ${sayim.farkliKalem} sayım farkı henüz onaylanmadı.`, onerilenEylem: "Sayım farklarını inceleyip sayımı onaylayın veya taslağı düzeltin." })),
         ...vadesiGecenEvraklar.map((evrak) => ({ tur: "cek_senet" as const, onem: "uyari" as const, kaynakTur: "cek_senet", kaynakRef: evrak.id, nedenKodu: "VADE_GECTI_DURUM_ACIK", aciklama: `${evrak.portfoyNo} portföy numaralı ${evrak.tutar.toString()} tutarlı evrakın vadesi ${evrak.vadeTarihi.toLocaleDateString("tr-TR")} tarihinde geçti; durumu ${evrak.durum}.`, onerilenEylem: "Tahsilat/ödeme sonucunu kaydedin veya evrak durumunu güncelleyin." })),
         ...eslesmeFarklari.map(({ fatura, farklar }) => ({ tur: "satin_alma" as const, onem: "uyari" as const, kaynakTur: "fatura", kaynakRef: fatura.id, nedenKodu: "UCLU_ESLESME_FARKI", aciklama: `${fatura.no || fatura.id} numaralı alış faturası sipariş ve mal kabulle örtüşmüyor — ${farkAciklamasi(farklar)}.`, onerilenEylem: "Faturayı sipariş ve irsaliyeyle karşılaştırın; fark gerçekse tedarikçiden düzeltme isteyin, kabul ediyorsanız kaydı kapatın." })),
+        ...[...kurFarklari].map(([cariId, c]) => ({ tur: "fatura_cari" as const, onem: "uyari" as const, kaynakTur: "cari", kaynakRef: cariId, nedenKodu: "KUR_FARKI_BEKLIYOR", aciklama: `${c.unvan} için ${c.adet} kur farkı (${c.toplam.toFixed(2)} TL) faturalanmadı ya da kapatılmadı.`, onerilenEylem: "Kur Farkları ekranında lehimize farkın faturasını kesin, gelen faturayı eşleştirin ya da yurt dışı/önemsiz farkı kapatın." })),
         ...odemesiAsanFaturalar.map((fatura) => ({ tur: "fatura_cari" as const, onem: "kritik" as const, kaynakTur: "fatura", kaynakRef: fatura.id, nedenKodu: "FATURA_ODEME_TOPLAMI_ASIMI", aciklama: `${fatura.no || fatura.id} numaralı faturada ödeme toplamı ${fatura.odenen.toFixed(2)}, fatura toplamı ${fatura.genelToplam.toString()}.`, onerilenEylem: "Faturaya bağlı tahsilat/ödeme hareketlerini inceleyip fazla veya yinelenen kaydı geri alın." })),
       ];
 
@@ -183,7 +192,7 @@ export class DuzeltmelerService {
         });
       }
 
-      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true } });
+      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "KUR_FARKI_BEKLIYOR", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true } });
       let otomatikCozulen = 0;
       for (const kayit of mevcutlar) {
         if (kayit.tekillikAnahtari && aktifAnahtarlar.has(kayit.tekillikAnahtari)) continue;

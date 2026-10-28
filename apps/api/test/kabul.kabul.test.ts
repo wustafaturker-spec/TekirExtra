@@ -1484,9 +1484,10 @@ describe("P2-9 finans — dövizli fatura TL ile kapanır, fazla ödeme avans ol
     for (const b of cari.veri.bakiyeler) expect(Number(b.bakiye), b.dovizCinsi).toBeCloseTo(0, 2);
 
     // Kur farkı kalanı bozmaz, ayrı listede bekler: 49.200 − 1.200 × 40 = 1.200 TL.
-    const kurFarki = await istek<Array<{ hareketId: string; kurFarkiTry: string }>>("/kur-farki?durum=bekleyen", { jeton });
+    // KSB-26: kalem tahsilatın faturaya yazdığı kapamadan doğar.
+    const kurFarki = await istek<Array<{ hareketId: string; fatura: { id: string }; kurFarkiTry: string }>>("/kur-farki?durum=bekleyen", { jeton });
     expect(kurFarki.durum, JSON.stringify(kurFarki.veri)).toBe(200);
-    expect(kurFarki.veri.find((k) => k.hareketId === tahsilat.veri.id)?.kurFarkiTry).toBe("1200.00");
+    expect(kurFarki.veri.find((k) => k.fatura.id === fatura.id)?.kurFarkiTry).toBe("1200.00");
 
     // Fazla ödeme: 120 USD'lik faturaya USD hesaptan 150 USD gelir → 120 mahsup, 30 avans.
     const ikinci = await faturaKes(jeton, {
