@@ -559,6 +559,28 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(belge.xml).toContain("<cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>");
   });
 
+  it("akış destekleyen sağlayıcının belgelerini geldikçe yazar, büyük XML'i geri okumaz; kursör sonda ilerler", async () => {
+    const mockTx = {
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      gelenEbelge: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({ id: "gelen-1" }), findMany: vi.fn().mockResolvedValue([]) },
+      ebelgeGelenKursor: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+    const yazilanlar: number[] = [];
+    mockAdapter.gelenBelgeleriCek.mockImplementationOnce(async (_cfg: unknown, _sonrasi: Date, isle?: (b: any) => Promise<void>) => {
+      for (const uuid of ["a", "b"]) {
+        await isle!({ uuid, belgeNo: uuid, gonderenVkn: "1", gonderenUnvan: "G", tarih: new Date(), xml: "<Invoice/>" });
+        yazilanlar.push(mockTx.gelenEbelge.upsert.mock.calls.length);
+      }
+      return [];
+    });
+    const sonuc = await service.gelenBelgeleriCek();
+    expect(yazilanlar).toEqual([1, 2]);
+    expect(sonuc).toMatchObject({ toplamCekilen: 2, yeniBelgeSayisi: 2 });
+    expect(mockTx.gelenEbelge.upsert.mock.calls[0][0]).toMatchObject({ select: { id: true } });
+    expect(mockTx.ebelgeGelenKursor.upsert).toHaveBeenCalledTimes(1);
+  });
+
   it("gelenBelgeleriCek fatura ÜRETMEZ, belgeyi gelen kutusuna yazar (EBLG-05 onay kapısı)", async () => {
     const mockTx = {
       baglanti: {

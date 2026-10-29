@@ -790,8 +790,9 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
    * Gelen faturaları tarih penceresiyle sayfalayarak indirir (EBLG-11).
    * NES kursör sunmaz, `page`/`pageSize` verir; tarama sürerken yeni belge
    * girerse sayfalar kayabildiği için UUID bazında tekilleştirme yapılır.
+   * `isle` verilirse her belge indirildiği anda işlenir, dizide tutulmaz.
    */
-  async gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenBelge[]> {
+  async gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date, isle?: (belge: GelenBelge) => Promise<void>): Promise<GelenBelge[]> {
     const hata = configDogrula(cfg);
     if (hata) throw new Error(hata);
     const bitis = new Date();
@@ -815,7 +816,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         });
         const gonderenVkn = satir.accountingSupplierParty?.partyIdentification ?? "";
         const yanit = nesGelenYanit(satir);
-        belgeler.push({
+        const belge: GelenBelge = {
           uuid: satir.id,
           belgeNo: satir.documentNumber ?? satir.id,
           gonderenVkn,
@@ -823,7 +824,9 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
           tarih: new Date(satir.issueDate ?? satir.createdAt ?? Date.now()),
           xml,
           ...(yanit ? { yanit } : {}),
-        });
+        };
+        if (isle) await isle(belge);
+        else belgeler.push(belge);
       }
       if (satirlar.length < SAYFA_BOYUTU) break;
     }

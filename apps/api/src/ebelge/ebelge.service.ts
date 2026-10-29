@@ -17,7 +17,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
-import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
+import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GelenBelge, GonderimSonuc } from "@tekirextra/baglanti";
 import { bugunTR, faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type KodTablosu, type TevkifatKodu, VARSAYILAN_KOD_TABLOSU } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -1546,22 +1546,15 @@ export class EbelgeService {
     const bitis = new Date();
     const baslangic = await this.gelenKursoruOku(tenantId);
 
-    let belgeler;
-    let yanitlar: GelenAliciYaniti[] = [];
-    if (adapter.gelenZarflariCek) {
-      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenZarflariCek", saglayici: baglanti.saglayici });
-      const zarflar = await adapter.gelenZarflariCek(cfg, { baslangic, bitis });
-      belgeler = zarflar.belgeler;
-      yanitlar = zarflar.yanitlar;
-    } else {
-      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenBelgeleriCek", saglayici: baglanti.saglayici });
-      belgeler = await adapter.gelenBelgeleriCek(cfg, baslangic);
-    }
-
     let yeniBelgeSayisi = 0;
+    let toplamCekilen = 0;
     const yeniIdler: string[] = [];
 
-    for (const b of belgeler) {
+    // Her belge indirildiği anda yazılır ve bırakılır: gelen XML'ler eklerle
+    // MB'larca olabiliyor; uzun pencerede hepsini bellekte toplamak worker'ı
+    // düşürüyor, kursör de ilerlemediği için pencere her seferinde büyüyordu.
+    const isle = async (b: GelenBelge) => {
+      toplamCekilen += 1;
       // Profil bilgisi kabul/ret düğmesini belirlediği için çekimde okunur;
       // bozuk XML çekimi düşürmesin — belge yine de kutuya girsin.
       let profilId: string | null = null;
@@ -1595,6 +1588,7 @@ export class EbelgeService {
           // Yalnızca entegratör tarafındaki gövde tazelenir; durum/yanıt
           // bizim iş akışımıza ait olduğu için korunur.
           update: { xmlIcerik: b.xml, profilId, ...gelenOzeti(b.xml) },
+          select: { id: true },
         });
         // EBLG-34: belge portalda ya da başka bir yerde yanıtlanmışsa karar
         // yanıtı olmayan kayda yazılır; yerel kararın üzerine yazılmaz.
@@ -1606,6 +1600,18 @@ export class EbelgeService {
         yeniBelgeSayisi += 1;
         yeniIdler.push(kaydedilen.id);
       }
+    };
+
+    let yanitlar: GelenAliciYaniti[] = [];
+    if (adapter.gelenZarflariCek) {
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenZarflariCek", saglayici: baglanti.saglayici });
+      const zarflar = await adapter.gelenZarflariCek(cfg, { baslangic, bitis });
+      for (const b of zarflar.belgeler) await isle(b);
+      yanitlar = zarflar.yanitlar;
+    } else {
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenBelgeleriCek", saglayici: baglanti.saglayici });
+      // Akış desteklemeyen sağlayıcı belgeleri dizide döndürür.
+      for (const b of await adapter.gelenBelgeleriCek(cfg, baslangic, isle)) await isle(b);
     }
 
     // EBLG-144: yeni belgelerin kural denetimi (liste rozeti); hata çekimi düşürmez.
@@ -1635,7 +1641,7 @@ export class EbelgeService {
     this.metrics.set("ebelge_gelen_kursor_yasi_saniye", (Date.now() - baslangic.getTime()) / 1000);
 
     return {
-      toplamCekilen: belgeler.length,
+      toplamCekilen,
       yeniBelgeSayisi,
       islenenAliciYaniti: islenenYanit,
     };

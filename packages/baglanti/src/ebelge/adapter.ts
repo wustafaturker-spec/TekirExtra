@@ -65,7 +65,13 @@ export interface EntegratorAdapter {
    */
   belgeOnizle?(cfg: EntegratorConfig, belge: UblBelge): Promise<OnizlemeSonuc>;
   durumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
-  gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenBelge[]>;
+  /**
+   * `isle` verilirse sağlayıcı her belgeyi indirdiği anda ona verir ve
+   * biriktirmez (dönen dizi boş olabilir); gelen XML'ler eklerle MB'larca
+   * olabildiği için uzun pencerede hepsini bellekte tutmak worker'ı düşürür.
+   * Verilmezse ya da sağlayıcı desteklemiyorsa belgeler dizide döner.
+   */
+  gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date, isle?: (belge: GelenBelge) => Promise<void>): Promise<GelenBelge[]>;
   /**
    * Tam GİB mükellef listesini indirir (EBLG-10). Yalnızca toplu liste sunan
    * sağlayıcılar uygular; tekil sorgusu ucuz olan sağlayıcılarda tanımsız

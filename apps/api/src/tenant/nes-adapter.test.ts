@@ -939,3 +939,22 @@ describe("NesEntegratorAdapter.seriTanimlari (EBLG-97)", () => {
     ]);
   });
 });
+
+describe("NES gelen fatura çekimi — akış", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("isle verilince her belge indirildiği anda işlenir, dizide biriktirilmez", async () => {
+    const sira: string[] = [];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {
+      const yol = String(adres);
+      if (yol.endsWith("/xml")) { sira.push(`indir:${yol.split("/").at(-2)}`); return yanit("<Invoice/>"); }
+      return yanit({ data: [{ id: "f1", documentNumber: "A1" }, { id: "f2", documentNumber: "A2" }, { id: "f1" }] });
+    }));
+    const islenen: string[] = [];
+    const donen = await new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-10-29T06:00:00Z"), async (b) => { sira.push(`isle:${b.uuid}`); islenen.push(b.belgeNo); });
+    expect(donen).toEqual([]);
+    expect(islenen).toEqual(["A1", "A2"]);
+    // İkinci belge, birincisi işlendikten sonra indirilir.
+    expect(sira).toEqual(["indir:f1", "isle:f1", "indir:f2", "isle:f2"]);
+  });
+});
