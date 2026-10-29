@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { bugunTR, DONEMSEL_DEGERLER, HATIRLATMA_GUNLERI, yayinTakvimi, type TakvimSatiri } from "@tekirextra/shared";
 import { createTransport } from "nodemailer";
 import { PlatformPrismaService } from "./platform-prisma.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const ALTI_SAAT_MS = 6 * 60 * 60 * 1000;
 
@@ -31,8 +32,8 @@ export class MevzuatHatirlatmaService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), ALTI_SAAT_MS);
+    setImmediate(() => void nabizla("mevzuat-hatirlatma", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("mevzuat-hatirlatma", () => this.calistir()), ALTI_SAAT_MS);
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }

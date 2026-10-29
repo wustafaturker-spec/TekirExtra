@@ -10,6 +10,7 @@ import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EirsaliyeService, eirsaliyeSorguKosulu, eirsaliyeYenidenDenemeKosulu } from "./eirsaliye.service";
 import { AZAMI_FATURA_SORGU_SURELERI, faturaSorguKosulu } from "./fatura-sorgu-kosulu";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const KUYRUK_ADI = "tekirextra-ebelge";
 const GONDERIM_ISI = "ebelge-gonder";
@@ -117,8 +118,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     this.worker.on("error", (hata) => this.logger.error(`e-Belge worker hatası: ${hata.message}`));
     await this.worker.waitUntilReady();
     this.logger.log(`e-Belge worker hazır; concurrency=${this.worker.opts.concurrency}`);
-    setImmediate(() => void this.periyodikIsleriPlanla());
-    this.periyodikKontrol = setInterval(() => void this.periyodikIsleriPlanla(), Number(process.env.EBELGE_SCHEDULE_INTERVAL_MS || 300_000));
+    setImmediate(() => void nabizla("ebelge-kuyruk", () => this.periyodikIsleriPlanla()));
+    this.periyodikKontrol = setInterval(() => void nabizla("ebelge-kuyruk", () => this.periyodikIsleriPlanla()), Number(process.env.EBELGE_SCHEDULE_INTERVAL_MS || 300_000));
   }
 
   async onModuleDestroy() { if (this.periyodikKontrol) clearInterval(this.periyodikKontrol); await this.worker?.close(); await this.kuyrukOlaylari.close(); await this.deadLetter.close(); await this.kuyruk.close(); }
@@ -264,6 +265,37 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       if (sayfa.length < sayfaBoyutu) break;
     }
     return sonuc.slice(0, sinir);
+  }
+
+  /**
+   * PLT-17: tüm firmaların kuyruk sayıları ve kuyruktan düşmüş işler (iş türü,
+   * hata, zaman; belge içeriği yok). Yalnız platform ekranı ve alarm okur.
+   */
+  async platformOzeti() {
+    const [sayilar, olu] = await Promise.all([
+      this.kuyruk.getJobCounts("waiting", "active", "delayed", "failed"),
+      this.deadLetter.getJobs(["waiting"], 0, 499, false),
+    ]);
+    const firmaSayilari = new Map<string, Partial<Record<"waiting" | "active" | "delayed" | "failed", number>>>();
+    for (const durum of ["waiting", "active", "delayed", "failed"] as const) {
+      for (const is of await this.kuyruk.getJobs([durum], 0, 999, false)) {
+        const k = firmaSayilari.get(is.data.tenantId) ?? {};
+        k[durum] = (k[durum] ?? 0) + 1;
+        firmaSayilari.set(is.data.tenantId, k);
+      }
+    }
+    return {
+      sayilar: { ...sayilar, deadLetter: olu.length },
+      firmalar: [...firmaSayilari].map(([tenantId, s]) => ({ tenantId, ...s })),
+      oluIsler: olu.map((is) => ({ id: String(is.id), tenantId: is.data.tenantId, isTuru: is.data.isTuru || is.name, hata: String(is.data.hata ?? "").slice(0, 500), zaman: is.data.deadLetterZamani })),
+    };
+  }
+
+  /** PLT-18: platform kuyruktan düşen işi firmanın bağlamında yeniden kuyruğa alır. */
+  async platformYenidenDene(oluIsId: string) {
+    const olu = await this.deadLetter.getJob(oluIsId);
+    if (!olu) throw new NotFoundException("Kuyruktan düşen iş bulunamadı");
+    return baglamlaCalistir({ tenantId: olu.data.tenantId, userId: olu.data.userId || SISTEM_KULLANICISI, rol: olu.data.rol || "muhasebe" }, () => this.yenidenDene(oluIsId));
   }
 
   async yenidenDene(isId: string) {

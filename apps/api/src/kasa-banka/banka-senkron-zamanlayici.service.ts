@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { CEKILEN_SAGLAYICILAR } from "./banka-saglayici-kaydi";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -24,8 +25,8 @@ export class BankaSenkronZamanlayiciService implements OnModuleInit, OnModuleDes
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), BES_DAKIKA_MS);
+    setImmediate(() => void nabizla("banka-senkron-zamanlayici", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("banka-senkron-zamanlayici", () => this.calistir()), BES_DAKIKA_MS);
   }
 
   onModuleDestroy(): void {

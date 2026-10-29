@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { DovizService } from "./doviz.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BIR_GUN_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_UTC_FARKI_MS = 3 * 60 * 60 * 1000;
@@ -28,10 +29,10 @@ export class DovizZamanlayiciService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
+    setImmediate(() => void nabizla("doviz-zamanlayici", () => this.calistir()));
     this.ilkCekim = setTimeout(() => {
       void this.calistir();
-      this.zamanlayici = setInterval(() => void this.calistir(), BIR_GUN_MS);
+      this.zamanlayici = setInterval(() => void nabizla("doviz-zamanlayici", () => this.calistir()), BIR_GUN_MS);
     }, sonrakiCekimMs());
     this.logger.log("TCMB kur çekimi her gün İstanbul saatiyle 16:05 için planlandı");
   }

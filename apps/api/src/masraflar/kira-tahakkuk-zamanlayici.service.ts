@@ -6,6 +6,7 @@ import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { DovizService } from "../doviz/doviz.service";
 import { KUR_GERI_BAKIS_GUN, kurCoz } from "../doviz/kur-coz";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BIR_GUN_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_UTC_FARKI_MS = 3 * 60 * 60 * 1000;
@@ -57,10 +58,10 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
+    setImmediate(() => void nabizla("kira-tahakkuk-zamanlayici", () => this.calistir()));
     this.ilkGunlukKontrol = setTimeout(() => {
       void this.calistir();
-      this.zamanlayici = setInterval(() => void this.calistir(), BIR_GUN_MS);
+      this.zamanlayici = setInterval(() => void nabizla("kira-tahakkuk-zamanlayici", () => this.calistir()), BIR_GUN_MS);
     }, sonrakiGunlukKontrolMs());
     this.logger.log("Kira tahakkuk kontrolü her gün İstanbul saatiyle 00:05 için planlandı");
   }

@@ -16,6 +16,7 @@ import {
   ACIK_TAKIP, TAKIP_METNI_TALIMATI, TEKLIF_TAKIP_MODULU, hazirTakipMetni, isGunuEkle, kapanisNedeni, mesajKimligi,
   takipMetniIstemi, takipMetniSemasi, teklifAcikMi, teklifTakipAyariSemasi, trGunu, yerTutucuVar,
 } from "./teklif-takip.kurallari";
+import { nabizla } from "../../core/nabiz/nabiz";
 
 type Tx = Prisma.TransactionClient;
 const OTUZ_DAKIKA_MS = 30 * 60 * 1000;
@@ -61,8 +62,8 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.zamanlayici = setInterval(() => void this.taraGuvenli(), OTUZ_DAKIKA_MS);
-    setImmediate(() => void this.taraGuvenli());
+    this.zamanlayici = setInterval(() => void nabizla("teklif-takip", () => this.taraGuvenli()), OTUZ_DAKIKA_MS);
+    setImmediate(() => void nabizla("teklif-takip", () => this.taraGuvenli()));
   }
 
   onModuleDestroy(): void {

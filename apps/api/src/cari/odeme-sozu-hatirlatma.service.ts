@@ -9,6 +9,7 @@ import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { odemeSozuKaynaklariniOku } from "./odeme-sozu-kaynak";
 import { itirazliCariler } from "./tahsilat-iletisim";
 import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./tahsilat-erisim";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const ARALIK = 15 * 60 * 1000;
 const SISTEM = "00000000-0000-4000-8000-000000000000";
@@ -36,8 +37,8 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   onModuleInit() {
     if (process.env.TEKIR_ODEME_SOZU_WORKER !== "1") return;
     z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
-    this.ilk = setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), ARALIK);
+    this.ilk = setImmediate(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir()), ARALIK);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
   saglikli() { return this.sonBasariliTarama !== null && Date.now() - this.sonBasariliTarama < ARALIK * 2; }

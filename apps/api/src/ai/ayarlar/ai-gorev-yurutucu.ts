@@ -15,6 +15,7 @@ import { AnalizYapilamadi, icgoruMetni } from "../icgoru/nakit-tahsilat-analizi"
 import { AiSinirHatasi } from "../saglayici/ai-butce";
 import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
 import { brifingMetni, brifingOncelikleri, brifingOnemi, brifingTamMetni, brifingVerisiTopla } from "../icgoru/gunluk-brifing";
+import { nabizla } from "../../core/nabiz/nabiz";
 
 export { trSimdi, type TrSimdi };
 
@@ -55,8 +56,8 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.zamanlayici = setInterval(() => void this.taraGuvenli(), BES_DAKIKA_MS);
-    setImmediate(() => void this.taraGuvenli());
+    this.zamanlayici = setInterval(() => void nabizla("ai-gorev-yurutucu", () => this.taraGuvenli()), BES_DAKIKA_MS);
+    setImmediate(() => void nabizla("ai-gorev-yurutucu", () => this.taraGuvenli()));
   }
 
   onModuleDestroy(): void {

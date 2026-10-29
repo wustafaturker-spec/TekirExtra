@@ -6,6 +6,7 @@ import { PrismaService } from "../core/prisma.service";
 import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./tahsilat-erisim";
 import { TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi } from "./tahsilat-otomasyon-ayari";
 import { TahsilatTakibiService } from "./tahsilat-takibi.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const ARALIK_MS = 15 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -20,8 +21,8 @@ export class GecikenSozZamanlayiciService implements OnModuleInit, OnModuleDestr
   constructor(private readonly prisma: PrismaService, private readonly takip: TahsilatTakibiService, @Optional() private readonly erisim?: AbonelikErisimService) {}
   onModuleInit() {
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.ilk = setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), ARALIK_MS);
+    this.ilk = setImmediate(() => void nabizla("geciken-soz-zamanlayici", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("geciken-soz-zamanlayici", () => this.calistir()), ARALIK_MS);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
 

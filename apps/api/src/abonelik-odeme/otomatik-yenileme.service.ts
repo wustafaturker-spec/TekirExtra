@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { AbonelikOdemeService } from "./abonelik-odeme.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
 
@@ -24,8 +25,8 @@ export class OtomatikYenilemeService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), BIR_SAAT_MS);
+    setImmediate(() => void nabizla("otomatik-yenileme", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("otomatik-yenileme", () => this.calistir()), BIR_SAAT_MS);
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }

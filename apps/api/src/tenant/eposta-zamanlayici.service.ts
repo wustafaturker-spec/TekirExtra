@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@ne
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { ImapService } from "./imap.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 
@@ -18,8 +19,8 @@ export class EpostaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), BES_DAKIKA_MS);
+    setImmediate(() => void nabizla("eposta-zamanlayici", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("eposta-zamanlayici", () => this.calistir()), BES_DAKIKA_MS);
     this.logger.log(JSON.stringify({ event: "imap_email_scan_scheduled", intervalMs: BES_DAKIKA_MS }));
   }
 

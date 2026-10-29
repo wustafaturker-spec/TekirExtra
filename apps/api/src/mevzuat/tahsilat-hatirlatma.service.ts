@@ -5,6 +5,7 @@ import { abonelikTutari } from "../abonelik-odeme/abonelik-tutari";
 import { baglantiAnahtariUret } from "../abonelik-odeme/baglanti-anahtari";
 import { SaglayiciAyarlariService } from "../abonelik-odeme/saglayici-ayarlari.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
 const GUN_MS = 24 * BIR_SAAT_MS;
@@ -75,8 +76,8 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), BIR_SAAT_MS);
+    setImmediate(() => void nabizla("tahsilat-hatirlatma", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("tahsilat-hatirlatma", () => this.calistir()), BIR_SAAT_MS);
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }

@@ -3,6 +3,7 @@ import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { MetricsService } from "../core/observability/metrics.service";
 import { RaporAbonelikService } from "./rapor-abonelik.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const PARTI = 100;
@@ -24,8 +25,8 @@ export class RaporAbonelikZamanlayiciService implements OnModuleInit, OnModuleDe
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), BES_DAKIKA_MS);
+    setImmediate(() => void nabizla("rapor-abonelik-zamanlayici", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("rapor-abonelik-zamanlayici", () => this.calistir()), BES_DAKIKA_MS);
     this.logger.log(JSON.stringify({ event: "report_subscription_scan_scheduled", intervalMs: BES_DAKIKA_MS }));
   }
 

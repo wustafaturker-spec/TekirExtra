@@ -3,6 +3,7 @@ import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { NestFactory } from "@nestjs/core";
 import { createServer } from "node:http";
 import { AppModule } from "./app.module";
+import { NabizLogger } from "./core/nabiz/nabiz";
 import { MetricsService } from "./core/observability/metrics.service";
 
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
@@ -11,7 +12,7 @@ uretimSirlariniDenetle();
 /** Ayrı süreçte kalıcı BullMQ işleyicilerini çalıştırır. */
 async function bootstrap(): Promise<void> {
   process.env.TEKIR_WORKER = "1";
-  const app = await NestFactory.createApplicationContext(AppModule);
+  const app = await NestFactory.createApplicationContext(AppModule, { logger: new NabizLogger() });
   app.enableShutdownHooks();
   const metrics = app.get(MetricsService);
   const metrikPortu = Number(process.env.WORKER_METRICS_PORT || 9464);

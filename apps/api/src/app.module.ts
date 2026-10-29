@@ -45,6 +45,7 @@ import { ButceModule } from "./butce/butce.module";
 import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
 import { MevzuatModule } from "./mevzuat/mevzuat.module";
 import { AbonelikOdemeModule } from "./abonelik-odeme/abonelik-odeme.module";
+import { SistemSagligiModule } from "./sistem-sagligi/sistem-sagligi.module";
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { AbonelikOdemeModule } from "./abonelik-odeme/abonelik-odeme.module";
     AuthModule,
     MevzuatModule,
     AbonelikOdemeModule,
+    SistemSagligiModule,
     TenantModule,
     BelgelerModule,
     CariModule,

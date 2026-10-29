@@ -3,6 +3,7 @@ import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { NestFactory } from "@nestjs/core";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
+import { NabizLogger } from "./core/nabiz/nabiz";
 import { bosTutucuylaCalistir } from "./core/istek-baglami";
 import { randomUUID } from "node:crypto";
 import { MetricsService } from "./core/observability/metrics.service";
@@ -17,7 +18,7 @@ import { json, urlencoded } from "express";
 uretimSirlariniDenetle();
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create(AppModule, { bodyParser: false, logger: new NabizLogger() });
   app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb" }));
   app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true }));
   const metrics = app.get(MetricsService);

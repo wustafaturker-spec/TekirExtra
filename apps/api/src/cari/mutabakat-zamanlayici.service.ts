@@ -3,6 +3,7 @@ import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { CariMutabakatService } from "./cari-mutabakat.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const SAAT_MS = 60 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -21,8 +22,8 @@ export class MutabakatZamanlayiciService implements OnModuleInit, OnModuleDestro
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), SAAT_MS);
+    setImmediate(() => void nabizla("mutabakat-zamanlayici", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("mutabakat-zamanlayici", () => this.calistir()), SAAT_MS);
   }
 
   onModuleDestroy(): void {

@@ -5,6 +5,7 @@ import { baglamlaCalistir } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { istanbulAyBaslangici, trSimdi } from "../ai-zaman";
 import { buAyMaliyeti, kiraciButceKurali, platformAnahtariMi } from "../saglayici/ai-butce";
+import { nabizla } from "../../core/nabiz/nabiz";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
 const IDEMPOTENCY_SAKLAMA_GUN = 7;
@@ -25,8 +26,8 @@ export class AiTelemetriBakimService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
-    this.zamanlayici = setInterval(() => void this.calistir(), BIR_SAAT_MS);
+    setImmediate(() => void nabizla("ai-telemetri-bakim", () => this.calistir()));
+    this.zamanlayici = setInterval(() => void nabizla("ai-telemetri-bakim", () => this.calistir()), BIR_SAAT_MS);
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }

@@ -7278,3 +7278,49 @@ model AracCeza {
   @@index([tenantId, aracId, tarih])
   @@map("arac_cezalari")
 }
+
+/// PLT-16: zamanlayıcı/iş başına son durum (kiracı verisi taşımaz).
+model SistemIsi {
+  isAdi         String    @id @map("is_adi") @db.VarChar(80)
+  sonBaslangic  DateTime? @map("son_baslangic")
+  sonBitis      DateTime? @map("son_bitis")
+  sonSureMs     Int?      @map("son_sure_ms")
+  sonBasariAt   DateTime? @map("son_basari_at")
+  sonHata       String?   @map("son_hata") @db.VarChar(1000)
+  sonHataAt     DateTime? @map("son_hata_at")
+  ardisikHata   Int       @default(0) @map("ardisik_hata")
+  calismaSayisi BigInt    @default(0) @map("calisma_sayisi")
+  updatedAt     DateTime  @default(now()) @map("updated_at")
+
+  @@map("sistem_isleri")
+}
+
+/// PLT-16: süreç açılışı + nabız; worker yeniden başlamaları buradan sayılır.
+model SistemSureci {
+  id          String   @id @db.Uuid
+  tur         String   @db.VarChar(20)
+  makine      String?  @db.VarChar(120)
+  pid         Int?
+  basladiAt   DateTime @default(now()) @map("basladi_at")
+  sonNabizAt  DateTime @default(now()) @map("son_nabiz_at")
+  rssMb       Int?     @map("rss_mb")
+  heapMb      Int?     @map("heap_mb")
+  heapSinirMb Int?     @map("heap_sinir_mb")
+
+  @@index([tur, basladiAt(sort: Desc)], map: "sistem_surecleri_tur_basladi_idx")
+  @@map("sistem_surecleri")
+}
+
+/// PLT-19: alarm durumu; e-posta tekilliği ve "düzeldi" bildirimi buradan.
+model SistemAlarmi {
+  anahtar       String    @id @db.VarChar(160)
+  tur           String    @db.VarChar(40)
+  acik          Boolean   @default(true)
+  ozet          String    @db.VarChar(1000)
+  ilkAt         DateTime  @default(now()) @map("ilk_at")
+  sonGorulmeAt  DateTime  @default(now()) @map("son_gorulme_at")
+  sonBildirimAt DateTime? @map("son_bildirim_at")
+  kapandiAt     DateTime? @map("kapandi_at")
+
+  @@map("sistem_alarmlari")
+}

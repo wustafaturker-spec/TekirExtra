@@ -148,6 +148,11 @@ export class BaglantilarService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** PLT-17/19: bu sağlayıcının işleri gerçekten çalışır mı (üretimde mock'lu sağlayıcı atlanır). */
+  static taranir(saglayici: string): boolean {
+    return Boolean(GERCEK_ADAPTORLER[saglayici]) || process.env.ALLOW_MOCK_ENTEGRATIONS === "true" || process.env.NODE_ENV !== "production";
+  }
+
   adapterCoz(saglayici: string): EntegratorAdapter {
     const uret = GERCEK_ADAPTORLER[saglayici];
     const mockaIzinVar = process.env.ALLOW_MOCK_ENTEGRATIONS === "true" || process.env.NODE_ENV !== "production";

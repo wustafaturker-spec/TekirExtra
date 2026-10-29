@@ -2044,6 +2044,32 @@ test("platform yöneticisi ödeme sağlayıcısını gizli alanları göstermede
   await expect(paytr.getByRole("button", { name: "Kaydet ve etkinleştir" })).toBeEnabled();
 });
 
+test("sistem sağlığı açık sorunları, düşen işi ve geciken taramayı gösterir; iş yeniden kuyruğa alınır (PLT-17/18)", async ({ page }) => {
+  let yeniden = "";
+  await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
+  await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com", rol: "yonetici" } }));
+  await page.route("**/api/v1/platform/sistem-sagligi", (route) => route.fulfill({ json: {
+    zaman: "2026-10-29T13:00:00Z", esikler: { workerNabizDk: 10, saatlikYenidenBaslama: 2, kursorSaat: 3, ardisikHata: 3 },
+    worker: { son: { basladiAt: "2026-10-29T12:09:29Z", sonNabizAt: "2026-10-29T12:58:00Z", rssMb: 442, heapMb: 380, heapSinirMb: 396 }, nabizGecikmesiDk: 2, acilis24s: 3, acilislar: [] },
+    api: null,
+    isler: [{ isAdi: "banka-senkron-zamanlayici", sonBaslangic: "2026-10-29T12:55:00Z", sonSureMs: 1200, sonBasariAt: "2026-10-29T11:00:00Z", sonHata: "zaman aşımı", sonHataAt: "2026-10-29T12:55:01Z", ardisikHata: 3, calismaSayisi: 40 }],
+    kuyruk: { sayilar: { waiting: 1, active: 0, delayed: 2, failed: 0 }, firmalar: [], oluIsler: [{ id: "dlq-1", tenantId: "t1", unvan: "TEKİR EKTRA", isTuru: "gelen-belge-cek", hata: "job stalled more than allowable limit", zaman: "2026-10-29T12:11:33Z" }] },
+    gecikenKursorler: [{ tenantId: "t1", unvan: "TEKİR EKTRA", saglayici: "nes", sonCekimAt: "2026-10-29T06:06:18Z" }], taranan: 2,
+    baglantilar: [],
+    alarmlar: [{ anahtar: "olu-is:dlq-1", tur: "olu_is", acik: true, ozet: "Kuyruktan düşen iş: gelen-belge-cek — TEKİR EKTRA: job stalled more than allowable limit", ilkAt: "2026-10-29T12:15:00Z", sonBildirimAt: "2026-10-29T12:15:00Z", kapandiAt: null }],
+  } }));
+  await page.route("**/api/v1/platform/sistem-sagligi/olu-isler/dlq-1/yeniden-dene", async (route) => { yeniden = route.request().method(); await route.fulfill({ json: { mesaj: "İş yeniden kuyruğa alındı." } }); });
+  await page.goto("/platform/sistem-sagligi");
+  await expect(page.getByText("1 açık sorun:")).toBeVisible();
+  await expect(page.getByText("3 ardışık hata")).toBeVisible();
+  await expect(page.getByText("380 / 396 MB")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "job stalled more than allowable limit" })).toBeVisible();
+  await expect(page.getByText(/Gelen taraması 3 saatten uzun/)).toBeVisible();
+  await page.getByRole("button", { name: "Yeniden kuyruğa al" }).click();
+  await expect(page.getByText("İş yeniden kuyruğa alındı.")).toBeVisible();
+  expect(yeniden).toBe("POST");
+});
+
 test("platform ekibi bekleyen plan talebini firmalar ekranından onaylar (platform P0-1/P1-1)", async ({ page }) => {
   let karar: { yol: string; govde: unknown } | null = null;
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));

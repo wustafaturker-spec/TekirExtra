@@ -5,6 +5,7 @@ import { AyarlarService } from "./ayarlar/ayarlar.service";
 import { PdfService } from "./pdf/pdf.service";
 import { BelgeGorunumuController } from "./pdf/belge-gorunumu.controller";
 import { AbonelikErisimService } from "./abonelik-erisim.service";
+import { NabizService } from "./nabiz/nabiz.service";
 import { DestekOturumService } from "./destek-oturum.service";
 import { KullaniciDurumService } from "./kullanici-durum.service";
 import { PrismaService } from "./prisma.service";
@@ -16,7 +17,7 @@ import { RaporlarService } from "./raporlar/raporlar.service";
   // PdfService, firma logosunu (KLN-03) depodan okumak için DepoService'e bağlı
   imports: [EklerModule],
   controllers: [AyarlarController, RaporlarController, BelgeGorunumuController],
-  providers: [PrismaService, AyarlarService, RaporlarService, PdfService, KullaniciDurumService, AbonelikErisimService, DestekOturumService],
+  providers: [PrismaService, AyarlarService, RaporlarService, PdfService, KullaniciDurumService, AbonelikErisimService, DestekOturumService, NabizService],
   exports: [PrismaService, AyarlarService, RaporlarService, PdfService, KullaniciDurumService, AbonelikErisimService, DestekOturumService],
 })
 export class CoreModule {}

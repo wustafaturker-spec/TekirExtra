@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { DuzeltmelerService } from "./duzeltmeler.service";
+import { nabizla } from "../core/nabiz/nabiz";
 
 const ON_BES_DAKIKA_MS = 15 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -19,10 +20,10 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    setImmediate(() => void this.calistir());
+    setImmediate(() => void nabizla("duzeltme-tarama-zamanlayici", () => this.calistir()));
     const ayar = Number(process.env.DUZELTME_TARAMA_INTERVAL_MS || ON_BES_DAKIKA_MS);
     const aralik = Math.min(Number.isFinite(ayar) && ayar > 0 ? ayar : ON_BES_DAKIKA_MS, ON_BES_DAKIKA_MS);
-    this.zamanlayici = setInterval(() => void this.calistir(), aralik);
+    this.zamanlayici = setInterval(() => void nabizla("duzeltme-tarama-zamanlayici", () => this.calistir()), aralik);
     this.logger.log(JSON.stringify({ event: "correction_scan_scheduled", intervalMs: aralik }));
   }
 

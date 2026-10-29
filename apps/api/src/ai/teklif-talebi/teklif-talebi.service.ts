@@ -24,6 +24,7 @@ import {
   secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yedekAramalar,
   type Cikarim, type StokAdayi, type TeklifIslemDurumu,
 } from "./teklif-talebi.kurallari";
+import { nabizla } from "../../core/nabiz/nabiz";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const ON_DAKIKA_MS = 10 * 60 * 1000;
@@ -94,8 +95,8 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.zamanlayici = setInterval(() => void this.taraGuvenli(), BES_DAKIKA_MS);
-    setImmediate(() => void this.taraGuvenli());
+    this.zamanlayici = setInterval(() => void nabizla("teklif-talebi", () => this.taraGuvenli()), BES_DAKIKA_MS);
+    setImmediate(() => void nabizla("teklif-talebi", () => this.taraGuvenli()));
   }
 
   onModuleDestroy(): void {
