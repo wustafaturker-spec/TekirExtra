@@ -22,6 +22,8 @@ interface Gecmis {
   odemeler?: { zaman: string; aySayisi: number; tutar: number; kdv: number | null; kaynak?: "elle" | "saglayici"; saglayici?: string | null; not: string | null; yeniDonemSonu: string }[];
   basarisizDenemeler?: { zaman: string; saglayici: string; kaynak: string; aySayisi: number; toplam: number; hata: string | null }[];
   askiNedeni?: "odeme" | "diger" | null;
+  /** PLT-14: otomatik yenileme kartı (anahtarlar dönmez). */
+  kart?: { saglayici: string; son4: string | null; kartMarkasi: string | null; otomatikYenileme: boolean; aySayisi: number; denemeSayisi: number; sonDeneme: string | null; sonHata: string | null } | null;
 }
 type Suzgec = "hepsi" | "talep" | "askiyaAlinacak" | "askida" | "iptal";
 const ODEME_SURELERI = [1, 3, 6, 12] as const;
@@ -234,6 +236,12 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
             </div>
           </div>
         </Card>
+        {gecmis?.kart && (
+          <Alert tone={gecmis.kart.sonHata ? "warning" : "success"}>
+            Kayıtlı kart: {gecmis.kart.kartMarkasi ?? ""} {gecmis.kart.son4 ? `**** ${gecmis.kart.son4}` : ""} ({gecmis.kart.saglayici}) · otomatik yenileme {gecmis.kart.otomatikYenileme ? `açık, ${gecmis.kart.aySayisi} ay` : "kapalı"}
+            {gecmis.kart.sonHata ? ` · son deneme başarısız (${gecmis.kart.denemeSayisi}/3): ${gecmis.kart.sonHata}` : ""}
+          </Alert>
+        )}
         {gecmis?.odemeler?.length ? (
           <Card title="Ödemeler" pad={false}>
             <TableWrap>

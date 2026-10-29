@@ -12,11 +12,11 @@ export function iyzicoTelefonuDuzenle(telefon?: string | null): string | undefin
 }
 
 export class IyzicoAdapter {
-  private async istek(config: IyzicoConfig, path: string, govde: Record<string, unknown>): Promise<any> {
+  private async istek(config: IyzicoConfig, path: string, govde: Record<string, unknown>, method: "POST" | "DELETE" = "POST"): Promise<any> {
     const body = JSON.stringify(govde); const randomKey = `${Date.now()}${randomBytes(8).toString("hex")}`;
     const signature = createHmac("sha256", config.secretKey).update(randomKey + path + body).digest("hex");
     const auth = Buffer.from(`apiKey:${config.apiKey}&randomKey:${randomKey}&signature:${signature}`).toString("base64");
-    const yanit = await fetch(`${config.baseUrl}${path}`, { method: "POST", headers: { Authorization: `IYZWSv2 ${auth}`, "x-iyzi-rnd": randomKey, "Content-Type": "application/json" }, body });
+    const yanit = await fetch(`${config.baseUrl}${path}`, { method, headers: { Authorization: `IYZWSv2 ${auth}`, "x-iyzi-rnd": randomKey, "Content-Type": "application/json" }, body });
     const veri = await yanit.json().catch(() => ({})) as any;
     if (!yanit.ok || veri.status !== "success") throw new Error(veri.errorMessage ?? `iyzico servisi HTTP ${yanit.status}`);
     return veri;
@@ -30,6 +30,26 @@ export class IyzicoAdapter {
 
   async odemeSonucu(config: IyzicoConfig, token: string) {
     const veri = await this.istek(config, "/payment/iyzipos/checkoutform/auth/ecom/detail", { locale: "tr", token });
-    return { basarili: veri.paymentStatus === "SUCCESS", odemeId: veri.paymentId ? String(veri.paymentId) : undefined, tutar: Number(veri.paidPrice ?? veri.price ?? 0), dovizCinsi: String(veri.currency ?? "TRY") };
+    return {
+      basarili: veri.paymentStatus === "SUCCESS",
+      odemeId: veri.paymentId ? String(veri.paymentId) : undefined,
+      tutar: Number(veri.paidPrice ?? veri.price ?? 0),
+      dovizCinsi: String(veri.currency ?? "TRY"),
+      // PLT-14: ödeyen ödeme sayfasında kartını kaydettiyse dolu gelir.
+      kart: veri.cardUserKey && veri.cardToken
+        ? { cardUserKey: String(veri.cardUserKey), cardToken: String(veri.cardToken), son4: veri.lastFourDigits ? String(veri.lastFourDigits) : undefined, marka: veri.cardAssociation ? String(veri.cardAssociation) : undefined }
+        : undefined,
+    };
+  }
+
+  /** PLT-14: kayıtlı kartla, kullanıcı olmadan (non-3D) çekim. Başarısızlıkta hata fırlatır. */
+  async kayitliKartlaOde(config: IyzicoConfig, girdi: Record<string, unknown>) {
+    const veri = await this.istek(config, "/payment/auth", girdi);
+    if (!veri.paymentId) throw new Error("iyzico ödeme numarası dönmedi");
+    return { odemeId: String(veri.paymentId), tutar: Number(veri.paidPrice ?? veri.price ?? 0), dovizCinsi: String(veri.currency ?? "TRY") };
+  }
+
+  async kartSil(config: IyzicoConfig, cardUserKey: string, cardToken: string) {
+    await this.istek(config, "/cardstorage/card", { locale: "tr", cardUserKey, cardToken }, "DELETE");
   }
 }

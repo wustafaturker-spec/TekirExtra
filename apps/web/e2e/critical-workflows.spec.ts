@@ -1968,10 +1968,47 @@ test("yönetici aboneliği panelden kartla öder; ödeme sağlayıcının sayfas
   await expect(kart.getByRole("cell", { name: "Kart (iyzico)" })).toBeVisible();
   await kart.getByLabel("Süre").selectOption("12");
   await expect(kart.getByText("Toplam 5.745,60 TL")).toBeVisible();
+  await kart.getByLabel(/Kartımı iyzico'da kaydet/).check();
   await kart.getByRole("button", { name: "Şimdi öde" }).click();
   await expect(page).toHaveURL(/\/odeme-saglayici-sahte$/);
   await expect(page.getByRole("heading", { name: "Sahte ödeme sayfası" })).toBeVisible();
-  expect(istek).toEqual({ aySayisi: 12 });
+  expect(istek).toEqual({ aySayisi: 12, kartKaydet: true });
+});
+
+test("kayıtlı kartın otomatik yenilemesi kapatılır ve kart kaldırılır; son başarısız çekim görünür (PLT-14)", async ({ page }) => {
+  const istekler: { yol: string; yontem: string; govde: unknown }[] = [];
+  let kart: Record<string, unknown> | null = { saglayici: "iyzico", son4: "4242", marka: "VISA", otomatikYenileme: true, aySayisi: 1, gecerli: true, sonHata: "Yetersiz bakiye", sonDeneme: "2026-10-28T09:00:00Z" };
+  const plan = { kod: "baslangic", ad: "Başlangıç", aciklama: "", aylikFiyat: 399, limitler: { kullanici: null, cari: null, stok: null, aylikFatura: null }, ozellikler: [] };
+  await page.route("**/api/v1/abonelik", (route) => route.fulfill({ json: { abonelik: { planKodu: "baslangic", durum: "aktif" }, plan, planlar: [plan], kullanim: { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }, sonTalep: null } }));
+  await page.route("**/api/v1/abonelik/gecmis", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/abonelik/odeme", (route) => route.fulfill({ json: {
+    etkin: true, saglayici: "iyzico", testOrtami: false, neden: null, donemSonu: "2026-10-31T21:00:00Z",
+    secenekler: [{ aySayisi: 1, matrah: "399.00", kdv: "79.80", toplam: "478.80" }], kart, odemeler: [], basarisizDenemeler: [],
+  } }));
+  await page.route("**/api/v1/abonelik/odeme/otomatik-yenileme", async (route) => {
+    istekler.push({ yol: "otomatik-yenileme", yontem: route.request().method(), govde: route.request().postDataJSON() });
+    kart = { ...kart!, otomatikYenileme: false, sonHata: null };
+    await route.fulfill({ json: { mesaj: "Otomatik yenileme kapatıldı; kart kayıtlı kalır." } });
+  });
+  await page.route("**/api/v1/abonelik/odeme/kart", async (route) => {
+    istekler.push({ yol: "kart", yontem: route.request().method(), govde: null });
+    kart = null;
+    await route.fulfill({ json: { mesaj: "Kart kaldırıldı; otomatik yenileme kapandı." } });
+  });
+  page.on("dialog", (d) => void d.accept());
+  await page.goto("/panel/ayarlar/abonelik");
+  const odeme = page.locator(".card", { has: page.locator(".card__title", { hasText: /^Ödeme$/ }) });
+  await expect(odeme.getByText("VISA **** 4242 · iyzico")).toBeVisible();
+  await expect(odeme.getByText("Otomatik yenileme açık · 1 ay")).toBeVisible();
+  await expect(odeme.getByText(/Son otomatik çekim yapılamadı.*Yetersiz bakiye/)).toBeVisible();
+  await expect(odeme.getByLabel(/Kartımı iyzico'da kaydet/)).toHaveCount(0);
+  await odeme.getByRole("button", { name: "Otomatik yenilemeyi kapat" }).click();
+  await expect(page.getByText("Otomatik yenileme kapatıldı; kart kayıtlı kalır.")).toBeVisible();
+  await expect(odeme.getByText("Otomatik yenileme kapalı")).toBeVisible();
+  await odeme.getByRole("button", { name: "Kartı kaldır" }).click();
+  await expect(page.getByText("Kart kaldırıldı; otomatik yenileme kapandı.")).toBeVisible();
+  await expect(odeme.getByText("Kayıtlı kart")).toHaveCount(0);
+  expect(istekler).toEqual([{ yol: "otomatik-yenileme", yontem: "PUT", govde: { acik: false } }, { yol: "kart", yontem: "DELETE", govde: null }]);
 });
 
 test("çevrim içi ödeme kapalıyken panel nedeni söyler, ödeme düğmesi çıkmaz (PLT-11)", async ({ page }) => {
@@ -1990,7 +2027,7 @@ test("platform yöneticisi ödeme sağlayıcısını gizli alanları göstermede
   await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com", rol: "yonetici" } }));
   await page.route("**/api/v1/platform/odeme-saglayicilari", (route) => route.fulfill({ json: [
     { saglayici: "iyzico", ad: "iyzico", bagli: true, ortam: "test", etkin: false, guncellendi: null, alanlar: [{ anahtar: "apiKey", etiket: "API anahtarı", gizli: true, dolu: true }, { anahtar: "secretKey", etiket: "Gizli anahtar", gizli: true, dolu: false }] },
-    { saglayici: "paytr", ad: "PayTR", bagli: false, ortam: "test", etkin: false, guncellendi: null, alanlar: [{ anahtar: "magazaId", etiket: "Mağaza no", gizli: false, dolu: false, deger: "" }] },
+    { saglayici: "paytr", ad: "PayTR", bagli: true, ortam: "test", etkin: false, guncellendi: null, bildirimAdresi: "https://api.ornek.invalid/api/v1/abonelik-odeme/paytr/bildirim", alanlar: [{ anahtar: "magazaId", etiket: "Mağaza no", gizli: false, dolu: false, deger: "" }] },
   ] }));
   await page.route("**/api/v1/platform/odeme-saglayicilari/iyzico", async (route) => { kayit = { yol: new URL(route.request().url()).pathname, govde: route.request().postDataJSON() }; await route.fulfill({ json: { mesaj: "iyzico etkin; firmalar abonelik ödemesini bununla yapar." } }); });
   await page.goto("/platform/odeme");
@@ -2003,8 +2040,8 @@ test("platform yöneticisi ödeme sağlayıcısını gizli alanları göstermede
   await expect(page.getByText("iyzico etkin; firmalar abonelik ödemesini bununla yapar.")).toBeVisible();
   expect(kayit).toEqual({ yol: "/api/v1/platform/odeme-saglayicilari/iyzico", govde: { ortam: "test", etkin: true, alanlar: { apiKey: "", secretKey: "sandbox-gizli" } } });
   const paytr = page.locator(".card", { has: page.locator(".card__title", { hasText: /^PayTR$/ }) });
-  await expect(paytr.getByText("Abonelik tahsilatı henüz bağlı değil")).toBeVisible();
-  await expect(paytr.getByRole("button", { name: "Kaydet ve etkinleştir" })).toBeDisabled();
+  await expect(paytr.getByText("https://api.ornek.invalid/api/v1/abonelik-odeme/paytr/bildirim")).toBeVisible();
+  await expect(paytr.getByRole("button", { name: "Kaydet ve etkinleştir" })).toBeEnabled();
 });
 
 test("platform ekibi bekleyen plan talebini firmalar ekranından onaylar (platform P0-1/P1-1)", async ({ page }) => {

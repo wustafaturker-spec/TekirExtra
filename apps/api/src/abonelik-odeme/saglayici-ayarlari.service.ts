@@ -35,6 +35,8 @@ export class SaglayiciAyarlariService {
         ortam: (k?.ortam ?? "test") as SaglayiciOrtami,
         etkin: k?.etkin ?? false,
         guncellendi: k?.updatedAt ?? null,
+        // PayTR sonucu mağaza panelinde tanımlı tek adrese bildirir.
+        bildirimAdresi: kod === "paytr" ? `${(process.env.PUBLIC_API_URL ?? "http://localhost:3001").replace(/\/$/, "")}/api/v1/abonelik-odeme/paytr/bildirim` : null,
         alanlar: SAGLAYICI_ALANLARI[kod].map((a) => ({ ...a, dolu: Boolean(config[a.anahtar]), deger: a.gizli ? undefined : config[a.anahtar] ?? "" })),
       };
     });

@@ -166,6 +166,7 @@ model Tenant {
   abonelikTalepleri         AbonelikTalebi[]
   abonelikOdemeleri         AbonelikOdemesi[]
   abonelikOdemeDenemeleri   AbonelikOdemeDenemesi[]
+  abonelikKarti             AbonelikKarti?
   destekIzinleri            DestekIzni[]
   ozelRoller                OzelRol[]
   cariMahsuplari            CariMahsup[]
@@ -450,6 +451,7 @@ model AbonelikOdemeDenemesi {
   odemeSayfasiUrl   String?   @map("odeme_sayfasi_url")
   hataMesaji        String?   @map("hata_mesaji") @db.VarChar(500)
   kartKaydet        Boolean   @default(false) @map("kart_kaydet")
+  odeyenIp          String?   @map("odeyen_ip") @db.VarChar(45)
   baslatanUserId    String?   @map("baslatan_user_id") @db.Uuid
   abonelikOdemesiId String?   @map("abonelik_odemesi_id") @db.Uuid
   createdAt         DateTime  @default(now()) @map("created_at")
@@ -461,6 +463,32 @@ model AbonelikOdemeDenemesi {
   @@unique([saglayici, saglayiciOdemeId], map: "abonelik_odeme_denemeleri_saglayici_odeme_key")
   @@index([tenantId, createdAt])
   @@map("abonelik_odeme_denemeleri")
+}
+
+/// PLT-14: otomatik yenileme kartı (firma başına bir). Kart sağlayıcıda
+/// saklanır; burada yalnız sağlayıcının kart anahtarları (şifreli) ve son 4 hane durur.
+model AbonelikKarti {
+  tenantId          String    @id @map("tenant_id") @db.Uuid
+  saglayici         String    @db.VarChar(20)
+  ortam             String    @db.VarChar(10)
+  /// iyzico: { cardUserKey, cardToken } · PayTR: { utoken, ctoken }
+  sifreliAnahtarlar String    @map("sifreli_anahtarlar")
+  son4              String?   @db.VarChar(4)
+  kartMarkasi       String?   @map("kart_markasi") @db.VarChar(40)
+  otomatikYenileme  Boolean   @default(true) @map("otomatik_yenileme")
+  aySayisi          Int       @map("ay_sayisi")
+  odeyenIp          String?   @map("odeyen_ip") @db.VarChar(45)
+  kaydedenUserId    String?   @map("kaydeden_user_id") @db.Uuid
+  yenilemeDonemSonu DateTime? @map("yenileme_donem_sonu")
+  denemeSayisi      Int       @default(0) @map("deneme_sayisi")
+  sonDenemeAt       DateTime? @map("son_deneme_at")
+  sonHata           String?   @map("son_hata") @db.VarChar(500)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("abonelik_kartlari")
 }
 
 /// PLT-11: abonelik ödeme sağlayıcısının erişim bilgileri. Platform tablosu:

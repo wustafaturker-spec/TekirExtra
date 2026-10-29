@@ -47,10 +47,12 @@ describe("abonelik ödeme sağlayıcısı ayarı (PLT-11)", () => {
     expect(JSON.stringify(db.mevzuatOlay.create.mock.calls)).not.toContain("yeni-api");
   });
 
-  it("eksik alanla ya da henüz bağlı olmayan sağlayıcıyla etkinleştirilemez", async () => {
+  it("eksik alanla etkinleştirilemez; PayTR bildirim adresini gösterir", async () => {
     const { servis, olarak } = kur();
     await expect(olarak(() => servis.kaydet("iyzico", { ortam: "test", etkin: true, alanlar: { apiKey: "a" } }))).rejects.toThrow(/Gizli anahtar/);
-    await expect(olarak(() => servis.kaydet("paytr", { ortam: "test", etkin: true, alanlar: { magazaId: "1", merchantKey: "k", merchantSalt: "s" } }))).rejects.toThrow(/henüz bağlı değil/);
+    await expect(olarak(() => servis.kaydet("paytr", { ortam: "test", etkin: true, alanlar: { magazaId: "1", merchantKey: "k" } }))).rejects.toThrow(/merchant salt/);
+    await olarak(() => servis.kaydet("paytr", { ortam: "test", etkin: true, alanlar: { magazaId: "1", merchantKey: "k", merchantSalt: "s" } }));
+    expect((await servis.listele()).find((l) => l.saglayici === "paytr")?.bildirimAdresi).toMatch(/\/api\/v1\/abonelik-odeme\/paytr\/bildirim$/);
   });
 
   it("etkin sağlayıcı yoksa ya da platform bağlantısı tanımsızsa null (elle tahsilat sürer)", async () => {

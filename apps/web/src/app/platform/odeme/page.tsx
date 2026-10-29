@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select } from "@/
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
 
 interface Alan { anahtar: string; etiket: string; gizli: boolean; dolu: boolean; deger?: string }
-interface Saglayici { saglayici: "iyzico" | "paytr"; ad: string; bagli: boolean; ortam: "test" | "canli"; etkin: boolean; guncellendi: string | null; alanlar: Alan[] }
+interface Saglayici { saglayici: "iyzico" | "paytr"; ad: string; bagli: boolean; ortam: "test" | "canli"; etkin: boolean; guncellendi: string | null; bildirimAdresi?: string | null; alanlar: Alan[] }
 
 /**
  * PLT-11: abonelik bedelini tahsil eden ödeme sağlayıcısı. Gizli alanlar bir
@@ -58,6 +58,7 @@ function SaglayiciKarti({ s, onTamam, onHata }: { s: Saglayici; onTamam: (m: str
           {!s.bagli && <Badge variant="warning">Abonelik tahsilatı henüz bağlı değil</Badge>}
           {s.guncellendi && <span className="subtle">Son değişiklik {new Date(s.guncellendi).toLocaleString("tr-TR")}</span>}
         </div>
+        {s.saglayici === "paytr" && <p className="subtle" style={{ margin: 0 }}>PayTR mağaza panelinde Direkt API, Non3D ve tekrarlayan ödeme yetkileri açık olmalı; <strong>Bildirim URL</strong> olarak şunu girin: <code>{s.bildirimAdresi}</code></p>}
         <div className="form-grid">
           <Field label="Ortam"><Select value={ortam} onChange={(e) => setOrtam(e.target.value as "test" | "canli")}><option value="test">Test (sandbox)</option><option value="canli">Canlı</option></Select></Field>
           {s.alanlar.map((a) => (
