@@ -9,10 +9,11 @@ import { JwtService } from "@nestjs/jwt";
 import { createHash, randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import * as bwipjs from "bwip-js";
-import { generateSecret, generateURI, verifySync } from "otplib";
+import { generateSecret, generateURI } from "otplib";
 import { coz, sifrele } from "../core/kripto";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
+import { totpDogrula } from "./totp-dogrula";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ikiAdimEksikMi, type GuvenlikPolitikasi } from "../core/guvenlik-politikasi";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
@@ -93,7 +94,7 @@ export class AuthService {
         throw new UnauthorizedException("TOTP kodu gerekli");
       }
       const secret = coz(kullanici.totpSecretSifreli as string);
-      const totpGecerli = !kurtarmaKoduBicimindeMi(totpKodu) && verifySync({ secret, token: totpKodu }).valid;
+      const totpGecerli = !kurtarmaKoduBicimindeMi(totpKodu) && totpDogrula(secret, totpKodu);
       // Yönetim P1-1: telefonu olmayan kullanıcı tek kullanımlık kurtarma koduyla girer.
       if (!totpGecerli && !(await this.kurtarmaKoduKullan(kullanici.tenantId, kullanici.id, totpKodu))) {
         if (await this.denemeler.hataKaydet("totp", eposta)) await this.kilitKaydet(kullanici.tenantId, kullanici.id, "totp");
@@ -260,7 +261,7 @@ export class AuthService {
     if (!kullanici?.totpSecretSifreli) {
       throw new BadRequestException("Önce TOTP kurulumu başlatın");
     }
-    if (!verifySync({ secret: coz(kullanici.totpSecretSifreli), token: kod }).valid) {
+    if (!totpDogrula(coz(kullanici.totpSecretSifreli), kod)) {
       throw new BadRequestException("TOTP kodu geçersiz");
     }
     const { kodlar, ozetler } = kurtarmaKodlariUret();
@@ -314,7 +315,7 @@ export class AuthService {
       tx.user.findUnique({ where: { id: userId }, select: { totpAktif: true, totpSecretSifreli: true } }),
     );
     if (!k?.totpAktif || !k.totpSecretSifreli) throw new BadRequestException("İki adımlı doğrulama etkin değil");
-    if (!kurtarmaKoduBicimindeMi(kod) && verifySync({ secret: coz(k.totpSecretSifreli), token: kod }).valid) return;
+    if (!kurtarmaKoduBicimindeMi(kod) && totpDogrula(coz(k.totpSecretSifreli), kod)) return;
     if (kurtarmaKoduOlur && (await this.kurtarmaKoduKullan(tenantId, userId, kod))) return;
     // 401 değil 400: istemci 401'de oturumu yenilemeye çalışır.
     throw new BadRequestException("Doğrulama kodu geçersiz");
@@ -346,7 +347,7 @@ export class AuthService {
     if (!kullanici?.totpAktif || !kullanici.totpSecretSifreli) {
       throw new BadRequestException("Ödeme talimatı onayı için TOTP etkin olmalıdır");
     }
-    if (!verifySync({ secret: coz(kullanici.totpSecretSifreli), token: kod }).valid) {
+    if (!totpDogrula(coz(kullanici.totpSecretSifreli), kod)) {
       throw new UnauthorizedException("TOTP kodu geçersiz");
     }
   }

@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { totpDogrula } from "../auth/totp-dogrula";
 import type { PlatformRol, Prisma } from "@prisma/client";
 import * as argon2 from "argon2";
 import * as bwipjs from "bwip-js";
 import { createHash, randomBytes } from "node:crypto";
 import { createTransport } from "nodemailer";
-import { generateSecret, generateURI, verifySync } from "otplib";
+import { generateSecret, generateURI } from "otplib";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { coz, sifrele } from "../core/kripto";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
@@ -132,7 +133,7 @@ export class PlatformKullanicilarService {
       const kural = parolaSemasi.safeParse(girdi.parola);
       if (!kural.success) throw new BadRequestException(kural.error.issues.map((i) => i.message).join("; "));
     }
-    if (!verifySync({ secret: coz(k.totpSecretSifreli), token: girdi.kod }).valid) {
+    if (!totpDogrula(coz(k.totpSecretSifreli), girdi.kod)) {
       throw new BadRequestException("Doğrulama kodu geçersiz; uygulamadaki güncel kodu girin");
     }
     let parolaHash = k.parolaHash;

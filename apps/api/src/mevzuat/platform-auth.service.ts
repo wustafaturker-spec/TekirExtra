@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from "@nestjs/common";
+import { totpDogrula } from "../auth/totp-dogrula";
 import { JwtService } from "@nestjs/jwt";
 import * as argon2 from "argon2";
-import { verifySync } from "otplib";
 import { platformJwtAnahtari, type PlatformJwtYuku } from "../auth/auth.guard";
 import { coz } from "../core/kripto";
 import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
@@ -39,7 +39,7 @@ export class PlatformAuthService {
     // PLT-07: davet ya da 2FA sıfırlaması bekleyen hesap bağlantıyla kurulmadan giremez.
     if (kullanici.davetTuru) throw await hatali("kurulum_bekliyor");
     if (!(await argon2.verify(kullanici.parolaHash, parola))) throw await hatali("parola");
-    if (!verifySync({ secret: coz(kullanici.totpSecretSifreli), token: totpKodu }).valid) throw await hatali("dogrulama_kodu");
+    if (!totpDogrula(coz(kullanici.totpSecretSifreli), totpKodu)) throw await hatali("dogrulama_kodu");
     await this.denemeler.temizle(sayacAnahtari, ["platform"]);
 
     await this.platform.db.platformKullanici.update({ where: { id: kullanici.id }, data: { sonGiris: new Date() } });
