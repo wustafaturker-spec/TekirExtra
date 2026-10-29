@@ -1,7 +1,7 @@
 # Platform Paneli İnceleme Raporu
 
 **Tarih:** 24 Ekim 2026
-**Durum (2026-10-25):** P0-1 ve P1-1…3 kapandı, pilotta (platform-20261025) geçici firmayla canlı denendi; P2/P3 açık.
+**Durum (2026-10-29):** P0-1, P1-1…3, P2-1, P2-2 ve P3-1 kapandı (PLT-05…10 ile); yalnız P3-2 ödeme sağlayıcısı açık, ara çözüm olarak elle tahsilat takibi (PLT-09) var.
 **İnceleme türü:** Kod okuma + yerel veritabanında salt okuma. Kod değişikliği yapılmadı; platform
 paneline giriş yapılmadı (2FA kodu gerektirir).
 **Kapsam:** Tüm firmaları yöneten ekip ekranı (`/platform`), platform kimlik doğrulaması (MVZ-04),
@@ -36,10 +36,10 @@ Satışa (ücretli aboneliğe) geçmeden önce 1. madde kapanmalı.
 | P1-1 | Firma listesi / genel bakış yok | ✅ 8b6efb7 — /platform/firmalar |
 | P1-2 | Platform girişinde deneme sınırı yok; başarısız denemeler kaydedilmiyor; pasif platform kullanıcısının token'ı 30 dk yaşıyor | ✅ 8b6efb7 — 5 hata/15 dk, giris_basarisiz, 10 sn |
 | P1-3 | Yapay zekâ tavanı değişikliği denetim izine yazılmıyor | ✅ 8b6efb7 — ai_tavani_degisti |
-| P2-1 | Platform kullanıcı yönetimi yalnız betikle; platform rolleri yok | Açık |
-| P2-2 | `/platform` sayfaları web rota korumasının dışında (veri sızmaz, arayüz kabuğu görünür) | Açık |
-| P3-1 | Kayıtlı ve izinli destek erişimi (firma adına bakma) | Açık |
-| P3-2 | Ödeme sağlayıcısı (KLN-08'de "ayrıca bağlanabilir") | Açık |
+| P2-1 | Platform kullanıcı yönetimi yalnız betikle; platform rolleri yok | ✅ fa172c9 PLT-06 (platform yöneticisi / mevzuat editörü rolleri) + dc18b31 PLT-07 (kullanıcılar ekranı: davet, rol değişikliği, pasife alma, 2FA sıfırlama) |
+| P2-2 | `/platform` sayfaları web rota korumasının dışında (veri sızmaz, arayüz kabuğu görünür) | ✅ 75d1fe8 PLT-08 — ayrı imzalı `tekir_platform_oturum` işareti, 30 dk |
+| P3-1 | Kayıtlı ve izinli destek erişimi (firma adına bakma) | ✅ 425e127 KLN-24 + PLT-10 — firma izniyle en çok 30 dk salt okuma, her istek firmanın denetim izinde |
+| P3-2 | Ödeme sağlayıcısı (KLN-08'de "ayrıca bağlanabilir") | Açık — ara çözüm 0b51e0c PLT-09 elle tahsilat + hatırlatma; ayrıca de45829 PLT-05 askıdaki firmada otomasyonlar durur |
 
 ## 3. Bulgular
 
