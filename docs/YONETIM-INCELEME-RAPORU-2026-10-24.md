@@ -1,7 +1,7 @@
 # Firma İçi Yönetim İnceleme Raporu
 
 **Tarih:** 24 Ekim 2026
-**Durum (2026-10-24 akşam):** P0–P2 kapandı ve pilotta canlı denendi (yonetim-20261024); P3 karar bekliyor.
+**Durum (2026-10-29):** P0–P3 kapandı. P0–P2 pilotta canlı denendi (yonetim-20261024); P3, KLN-20…23 isterleriyle kodlandı (af7cb44, a7322f1, e7c0284).
 **İnceleme türü:** Kod okuma + pilot API'de (3001) canlı deneme. Demo kiracıda (TEKİR EKTRA ÖN MUHASEBE)
 yalnız okuma ve yetkisiz yazma denemesi yapıldı (403 gövde işlenmeden döner, veri değişmez); roller
 `muhasebe@`, `depo@` ve `admin@tekirextra.local` ile denendi. Kod değişikliği yapılmadı.
@@ -46,9 +46,9 @@ Asıl sorunlar **güvenilirlik** ve **kurtarılabilirlik**:
 | P2-2 | "Aktif Et" abonelik kullanıcı sınırını aşıyor | ✅ 40e3417 |
 | P2-3 | Yeni kullanıcıyı davetle açma yok; yönetici parolayı yazıp iletiyor | ✅ 971ff70 |
 | P2-4 | Giriş kaydı / son giriş zamanı / aktif oturumlar yok | ✅ c3d6de1 |
-| P3-1 | Gerçek, düzenlenebilir yetki modeli (modül × işlem) | Açık |
-| P3-2 | Firma geneli güvenlik politikası (2FA zorunluluğu, oturum süresi) | Açık |
-| P3-3 | Küçük kullanım sorunları (onaysız rol değişikliği, 2FA'da karekod yok) | Açık |
+| P3-1 | Gerçek, düzenlenebilir yetki modeli (modül × işlem) | ✅ af7cb44 KLN-20 — özel roller: şablondan türetilir, yalnız daraltır (18 modül × 4 işlem); API, menü ve asistan aynı kaynaktan |
+| P3-2 | Firma geneli güvenlik politikası (2FA zorunluluğu, oturum süresi) | ✅ a7322f1 KLN-21/22 — rol bazında zorunlu 2FA, oturum süresi, hareketsizlikte çıkış |
+| P3-3 | Küçük kullanım sorunları (onaysız rol değişikliği, 2FA'da karekod yok) | ✅ e7c0284 KLN-23 — rol değişikliği onayı, 2FA karekodu, doğrulamalı e-posta değiştirme |
 
 ## 3. Bulgular
 
