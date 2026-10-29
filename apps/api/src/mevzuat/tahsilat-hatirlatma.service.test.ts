@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const posta = vi.hoisted(() => ({ gonderilen: [] as { to: string; subject: string; text: string }[] }));
 vi.mock("nodemailer", () => ({ createTransport: () => ({ sendMail: async (m: { to: string; subject: string; text: string }) => { posta.gonderilen.push(m); } }) }));
 
-import { firmaAlicilari, tahsilatDurumu, TahsilatHatirlatmaService, type TahsilatAdayi } from "./tahsilat-hatirlatma.service";
+import { baglantiAnahtariDogrula } from "../abonelik-odeme/baglanti-anahtari";
+import { firmaAlicilari, odemeBaglantisi, tahsilatDurumu, TahsilatHatirlatmaService, type TahsilatAdayi } from "./tahsilat-hatirlatma.service";
 
 const simdi = new Date("2026-10-25T09:00:00Z");
 const gun = (n: number) => new Date(simdi.getTime() + n * 24 * 3600 * 1000);
@@ -57,5 +58,17 @@ describe("elle tahsilat hatırlatması (PLT-09)", () => {
       await servis().calistir(gun(2));
       expect(posta.gonderilen).toEqual([]);
     });
+  });
+});
+
+describe("hatırlatmadaki ödeme bağlantısı (PLT-13)", () => {
+  it("etkin sağlayıcı ve fiyatlı planda imzalı bağlantı; aksi hâlde yok", () => {
+    process.env.JWT_SECRET ??= "test-sirri";
+    const tenantId = "3f1c2a4e-1b2c-4d5e-8f90-1234567890ab";
+    const baglanti = odemeBaglantisi({ tenant_id: tenantId, plan_kodu: "baslangic" }, true, simdi)!;
+    expect(baglanti).toMatch(/\/api\/v1\/abonelik-odeme\/baglanti\/[^/]+$/);
+    expect(baglantiAnahtariDogrula(baglanti.split("/").pop()!, simdi)).toBe(tenantId);
+    expect(odemeBaglantisi({ tenant_id: tenantId, plan_kodu: "kurumsal" }, true, simdi)).toBeNull();
+    expect(odemeBaglantisi({ tenant_id: tenantId, plan_kodu: "baslangic" }, false, simdi)).toBeNull();
   });
 });

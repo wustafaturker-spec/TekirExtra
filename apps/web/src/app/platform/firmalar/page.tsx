@@ -18,6 +18,10 @@ interface Firma {
 interface Gecmis {
   degisiklikler: { zaman: string; oncekiPlan: string | null; yeniPlan: string; oncekiDurum: string | null; yeniDurum: string; neden: string | null }[];
   talepler: { id: string; zaman: string; mevcutPlan: string; istenenPlan: string; durum: string; aciklama: string | null; kararNotu: string | null }[];
+  /** PLT-15: elle (PLT-09) ve sağlayıcıyla alınan ödemeler, başarısız denemeler. */
+  odemeler?: { zaman: string; aySayisi: number; tutar: number; kdv: number | null; kaynak?: "elle" | "saglayici"; saglayici?: string | null; not: string | null; yeniDonemSonu: string }[];
+  basarisizDenemeler?: { zaman: string; saglayici: string; kaynak: string; aySayisi: number; toplam: number; hata: string | null }[];
+  askiNedeni?: "odeme" | "diger" | null;
 }
 type Suzgec = "hepsi" | "talep" | "askiyaAlinacak" | "askida" | "iptal";
 const ODEME_SURELERI = [1, 3, 6, 12] as const;
@@ -29,6 +33,7 @@ const DURUM: Record<string, { ad: string; ton: "success" | "danger" | "neutral" 
 const TALEP_DURUMU: Record<string, string> = { bekliyor: "Bekliyor", onaylandi: "Onaylandı", reddedildi: "Reddedildi", geri_cekildi: "Geri çekildi" };
 const GORUNEN_EN_COK = 200;
 const tarih = (s: string | null) => (s ? new Date(s).toLocaleDateString("tr-TR") : "—");
+const tl = (x: number | string) => Number(x).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
  * Platform P0-1 / P1-1: firmalar ve abonelikleri. Liste yalnız yönetim için
@@ -163,6 +168,7 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
   const [islem, setIslem] = useState(false);
   const [kararNotu, setKararNotu] = useState("");
   const [neden, setNeden] = useState("");
+  const [askiNedeni, setAskiNedeni] = useState<"odeme" | "diger">(firma.askiyaAlinacak ? "odeme" : "diger");
   const [plan, setPlan] = useState(firma.planKodu === "v1" ? "profesyonel" : firma.planKodu);
   const [aySayisi, setAySayisi] = useState<(typeof ODEME_SURELERI)[number]>(1);
   const [tutar, setTutar] = useState("");
@@ -211,18 +217,33 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
             </div>
           </div>
         </Card>
+        {askida && gecmis?.askiNedeni && <Alert tone="warning">{gecmis.askiNedeni === "odeme" ? "Ödeme beklendiği için askıda: firma kartla ödeyince kendiliğinden açılır." : "Ödeme dışı bir nedenle askıda: ödeme gelse de yalnız platform açar."}</Alert>}
         <Card title="Abonelik işlemi">
           <div className="stack">
             <Field label="Neden (zorunlu, geçmişe yazılır)"><Input value={neden} onChange={(e) => setNeden(e.target.value)} maxLength={500} placeholder="Örn. Ekim ödemesi 30 gün gecikti" /></Field>
             <div className="row" style={{ alignItems: "flex-end" }}>
               <div style={{ minWidth: 180 }}><Field label="Plan"><Select value={plan} onChange={(e) => setPlan(e.target.value)}>{PLANLAR.map((p) => <option key={p.kod} value={p.kod}>{p.ad}</option>)}</Select></Field></div>
               <Button disabled={islem || neden.trim().length < 5} onClick={() => void calistir(() => post(`/platform/firmalar/${firma.tenantId}/plan`, { planKodu: plan, neden }))}>Planı değiştir</Button>
-              <Button variant={askida ? "primary" : "danger"} disabled={islem || neden.trim().length < 5} onClick={() => void calistir(() => post(`/platform/firmalar/${firma.tenantId}/durum`, { durum: askida ? "aktif" : "askida", neden }))}>
+              {!askida && <div style={{ minWidth: 220 }}><Field label="Askı nedeni"><Select value={askiNedeni} onChange={(e) => setAskiNedeni(e.target.value as "odeme" | "diger")}>
+                <option value="odeme">Ödeme yok (ödeyince kendiliğinden açılır)</option>
+                <option value="diger">Diğer (yalnız platform açar)</option>
+              </Select></Field></div>}
+              <Button variant={askida ? "primary" : "danger"} disabled={islem || neden.trim().length < 5} onClick={() => void calistir(() => post(`/platform/firmalar/${firma.tenantId}/durum`, askida ? { durum: "aktif", neden } : { durum: "askida", neden, askiNedeni }))}>
                 {askida ? "Askıdan çıkar" : "Askıya al (salt okunur)"}
               </Button>
             </div>
           </div>
         </Card>
+        {gecmis?.odemeler?.length ? (
+          <Card title="Ödemeler" pad={false}>
+            <TableWrap>
+              <thead><tr><th>Zaman</th><th>Yöntem</th><th>Süre</th><th className="num">Toplam</th><th>Yeni dönem sonu</th><th>Not</th></tr></thead>
+              <tbody>{gecmis.odemeler.map((o, i) => (
+                <tr key={i}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(o.zaman).toLocaleString("tr-TR")}</td><td>{o.kaynak === "saglayici" ? <Badge variant="info">{o.saglayici === "paytr" ? "PayTR" : "iyzico"}</Badge> : "Elle"}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL{o.kdv !== null && <div className="subtle" style={{ fontSize: "0.8rem" }}>KDV {tl(o.kdv)}</div>}</td><td>{tarih(o.yeniDonemSonu)}</td><td>{o.not ?? "—"}</td></tr>
+              ))}</tbody>
+            </TableWrap>
+          </Card>
+        ) : null}
         <Card title="Geçmiş" pad={false}>
           <TableWrap>
             <thead><tr><th>Zaman</th><th>Değişiklik</th><th>Neden / not</th></tr></thead>
@@ -230,10 +251,11 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
               {[
                 ...(gecmis?.degisiklikler ?? []).map((d) => ({ zaman: d.zaman, ne: `${d.oncekiPlan ?? "—"} → ${d.yeniPlan} · ${d.oncekiDurum ?? "—"} → ${d.yeniDurum}`, not: d.neden })),
                 ...(gecmis?.talepler ?? []).map((t) => ({ zaman: t.zaman, ne: `Talep ${t.mevcutPlan} → ${t.istenenPlan}: ${TALEP_DURUMU[t.durum] ?? t.durum}`, not: t.kararNotu ?? t.aciklama })),
+                ...(gecmis?.basarisizDenemeler ?? []).map((d) => ({ zaman: d.zaman, ne: `Başarısız ödeme denemesi (${d.saglayici}, ${d.kaynak === "eposta" ? "e-posta bağlantısı" : d.kaynak === "otomatik" ? "otomatik yenileme" : "panel"}): ${d.aySayisi} ay, ${tl(d.toplam)} TL`, not: d.hata })),
               ].sort((a, b) => b.zaman.localeCompare(a.zaman)).map((s, i) => (
                 <tr key={i}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(s.zaman).toLocaleString("tr-TR")}</td><td>{s.ne}</td><td>{s.not ?? "—"}</td></tr>
               ))}
-              {gecmis && !gecmis.degisiklikler.length && !gecmis.talepler.length && <tr><td colSpan={3} className="empty">Abonelik geçmişi yok.</td></tr>}
+              {gecmis && !gecmis.degisiklikler.length && !gecmis.talepler.length && !gecmis.basarisizDenemeler?.length && <tr><td colSpan={3} className="empty">Abonelik geçmişi yok.</td></tr>}
             </tbody>
           </TableWrap>
         </Card>

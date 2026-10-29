@@ -122,10 +122,13 @@ export class PlatformFirmaService {
   }
 
   /** Askıya alma ve geri açma; neden zorunlu ve firmanın abonelik geçmişine de yazılır. */
-  async durumDegistir(tenantId: string, durum: "askida" | "aktif", neden: string) {
+  /** PLT-13: askı nedeni "odeme" ise firma başarılı sağlayıcı ödemesiyle kendiliğinden açılır. */
+  async durumDegistir(tenantId: string, durum: "askida" | "aktif", neden: string, askiNedeni: "odeme" | "diger" = "diger") {
     const { kullaniciId, eposta } = aktifPlatformBaglam();
-    await this.cagir(() => this.platform.db.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, NULL, ${durum}, ${`${durum === "askida" ? "Askıya alındı" : "Askıdan çıkarıldı"} (${eposta}): ${neden}`})`);
-    await this.olay(kullaniciId, durum === "askida" ? "firma_askiya_alindi" : "firma_askidan_cikarildi", { tenantId, neden });
+    const aski = durum === "askida" ? askiNedeni : null;
+    const etiket = durum === "askida" ? `Askıya alındı${askiNedeni === "odeme" ? " — ödeme bekleniyor" : ""}` : "Askıdan çıkarıldı";
+    await this.cagir(() => this.platform.db.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, NULL, ${durum}, ${`${etiket} (${eposta}): ${neden}`}, ${aski})`);
+    await this.olay(kullaniciId, durum === "askida" ? "firma_askiya_alindi" : "firma_askidan_cikarildi", { tenantId, neden, ...(aski ? { askiNedeni: aski } : {}) });
     this.erisim.unut(tenantId);
     return { mesaj: durum === "askida" ? "Firma askıya alındı; salt okunur." : "Firma yeniden etkin." };
   }

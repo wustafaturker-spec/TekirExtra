@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { createTransport } from "nodemailer";
+import { abonelikTutari } from "../abonelik-odeme/abonelik-tutari";
+import { baglantiAnahtariUret } from "../abonelik-odeme/baglanti-anahtari";
+import { SaglayiciAyarlariService } from "../abonelik-odeme/saglayici-ayarlari.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
@@ -45,7 +48,17 @@ const gunTR = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "Europe/Ist
 const tarih = (d: Date) => d.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" });
 
 /**
- * PLT-09: elle tahsilat hatırlatmaları (ödeme sağlayıcısı sonra). Dönem
+ * PLT-13: etkin sağlayıcı varsa ve plan fiyatlıysa e-postaya oturumsuz ödeme
+ * bağlantısı eklenir; yoksa PLT-09 metni (yanıtlayarak ödeme bilgisi isteme) kalır.
+ */
+export function odemeBaglantisi(a: Pick<TahsilatAdayi, "tenant_id" | "plan_kodu">, saglayiciEtkin: boolean, simdi = new Date()): string | null {
+  if (!saglayiciEtkin || !abonelikTutari(a.plan_kodu, 1)) return null;
+  const kok = (process.env.PUBLIC_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
+  return `${kok}/api/v1/abonelik-odeme/baglanti/${baglantiAnahtariUret(a.tenant_id, simdi)}`;
+}
+
+/**
+ * PLT-09: elle tahsilat hatırlatmaları (PLT-13 ile ödeme bağlantısı da taşır). Dönem
  * sonundan 7 gün önce firmaya (fatura e-postası + yöneticiler) ve platform
  * yöneticilerine bir kez; dönem sonundan 15 gün geçmiş firmalar için platforma
  * günlük özet. Otomatik askı yoktur. Her gönderim `mevzuat_olaylari`'na yazılır
@@ -85,18 +98,22 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
       const from = process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>";
 
       const yeniYaklasan = yaklasan.filter((a) => !gonderilmis.has(yaklasanAnahtari(a)));
+      const saglayiciEtkin = yeniYaklasan.length > 0 && Boolean(await new SaglayiciAyarlariService(this.platform).etkin());
       const hatirlatilan: TahsilatAdayi[] = [];
       for (const a of yeniYaklasan) {
         const alicilar = firmaAlicilari(a);
+        const baglanti = odemeBaglantisi(a, saglayiciEtkin, simdi);
         try {
           if (alicilar.length) {
             await transport.sendMail({
               from, to: alicilar.join(", "),
               subject: "TekirExtra aboneliğinizin dönemi bitiyor",
-              text: `Merhaba,\n\n${a.unvan.trim()} firmasının TekirExtra abonelik dönemi ${tarih(a.donem_sonu)} tarihinde bitiyor. Kesintisiz kullanım için ödemenizi dönem sonundan önce yapın; ödeme bilgileri için bu e-postayı yanıtlayabilirsiniz.\n\nÖdeme alındığında dönem uzatılır ve size ayrıca bilgi verilir.`,
+              text: baglanti
+                ? `Merhaba,\n\n${a.unvan.trim()} firmasının TekirExtra abonelik dönemi ${tarih(a.donem_sonu)} tarihinde bitiyor. Kesintisiz kullanım için ödemenizi dönem sonundan önce aşağıdaki bağlantıdan kartla yapabilirsiniz:\n\n${baglanti}\n\nÖdemeyi panelde Ayarlar › Abonelik sayfasından da yapabilirsiniz. Ödeme alındığında dönem hemen uzar ve makbuz e-postanıza gelir.`
+                : `Merhaba,\n\n${a.unvan.trim()} firmasının TekirExtra abonelik dönemi ${tarih(a.donem_sonu)} tarihinde bitiyor. Kesintisiz kullanım için ödemenizi dönem sonundan önce yapın; ödeme bilgileri için bu e-postayı yanıtlayabilirsiniz.\n\nÖdeme alındığında dönem uzatılır ve size ayrıca bilgi verilir.`,
             });
           }
-          await db.mevzuatOlay.create({ data: { olay: "tahsilat_hatirlatma", detay: { anahtar: yaklasanAnahtari(a), tenantId: a.tenant_id, donemSonu: a.donem_sonu, alici: alicilar.length } as Prisma.InputJsonValue } });
+          await db.mevzuatOlay.create({ data: { olay: "tahsilat_hatirlatma", detay: { anahtar: yaklasanAnahtari(a), tenantId: a.tenant_id, donemSonu: a.donem_sonu, alici: alicilar.length, odemeBaglantisi: Boolean(baglanti) } as Prisma.InputJsonValue } });
           hatirlatilan.push(a);
         } catch (hata) {
           this.logger.error(JSON.stringify({ event: "billing_reminder_failed", tenantId: a.tenant_id, error: hata instanceof Error ? hata.message : String(hata) }));

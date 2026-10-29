@@ -229,7 +229,7 @@ export class PlatformAiController {
   }
 }
 
-const durumSemasi = z.object({ durum: z.enum(["askida", "aktif"]), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500) });
+const durumSemasi = z.object({ durum: z.enum(["askida", "aktif"]), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500), askiNedeni: z.enum(["odeme", "diger"]).optional() });
 const planSemasi = z.object({ planKodu: z.string().min(1).max(40), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500) });
 const kararSemasi = z.object({ onay: z.boolean(), not: z.string().trim().max(500).optional().nullable() });
 const odemeSemasi = z.object({
@@ -257,7 +257,7 @@ export class PlatformFirmaController {
   @Post(":tenantId/durum")
   durum(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
     const g = ayristir(durumSemasi, govde);
-    return this.firmalar.durumDegistir(tenantId, g.durum, g.neden);
+    return this.firmalar.durumDegistir(tenantId, g.durum, g.neden, g.askiNedeni);
   }
 
   @Post(":tenantId/plan")

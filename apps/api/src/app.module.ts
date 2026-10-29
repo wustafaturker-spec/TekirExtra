@@ -44,6 +44,7 @@ import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
 import { ButceModule } from "./butce/butce.module";
 import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
 import { MevzuatModule } from "./mevzuat/mevzuat.module";
+import { AbonelikOdemeModule } from "./abonelik-odeme/abonelik-odeme.module";
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { MevzuatModule } from "./mevzuat/mevzuat.module";
     CoreModule,
     AuthModule,
     MevzuatModule,
+    AbonelikOdemeModule,
     TenantModule,
     BelgelerModule,
     CariModule,

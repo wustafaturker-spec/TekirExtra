@@ -1946,6 +1946,67 @@ test("firma plan değişikliğini talep eder, hemen uygulanmaz (platform P0-1)",
   await expect(page.getByRole("button", { name: "Talebi geri çek" })).toBeVisible();
 });
 
+test("yönetici aboneliği panelden kartla öder; ödeme sağlayıcının sayfasına gider (PLT-12/13)", async ({ page }) => {
+  let istek: unknown = null;
+  const plan = { kod: "baslangic", ad: "Başlangıç", aciklama: "", aylikFiyat: 399, limitler: { kullanici: null, cari: null, stok: null, aylikFatura: null }, ozellikler: [] };
+  await page.route("**/api/v1/abonelik", (route) => route.fulfill({ json: { abonelik: { planKodu: "baslangic", durum: "askida", donemSonu: "2026-10-31T21:00:00Z" }, plan, planlar: [plan], kullanim: { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }, sonTalep: null } }));
+  await page.route("**/api/v1/abonelik/gecmis", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/abonelik/odeme", async (route) => {
+    if (route.request().method() === "POST") { istek = route.request().postDataJSON(); return route.fulfill({ json: { denemeId: "d1", odemeSayfasiUrl: "http://localhost:3100/odeme-saglayici-sahte" } }); }
+    return route.fulfill({ json: {
+      etkin: true, saglayici: "iyzico", testOrtami: true, neden: null, donemSonu: "2026-10-31T21:00:00Z",
+      secenekler: [{ aySayisi: 1, matrah: "399.00", kdv: "79.80", toplam: "478.80" }, { aySayisi: 12, matrah: "4788.00", kdv: "957.60", toplam: "5745.60" }],
+      odemeler: [{ id: "o1", createdAt: "2026-09-30T10:00:00Z", aySayisi: 1, tutar: "478.80", matrah: "399.00", kdv: "79.80", kaynak: "saglayici", saglayici: "iyzico", yeniDonemSonu: "2026-10-31T21:00:00Z" }],
+      basarisizDenemeler: [],
+    } });
+  });
+  await page.route("**/odeme-saglayici-sahte", (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: "<h1>Sahte ödeme sayfası</h1>" }));
+  await page.goto("/panel/ayarlar/abonelik");
+  const kart = page.locator(".card", { has: page.locator(".card__title", { hasText: /^Ödeme$/ }) });
+  await expect(kart.getByText("Toplam 478,80 TL")).toBeVisible();
+  await expect(kart.getByText("Test ortamı")).toBeVisible();
+  await expect(kart.getByRole("cell", { name: "Kart (iyzico)" })).toBeVisible();
+  await kart.getByLabel("Süre").selectOption("12");
+  await expect(kart.getByText("Toplam 5.745,60 TL")).toBeVisible();
+  await kart.getByRole("button", { name: "Şimdi öde" }).click();
+  await expect(page).toHaveURL(/\/odeme-saglayici-sahte$/);
+  await expect(page.getByRole("heading", { name: "Sahte ödeme sayfası" })).toBeVisible();
+  expect(istek).toEqual({ aySayisi: 12 });
+});
+
+test("çevrim içi ödeme kapalıyken panel nedeni söyler, ödeme düğmesi çıkmaz (PLT-11)", async ({ page }) => {
+  const plan = { kod: "kurumsal", ad: "Kurumsal", aciklama: "", aylikFiyat: null, limitler: { kullanici: null, cari: null, stok: null, aylikFatura: null }, ozellikler: [] };
+  await page.route("**/api/v1/abonelik", (route) => route.fulfill({ json: { abonelik: { planKodu: "kurumsal", durum: "aktif" }, plan, planlar: [plan], kullanim: { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }, sonTalep: null } }));
+  await page.route("**/api/v1/abonelik/gecmis", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/abonelik/odeme", (route) => route.fulfill({ json: { etkin: false, saglayici: "iyzico", testOrtami: false, neden: "Kurumsal planı için ödeme teklifle yapılır; TekirExtra ekibiyle iletişime geçin.", donemSonu: null, secenekler: [], odemeler: [], basarisizDenemeler: [] } }));
+  await page.goto("/panel/ayarlar/abonelik");
+  await expect(page.getByText("Kurumsal planı için ödeme teklifle yapılır")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Şimdi öde" })).toHaveCount(0);
+});
+
+test("platform yöneticisi ödeme sağlayıcısını gizli alanları göstermeden etkinleştirir (PLT-11)", async ({ page }) => {
+  let kayit: { yol: string; govde: unknown } | null = null;
+  await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
+  await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com", rol: "yonetici" } }));
+  await page.route("**/api/v1/platform/odeme-saglayicilari", (route) => route.fulfill({ json: [
+    { saglayici: "iyzico", ad: "iyzico", bagli: true, ortam: "test", etkin: false, guncellendi: null, alanlar: [{ anahtar: "apiKey", etiket: "API anahtarı", gizli: true, dolu: true }, { anahtar: "secretKey", etiket: "Gizli anahtar", gizli: true, dolu: false }] },
+    { saglayici: "paytr", ad: "PayTR", bagli: false, ortam: "test", etkin: false, guncellendi: null, alanlar: [{ anahtar: "magazaId", etiket: "Mağaza no", gizli: false, dolu: false, deger: "" }] },
+  ] }));
+  await page.route("**/api/v1/platform/odeme-saglayicilari/iyzico", async (route) => { kayit = { yol: new URL(route.request().url()).pathname, govde: route.request().postDataJSON() }; await route.fulfill({ json: { mesaj: "iyzico etkin; firmalar abonelik ödemesini bununla yapar." } }); });
+  await page.goto("/platform/odeme");
+  await expect(page.getByText("Etkin sağlayıcı yok")).toBeVisible();
+  const iyzico = page.locator(".card", { has: page.locator(".card__title", { hasText: /^iyzico$/ }) });
+  await expect(iyzico.getByLabel("API anahtarı")).toHaveValue("");
+  await expect(iyzico.getByLabel("API anahtarı")).toHaveAttribute("placeholder", "Kayıtlı — değiştirmek için yazın");
+  await iyzico.getByLabel("Gizli anahtar").fill("sandbox-gizli");
+  await iyzico.getByRole("button", { name: "Kaydet ve etkinleştir" }).click();
+  await expect(page.getByText("iyzico etkin; firmalar abonelik ödemesini bununla yapar.")).toBeVisible();
+  expect(kayit).toEqual({ yol: "/api/v1/platform/odeme-saglayicilari/iyzico", govde: { ortam: "test", etkin: true, alanlar: { apiKey: "", secretKey: "sandbox-gizli" } } });
+  const paytr = page.locator(".card", { has: page.locator(".card__title", { hasText: /^PayTR$/ }) });
+  await expect(paytr.getByText("Abonelik tahsilatı henüz bağlı değil")).toBeVisible();
+  await expect(paytr.getByRole("button", { name: "Kaydet ve etkinleştir" })).toBeDisabled();
+});
+
 test("platform ekibi bekleyen plan talebini firmalar ekranından onaylar (platform P0-1/P1-1)", async ({ page }) => {
   let karar: { yol: string; govde: unknown } | null = null;
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));

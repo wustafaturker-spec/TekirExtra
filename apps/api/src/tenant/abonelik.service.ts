@@ -76,7 +76,7 @@ export class AbonelikService {
 
   /**
    * Platform P0-1: plan değişikliği talep olarak açılır, platform ekibi onaylar
-   * (ödeme sağlayıcısı bağlanınca onayın yerini ödeme alır). Daha küçük plana
+   * (PLT-12: yeni fiyat bir sonraki ödemeden geçerlidir). Daha küçük plana
    * geçişte aşılan sınırlar baştan söylenir.
    */
   async planTalebi(yeniPlanKodu: string, aciklama?: string) {

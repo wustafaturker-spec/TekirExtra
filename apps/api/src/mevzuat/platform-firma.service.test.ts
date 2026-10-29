@@ -28,8 +28,18 @@ describe("platform firma yönetimi (platform P0-1 / P1-1)", () => {
     const k = kur();
     await k.olarak(() => k.servis.durumDegistir("t1", "askida", "Ödeme 30 gün gecikti"));
     expect(JSON.stringify(k.db.$executeRaw.mock.calls[0])).toContain("Askıya alındı (ekip@tekirextra.com): Ödeme 30 gün gecikti");
-    expect(k.olaylar).toEqual([{ kullaniciId: "p1", olay: "firma_askiya_alindi", detay: { tenantId: "t1", neden: "Ödeme 30 gün gecikti" } }]);
+    expect(k.olaylar).toEqual([{ kullaniciId: "p1", olay: "firma_askiya_alindi", detay: { tenantId: "t1", neden: "Ödeme 30 gün gecikti", askiNedeni: "diger" } }]);
     expect(k.erisim.unut).toHaveBeenCalledWith("t1");
+  });
+
+  it("PLT-13: ödeme nedeniyle askı işlevine nedenle gider ve geçmişte görünür", async () => {
+    const k = kur();
+    await k.olarak(() => k.servis.durumDegistir("t1", "askida", "Ekim ödemesi yok", "odeme"));
+    const cagri = JSON.stringify(k.db.$executeRaw.mock.calls[0]);
+    expect(cagri).toContain("Askıya alındı — ödeme bekleniyor (ekip@tekirextra.com): Ekim ödemesi yok");
+    expect(k.db.$executeRaw.mock.calls[0]).toContain("odeme");
+    await k.olarak(() => k.servis.durumDegistir("t1", "aktif", "ödeme geldi"));
+    expect(k.db.$executeRaw.mock.calls[1]).toContain(null);
   });
 
   it("katalogda olmayan plan reddedilir, veritabanına gidilmez", async () => {

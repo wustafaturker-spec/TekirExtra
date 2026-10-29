@@ -165,6 +165,7 @@ model Tenant {
   abonelikDegisiklikleri    AbonelikDegisikligi[]
   abonelikTalepleri         AbonelikTalebi[]
   abonelikOdemeleri         AbonelikOdemesi[]
+  abonelikOdemeDenemeleri   AbonelikOdemeDenemesi[]
   destekIzinleri            DestekIzni[]
   ozelRoller                OzelRol[]
   cariMahsuplari            CariMahsup[]
@@ -292,6 +293,8 @@ model TenantAbonelik {
   donemBaslangici      DateTime?      @map("donem_baslangici")
   donemSonu            DateTime?      @map("donem_sonu")
   iptalTarihi          DateTime?      @map("iptal_tarihi")
+  /// PLT-13: "odeme" nedeniyle askıdaki firma başarılı ödemeyle kendiliğinden açılır.
+  askiNedeni           String?        @map("aski_nedeni") @db.VarChar(20)
   meta                 Json?
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
@@ -410,13 +413,70 @@ model AbonelikOdemesi {
   not                 String?   @db.VarChar(500)
   oncekiDonemSonu     DateTime? @map("onceki_donem_sonu")
   yeniDonemSonu       DateTime  @map("yeni_donem_sonu")
-  platformKullaniciId String    @map("platform_kullanici_id") @db.Uuid
+  /// Elle kayıtta platform kullanıcısı; sağlayıcıdan gelen ödemede boş.
+  platformKullaniciId String?   @map("platform_kullanici_id") @db.Uuid
+  /// PLT-13: "elle" (PLT-09) | "saglayici"
+  kaynak              String    @default("elle") @db.VarChar(20)
+  saglayici           String?   @db.VarChar(20)
+  /// PLT-12: KDV hariç tutar ve KDV; elle kayıtta boş (yalnız toplam girilir).
+  matrah              Decimal?  @db.Decimal(14, 2)
+  kdv                 Decimal?  @db.Decimal(14, 2)
   createdAt           DateTime  @default(now()) @map("created_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  denemeler AbonelikOdemeDenemesi[]
 
   @@index([tenantId, createdAt])
   @@map("abonelik_odemeleri")
+}
+
+/// PLT-13/14: abonelik ödeme girişimi (panel, e-posta bağlantısı ya da otomatik yenileme).
+model AbonelikOdemeDenemesi {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  saglayici         String    @db.VarChar(20)
+  ortam             String    @db.VarChar(10)
+  /// panel | eposta | otomatik
+  kaynak            String    @db.VarChar(20)
+  planKodu          String    @map("plan_kodu")
+  aySayisi          Int       @map("ay_sayisi")
+  matrah            Decimal   @db.Decimal(14, 2)
+  kdv               Decimal   @db.Decimal(14, 2)
+  toplam            Decimal   @db.Decimal(14, 2)
+  /// baslatildi | odendi | basarisiz
+  durum             String    @default("baslatildi") @db.VarChar(20)
+  saglayiciToken    String?   @map("saglayici_token") @db.VarChar(255)
+  saglayiciOdemeId  String?   @map("saglayici_odeme_id") @db.VarChar(100)
+  odemeSayfasiUrl   String?   @map("odeme_sayfasi_url")
+  hataMesaji        String?   @map("hata_mesaji") @db.VarChar(500)
+  kartKaydet        Boolean   @default(false) @map("kart_kaydet")
+  baslatanUserId    String?   @map("baslatan_user_id") @db.Uuid
+  abonelikOdemesiId String?   @map("abonelik_odemesi_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  sonuclandiAt      DateTime? @map("sonuclandi_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  abonelikOdemesi AbonelikOdemesi? @relation(fields: [abonelikOdemesiId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([saglayici, saglayiciOdemeId], map: "abonelik_odeme_denemeleri_saglayici_odeme_key")
+  @@index([tenantId, createdAt])
+  @@map("abonelik_odeme_denemeleri")
+}
+
+/// PLT-11: abonelik ödeme sağlayıcısının erişim bilgileri. Platform tablosu:
+/// uygulama rolünün yetkisi yoktur, yalnız platform bağlantısı okur/yazar.
+model AbonelikSaglayiciAyari {
+  /// iyzico | paytr
+  saglayici     String             @id @db.VarChar(20)
+  /// test | canli
+  ortam         String             @default("test") @db.VarChar(10)
+  sifreliConfig String             @map("sifreli_config")
+  etkin         Boolean            @default(false)
+  guncelleyenId String?            @map("guncelleyen_id") @db.Uuid
+  updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
+  guncelleyen   PlatformKullanici? @relation(fields: [guncelleyenId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("abonelik_saglayici_ayarlari")
 }
 
 model User {
@@ -6217,7 +6277,8 @@ model PlatformKullanici {
   updatedAt          DateTime    @updatedAt @map("updated_at")
 
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
-  aiTavanlari PlatformAiTavani[]
+  aiTavanlari                PlatformAiTavani[]
+  abonelikSaglayiciAyarlari  AbonelikSaglayiciAyari[]
   yayinlanan  MevzuatDegisiklik[] @relation("Yayinlayan")
 
   @@map("platform_kullanicilari")
