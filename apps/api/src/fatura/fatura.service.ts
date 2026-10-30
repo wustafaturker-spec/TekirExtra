@@ -7,6 +7,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Inject,
   Optional,
@@ -56,6 +57,8 @@ const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prism
 
 @Injectable()
 export class FaturaService {
+  private readonly logger = new Logger(FaturaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly stokService: StokService,
@@ -1680,7 +1683,18 @@ export class FaturaService {
       return { kesinFatura: { ...this.gorunum(kesinFatura), riskUyari, stokUyarilari } };
     });
 
+    // Kesinleşme sonrası işler (ör. PLT-22 abonelik tahsilatı); hata kesinleştirmeyi geri almaz.
+    for (const dinleyici of this.kesinlesmeDinleyicileri) {
+      await dinleyici(tenantId, id).catch((hata) => this.logger.error(JSON.stringify({ event: "invoice_finalize_listener_failed", tenantId, faturaId: id, error: hata instanceof Error ? hata.message : String(hata) })));
+    }
     return sonuc.kesinFatura;
+  }
+
+  private readonly kesinlesmeDinleyicileri: ((tenantId: string, faturaId: string) => Promise<void>)[] = [];
+
+  /** Faturaya bağımlı modüller kendini buradan kaydeder (FaturaModule onları içe aktarmaz; döngü olmaz). */
+  kesinlesinceCalistir(dinleyici: (tenantId: string, faturaId: string) => Promise<void>) {
+    this.kesinlesmeDinleyicileri.push(dinleyici);
   }
 
   // ─── PDF ÜRETİMİ (FTR-07, T-02 altyapısı) ───────────────────────────────

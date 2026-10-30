@@ -5,6 +5,7 @@ import { Public } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ABONELIK_SURELERI, tlYaz, type AbonelikSuresi } from "./abonelik-tutari";
+import { AbonelikFaturaService } from "./abonelik-fatura.service";
 import { AbonelikOdemeService } from "./abonelik-odeme.service";
 import { baglantiAnahtariDogrula } from "./baglanti-anahtari";
 import { PAYTR_ODEME_ADRESI, type PaytrBildirim } from "./paytr-direkt";
@@ -22,7 +23,10 @@ function ayristir<T>(sema: z.ZodType<T>, govde: unknown): T {
 @Controller("abonelik/odeme")
 @Roller("yonetici")
 export class AbonelikOdemeController {
-  constructor(private readonly odeme: AbonelikOdemeService) {}
+  constructor(
+    private readonly odeme: AbonelikOdemeService,
+    private readonly fatura: AbonelikFaturaService,
+  ) {}
 
   @Get()
   durum() {
@@ -45,6 +49,16 @@ export class AbonelikOdemeController {
   @Delete("kart")
   kartKaldir() {
     return this.odeme.kartKaldir(aktifBaglam().tenantId);
+  }
+
+  /** PLT-23: kesinleşmiş abonelik faturasının PDF'i. */
+  @Get(":odemeId/fatura.pdf")
+  async faturaPdf(@Param("odemeId", ParseUUIDPipe) odemeId: string, @Res() yanit: Response) {
+    const pdf = await this.fatura.faturaPdf(aktifBaglam().tenantId, odemeId);
+    yanit.setHeader("Content-Type", "application/pdf");
+    yanit.setHeader("Content-Disposition", `attachment; filename="${pdf.dosyaAdi}"`);
+    yanit.setHeader("Cache-Control", "private, no-store");
+    yanit.send(pdf.buffer);
   }
 }
 

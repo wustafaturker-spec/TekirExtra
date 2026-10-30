@@ -62,7 +62,7 @@ export class AbonelikOdemeService {
       const planKodu = abonelik?.planKodu ?? "v1";
       const secenekler = ABONELIK_SURELERI.map((a) => abonelikTutari(planKodu, a)).filter((t) => t !== null);
       const [odemeler, basarisiz, kart] = await Promise.all([
-        tx.abonelikOdemesi.findMany({ orderBy: { createdAt: "desc" }, take: 20, select: { id: true, createdAt: true, aySayisi: true, tutar: true, matrah: true, kdv: true, kaynak: true, saglayici: true, yeniDonemSonu: true } }),
+        tx.abonelikOdemesi.findMany({ orderBy: { createdAt: "desc" }, take: 20, select: { id: true, createdAt: true, aySayisi: true, tutar: true, matrah: true, kdv: true, kaynak: true, saglayici: true, yeniDonemSonu: true, fatura: { select: { durum: true, faturaNo: true } } } }),
         tx.abonelikOdemeDenemesi.findMany({ where: { durum: "basarisiz" }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, createdAt: true, aySayisi: true, toplam: true, hataMesaji: true, kaynak: true } }),
         tx.abonelikKarti.findUnique({ where: { tenantId } }),
       ]);

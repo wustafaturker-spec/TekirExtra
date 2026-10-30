@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, apiDosyaIndir } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Select, TableWrap } from "@/components/ui";
 
 interface Secenek { aySayisi: number; matrah: string; kdv: string; toplam: string }
-interface Odeme { id: string; createdAt: string; aySayisi: number; tutar: string; matrah: string | null; kdv: string | null; kaynak: "elle" | "saglayici"; saglayici: string | null; yeniDonemSonu: string }
+interface Odeme { id: string; createdAt: string; aySayisi: number; tutar: string; matrah: string | null; kdv: string | null; kaynak: "elle" | "saglayici"; saglayici: string | null; yeniDonemSonu: string; fatura?: { durum: string; faturaNo: string | null } | null }
 interface Basarisiz { id: string; createdAt: string; aySayisi: number; toplam: string; hataMesaji: string | null; kaynak?: string }
 /** PLT-14: kayıtlı kart; kart sağlayıcıda saklanır, burada yalnız son 4 hane. */
 interface Kart { saglayici: string; son4: string | null; marka: string | null; otomatikYenileme: boolean; aySayisi: number; gecerli: boolean; sonHata: string | null; sonDeneme: string | null }
@@ -65,6 +65,16 @@ export function OdemeKarti() {
     }
   }
 
+  /** PLT-23: kesinleşmiş abonelik faturası (faturalayan firmanın belgesi). */
+  async function faturaIndir(o: Odeme) {
+    setHata("");
+    try {
+      await apiDosyaIndir(`/abonelik/odeme/${o.id}/fatura.pdf`, `${o.fatura?.faturaNo ?? "abonelik-faturasi"}.pdf`);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Fatura indirilemedi");
+    }
+  }
+
   if (!durum) return hata ? <Alert tone="error">{hata}</Alert> : null;
   const secili = durum.secenekler.find((s) => s.aySayisi === ay);
   const kart = durum.kart;
@@ -114,9 +124,12 @@ export function OdemeKarti() {
         )}
         {durum.odemeler.length > 0 && (
           <TableWrap>
-            <thead><tr><th>Tarih</th><th>Süre</th><th className="num">Toplam</th><th>Yöntem</th><th>Yeni dönem sonu</th></tr></thead>
+            <thead><tr><th>Tarih</th><th>Süre</th><th className="num">Toplam</th><th>Yöntem</th><th>Yeni dönem sonu</th><th>Fatura</th></tr></thead>
             <tbody>{durum.odemeler.map((o) => (
-              <tr key={o.id}><td>{new Date(o.createdAt).toLocaleDateString("tr-TR")}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL</td><td>{o.kaynak === "saglayici" ? `Kart (${o.saglayici === "paytr" ? "PayTR" : "iyzico"})` : "Havale / elle"}</td><td>{tarih(o.yeniDonemSonu)}</td></tr>
+              <tr key={o.id}><td>{new Date(o.createdAt).toLocaleDateString("tr-TR")}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL</td><td>{o.kaynak === "saglayici" ? `Kart (${o.saglayici === "paytr" ? "PayTR" : "iyzico"})` : "Havale / elle"}</td><td>{tarih(o.yeniDonemSonu)}</td>
+                <td>{o.fatura && (o.fatura.durum === "kesinlesti" || o.fatura.durum === "tahsil_edildi")
+                  ? <Button size="sm" disabled={islem} onClick={() => void faturaIndir(o)}>{o.fatura.faturaNo ?? "Fatura"} PDF</Button>
+                  : <span className="subtle">{o.fatura ? "Hazırlanıyor" : "—"}</span>}</td></tr>
             ))}</tbody>
           </TableWrap>
         )}

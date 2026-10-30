@@ -2044,6 +2044,60 @@ test("platform yöneticisi ödeme sağlayıcısını gizli alanları göstermede
   await expect(paytr.getByRole("button", { name: "Kaydet ve etkinleştir" })).toBeEnabled();
 });
 
+test("platform faturalayan firmayı ve TL tahsilat hesabını seçer, açılamayan faturayı yeniden dener (PLT-20/23)", async ({ page }) => {
+  let kayit: unknown = null;
+  let yeniden = "";
+  await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
+  await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com", rol: "yonetici" } }));
+  await page.route("**/api/v1/platform/odeme-saglayicilari", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [{ tenantId: "tf", unvan: "TEKİREXTRA YAZILIM", vkn: "1234567890" }, { tenantId: "t2", unvan: "MÜŞTERİ A.Ş.", vkn: "9876543210" }] }));
+  await page.route("**/api/v1/platform/abonelik-fatura/hesaplar/tf", (route) => route.fulfill({ json: [
+    { tur: "banka", id: "b1", ad: "Abonelik (Ziraat)", doviz: "TRY" }, { tur: "banka", id: "b2", ad: "Dolar (Ziraat)", doviz: "USD" }, { tur: "pos", id: "p1", ad: "Sanal POS (iyzico)", doviz: "TRY" },
+  ] }));
+  await page.route("**/api/v1/platform/abonelik-fatura", async (route) => {
+    if (route.request().method() === "PUT") { kayit = route.request().postDataJSON(); await route.fulfill({ json: { mesaj: "Faturalayan firma kaydedildi; bundan sonraki ödemeler için taslak fatura açılır (geçmiş ödemeler faturalanmaz)." } }); return; }
+    await route.fulfill({ json: { faturalayan: null, kartHesap: null, elleHesap: null, baslangicAt: null, hesaplar: [], sorunlu: [
+      { odemeId: "o1", firma: "MÜŞTERİ A.Ş.", durum: "hata", faturaNo: null, hata: "Firmanın VKN/TCKN'si geçersiz (12); fatura kesilemez", deneme: 3, guncellendi: "2026-10-29T12:00:00Z" },
+    ] } });
+  });
+  await page.route("**/api/v1/platform/abonelik-fatura/o1/yeniden-dene", async (route) => { yeniden = route.request().method(); await route.fulfill({ json: { mesaj: "Taslak fatura açıldı." } }); });
+  page.on("dialog", (d) => void d.accept());
+  await page.goto("/platform/odeme");
+  const kart = page.locator(".card", { has: page.locator(".card__title", { hasText: /^Abonelik faturası$/ }) });
+  await expect(kart.getByText("Kapalı", { exact: true })).toBeVisible();
+  await expect(kart.getByRole("cell", { name: /VKN\/TCKN'si geçersiz/ })).toBeVisible();
+  await kart.getByLabel("Faturalayan firma").selectOption("tf");
+  const kartHesabi = kart.getByLabel("Kartla alınan ödemelerin hesabı");
+  await expect(kartHesabi.locator("option")).toHaveText(["— Seçilmedi (tahsilat açılmaz) —", "Banka · Abonelik (Ziraat)", "POS · Sanal POS (iyzico)"]);
+  await kartHesabi.selectOption("pos:p1");
+  await kart.getByLabel("Elle (havale) alınan ödemelerin hesabı").selectOption("banka:b1");
+  await kart.getByRole("button", { name: "Kaydet" }).click();
+  await expect(page.getByText(/geçmiş ödemeler faturalanmaz/)).toBeVisible();
+  expect(kayit).toEqual({ faturalayanTenantId: "tf", kartHesap: { tur: "pos", id: "p1" }, elleHesap: { tur: "banka", id: "b1" } });
+  await kart.getByRole("button", { name: "Yeniden dene" }).click();
+  await expect(page.getByText("Taslak fatura açıldı.")).toBeVisible();
+  expect(yeniden).toBe("POST");
+});
+
+test("firma kesinleşmiş abonelik faturasının PDF'ini indirir, hazırlanan fatura için düğme çıkmaz (PLT-23)", async ({ page }) => {
+  const plan = { kod: "profesyonel", ad: "Profesyonel", aciklama: "", aylikFiyat: 399, limitler: { kullanici: null, cari: null, stok: null, aylikFatura: null }, ozellikler: [] };
+  await page.route("**/api/v1/abonelik", (route) => route.fulfill({ json: { abonelik: { planKodu: "profesyonel", durum: "aktif" }, plan, planlar: [plan], kullanim: { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }, sonTalep: null } }));
+  await page.route("**/api/v1/abonelik/gecmis", (route) => route.fulfill({ json: [] }));
+  const odeme = (id: string, fatura: unknown) => ({ id, createdAt: "2026-10-29T10:00:00Z", aySayisi: 1, tutar: "478.80", matrah: "399.00", kdv: "79.80", kaynak: "saglayici", saglayici: "iyzico", yeniDonemSonu: "2026-11-30T21:00:00Z", fatura });
+  await page.route("**/api/v1/abonelik/odeme", (route) => route.fulfill({ json: {
+    etkin: false, saglayici: "iyzico", testOrtami: false, neden: "Ödeme kapalı.", donemSonu: null, secenekler: [], basarisizDenemeler: [],
+    odemeler: [odeme("o1", { durum: "tahsil_edildi", faturaNo: "ABN2026000000007" }), odeme("o2", { durum: "taslak", faturaNo: null }), odeme("o3", null)],
+  } }));
+  await page.route("**/api/v1/abonelik/odeme/o1/fatura.pdf", (route) => route.fulfill({ body: "%PDF-1.4 e2e", contentType: "application/pdf" }));
+  await page.goto("/panel/ayarlar/abonelik");
+  const kart = page.locator(".card", { has: page.locator(".card__title", { hasText: /^Ödeme$/ }) });
+  await expect(kart.getByText("Hazırlanıyor")).toHaveCount(1);
+  const indirme = page.waitForEvent("download");
+  await kart.getByRole("button", { name: "ABN2026000000007 PDF" }).click();
+  expect((await indirme).suggestedFilename()).toBe("ABN2026000000007.pdf");
+  await expect(kart.getByRole("button", { name: /PDF$/ })).toHaveCount(1);
+});
+
 test("sistem sağlığı açık sorunları, düşen işi ve geciken taramayı gösterir; iş yeniden kuyruğa alınır (PLT-17/18)", async ({ page }) => {
   let yeniden = "";
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));

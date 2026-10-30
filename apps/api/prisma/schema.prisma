@@ -167,6 +167,9 @@ model Tenant {
   abonelikOdemeleri         AbonelikOdemesi[]
   abonelikOdemeDenemeleri   AbonelikOdemeDenemesi[]
   abonelikKarti             AbonelikKarti?
+  abonelikFaturaAyarlari    AbonelikFaturaAyari[]
+  odenenAbonelikFaturalari  AbonelikFaturasi[]       @relation("AbonelikFaturasiOdeyen")
+  kesilenAbonelikFaturalari AbonelikFaturasi[]       @relation("AbonelikFaturasiFaturalayan")
   destekIzinleri            DestekIzni[]
   ozelRoller                OzelRol[]
   cariMahsuplari            CariMahsup[]
@@ -426,6 +429,7 @@ model AbonelikOdemesi {
 
   tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   denemeler AbonelikOdemeDenemesi[]
+  fatura    AbonelikFaturasi?
 
   @@index([tenantId, createdAt])
   @@map("abonelik_odemeleri")
@@ -6307,6 +6311,7 @@ model PlatformKullanici {
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari                PlatformAiTavani[]
   abonelikSaglayiciAyarlari  AbonelikSaglayiciAyari[]
+  abonelikFaturaAyarlari     AbonelikFaturaAyari[]
   yayinlanan  MevzuatDegisiklik[] @relation("Yayinlayan")
 
   @@map("platform_kullanicilari")
@@ -7323,4 +7328,45 @@ model SistemAlarmi {
   kapandiAt     DateTime? @map("kapandi_at")
 
   @@map("sistem_alarmlari")
+}
+
+/// PLT-20: abonelik faturasını kesen firma (TekirExtra'nın kendi kiracısı) ve
+/// tahsilat hesapları. Tek satır; yalnız platform yazar.
+model AbonelikFaturaAyari {
+  id                  Int                @id @default(1) @db.SmallInt
+  faturalayanTenantId String?            @map("faturalayan_tenant_id") @db.Uuid
+  kartHesapTur        String?            @map("kart_hesap_tur") @db.VarChar(10)
+  kartHesapId         String?            @map("kart_hesap_id") @db.Uuid
+  elleHesapTur        String?            @map("elle_hesap_tur") @db.VarChar(10)
+  elleHesapId         String?            @map("elle_hesap_id") @db.Uuid
+  /// Bu andan önceki ödemeler faturalanmaz.
+  baslangicAt         DateTime?          @map("baslangic_at")
+  guncelleyenId       String?            @map("guncelleyen_id") @db.Uuid
+  updatedAt           DateTime           @default(now()) @map("updated_at")
+  faturalayan         Tenant?            @relation(fields: [faturalayanTenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  guncelleyen         PlatformKullanici? @relation(fields: [guncelleyenId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("abonelik_fatura_ayari")
+}
+
+/// PLT-21…23: ödeme başına tek abonelik faturası ve tahsilatı (iki kiracıyı bağlar).
+model AbonelikFaturasi {
+  odemeId             String          @id @map("odeme_id") @db.Uuid
+  odeyenTenantId      String          @map("odeyen_tenant_id") @db.Uuid
+  faturalayanTenantId String          @map("faturalayan_tenant_id") @db.Uuid
+  faturaId            String?         @map("fatura_id") @db.Uuid
+  faturaNo            String?         @map("fatura_no") @db.VarChar(40)
+  /// bekliyor | taslak | kesinlesti | tahsil_edildi | hata
+  durum               String          @default("bekliyor") @db.VarChar(20)
+  hata                String?         @db.VarChar(500)
+  tahsilatHareketId   String?         @map("tahsilat_hareket_id") @db.Uuid
+  deneme              Int             @default(0)
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @default(now()) @map("updated_at")
+  odeme               AbonelikOdemesi @relation(fields: [odemeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  odeyen              Tenant          @relation("AbonelikFaturasiOdeyen", fields: [odeyenTenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  faturalayan         Tenant          @relation("AbonelikFaturasiFaturalayan", fields: [faturalayanTenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([odeyenTenantId], map: "abonelik_faturalari_odeyen_idx")
+  @@map("abonelik_faturalari")
 }

@@ -19,12 +19,18 @@ interface Gecmis {
   degisiklikler: { zaman: string; oncekiPlan: string | null; yeniPlan: string; oncekiDurum: string | null; yeniDurum: string; neden: string | null }[];
   talepler: { id: string; zaman: string; mevcutPlan: string; istenenPlan: string; durum: string; aciklama: string | null; kararNotu: string | null }[];
   /** PLT-15: elle (PLT-09) ve sağlayıcıyla alınan ödemeler, başarısız denemeler. */
-  odemeler?: { zaman: string; aySayisi: number; tutar: number; kdv: number | null; kaynak?: "elle" | "saglayici"; saglayici?: string | null; not: string | null; yeniDonemSonu: string }[];
+  odemeler?: { id?: string; zaman: string; aySayisi: number; tutar: number; kdv: number | null; kaynak?: "elle" | "saglayici"; saglayici?: string | null; not: string | null; yeniDonemSonu: string; fatura?: AbonelikFaturasi | null }[];
   basarisizDenemeler?: { zaman: string; saglayici: string; kaynak: string; aySayisi: number; toplam: number; hata: string | null }[];
   askiNedeni?: "odeme" | "diger" | null;
   /** PLT-14: otomatik yenileme kartı (anahtarlar dönmez). */
   kart?: { saglayici: string; son4: string | null; kartMarkasi: string | null; otomatikYenileme: boolean; aySayisi: number; denemeSayisi: number; sonDeneme: string | null; sonHata: string | null } | null;
 }
+/** PLT-23: ödemenin faturalayan firmadaki faturası. */
+interface AbonelikFaturasi { no: string | null; durum: "bekliyor" | "taslak" | "kesinlesti" | "tahsil_edildi" | "hata"; hata: string | null }
+const FATURA_DURUMU: Record<AbonelikFaturasi["durum"], { ad: string; ton: "success" | "danger" | "neutral" | "warning" }> = {
+  bekliyor: { ad: "Fatura bekliyor", ton: "warning" }, taslak: { ad: "Taslak", ton: "neutral" }, kesinlesti: { ad: "Kesin, tahsilat yok", ton: "warning" },
+  tahsil_edildi: { ad: "Kesin, tahsil edildi", ton: "success" }, hata: { ad: "Fatura açılamadı", ton: "danger" },
+};
 type Suzgec = "hepsi" | "talep" | "askiyaAlinacak" | "askida" | "iptal";
 const ODEME_SURELERI = [1, 3, 6, 12] as const;
 
@@ -245,9 +251,11 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
         {gecmis?.odemeler?.length ? (
           <Card title="Ödemeler" pad={false}>
             <TableWrap>
-              <thead><tr><th>Zaman</th><th>Yöntem</th><th>Süre</th><th className="num">Toplam</th><th>Yeni dönem sonu</th><th>Not</th></tr></thead>
+              <thead><tr><th>Zaman</th><th>Yöntem</th><th>Süre</th><th className="num">Toplam</th><th>Yeni dönem sonu</th><th>Fatura</th><th>Not</th></tr></thead>
               <tbody>{gecmis.odemeler.map((o, i) => (
-                <tr key={i}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(o.zaman).toLocaleString("tr-TR")}</td><td>{o.kaynak === "saglayici" ? <Badge variant="info">{o.saglayici === "paytr" ? "PayTR" : "iyzico"}</Badge> : "Elle"}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL{o.kdv !== null && <div className="subtle" style={{ fontSize: "0.8rem" }}>KDV {tl(o.kdv)}</div>}</td><td>{tarih(o.yeniDonemSonu)}</td><td>{o.not ?? "—"}</td></tr>
+                <tr key={o.id ?? i}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(o.zaman).toLocaleString("tr-TR")}</td><td>{o.kaynak === "saglayici" ? <Badge variant="info">{o.saglayici === "paytr" ? "PayTR" : "iyzico"}</Badge> : "Elle"}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL{o.kdv !== null && <div className="subtle" style={{ fontSize: "0.8rem" }}>KDV {tl(o.kdv)}</div>}</td><td>{tarih(o.yeniDonemSonu)}</td>
+                  <td>{o.fatura ? <><Badge variant={FATURA_DURUMU[o.fatura.durum]?.ton ?? "neutral"}>{FATURA_DURUMU[o.fatura.durum]?.ad ?? o.fatura.durum}</Badge>{o.fatura.no && <div className="subtle" style={{ fontSize: "0.8rem" }}>{o.fatura.no}</div>}{o.fatura.hata && <div className="subtle" style={{ fontSize: "0.8rem" }}>{o.fatura.hata}</div>}</> : <span className="subtle">—</span>}</td>
+                  <td>{o.not ?? "—"}</td></tr>
               ))}</tbody>
             </TableWrap>
           </Card>
