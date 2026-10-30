@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { CreditCard, RefreshCw, ShieldCheck } from "lucide-react";
+import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
 
@@ -14,22 +17,39 @@ interface Saglayici { saglayici: "iyzico" | "paytr"; ad: string; bagli: boolean;
  */
 export default function PlatformOdeme() {
   const [liste, setListe] = useState<Saglayici[] | null>(null);
+  const [listeHatasi, setListeHatasi] = useState("");
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [kilitli, setKilitli] = useState(false);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
 
-  const yukle = useCallback(async () => setListe(await platformApi<Saglayici[]>("/platform/odeme-saglayicilari")), []);
-  useEffect(() => { if (platformTokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Yüklenemedi")); }, [yukle]);
+  const yukle = useCallback(async (signal?: AbortSignal) => {
+    setYukleniyor(true);
+    try {
+      const sonuc = await platformApi<Saglayici[]>("/platform/odeme-saglayicilari", { signal });
+      if (!signal?.aborted) { setListe(sonuc); setListeHatasi(""); }
+    } catch (e) { if (!signal?.aborted) setListeHatasi(e instanceof Error ? e.message : "Sağlayıcılar yüklenemedi."); }
+    finally { if (!signal?.aborted) setYukleniyor(false); }
+  }, []);
+  useEffect(() => {
+    if (!platformTokenAl()) return;
+    const kontrol = new AbortController();
+    void yukle(kontrol.signal);
+    return () => kontrol.abort();
+  }, [yukle]);
 
   const etkin = liste?.find((s) => s.etkin);
   return <>
-    <PageHeader title="Abonelik ödemesi" subtitle="Firmaların abonelik bedelini kartla ödediği sağlayıcı. Aynı anda tek sağlayıcı etkin olur; elle tahsilat (Firmalar ekranı) her zaman açıktır." />
-    <Alert tone="error">{hata}</Alert>
-    {basari && <Alert tone="success">{basari}</Alert>}
-    {liste && !etkin && <Alert tone="warning">Etkin sağlayıcı yok: firmalar panelde çevrim içi ödeme göremez, hatırlatma e-postası ödeme bağlantısı taşımaz.</Alert>}
-    <div className="stack">
-      {liste?.map((s) => <SaglayiciKarti key={s.saglayici} s={s} onTamam={async (m) => { setBasari(m); setHata(""); await yukle(); }} onHata={(m) => { setHata(m); setBasari(""); }} />)}
-      {liste && <FaturaKarti onBasari={(m) => { setBasari(m); setHata(""); }} onHata={(m) => { setHata(m); setBasari(""); }} />}
+    <PageHeader title="Abonelik ödemesi" subtitle="Kartla tahsilat sağlayıcısını ve abonelik faturalarının hangi firmada oluşturulacağını yönetin." actions={<Button disabled={yukleniyor || kilitli} onClick={() => void yukle()}><RefreshCw size={16} aria-hidden="true" />Sağlayıcıları yenile</Button>} />
+    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
+    {listeHatasi && <Alert tone="error">{listeHatasi} {liste && "Gösterilen sağlayıcı bilgileri son başarılı yüklemeye aittir."} <Button size="sm" disabled={yukleniyor || kilitli} onClick={() => void yukle()}>Tekrar dene</Button></Alert>}
+    <div className="platform-workflow"><CreditCard size={20} aria-hidden="true" /><div><strong>{!liste ? "Tahsilat ayarları yükleniyor…" : etkin ? `Kartla tahsilat: ${etkin.ad} · ${etkin.ortam === "canli" ? "Canlı ortam" : "Test ortamı"}` : "Kartla tahsilat kapalı"}</strong><span>Aynı anda tek sağlayıcı etkin olur. <Link href="/platform/firmalar">Firmalar ekranından</Link> elle ödeme kaydı her zaman yapılabilir.</span></div></div>
+    {liste && !etkin && !listeHatasi && <Alert tone="warning">Etkin sağlayıcı yok: firmalar panelde çevrim içi ödeme göremez, hatırlatma e-postası ödeme bağlantısı taşımaz.</Alert>}
+    {!liste && yukleniyor && <Card><div className="platform-empty" role="status">Ödeme sağlayıcıları yükleniyor…</div></Card>}
+    <div className="platform-provider-grid">
+      {liste?.map((s) => <SaglayiciKarti key={s.saglayici} s={s} kilitli={kilitli || yukleniyor || Boolean(listeHatasi)} onIslem={setKilitli} onTamam={async (m) => { setBasari(m); setHata(""); await yukle(); }} onHata={(m) => { setHata(m); setBasari(""); }} />)}
     </div>
+    <FaturaKarti onBasari={(m) => { setBasari(m); setHata(""); }} onHata={(m) => { setHata(m); setBasari(""); }} />
   </>;
 }
 
@@ -56,122 +76,105 @@ const hesapAyir = (s: string) => (s ? { tur: s.split(":")[0] as HesapTuru, id: s
  * burada listelenir ve yeniden denenir.
  */
 function FaturaKarti({ onBasari, onHata }: { onBasari: (m: string) => void; onHata: (m: string) => void }) {
-  const [ayar, setAyar] = useState<FaturaAyari | null>(null);
-  const [firmalar, setFirmalar] = useState<{ tenantId: string; unvan: string; vkn: string }[]>([]);
-  const [firma, setFirma] = useState("");
-  const [hesaplar, setHesaplar] = useState<Hesap[]>([]);
-  const [kart, setKart] = useState("");
-  const [elle, setElle] = useState("");
+  const { veri, yukleniyor, hata: yuklemeHatasi, yenile } = usePlatformVerisi<Partial<FaturaAyari>>("/platform/abonelik-fatura");
+  const { veri: hamFirmalar, yukleniyor: firmaYukleniyor, hata: firmaHatasi, yenile: firmaYenile } = usePlatformVerisi<{ tenantId: string; unvan: string; vkn: string }[]>("/platform/firmalar");
+  const firmalar = Array.isArray(hamFirmalar) ? hamFirmalar : [];
+  const [taslak, setTaslak] = useState<{ firma: string; kart: string; elle: string } | null>(null);
   const [islem, setIslem] = useState(false);
-  const [yuklemeHatasi, setYuklemeHatasi] = useState("");
-
-  const yukle = useCallback(async () => {
-    const y = await platformApi<FaturaAyari>("/platform/abonelik-fatura");
-    // Eksik yanıtta (ör. eski API) kart çökmesin.
-    const a: FaturaAyari = { ...y, faturalayan: y?.faturalayan ?? null, kartHesap: y?.kartHesap ?? null, elleHesap: y?.elleHesap ?? null, baslangicAt: y?.baslangicAt ?? null, hesaplar: Array.isArray(y?.hesaplar) ? y.hesaplar : [], sorunlu: Array.isArray(y?.sorunlu) ? y.sorunlu : [] };
-    setAyar(a);
-    setFirma(a.faturalayan?.tenantId ?? "");
-    setHesaplar(a.hesaplar);
-    setKart(hesapDegeri(a.kartHesap));
-    setElle(hesapDegeri(a.elleHesap));
-  }, []);
-  useEffect(() => {
-    void yukle().catch((e) => setYuklemeHatasi(e instanceof Error ? e.message : "Fatura ayarı yüklenemedi"));
-    void platformApi<{ tenantId: string; unvan: string; vkn: string }[]>("/platform/firmalar").then((l) => setFirmalar(Array.isArray(l) ? l : [])).catch(() => setFirmalar([]));
-  }, [yukle]);
-
-  async function firmaSec(tenantId: string) {
-    setFirma(tenantId);
-    setKart("");
-    setElle("");
-    const l = tenantId ? await platformApi<Hesap[]>(`/platform/abonelik-fatura/hesaplar/${tenantId}`).catch(() => []) : [];
-    setHesaplar(Array.isArray(l) ? l : []);
-  }
+  const ayar: FaturaAyari | null = veri ? {
+    faturalayan: veri.faturalayan ?? null, kartHesap: veri.kartHesap ?? null, elleHesap: veri.elleHesap ?? null,
+    baslangicAt: veri.baslangicAt ?? null, hesaplar: Array.isArray(veri.hesaplar) ? veri.hesaplar : [], sorunlu: Array.isArray(veri.sorunlu) ? veri.sorunlu : [],
+  } : null;
+  const firma = taslak?.firma ?? ayar?.faturalayan?.tenantId ?? "";
+  const kart = taslak?.kart ?? hesapDegeri(ayar?.kartHesap ?? null);
+  const elle = taslak?.elle ?? hesapDegeri(ayar?.elleHesap ?? null);
+  const { veri: firmaHesaplari, yukleniyor: hesapYukleniyor, hata: hesapHatasi, yenile: hesapYenile } = usePlatformVerisi<Hesap[]>(ayar && firma && firma !== ayar.faturalayan?.tenantId ? `/platform/abonelik-fatura/hesaplar/${encodeURIComponent(firma)}` : null);
+  const hesaplar = firma === ayar?.faturalayan?.tenantId ? ayar.hesaplar : Array.isArray(firmaHesaplari) ? firmaHesaplari : [];
+  const tlHesaplar = hesaplar.filter((h) => h.doviz === "TRY");
+  const degisti = Boolean(ayar && (firma !== (ayar.faturalayan?.tenantId ?? "") || kart !== hesapDegeri(ayar.kartHesap) || elle !== hesapDegeri(ayar.elleHesap)));
+  const taslakYaz = (ek: Partial<{ firma: string; kart: string; elle: string }>) => setTaslak({ firma, kart, elle, ...ek });
 
   async function calistir(is: () => Promise<{ mesaj: string }>) {
+    if (islem) return;
     setIslem(true);
-    try { onBasari((await is()).mesaj); await yukle(); } catch (e) { onHata(e instanceof Error ? e.message : "İşlem tamamlanamadı"); } finally { setIslem(false); }
+    try { onBasari((await is()).mesaj); yenile(); }
+    catch (e) { onHata(e instanceof Error ? e.message : "İşlem tamamlanamadı."); }
+    finally { setIslem(false); }
   }
 
   function kaydet() {
-    const firmaDegisti = firma !== (ayar?.faturalayan?.tenantId ?? "");
+    if (!ayar || hesapYukleniyor || hesapHatasi || islem) return;
+    const firmaDegisti = firma !== (ayar.faturalayan?.tenantId ?? "");
     if (firmaDegisti && firma && !confirm("Bu tarihten sonraki abonelik ödemeleri için seçilen firmada taslak satış faturası açılsın mı? Geçmiş ödemeler faturalanmaz.")) return;
     if (firmaDegisti && !firma && !confirm("Otomatik abonelik faturası kapatılsın mı?")) return;
     void calistir(() => platformApi<{ mesaj: string }>("/platform/abonelik-fatura", { method: "PUT", body: JSON.stringify({ faturalayanTenantId: firma || null, kartHesap: firma ? hesapAyir(kart) : null, elleHesap: firma ? hesapAyir(elle) : null }) }));
   }
 
-  if (!ayar) return yuklemeHatasi ? <Card title="Abonelik faturası"><Alert tone="error">{yuklemeHatasi}</Alert></Card> : null;
-  const tlHesaplar = hesaplar.filter((h) => h.doviz === "TRY");
-  const hesapSecimi = (deger: string, setDeger: (s: string) => void, etiket: string) => (
-    <Field label={etiket}>
-      <Select value={deger} disabled={!firma} onChange={(e) => setDeger(e.target.value)}>
-        <option value="">— Seçilmedi (tahsilat açılmaz) —</option>
-        {tlHesaplar.map((h) => <option key={`${h.tur}:${h.id}`} value={`${h.tur}:${h.id}`}>{HESAP_TURU[h.tur]} · {h.ad}</option>)}
-      </Select>
-    </Field>
-  );
+  if (!ayar) return <Card id="abonelik-faturasi" title="Abonelik faturası">{yuklemeHatasi ? <><Alert tone="error">{yuklemeHatasi}</Alert><Button onClick={yenile}>Fatura ayarını yeniden yükle</Button></> : <p className="muted" role="status">Fatura ayarları yükleniyor…</p>}</Card>;
+  const hesapSecimi = (deger: string, anahtar: "kart" | "elle", etiket: string) => <Field label={etiket}>
+    <Select value={deger} disabled={!firma || islem || hesapYukleniyor || Boolean(hesapHatasi)} onChange={(e) => taslakYaz({ [anahtar]: e.target.value })}>
+      <option value="">— Seçilmedi (tahsilat açılmaz) —</option>
+      {tlHesaplar.map((h) => <option key={`${h.tur}:${h.id}`} value={`${h.tur}:${h.id}`}>{HESAP_TURU[h.tur]} · {h.ad}</option>)}
+    </Select>
+  </Field>;
 
-  return (
-    <Card title="Abonelik faturası">
-      <div className="stack">
-        <div className="row-tight">
-          {ayar.faturalayan ? <Badge variant="success">Açık · {ayar.faturalayan.unvan}</Badge> : <Badge variant="neutral">Kapalı</Badge>}
-          {ayar.baslangicAt && <span className="subtle">{new Date(ayar.baslangicAt).toLocaleString("tr-TR")} sonrası ödemeler faturalanır</span>}
-        </div>
-        <p className="subtle" style={{ margin: 0 }}>Her ödemede seçilen firmada <strong>taslak</strong> satış faturası açılır; kesinleştirme ve gönderim o firmanın Faturalar ekranında yapılır. Fatura kesinleşince ödeme tutarı seçilen hesaba tahsilat olarak girer ve faturayı kapatır.</p>
-        <div className="form-grid">
-          <Field label="Faturalayan firma">
-            <Select value={firma} onChange={(e) => void firmaSec(e.target.value)}>
-              <option value="">— Kapalı —</option>
-              {ayar.faturalayan && !firmalar.some((f) => f.tenantId === ayar.faturalayan!.tenantId) && <option value={ayar.faturalayan.tenantId}>{ayar.faturalayan.unvan}</option>}
-              {firmalar.map((f) => <option key={f.tenantId} value={f.tenantId}>{f.unvan} · {f.vkn}</option>)}
-            </Select>
-          </Field>
-          {hesapSecimi(kart, setKart, "Kartla alınan ödemelerin hesabı")}
-          {hesapSecimi(elle, setElle, "Elle (havale) alınan ödemelerin hesabı")}
-        </div>
-        {firma && tlHesaplar.length === 0 && <Alert tone="warning">Seçilen firmada TL kasa, banka ya da POS hesabı yok; tahsilat açılamaz.</Alert>}
-        <div className="row-tight"><Button variant="primary" disabled={islem} onClick={kaydet}>Kaydet</Button></div>
-        {ayar.sorunlu.length > 0 && (
-          <TableWrap>
-            <thead><tr><th>Firma</th><th>Durum</th><th>Fatura</th><th>Ayrıntı</th><th className="num">Deneme</th><th /></tr></thead>
-            <tbody>{ayar.sorunlu.map((s) => (
-              <tr key={s.odemeId}>
-                <td>{s.firma}</td>
-                <td><Badge variant={s.durum === "hata" ? "danger" : "warning"}>{SORUN[s.durum]}</Badge></td>
-                <td>{s.faturaNo ?? "—"}</td>
-                <td className="subtle">{s.hata ?? "—"}<div style={{ fontSize: "0.8rem" }}>{new Date(s.guncellendi).toLocaleString("tr-TR")}</div></td>
-                <td className="num">{s.deneme}</td>
-                <td><Button size="sm" disabled={islem} onClick={() => void calistir(() => platformApi<{ mesaj: string }>(`/platform/abonelik-fatura/${s.odemeId}/yeniden-dene`, { method: "POST" }))}>Yeniden dene</Button></td>
-              </tr>
-            ))}</tbody>
-          </TableWrap>
-        )}
+  return <Card id="abonelik-faturasi" title="Abonelik faturası" className="platform-invoice-card">
+    <div className="stack">
+      <div className="row-tight">{ayar.faturalayan ? <Badge variant="success">Açık · {ayar.faturalayan.unvan}</Badge> : <Badge variant="neutral">Kapalı</Badge>}{ayar.baslangicAt && <span className="subtle">{new Date(ayar.baslangicAt).toLocaleString("tr-TR")} sonrası ödemeler faturalanır</span>}</div>
+      {degisti && <Alert tone="warning">Kaydedilmemiş ayarlar var. Seçimleriniz Kaydet düğmesine bastığınızda uygulanır.</Alert>}
+      <p className="platform-field-help">Ödemeler seçilen firmada taslak satış faturasına dönüşür. Kesinleştirme ve gönderim, o firmanın Faturalar ekranında yapılır. Kesinleşen faturanın tahsilatı seçilen hesaba işlenir.</p>
+      {firmaHatasi && <Alert tone="error">Firma listesi yüklenemedi: {firmaHatasi} <Button size="sm" onClick={firmaYenile}>Firmaları yeniden yükle</Button></Alert>}
+      <div className="platform-invoice-fields">
+        <Field label="Faturalayan firma"><Select value={firma} disabled={islem || firmaYukleniyor || Boolean(firmaHatasi)} onChange={(e) => taslakYaz({ firma: e.target.value, kart: "", elle: "" })}>
+          <option value="">— Kapalı —</option>
+          {ayar.faturalayan && !firmalar?.some((f) => f.tenantId === ayar.faturalayan!.tenantId) && <option value={ayar.faturalayan.tenantId}>{ayar.faturalayan.unvan}</option>}
+          {(firmalar ?? []).map((f) => <option key={f.tenantId} value={f.tenantId}>{f.unvan} · {f.vkn}</option>)}
+        </Select></Field>
+        {hesapSecimi(kart, "kart", "Kartla alınan ödemelerin hesabı")}
+        {hesapSecimi(elle, "elle", "Elle (havale) alınan ödemelerin hesabı")}
       </div>
-    </Card>
-  );
+      {hesapYukleniyor && <p className="platform-field-help" role="status">Seçilen firmanın hesapları yükleniyor…</p>}
+      {hesapHatasi && <Alert tone="error">Hesaplar yüklenemedi: {hesapHatasi} <Button size="sm" onClick={hesapYenile}>Hesapları yeniden yükle</Button></Alert>}
+      {firma && !hesapYukleniyor && !hesapHatasi && !tlHesaplar.length && <Alert tone="warning">Seçilen firmada TL kasa, banka ya da POS hesabı yok; tahsilat açılamaz.</Alert>}
+      <div className="platform-row-actions"><Button variant="primary" disabled={islem || yukleniyor || hesapYukleniyor || firmaYukleniyor || Boolean(hesapHatasi) || Boolean(firmaHatasi)} onClick={kaydet}>{islem ? "Kaydediliyor…" : "Kaydet"}</Button></div>
+      <div className="platform-section-heading"><h2>İşlem bekleyen faturalar</h2><Badge variant={ayar.sorunlu.length ? "warning" : "success"}>{ayar.sorunlu.length} kayıt</Badge></div>
+      {ayar.sorunlu.length ? <TableWrap className="platform-responsive-table platform-invoice-table">
+        <thead><tr><th>Firma</th><th>Durum</th><th>Fatura</th><th>Ayrıntı</th><th className="num">Deneme</th><th>İşlem</th></tr></thead>
+        <tbody>{ayar.sorunlu.map((s) => <tr key={s.odemeId}>
+          <td data-label="Firma" className="platform-cell-title">{s.firma}</td>
+          <td data-label="Durum"><Badge variant={s.durum === "hata" ? "danger" : "warning"}>{SORUN[s.durum]}</Badge></td>
+          <td data-label="Fatura">{s.faturaNo ?? "—"}</td>
+          <td data-label="Ayrıntı" className="subtle">{s.hata ?? "—"}<div>{new Date(s.guncellendi).toLocaleString("tr-TR")}</div></td>
+          <td data-label="Deneme" className="num">{s.deneme}</td>
+          <td data-label="İşlem"><Button size="sm" disabled={islem} onClick={() => void calistir(() => platformApi<{ mesaj: string }>(`/platform/abonelik-fatura/${encodeURIComponent(s.odemeId)}/yeniden-dene`, { method: "POST" }))}>Yeniden dene</Button></td>
+        </tr>)}</tbody>
+      </TableWrap> : <p className="platform-field-help">Yeniden işlem bekleyen fatura veya tahsilat yok.</p>}
+    </div>
+  </Card>;
 }
 
-function SaglayiciKarti({ s, onTamam, onHata }: { s: Saglayici; onTamam: (m: string) => Promise<void>; onHata: (m: string) => void }) {
+function SaglayiciKarti({ s, onTamam, onHata, kilitli, onIslem }: { s: Saglayici; kilitli: boolean; onIslem: (v: boolean) => void; onTamam: (m: string) => Promise<void>; onHata: (m: string) => void }) {
   const [ortam, setOrtam] = useState(s.ortam);
   const [alanlar, setAlanlar] = useState<Record<string, string>>(() => Object.fromEntries(s.alanlar.map((a) => [a.anahtar, a.gizli ? "" : a.deger ?? ""])));
   const [islem, setIslem] = useState(false);
 
   async function kaydet(etkin: boolean) {
+    if (islem || kilitli) return;
     if (etkin && ortam === "canli" && !confirm(`${s.ad} canlı ortamda etkinleştirilsin mi? Firmaların kartından gerçek çekim yapılır.`)) return;
-    setIslem(true);
+    setIslem(true); onIslem(true);
     try {
       const r = await platformApi<{ mesaj: string }>(`/platform/odeme-saglayicilari/${s.saglayici}`, { method: "PUT", body: JSON.stringify({ ortam, etkin, alanlar }) });
+      setAlanlar((v) => Object.fromEntries(s.alanlar.map((a) => [a.anahtar, a.gizli ? "" : v[a.anahtar] ?? ""])));
       await onTamam(r.mesaj);
     } catch (e) {
       onHata(e instanceof Error ? e.message : "Kaydedilemedi");
     } finally {
-      setIslem(false);
+      setIslem(false); onIslem(false);
     }
   }
 
   return (
-    <Card title={s.ad}>
+    <Card title={s.ad} className="platform-provider-card">
       <div className="stack">
         <div className="row-tight">
           {s.etkin ? <Badge variant="success">Etkin · {s.ortam === "canli" ? "canlı" : "test"}</Badge> : <Badge variant="neutral">Kapalı</Badge>}
@@ -179,13 +182,15 @@ function SaglayiciKarti({ s, onTamam, onHata }: { s: Saglayici; onTamam: (m: str
           {s.guncellendi && <span className="subtle">Son değişiklik {new Date(s.guncellendi).toLocaleString("tr-TR")}</span>}
         </div>
         {s.saglayici === "paytr" && <p className="subtle" style={{ margin: 0 }}>PayTR mağaza panelinde Direkt API, Non3D ve tekrarlayan ödeme yetkileri açık olmalı; <strong>Bildirim URL</strong> olarak şunu girin: <code>{s.bildirimAdresi}</code></p>}
+        <p className="platform-field-help"><ShieldCheck size={14} aria-hidden="true" /> Gizli alanlar tekrar gösterilmez. Boş bırakırsanız kayıtlı değer korunur.</p>
         <div className="form-grid">
-          <Field label="Ortam"><Select value={ortam} onChange={(e) => setOrtam(e.target.value as "test" | "canli")}><option value="test">Test (sandbox)</option><option value="canli">Canlı</option></Select></Field>
+          <Field label="Ortam"><Select disabled={islem || kilitli} value={ortam} onChange={(e) => setOrtam(e.target.value as "test" | "canli")}><option value="test">Test (sandbox)</option><option value="canli">Canlı</option></Select></Field>
           {s.alanlar.map((a) => (
             <Field key={a.anahtar} label={a.etiket}>
               <Input
                 type={a.gizli ? "password" : "text"}
                 autoComplete="off"
+                disabled={islem || kilitli}
                 value={alanlar[a.anahtar] ?? ""}
                 placeholder={a.gizli && a.dolu ? "Kayıtlı — değiştirmek için yazın" : ""}
                 onChange={(e) => setAlanlar((x) => ({ ...x, [a.anahtar]: e.target.value }))}
@@ -193,11 +198,11 @@ function SaglayiciKarti({ s, onTamam, onHata }: { s: Saglayici; onTamam: (m: str
             </Field>
           ))}
         </div>
-        <div className="row-tight">
-          <Button disabled={islem} onClick={() => void kaydet(s.etkin)}>Kaydet</Button>
+        <div className="platform-row-actions">
+          <Button disabled={islem || kilitli} onClick={() => void kaydet(s.etkin)}>{islem ? "Kaydediliyor…" : "Kaydet"}</Button>
           {s.etkin
-            ? <Button variant="danger" disabled={islem} onClick={() => void kaydet(false)}>Kapat</Button>
-            : <Button variant="primary" disabled={islem || !s.bagli} onClick={() => void kaydet(true)}>Kaydet ve etkinleştir</Button>}
+            ? <Button variant="danger" disabled={islem || kilitli} onClick={() => void kaydet(false)}>Kapat</Button>
+            : <Button variant="primary" disabled={islem || kilitli || !s.bagli} onClick={() => void kaydet(true)}>Kaydet ve etkinleştir</Button>}
         </div>
       </div>
     </Card>

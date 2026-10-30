@@ -11,6 +11,8 @@ import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { MevzuatHatirlatmaService } from "./mevzuat-hatirlatma.service";
 import { TahsilatHatirlatmaService } from "./tahsilat-hatirlatma.service";
+import { PlatformGorevController } from "./platform-gorev.controller";
+import { PlatformGorevService } from "./platform-gorev.service";
 
 /**
  * Mevzuat Merkezi (MVZ). `MevzuatService` diğer modüllerin (fatura, e-belge,
@@ -19,8 +21,8 @@ import { TahsilatHatirlatmaService } from "./tahsilat-hatirlatma.service";
  */
 @Global()
 @Module({
-  controllers: [MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
-  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci],
+  controllers: [PlatformGorevController, MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
+  providers: [PlatformGorevService, MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci],
   exports: [MevzuatService, PlatformPrismaService],
 })
 export class MevzuatModule {}

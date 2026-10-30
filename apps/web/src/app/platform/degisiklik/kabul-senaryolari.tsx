@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, Field, Input } from "@/components/ui";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Badge, Button, Card, Field, Input, TableWrap } from "@/components/ui";
 import { platformApi } from "@/lib/platform-api";
 
 /** MVZ-14: bordro parametresi değişikliğinin kabul senaryosu (sunucudaki kayıt). */
@@ -65,33 +65,46 @@ const YENI: Taslak = {
 };
 const para = (v: number) => v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function KabulSenaryolari({ degisiklikId, senaryolar, duzenle, yayinlandi, kalemlerKaydedilmedi, onDegisti }: {
+export function KabulSenaryolari<T>({ degisiklikId, senaryolar, duzenle, yayinlandi, kalemlerKaydedilmedi, onDegisti, onKayitDurumu, onIslemDurumu }: {
   degisiklikId: string;
   senaryolar: KabulSenaryosu[];
   duzenle: boolean;
   yayinlandi: boolean;
   kalemlerKaydedilmedi: boolean;
-  onDegisti: (d: never) => void;
+  onDegisti: (d: T) => void;
+  onKayitDurumu: (degisti: boolean) => void;
+  onIslemDurumu: (islem: boolean) => void;
 }) {
-  const [taslaklar, setTaslaklar] = useState<Taslak[]>([]);
+  const [taslaklar, setTaslaklar] = useState<Taslak[]>(() => senaryolar.map(taslagaCevir));
+  const degistiRef = useRef(false);
+  const [basari, setBasari] = useState("");
   const [degisti, setDegisti] = useState(false);
   const [hata, setHata] = useState(""); const [islem, setIslem] = useState(false);
-  useEffect(() => { setTaslaklar(senaryolar.map(taslagaCevir)); setDegisti(false); }, [senaryolar]);
+  useEffect(() => { if (!degistiRef.current) setTaslaklar(senaryolar.map(taslagaCevir)); }, [senaryolar]);
+  const kirlet = () => { degistiRef.current = true; setDegisti(true); onKayitDurumu(true); setBasari(""); };
 
-  const guncelle = (i: number, ek: Partial<Taslak>) => { setTaslaklar((e) => e.map((t, j) => (j === i ? { ...t, ...ek } : t))); setDegisti(true); };
+  const guncelle = (i: number, ek: Partial<Taslak>) => { setTaslaklar((e) => e.map((t, j) => (j === i ? { ...t, ...ek } : t))); kirlet(); };
   async function gonder(yol: string, govde?: unknown) {
-    setIslem(true); setHata("");
-    try { onDegisti(await platformApi<never>(`/platform/mevzuat/degisiklikler/${degisiklikId}/${yol}`, { method: govde ? "PUT" : "POST", body: govde ? JSON.stringify(govde) : undefined })); }
-    catch (e) { setHata(e instanceof Error ? e.message : "İşlem başarısız"); } finally { setIslem(false); }
+    if (islem) return;
+    if (govde && taslaklar.some((t) => Object.values({ ...t.girdi, ...t.beklenen }).some((v) => v.trim() !== "" && !Number.isFinite(sayi(v))) || !Number.isFinite(t.tolerans ? sayi(t.tolerans) : 0.01) || (t.tolerans ? sayi(t.tolerans) : 0.01) < 0)) { setHata("Senaryo alanlarına geçerli sayılar ve sıfırdan küçük olmayan bir tolerans girin."); return; }
+    setIslem(true); onIslemDurumu(true); setHata(""); setBasari("");
+    try {
+      const sonuc = await platformApi<T>(`/platform/mevzuat/degisiklikler/${degisiklikId}/${yol}`, { method: govde ? "PUT" : "POST", body: govde ? JSON.stringify(govde) : undefined });
+      degistiRef.current = false; setDegisti(false); onKayitDurumu(false); onDegisti(sonuc);
+      setBasari(govde ? "Senaryolar kaydedildi." : "Senaryolar çalıştırıldı.");
+    } catch (e) { setHata(e instanceof Error ? e.message : "İşlem başarısız."); }
+    finally { setIslem(false); onIslemDurumu(false); }
   }
 
   const sonuclu = senaryolar.length > 0 && senaryolar.every((s) => s.basarili !== null);
   return (
     <Card
+      id="kabul-senaryolari"
+      className="platform-acceptance"
       title="Kabul senaryoları"
       pad={false}
       actions={!yayinlandi ? <div className="row-tight">
-        {duzenle && <Button size="sm" onClick={() => { setTaslaklar((e) => [...e, YENI]); setDegisti(true); }}>+ Senaryo</Button>}
+        {duzenle && <Button size="sm" disabled={islem} onClick={() => { setTaslaklar((e) => [...e, YENI]); kirlet(); }}>Senaryo ekle</Button>}
         {duzenle && <Button size="sm" variant="primary" disabled={islem || !degisti} onClick={() => void gonder("kabul-senaryolari", { senaryolar: taslaklar.map(govdeye) })}>Senaryoları kaydet</Button>}
         <Button size="sm" disabled={islem || degisti || kalemlerKaydedilmedi || !senaryolar.length} onClick={() => void gonder("kabul-senaryolari/calistir")}>Çalıştır</Button>
       </div> : undefined}
@@ -99,7 +112,7 @@ export function KabulSenaryolari({ degisiklikId, senaryolar, duzenle, yayinlandi
       <p className="muted" style={{ padding: "0.8rem 1.25rem 0", margin: 0 }}>
         Bordro parametresi değişikliği en az bir senaryo olmadan onaya gönderilemez. Beklenen değerleri resmî kaynaktan girin (ör. asgari ücretin açıklanan neti); senaryolar onaya gönderirken ve yayında bu değişikliğin değeriyle yeniden çalıştırılır, biri tutmazsa yayın yapılmaz. Boş bırakılan beklenen alan denetlenmez.
       </p>
-      <div style={{ padding: "0 1.25rem" }}><Alert tone="error">{hata}</Alert></div>
+      <div className="platform-scenario-feedback"><Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert></div>
       {sonuclu && !degisti && <div style={{ padding: "0.5rem 1.25rem 0" }}><Alert tone={senaryolar.every((s) => s.basarili) ? "success" : "warning"}>{senaryolar.every((s) => s.basarili) ? "Bütün senaryolar tutuyor." : "Tutmayan senaryo var; değeri ya da beklentiyi kontrol edin."}</Alert></div>}
       {taslaklar.map((t, i) => {
         const kayit = !degisti ? senaryolar[i] : undefined;
@@ -110,26 +123,24 @@ export function KabulSenaryolari({ degisiklikId, senaryolar, duzenle, yayinlandi
               <div className="row-tight">
                 {kayit?.basarili === true && <Badge variant="success">Tuttu</Badge>}
                 {kayit?.basarili === false && <Badge variant="danger">Tutmadı</Badge>}
-                {duzenle && <Button size="sm" variant="danger" onClick={() => { setTaslaklar((e) => e.filter((_, j) => j !== i)); setDegisti(true); }}>Sil</Button>}
+                {duzenle && <Button size="sm" variant="danger" onClick={() => { setTaslaklar((e) => e.filter((_, j) => j !== i)); kirlet(); }}>Sil</Button>}
               </div>
             </div>
-            <div className="form-grid">
+            <details open className="platform-scenario-section"><summary>Girdi değerleri</summary><div className="form-grid">
               {GIRDILER.map(([k, ad]) => <Field key={k} label={ad}><Input value={t.girdi[k] ?? ""} disabled={!duzenle} inputMode="decimal" onChange={(e) => guncelle(i, { girdi: { ...t.girdi, [k]: e.target.value } })} /></Field>)}
-            </div>
-            <div className="form-grid">
+            </div></details>
+            <details open className="platform-scenario-section"><summary>Beklenen sonuçlar</summary><div className="form-grid">
               {BEKLENEN.map(([k, ad]) => <Field key={k} label={`Beklenen ${ad.toLocaleLowerCase("tr-TR")}`}><Input value={t.beklenen[k] ?? ""} disabled={!duzenle} inputMode="decimal" onChange={(e) => guncelle(i, { beklenen: { ...t.beklenen, [k]: e.target.value } })} /></Field>)}
               <Field label="Tolerans (TL)"><Input value={t.tolerans} disabled={!duzenle} inputMode="decimal" onChange={(e) => guncelle(i, { tolerans: e.target.value })} /></Field>
-            </div>
-            {kayit?.sonSonuc && (
-              <p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
-                {kayit.sonSonuc.hata ? `Hesaplanamadı: ${kayit.sonSonuc.hata}` : Object.entries(kayit.sonSonuc.alanlar).map(([k, a]) => `${ETIKET[k] ?? k}: beklenen ${para(a.beklenen)}, hesaplanan ${para(a.hesaplanan)}${a.fark > 0 ? ` (fark ${para(a.fark)})` : ""}`).join(" · ")}
-                {kayit.sonCalismaZamani ? ` — ${new Date(kayit.sonCalismaZamani).toLocaleString("tr-TR")}` : ""}
-              </p>
-            )}
+            </div></details>
+            {kayit?.sonSonuc && <div className="platform-scenario-results">
+              {kayit.sonSonuc.hata ? <Alert tone="error">Hesaplanamadı: {kayit.sonSonuc.hata}</Alert> : <TableWrap className="platform-responsive-table"><thead><tr><th>Alan</th><th>Beklenen</th><th>Hesaplanan</th><th>Fark</th></tr></thead><tbody>{Object.entries(kayit.sonSonuc.alanlar).map(([k, a]) => <tr key={k}><td data-label="Alan" className="platform-cell-title">{ETIKET[k] ?? k}</td><td data-label="Beklenen">{para(a.beklenen)}</td><td data-label="Hesaplanan">{para(a.hesaplanan)}</td><td data-label="Fark">{para(a.fark)}</td></tr>)}</tbody></TableWrap>}
+              {kayit.sonCalismaZamani && <p className="platform-field-help">Son çalışma: {new Date(kayit.sonCalismaZamani).toLocaleString("tr-TR")}</p>}
+            </div>}
           </div>
         );
       })}
-      {!taslaklar.length && <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>Henüz senaryo yok.</p>}
+      {!taslaklar.length && <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>Henüz senaryo yok. Resmî bir beklenen sonuçla ilk senaryonuzu ekleyin.</p>}
       {degisti && <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>Kaydedilmemiş senaryo değişikliği var.</p>}
     </Card>
   );

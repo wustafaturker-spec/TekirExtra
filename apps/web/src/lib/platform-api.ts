@@ -5,7 +5,7 @@
  * tamamen ayrıdır: token başka anahtarda, yalnız bu sekmede tutulur; yenileme
  * yoktur (30 dk), süre dolunca yeniden giriş istenir.
  */
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 const ANAHTAR = "tekir_platform_access";
 
 export function platformTokenAl(): string | null {

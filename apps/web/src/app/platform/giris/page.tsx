@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import { Alert, Button, Field, Input } from "@/components/ui";
+import { PlatformAuth, PlatformParola } from "@/components/platform-auth";
 import { platformApi, platformTokenYaz } from "@/lib/platform-api";
 
-/** MVZ-04: platform ekibi girişi — parola ve doğrulama kodu birlikte zorunlu. */
+/** Platform hesabı, parola ve doğrulayıcı uygulamadaki kodla açılır. */
 export default function PlatformGirisSayfasi() {
   const yonlendir = useRouter();
   const [hata, setHata] = useState("");
@@ -13,39 +16,28 @@ export default function PlatformGirisSayfasi() {
 
   async function gonder(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (yukleniyor) return;
     const v = new FormData(e.currentTarget);
     setHata(""); setYukleniyor(true);
     try {
       const s = await platformApi<{ accessToken: string }>("/platform/auth/giris", {
-        method: "POST",
-        body: JSON.stringify({ eposta: String(v.get("eposta") ?? ""), parola: String(v.get("parola") ?? ""), totpKodu: String(v.get("totpKodu") ?? "") }),
+        method: "POST", body: JSON.stringify({ eposta: String(v.get("eposta") ?? "").trim(), parola: String(v.get("parola") ?? ""), totpKodu: String(v.get("totpKodu") ?? "") }),
       });
       platformTokenYaz(s.accessToken);
       yonlendir.replace("/platform");
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Giriş başarısız");
-    } finally {
-      setYukleniyor(false);
-    }
+    } catch (h) { setHata(h instanceof Error ? h.message : "Giriş başarısız."); }
+    finally { setYukleniyor(false); }
   }
 
-  return (
-    <main className="auth-page-container">
-      <div className="auth-form-side" style={{ width: "100%" }}>
-        <div className="auth-card-modern">
-          <div className="auth-header">
-            <h1>Mevzuat Merkezi</h1>
-            <p>Platform ekibi girişi. Kiracı hesapları burada geçmez.</p>
-          </div>
-          <Alert tone="error">{hata}</Alert>
-          <form className="auth-form" onSubmit={(e) => void gonder(e)}>
-            <Field label="E-posta"><Input name="eposta" type="email" autoComplete="username" required /></Field>
-            <Field label="Parola"><Input name="parola" type="password" autoComplete="current-password" required /></Field>
-            <Field label="Doğrulama kodu"><Input name="totpKodu" inputMode="numeric" pattern="\d{6}" maxLength={6} autoComplete="one-time-code" required placeholder="6 haneli kod" /></Field>
-            <Button type="submit" variant="primary" disabled={yukleniyor}>{yukleniyor ? "Giriş yapılıyor..." : "Giriş yap"}</Button>
-          </form>
-        </div>
-      </div>
-    </main>
-  );
+  return <PlatformAuth title="Platforma giriş yapın" description="Platform hesabınızı ve doğrulayıcı uygulamanızdaki 6 haneli kodu kullanın.">
+    <Alert tone="error">{hata}</Alert>
+    <form onSubmit={(e) => void gonder(e)}><fieldset disabled={yukleniyor} className="platform-auth-fields">
+      <Field label="E-posta"><Input name="eposta" type="email" autoComplete="username" required placeholder="ad@firma.com" /></Field>
+      <PlatformParola label="Parola" name="parola" autoComplete="current-password" required />
+      <Field label="Doğrulama kodu"><Input name="totpKodu" inputMode="numeric" pattern="\d{6}" maxLength={6} autoComplete="one-time-code" required placeholder="6 haneli kod" className="platform-otp" /></Field>
+      <p className="platform-auth-help"><ShieldCheck size={16} aria-hidden="true" />Kodu, hesabınıza bağlı doğrulayıcı uygulamadan alın.</p>
+      <Button type="submit" variant="primary" disabled={yukleniyor}>{yukleniyor ? "Giriş yapılıyor…" : "Giriş yap"}<ArrowRight size={16} aria-hidden="true" /></Button>
+    </fieldset></form>
+    <p className="platform-auth-switch">Firma kullanıcısı mısınız? <Link href="/giris">Firma girişine gidin</Link></p>
+  </PlatformAuth>;
 }

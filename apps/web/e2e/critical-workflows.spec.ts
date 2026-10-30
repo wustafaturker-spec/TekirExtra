@@ -2211,7 +2211,8 @@ test("mevzuat editörü firma ve tavan menülerini görmez, o sayfalardan Deği�
   await expect(menu.getByRole("link", { name: "Denetim izi" })).toBeVisible();
   await expect(menu.getByRole("link", { name: "Firmalar" })).toHaveCount(0);
   await expect(menu.getByRole("link", { name: "Yapay zekâ tavanı" })).toHaveCount(0);
-  await expect(page.getByText("editor@tekirextra.com · Mevzuat editörü")).toBeVisible();
+  await expect(page.locator(".platform-account")).toContainText("editor@tekirextra.com");
+  await expect(page.locator(".platform-account")).toContainText("Mevzuat editörü");
 });
 
 test("platform ödemesi geciken firmayı süzer ve elle ödemeyle dönemi uzatır (PLT-09)", async ({ page }) => {

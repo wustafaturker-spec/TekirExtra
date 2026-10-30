@@ -4,6 +4,8 @@ export const DURUM_ADI: Record<MevzuatDurum, string> = { taslak: "Taslak", onay_
 export const DURUM_ROZETI: Record<MevzuatDurum, "neutral" | "warning" | "success"> = { taslak: "neutral", onay_bekliyor: "warning", yayinlandi: "success" };
 export const ISLEM_ADI: Record<"ekle" | "degistir" | "kaldir", string> = { ekle: "Ekle", degistir: "Değiştir", kaldir: "Kaldır" };
 export const OLAY_ADI: Record<string, string> = {
+  mevzuat_gorevi_olusturuldu: "Mevzuat görevi oluşturdu", mevzuat_gorevi_guncellendi: "Mevzuat görevini güncelledi",
+  platform_gorevi_olusturuldu: "Platform görevi oluşturdu", platform_gorevi_guncellendi: "Platform görevini güncelledi",
   giris: "Giriş yaptı", olusturuldu: "Oluşturdu", guncellendi: "Bilgileri güncelledi", satirlar_guncellendi: "Kalemleri güncelledi",
   onaya_gonderildi: "Onaya gönderdi", taslaga_cekildi: "Taslağa çekti", geri_cevrildi: "Geri çevirdi", yayinlandi: "Yayınladı",
   silindi: "Taslağı sildi", talep_guncellendi: "Talebi güncelledi", platform_kullanicisi_kuruldu: "Platform kullanıcısı kuruldu",

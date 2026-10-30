@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select, Stat, StatGrid, TableWrap } from "@/components/ui";
-import { platformApi, platformTokenAl } from "@/lib/platform-api";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { RefreshCw } from "lucide-react";
+import { PlatformArama, PlatformListeDurumu } from "@/components/platform-liste";
+import { usePlatformVerisi } from "@/lib/use-platform-verisi";
+import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select, TableWrap } from "@/components/ui";
+import { platformApi } from "@/lib/platform-api";
 
 interface Firma {
   tenantId: string; unvan: string; vkn: string; kayitTarihi: string;
@@ -47,18 +51,20 @@ const tl = (x: number | string) => Number(x).toLocaleString("tr-TR", { minimumFr
  * Platform P0-1 / P1-1: firmalar ve abonelikleri. Liste yalnız yönetim için
  * gereken sayıları ve durumları içerir; firma verisinin içeriği görünmez.
  */
-export default function PlatformFirmalar() {
-  const [firmalar, setFirmalar] = useState<Firma[] | null>(null);
+function PlatformFirmalarIcerigi() {
+  const parametreler = useSearchParams();
+  const { veri: firmalar, yukleniyor, hata: listeHatasi, yenile: yukle } = usePlatformVerisi<Firma[]>("/platform/firmalar");
+  const [destekIslem, setDestekIslem] = useState(false);
   const [arama, setArama] = useState("");
   const [suzgec, setSuzgec] = useState<Suzgec>("hepsi");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [secili, setSecili] = useState<Firma | null>(null);
 
-  const yukle = useCallback(async () => {
-    setFirmalar(await platformApi<Firma[]>("/platform/firmalar"));
-  }, []);
-  useEffect(() => { if (platformTokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Yüklenemedi")); }, [yukle]);
+  useEffect(() => {
+    const secim = parametreler.get("goster");
+    setSuzgec(secim === "talep" || secim === "askiyaAlinacak" || secim === "askida" || secim === "iptal" ? secim : "hepsi");
+  }, [parametreler]);
 
   const sayilar = useMemo(() => ({
     toplam: firmalar?.length ?? 0,
@@ -79,6 +85,8 @@ export default function PlatformFirmalar() {
    * adres # ile verilir; sunucuya gitmez.
    */
   async function destekAc(f: Firma) {
+    if (destekIslem) return;
+    setDestekIslem(true);
     setHata("");
     setBasari("");
     const sekme = window.open("", "_blank");
@@ -89,89 +97,89 @@ export default function PlatformFirmalar() {
         sekme.location.href = `/destek#t=${encodeURIComponent(s.token)}`;
       }
       setBasari(`${f.unvan} için destek oturumu açıldı; ${new Date(s.bitis).toLocaleTimeString("tr-TR")} saatinde kapanır.`);
-      await yukle();
+      yukle();
     } catch (e) {
       sekme?.close();
       setHata(e instanceof Error ? e.message : "Destek oturumu açılamadı");
-    }
+    } finally { setDestekIslem(false); }
   }
 
   async function destekKapat(oturumId: string) {
+    if (destekIslem) return;
+    setDestekIslem(true); setHata(""); setBasari("");
     try {
       setBasari((await platformApi<{ mesaj: string }>(`/platform/firmalar/destek-oturumlari/${oturumId}/kapat`, { method: "POST" })).mesaj);
-      await yukle();
+      yukle();
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Destek oturumu kapatılamadı");
-    }
+    } finally { setDestekIslem(false); }
   }
 
-  async function tamamlandi(mesaj: string) {
+  function tamamlandi(mesaj: string) {
     setBasari(mesaj);
     setHata("");
     setSecili(null);
-    await yukle();
+    yukle();
   }
 
   return <>
-    <PageHeader title="Firmalar" subtitle="Firmaların planı, abonelik durumu ve kullanımı. Plan talepleri burada onaylanır; ödemesi olmayan firma askıya alınır (askıdaki firma salt okunurdur)." />
+    <PageHeader title="Firmalar" subtitle="Abonelikleri izleyin, plan taleplerini değerlendirin ve izinli destek oturumlarını yönetin." actions={<Button disabled={yukleniyor} onClick={yukle}><RefreshCw size={16} aria-hidden="true" />Yenile</Button>} />
     <Alert tone="error">{hata}</Alert>
     {basari && <Alert tone="success">{basari}</Alert>}
-    <StatGrid>
-      <Stat label="Firma" value={sayilar.toplam} />
-      <Stat label="Bekleyen plan talebi" value={sayilar.talep} tone={sayilar.talep ? "info" : undefined} />
-      <Stat label="Askıya alınacak" value={sayilar.askiyaAlinacak} tone={sayilar.askiyaAlinacak ? "accent" : undefined} />
-      <Stat label="Askıda" value={sayilar.askida} tone={sayilar.askida ? "danger" : undefined} />
-      <Stat label="İptal" value={sayilar.iptal} />
-    </StatGrid>
-    <Card>
-      <div className="row" style={{ alignItems: "flex-end" }}>
-        <div style={{ flex: 1, minWidth: 220 }}><Field label="Ara"><Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Unvan ya da VKN" /></Field></div>
+    <div className="platform-overview platform-firma-overview" aria-label="Firma durumları">
+      {([
+        ["hepsi", "Tüm firmalar", sayilar.toplam], ["talep", "Bekleyen plan talebi", sayilar.talep],
+        ["askiyaAlinacak", "Ödemesi geciken", sayilar.askiyaAlinacak], ["askida", "Askıda", sayilar.askida], ["iptal", "İptal", sayilar.iptal],
+      ] as const).map(([deger, ad, sayi]) => <button key={deger} className={`platform-metric${suzgec === deger ? " is-active" : ""}`} aria-pressed={suzgec === deger} onClick={() => setSuzgec(deger)}><span>{ad}</span><strong>{yukleniyor || listeHatasi ? "—" : sayi}</strong></button>)}
+    </div>
+    <Card title="Firma listesi" pad={false}>
+      <div className="platform-filter-bar">
+        <PlatformArama etiket="Firma ara" deger={arama} onChange={setArama} placeholder="Unvan veya VKN ile ara…" />
         <div style={{ minWidth: 200 }}><Field label="Göster"><Select value={suzgec} onChange={(e) => setSuzgec(e.target.value as Suzgec)}>
           <option value="hepsi">Tüm firmalar</option>
           <option value="talep">Bekleyen plan talebi</option>
-          <option value="askiyaAlinacak">Askıya alınacaklar (ödeme 15 günden fazla gecikti)</option>
+          <option value="askiyaAlinacak">Ödemesi 15+ gün gecikenler</option>
           <option value="askida">Askıda</option>
           <option value="iptal">İptal</option>
         </Select></Field></div>
       </div>
-    </Card>
-    <Card pad={false}>
-      <TableWrap>
-        <thead><tr><th>Firma</th><th>Plan</th><th>Durum</th><th className="num">Kullanıcı</th><th>Son giriş</th><th>e-Belge</th><th>Talep</th><th>Destek</th><th /></tr></thead>
+      <div className="platform-list-caption" role="status">{yukleniyor ? "Firma listesi yükleniyor…" : listeHatasi ? "Firma listesi alınamadı" : `${suzulen.length} firma${suzulen.length > GORUNEN_EN_COK ? ` · İlk ${GORUNEN_EN_COK} kayıt gösteriliyor` : ""}`}</div>
+      <TableWrap className="platform-responsive-table platform-firma-table">
+        <thead><tr><th>Firma</th><th>Plan</th><th>Durum</th><th className="num">Kullanıcı</th><th>Son giriş</th><th>e-Belge</th><th>Talep</th><th>Destek</th><th>İşlem</th></tr></thead>
         <tbody>
-          {suzulen.slice(0, GORUNEN_EN_COK).map((f) => (
+          {(!yukleniyor && !listeHatasi ? suzulen : []).slice(0, GORUNEN_EN_COK).map((f) => (
             <tr key={f.tenantId}>
-              <td><strong>{f.unvan}</strong><div className="subtle mono" style={{ fontSize: "0.8rem" }}>{f.vkn}</div></td>
-              <td>{f.planAdi}{f.donemSonu && <div className="subtle" style={{ fontSize: "0.8rem" }}>Dönem sonu {tarih(f.donemSonu)}</div>}</td>
-              <td><Badge variant={DURUM[f.durum]?.ton ?? "neutral"}>{DURUM[f.durum]?.ad ?? f.durum}</Badge>{f.askiyaAlinacak && <div style={{ marginTop: 4 }}><Badge variant="warning">Ödeme gecikti</Badge></div>}</td>
-              <td className="num">{f.aktifKullanici}</td>
-              <td className="subtle">{f.sonGiris ? new Date(f.sonGiris).toLocaleString("tr-TR") : "Hiç"}</td>
-              <td>{f.ebelgeSaglayici ?? <span className="subtle">—</span>}</td>
-              <td>{f.bekleyenTalep ? <Badge variant="info">{f.bekleyenTalep.istenenPlanAdi} istiyor</Badge> : <span className="subtle">—</span>}</td>
-              <td style={{ minWidth: 170 }}>
+              <td data-label="Firma" className="platform-cell-title"><strong>{f.unvan}</strong><div className="subtle mono" style={{ fontSize: "0.8rem" }}>{f.vkn}</div></td>
+              <td data-label="Plan">{f.planAdi}{f.donemSonu && <div className="subtle" style={{ fontSize: "0.8rem" }}>Dönem sonu {tarih(f.donemSonu)}</div>}</td>
+              <td data-label="Durum"><Badge variant={DURUM[f.durum]?.ton ?? "neutral"}>{DURUM[f.durum]?.ad ?? f.durum}</Badge>{f.askiyaAlinacak && <div style={{ marginTop: 4 }}><Badge variant="warning">Ödeme gecikti</Badge></div>}</td>
+              <td data-label="Kullanıcı" className="num">{f.aktifKullanici}</td>
+              <td data-label="Son giriş" className="subtle">{f.sonGiris ? new Date(f.sonGiris).toLocaleString("tr-TR") : "Hiç"}</td>
+              <td data-label="e-Belge">{f.ebelgeSaglayici ?? <span className="subtle">—</span>}</td>
+              <td data-label="Plan talebi">{f.bekleyenTalep ? <Badge variant="info">{f.bekleyenTalep.istenenPlanAdi} istiyor</Badge> : <span className="subtle">—</span>}</td>
+              <td data-label="Destek" className="platform-support-cell">
                 {f.destek ? (
                   <div className="stack" style={{ gap: 4 }}>
                     <span className="subtle" style={{ fontSize: "0.8rem" }}>İzin {new Date(f.destek.izinBitis).toLocaleString("tr-TR")}&apos;e kadar</span>
                     {f.destek.acikOturum
-                      ? <div className="row-tight"><Badge variant="warning">Bağlı: {f.destek.acikOturum.kisi}</Badge><Button size="sm" onClick={() => void destekKapat(f.destek!.acikOturum!.id)}>Kapat</Button></div>
-                      : <Button size="sm" onClick={() => void destekAc(f)}>Destek oturumu aç</Button>}
+                      ? <div className="row-tight"><Badge variant="warning">Bağlı: {f.destek.acikOturum.kisi}</Badge><Button size="sm" disabled={destekIslem} onClick={() => void destekKapat(f.destek!.acikOturum!.id)}>Kapat</Button></div>
+                      : <Button size="sm" disabled={destekIslem} onClick={() => void destekAc(f)}>Destek oturumu aç</Button>}
                   </div>
                 ) : <span className="subtle">İzin yok</span>}
               </td>
-              <td><Button size="sm" onClick={() => setSecili(f)}>Yönet</Button></td>
+              <td data-label="İşlem"><Button size="sm" onClick={() => setSecili(f)}>Yönet</Button></td>
             </tr>
           ))}
-          {firmalar && suzulen.length === 0 && <tr><td colSpan={9} className="empty">Eşleşen firma yok.</td></tr>}
+          <PlatformListeDurumu sutun={9} yukleniyor={yukleniyor} hata={listeHatasi} bos={!suzulen.length} baslik={firmalar?.length ? "Eşleşen firma yok." : "Henüz firma yok."} aciklama={firmalar?.length ? "Arama metnini veya durum filtresini değiştirin." : "Firma kayıtları oluşturulduğunda burada listelenir."} onTekrar={yukle} />
         </tbody>
       </TableWrap>
       {suzulen.length > GORUNEN_EN_COK && <p className="subtle" style={{ padding: "0.75rem 1rem", margin: 0 }}>{suzulen.length} firmadan ilk {GORUNEN_EN_COK} tanesi gösteriliyor; aramayı daraltın.</p>}
     </Card>
-    {secili && <FirmaYonet firma={secili} onKapat={() => setSecili(null)} onTamam={(m) => void tamamlandi(m)} />}
+    {secili && <FirmaYonet firma={secili} onKapat={() => setSecili(null)} onTamam={tamamlandi} />}
   </>;
 }
 
 function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => void; onTamam: (mesaj: string) => void }) {
-  const [gecmis, setGecmis] = useState<Gecmis | null>(null);
+  const { veri: gecmis, yukleniyor: gecmisYukleniyor, hata: gecmisHatasi, yenile: gecmisYenile } = usePlatformVerisi<Gecmis>(`/platform/firmalar/${firma.tenantId}/gecmis`);
   const [hata, setHata] = useState("");
   const [islem, setIslem] = useState(false);
   const [kararNotu, setKararNotu] = useState("");
@@ -183,10 +191,6 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
   const [odemeNotu, setOdemeNotu] = useState("");
   const tutarSayi = Number(tutar.replace(",", "."));
 
-  useEffect(() => {
-    void platformApi<Gecmis>(`/platform/firmalar/${firma.tenantId}/gecmis`).then(setGecmis).catch((e) => setHata(e instanceof Error ? e.message : "Geçmiş yüklenemedi"));
-  }, [firma.tenantId]);
-
   async function calistir(is: () => Promise<{ mesaj: string }>) {
     setIslem(true);
     setHata("");
@@ -197,7 +201,7 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
 
   return (
     <Modal genis baslik={firma.unvan} aciklama={`VKN ${firma.vkn} · ${firma.planAdi} · ${DURUM[firma.durum]?.ad ?? firma.durum} · kayıt ${tarih(firma.kayitTarihi)}`} onKapat={onKapat}>
-      <div className="stack">
+      <div className="stack platform-firma-modal">
         <Alert tone="error">{hata}</Alert>
         {firma.bekleyenTalep && (
           <Card title={`Plan talebi: ${firma.planAdi} → ${firma.bekleyenTalep.istenenPlanAdi}`}>
@@ -271,11 +275,15 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
               ].sort((a, b) => b.zaman.localeCompare(a.zaman)).map((s, i) => (
                 <tr key={i}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(s.zaman).toLocaleString("tr-TR")}</td><td>{s.ne}</td><td>{s.not ?? "—"}</td></tr>
               ))}
-              {gecmis && !gecmis.degisiklikler.length && !gecmis.talepler.length && !gecmis.basarisizDenemeler?.length && <tr><td colSpan={3} className="empty">Abonelik geçmişi yok.</td></tr>}
+              <PlatformListeDurumu sutun={3} yukleniyor={gecmisYukleniyor} hata={gecmisHatasi} bos={Boolean(gecmis && !gecmis.degisiklikler.length && !gecmis.talepler.length && !gecmis.basarisizDenemeler?.length)} baslik="Abonelik geçmişi yok." onTekrar={gecmisYenile} />
             </tbody>
           </TableWrap>
         </Card>
       </div>
     </Modal>
   );
+}
+
+export default function PlatformFirmalar() {
+  return <Suspense fallback={<p className="muted" role="status">Firmalar yükleniyor…</p>}><PlatformFirmalarIcerigi /></Suspense>;
 }

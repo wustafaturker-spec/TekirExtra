@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { RefreshCw, UserPlus } from "lucide-react";
+import { PlatformArama, PlatformListeDurumu } from "@/components/platform-liste";
+import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 import { Alert, Badge, Button, Card, Field, Input, Modal, ModalEylem, PageHeader, Select, TableWrap } from "@/components/ui";
-import { platformApi, platformTokenAl } from "@/lib/platform-api";
+import { platformApi } from "@/lib/platform-api";
 
 type PlatformRolu = "yonetici" | "mevzuat_editoru";
 interface PlatformKullanici {
@@ -27,8 +30,12 @@ type Onay =
  * belirler ve 2FA'yı kurar; 2FA sıfırlanınca aynı yolla yeniden kurar.
  */
 export default function PlatformKullanicilari() {
-  const [liste, setListe] = useState<PlatformKullanici[] | null>(null);
-  const [benId, setBenId] = useState("");
+  const { veri: liste, yukleniyor, hata: listeHatasi, yenile: yukle } = usePlatformVerisi<PlatformKullanici[]>("/platform/kullanicilar");
+  const { veri: kimlik, hata: kimlikHatasi, yukleniyor: kimlikYukleniyor, yenile: kimlikYenile } = usePlatformVerisi<{ kullaniciId: string }>("/platform/auth/ben");
+  const benId = kimlik?.kullaniciId;
+  const [arama, setArama] = useState("");
+  const [durumFiltresi, setDurumFiltresi] = useState("hepsi");
+  const [rolFiltresi, setRolFiltresi] = useState("hepsi");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [baglanti, setBaglanti] = useState("");
@@ -39,12 +46,11 @@ export default function PlatformKullanicilari() {
   const [onay, setOnay] = useState<Onay | null>(null);
   const [isleniyor, setIsleniyor] = useState(false);
 
-  const yukle = useCallback(async () => setListe(await platformApi<PlatformKullanici[]>("/platform/kullanicilar")), []);
-  useEffect(() => {
-    if (!platformTokenAl()) return;
-    void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Yüklenemedi"));
-    void platformApi<{ kullaniciId: string }>("/platform/auth/ben").then((b) => setBenId(b.kullaniciId)).catch(() => undefined);
-  }, [yukle]);
+  const aranan = arama.trim().toLocaleLowerCase("tr-TR");
+  const gorunen = (liste ?? []).filter((k) => (rolFiltresi === "hepsi" || k.rol === rolFiltresi)
+    && (durumFiltresi === "hepsi" || (durumFiltresi === "pasif" ? !k.aktif : durumFiltresi === "kurulum" ? k.aktif && Boolean(k.davetTuru) : k.aktif && !k.davetTuru))
+    && `${k.adSoyad} ${k.eposta}`.toLocaleLowerCase("tr-TR").includes(aranan));
+  const kilitli = isleniyor || !benId;
 
   function davetSonucuGoster(s: DavetSonucu) {
     if (s.gonderildi) setBasari(s.mesaj);
@@ -53,13 +59,14 @@ export default function PlatformKullanicilari() {
   }
 
   async function calistir(is: () => Promise<void>) {
+    if (isleniyor || !benId) return;
     setIsleniyor(true);
     setHata("");
     setBasari("");
     setBaglanti("");
     try {
       await is();
-      await yukle();
+      yukle();
     } catch (e) {
       setHata(e instanceof Error ? e.message : "İşlem başarısız");
     } finally {
@@ -99,12 +106,13 @@ export default function PlatformKullanicilari() {
   const davetYenile = (k: PlatformKullanici) => void calistir(async () => davetSonucuGoster(await platformApi<DavetSonucu>(`/platform/kullanicilar/${k.id}/davet`, { method: "POST" })));
 
   return (
-    <div className="stack">
+    <div className="stack platform-users">
       <PageHeader
         title="Platform kullanıcıları"
         subtitle="Davetle açılan hesaplar parolasını kendisi belirler ve iki adımlı doğrulamayı kurar. En az bir aktif platform yöneticisi kalır; kimse kendi rolünü değiştiremez."
-        actions={<Button variant="primary" onClick={() => setFormAcik(true)}>Kullanıcı davet et</Button>}
+        actions={<div className="platform-row-actions"><Button disabled={yukleniyor || isleniyor} onClick={yukle}><RefreshCw size={16} aria-hidden="true" />Yenile</Button><Button variant="primary" disabled={kilitli} onClick={() => setFormAcik(true)}><UserPlus size={16} aria-hidden="true" />Kullanıcı davet et</Button></div>}
       />
+      {(kimlikHatasi || (!kimlikYukleniyor && !benId)) && <Alert tone="warning">Oturum kimliği doğrulanamadı. Kullanıcı işlemleri için yeniden deneyin. <Button size="sm" onClick={kimlikYenile}>Kimliği yeniden doğrula</Button></Alert>}
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
       {baglanti && (
@@ -114,46 +122,57 @@ export default function PlatformKullanicilari() {
           </Field>
         </Card>
       )}
-      <Card pad={false}>
-        <TableWrap>
+      <div className="platform-overview platform-user-overview" aria-label="Kullanıcı durumları">{([
+        ["hepsi", "Tüm hesaplar", liste?.length ?? 0],
+        ["aktif", "Aktif", liste?.filter((k) => k.aktif && !k.davetTuru).length ?? 0],
+        ["kurulum", "Kurulum bekliyor", liste?.filter((k) => k.aktif && k.davetTuru).length ?? 0],
+        ["pasif", "Pasif", liste?.filter((k) => !k.aktif).length ?? 0],
+      ] as const).map(([deger, ad, sayi]) => <button key={deger} className={`platform-metric${durumFiltresi === deger ? " is-active" : ""}`} aria-pressed={durumFiltresi === deger} onClick={() => setDurumFiltresi(deger)}><span>{ad}</span><strong>{yukleniyor || listeHatasi ? "—" : sayi}</strong></button>)}</div>
+      <Card title="Ekip ve erişim" pad={false}>
+        <div className="platform-filter-bar">
+          <PlatformArama etiket="Platform kullanıcısı ara" deger={arama} onChange={setArama} placeholder="Ad soyad veya e-posta ara…" />
+          <Field label="Rol filtresi"><Select value={rolFiltresi} onChange={(e) => setRolFiltresi(e.target.value)}><option value="hepsi">Tüm roller</option><option value="yonetici">Platform yöneticisi</option><option value="mevzuat_editoru">Mevzuat editörü</option></Select></Field>
+        </div>
+        <div className="platform-list-caption" role="status">{yukleniyor ? "Kullanıcılar yükleniyor…" : listeHatasi ? "Liste alınamadı" : `${gorunen.length} kullanıcı`}</div>
+        <TableWrap className="platform-responsive-table platform-users-table">
           <table className="table">
-            <thead><tr><th>Ad soyad</th><th>E-posta</th><th>Rol</th><th>Durum</th><th>Son giriş</th><th /></tr></thead>
+            <thead><tr><th>Ad soyad</th><th>E-posta</th><th>Rol</th><th>Durum</th><th>Son giriş</th><th>İşlem</th></tr></thead>
             <tbody>
-              {(liste ?? []).map((k) => {
+              {(!yukleniyor && !listeHatasi ? gorunen : []).map((k) => {
                 const ben = k.id === benId;
                 return (
                   <tr key={k.id}>
-                    <td>{k.adSoyad}{ben && <span className="subtle"> (siz)</span>}</td>
-                    <td>{k.eposta}</td>
-                    <td>
+                    <td data-label="Ad soyad" className="platform-cell-title"><strong>{k.adSoyad}</strong>{ben && <span className="subtle"> (siz)</span>}</td>
+                    <td data-label="E-posta">{k.eposta}</td>
+                    <td data-label="Rol">
                       {ben ? ROL_ADI[k.rol] : (
-                        <Select aria-label={`${k.adSoyad} rolü`} value={k.rol} disabled={isleniyor} onChange={(e) => setOnay({ tur: "rol", k, rol: e.target.value as PlatformRolu })}>
+                        <Select aria-label={`${k.adSoyad} rolü`} value={k.rol} disabled={kilitli} onChange={(e) => setOnay({ tur: "rol", k, rol: e.target.value as PlatformRolu })}>
                           <option value="yonetici">{ROL_ADI.yonetici}</option>
                           <option value="mevzuat_editoru">{ROL_ADI.mevzuat_editoru}</option>
                         </Select>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Durum">
                       {!k.aktif ? <Badge variant="danger">Pasif</Badge>
                         : k.davetTuru === "hesap" ? <Badge variant="warning">Davet bekliyor</Badge>
                         : k.davetTuru === "iki_adim" ? <Badge variant="warning">2FA yeniden kurulacak</Badge>
                         : <Badge variant="success">Aktif</Badge>}
                       {k.davetTuru && k.davetSonGecerlilik && new Date(k.davetSonGecerlilik) < new Date() && <span className="subtle"> · bağlantı süresi doldu</span>}
                     </td>
-                    <td className="subtle" style={{ whiteSpace: "nowrap" }}>{zaman(k.sonGiris)}</td>
-                    <td>
+                    <td data-label="Son giriş" className="subtle">{zaman(k.sonGiris)}</td>
+                    <td data-label="İşlem">
                       {!ben && (
-                        <div className="row-tight" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                          {k.aktif && k.davetTuru && <Button size="sm" disabled={isleniyor} onClick={() => davetYenile(k)}>Bağlantıyı yeniden gönder</Button>}
-                          {k.aktif && k.davetTuru !== "hesap" && <Button size="sm" disabled={isleniyor} onClick={() => setOnay({ tur: "iki-adim", k })}>2FA sıfırla</Button>}
-                          <Button size="sm" variant={k.aktif ? "danger" : "ghost"} disabled={isleniyor} onClick={() => setOnay({ tur: "aktif", k, aktif: !k.aktif })}>{k.aktif ? "Pasife al" : "Aktif et"}</Button>
+                        <div className="platform-row-actions">
+                          {k.aktif && k.davetTuru && <Button size="sm" disabled={kilitli} onClick={() => davetYenile(k)}>Bağlantıyı yeniden gönder</Button>}
+                          {k.aktif && k.davetTuru !== "hesap" && <Button size="sm" disabled={kilitli} onClick={() => setOnay({ tur: "iki-adim", k })}>2FA sıfırla</Button>}
+                          <Button size="sm" variant={k.aktif ? "danger" : "ghost"} disabled={kilitli} onClick={() => setOnay({ tur: "aktif", k, aktif: !k.aktif })}>{k.aktif ? "Pasife al" : "Aktif et"}</Button>
                         </div>
                       )}
                     </td>
                   </tr>
                 );
               })}
-              {liste && !liste.length && <tr><td colSpan={6}>Kayıt yok.</td></tr>}
+              <PlatformListeDurumu sutun={6} yukleniyor={yukleniyor} hata={listeHatasi} bos={!gorunen.length} baslik="Eşleşen kullanıcı yok." aciklama="Arama metnini, durumu veya rol filtresini değiştirin." onTekrar={yukle} />
             </tbody>
           </table>
         </TableWrap>
@@ -162,7 +181,7 @@ export default function PlatformKullanicilari() {
       {formAcik && (
         <Modal baslik="Platform kullanıcısı davet et" aciklama="Kullanıcıya parolasını belirleyip iki adımlı doğrulamayı kuracağı bir bağlantı gider." onKapat={() => setFormAcik(false)}>
           <form onSubmit={olustur} className="stack">
-            <Field label="Ad soyad"><Input required minLength={2} value={adSoyad} onChange={(e) => setAdSoyad(e.target.value)} /></Field>
+            <Field label="Ad soyad"><Input autoFocus required minLength={2} value={adSoyad} onChange={(e) => setAdSoyad(e.target.value)} /></Field>
             <Field label="E-posta"><Input type="email" required value={eposta} onChange={(e) => setEposta(e.target.value)} /></Field>
             <Field label="Rol">
               <Select value={rol} onChange={(e) => setRol(e.target.value as PlatformRolu)}>

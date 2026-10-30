@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw, Activity } from "lucide-react";
 import { Alert, Badge, Button, Card, PageHeader, Stat, StatGrid, TableWrap } from "@/components/ui";
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
 
@@ -30,19 +31,34 @@ const sure = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${ms} ms
  */
 export default function PlatformSistemSagligi() {
   const [v, setV] = useState<Saglik | null>(null);
+  const [listeHatasi, setListeHatasi] = useState("");
+  const [yenileniyor, setYenileniyor] = useState(true);
+  const kontrol = useRef<AbortController | null>(null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState("");
 
-  const yukle = useCallback(async () => setV(await platformApi<Saglik>("/platform/sistem-sagligi")), []);
+  const yukle = useCallback(async () => {
+    kontrol.current?.abort();
+    const istek = new AbortController();
+    kontrol.current = istek;
+    setYenileniyor(true);
+    try {
+      const sonuc = await platformApi<Saglik>("/platform/sistem-sagligi", { signal: istek.signal });
+      if (!istek.signal.aborted) { setV(sonuc); setListeHatasi(""); }
+    } catch (e) {
+      if (!istek.signal.aborted) setListeHatasi(e instanceof Error ? e.message : "Sistem ölçümleri alınamadı.");
+    } finally { if (!istek.signal.aborted) setYenileniyor(false); }
+  }, []);
   useEffect(() => {
     if (!platformTokenAl()) return;
-    void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Yüklenemedi"));
-    const t = setInterval(() => void yukle().catch(() => undefined), 60_000);
-    return () => clearInterval(t);
+    void yukle();
+    const t = setInterval(() => void yukle(), 60_000);
+    return () => { clearInterval(t); kontrol.current?.abort(); };
   }, [yukle]);
 
   async function yenidenDene(id: string) {
+    if (islem) return;
     setIslem(id); setHata(""); setBasari("");
     try { setBasari((await platformApi<{ mesaj: string }>(`/platform/sistem-sagligi/olu-isler/${encodeURIComponent(id)}/yeniden-dene`, { method: "POST" })).mesaj); await yukle(); }
     catch (e) { setHata(e instanceof Error ? e.message : "Yeniden kuyruğa alınamadı"); }
@@ -51,18 +67,21 @@ export default function PlatformSistemSagligi() {
 
   const acikAlarmlar = v?.alarmlar.filter((a) => a.acik) ?? [];
   const nabizGec = v?.worker.nabizGecikmesiDk !== null && v?.worker.nabizGecikmesiDk !== undefined && v.worker.nabizGecikmesiDk > v.esikler.workerNabizDk;
-  const bellekOrani = v?.worker.son?.heapMb && v.worker.son.heapSinirMb ? Math.round((v.worker.son.heapMb / v.worker.son.heapSinirMb) * 100) : null;
+  const bellekOrani = v?.worker.son?.heapMb !== null && v?.worker.son?.heapMb !== undefined && v.worker.son.heapSinirMb ? Math.round((v.worker.son.heapMb / v.worker.son.heapSinirMb) * 100) : null;
 
   return <>
-    <PageHeader title="Sistem sağlığı" subtitle="Worker, zamanlayıcılar, e-belge kuyruğu, gelen taramaları ve bağlantılar. Sorunlar platform yöneticilerine e-postayla bildirilir; sayfa dakikada bir yenilenir." />
+    <PageHeader title="Sistem sağlığı" subtitle="Arka plan işlerini, e-belge kuyruğunu ve bağlantı sorunlarını izleyin. Sorunlar platform yöneticilerine e-postayla bildirilir." actions={<Button disabled={yenileniyor || Boolean(islem)} onClick={() => void yukle()}><RefreshCw size={16} aria-hidden="true" />{yenileniyor ? "Yenileniyor…" : "Şimdi yenile"}</Button>} />
+    <div className="platform-health-status"><Activity size={16} aria-hidden="true" /><span>Son ölçüm: <strong>{v ? zaman(v.zaman) : "Henüz alınmadı"}</strong></span><span>60 saniyede bir yenilenir.</span></div>
+    {listeHatasi && <Alert tone="error">{listeHatasi} <Button size="sm" disabled={yenileniyor} onClick={() => void yukle()}>Tekrar dene</Button></Alert>}
+    {!v && !listeHatasi && <Card><div className="platform-empty" role="status"><Activity size={26} aria-hidden="true" /><strong>Sistem ölçümleri yükleniyor…</strong></div></Card>}
     <Alert tone="error">{hata}</Alert>
     {basari && <Alert tone="success">{basari}</Alert>}
-    {v && <div className="stack">
-      {acikAlarmlar.length > 0
+    {v && <div className="stack platform-health">
+      {listeHatasi ? <Alert tone="warning">Güncel ölçümler alınamadı. Aşağıdaki bilgiler son başarılı ölçüme aittir.</Alert> : acikAlarmlar.length > 0
         ? <Alert tone="warning"><strong>{acikAlarmlar.length} açık sorun:</strong><ul style={{ margin: "0.4rem 0 0", paddingLeft: "1.2rem" }}>{acikAlarmlar.map((a) => <li key={a.anahtar}>{a.ozet} <span className="subtle">({zaman(a.ilkAt)}’den beri)</span></li>)}</ul></Alert>
         : <Alert tone="success">Açık sorun yok.</Alert>}
       <StatGrid>
-        <Stat label="Worker son nabız" value={v.worker.son ? `${v.worker.nabizGecikmesiDk} dk önce` : "Kayıt yok"} tone={nabizGec ? "danger" : undefined} />
+        <Stat label="Worker son nabız" value={v.worker.son && v.worker.nabizGecikmesiDk !== null ? `${v.worker.nabizGecikmesiDk} dk önce` : "Kayıt yok"} tone={nabizGec ? "danger" : undefined} />
         <Stat label="Worker açılışı (24 saat)" value={v.worker.acilis24s} tone={v.worker.acilis24s > 2 ? "accent" : undefined} />
         <Stat label="Worker belleği" value={v.worker.son ? `${v.worker.son.heapMb ?? "—"} / ${v.worker.son.heapSinirMb ?? "—"} MB` : "—"} tone={bellekOrani !== null && bellekOrani >= 85 ? "danger" : undefined} />
         <Stat label="Kuyruktan düşen iş" value={v.kuyruk.oluIsler.length} tone={v.kuyruk.oluIsler.length ? "danger" : undefined} />
@@ -70,30 +89,30 @@ export default function PlatformSistemSagligi() {
       </StatGrid>
 
       {v.kuyruk.oluIsler.length > 0 && <Card title="Kuyruktan düşen işler" pad={false}>
-        <TableWrap>
-          <thead><tr><th>Zaman</th><th>Firma</th><th>İş</th><th>Hata</th><th /></tr></thead>
-          <tbody>{v.kuyruk.oluIsler.map((o) => <tr key={o.id}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{zaman(o.zaman)}</td><td>{o.unvan}</td><td className="mono">{o.isTuru}</td><td>{o.hata}</td><td><Button size="sm" disabled={Boolean(islem)} onClick={() => void yenidenDene(o.id)}>{islem === o.id ? "Alınıyor…" : "Yeniden kuyruğa al"}</Button></td></tr>)}</tbody>
+        <TableWrap className="platform-responsive-table platform-health-table">
+          <thead><tr><th>Zaman</th><th>Firma</th><th>İş</th><th>Hata</th><th>İşlem</th></tr></thead>
+          <tbody>{v.kuyruk.oluIsler.map((o) => <tr key={o.id}><td data-label="Zaman" className="subtle">{zaman(o.zaman)}</td><td data-label="Firma" className="platform-cell-title">{o.unvan}</td><td data-label="İş" className="mono">{o.isTuru}</td><td data-label="Hata">{o.hata}</td><td data-label="İşlem"><Button size="sm" disabled={Boolean(islem)} onClick={() => void yenidenDene(o.id)}>{islem === o.id ? "Alınıyor…" : "Yeniden kuyruğa al"}</Button></td></tr>)}</tbody>
         </TableWrap>
       </Card>}
 
       {v.gecikenKursorler.length > 0 && <Card title={`Gelen taraması ${v.esikler.kursorSaat} saatten uzun süredir bitmeyen firmalar`} pad={false}>
-        <TableWrap>
+        <TableWrap className="platform-responsive-table platform-health-table">
           <thead><tr><th>Firma</th><th>Sağlayıcı</th><th>Son başarılı tarama</th></tr></thead>
-          <tbody>{v.gecikenKursorler.map((k) => <tr key={k.tenantId}><td>{k.unvan}</td><td>{k.saglayici}</td><td>{k.sonCekimAt ? zaman(k.sonCekimAt) : <Badge variant="warning">Hiç tamamlanmadı</Badge>}</td></tr>)}</tbody>
+          <tbody>{v.gecikenKursorler.map((k) => <tr key={k.tenantId}><td data-label="Firma" className="platform-cell-title">{k.unvan}</td><td data-label="Sağlayıcı">{k.saglayici}</td><td data-label="Son başarılı tarama">{k.sonCekimAt ? zaman(k.sonCekimAt) : <Badge variant="warning">Hiç tamamlanmadı</Badge>}</td></tr>)}</tbody>
         </TableWrap>
       </Card>}
 
       <Card title="Zamanlayıcılar" pad={false}>
-        <TableWrap>
+        <TableWrap className="platform-responsive-table platform-health-table">
           <thead><tr><th>İş</th><th>Son çalışma</th><th className="num">Süre</th><th>Son başarı</th><th>Son hata</th><th className="num">Çalışma</th></tr></thead>
           <tbody>
             {v.isler.map((i) => <tr key={i.isAdi}>
-              <td className="mono">{i.isAdi}{i.ardisikHata > 0 && <div style={{ marginTop: 4 }}><Badge variant={i.ardisikHata >= v.esikler.ardisikHata ? "danger" : "warning"}>{i.ardisikHata} ardışık hata</Badge></div>}</td>
-              <td className="subtle" style={{ whiteSpace: "nowrap" }}>{zaman(i.sonBaslangic)}</td>
-              <td className="num">{sure(i.sonSureMs)}</td>
-              <td className="subtle" style={{ whiteSpace: "nowrap" }}>{zaman(i.sonBasariAt)}</td>
-              <td>{i.sonHata ? <><span className="subtle">{zaman(i.sonHataAt)}</span><div style={{ fontSize: "0.85rem" }}>{i.sonHata}</div></> : "—"}</td>
-              <td className="num">{i.calismaSayisi}</td>
+              <td data-label="İş" className="mono platform-cell-title">{i.isAdi}{i.ardisikHata > 0 && <div style={{ marginTop: 4 }}><Badge variant={i.ardisikHata >= v.esikler.ardisikHata ? "danger" : "warning"}>{i.ardisikHata} ardışık hata</Badge></div>}</td>
+              <td data-label="Son çalışma" className="subtle">{zaman(i.sonBaslangic)}</td>
+              <td data-label="Süre" className="num">{sure(i.sonSureMs)}</td>
+              <td data-label="Son başarı" className="subtle">{zaman(i.sonBasariAt)}</td>
+              <td data-label="Son hata">{i.sonHata ? <><span className="subtle">{zaman(i.sonHataAt)}</span><div style={{ fontSize: "0.85rem" }}>{i.sonHata}</div></> : "—"}</td>
+              <td data-label="Çalışma" className="num">{i.calismaSayisi}</td>
             </tr>)}
             {!v.isler.length && <tr><td colSpan={6} className="empty">Henüz nabız kaydı yok.</td></tr>}
           </tbody>
@@ -101,21 +120,23 @@ export default function PlatformSistemSagligi() {
       </Card>
 
       <Card title="e-Belge kuyruğu" pad={false}>
-        <div className="subtle" style={{ padding: "0.75rem 1rem 0" }}>Bekleyen {v.kuyruk.sayilar.waiting ?? 0} · çalışan {v.kuyruk.sayilar.active ?? 0} · ertelenen {v.kuyruk.sayilar.delayed ?? 0} · başarısız {v.kuyruk.sayilar.failed ?? 0}</div>
-        <TableWrap>
+        <div className="subtle" style={{ padding: "0 1.25rem 1rem" }}>Bekleyen {v.kuyruk.sayilar.waiting ?? 0} · çalışan {v.kuyruk.sayilar.active ?? 0} · ertelenen {v.kuyruk.sayilar.delayed ?? 0} · başarısız {v.kuyruk.sayilar.failed ?? 0}</div>
+        <TableWrap className="platform-responsive-table platform-health-table">
           <thead><tr><th>Firma</th><th className="num">Bekleyen</th><th className="num">Çalışan</th><th className="num">Ertelenen</th><th className="num">Başarısız</th></tr></thead>
           <tbody>
-            {v.kuyruk.firmalar.slice(0, 50).map((f) => <tr key={f.tenantId}><td>{f.unvan}</td><td className="num">{f.waiting ?? 0}</td><td className="num">{f.active ?? 0}</td><td className="num">{f.delayed ?? 0}</td><td className="num">{f.failed ?? 0}</td></tr>)}
+            {v.kuyruk.firmalar.slice(0, 50).map((f) => <tr key={f.tenantId}><td data-label="Firma" className="platform-cell-title">{f.unvan}</td><td data-label="Bekleyen" className="num">{f.waiting ?? 0}</td><td data-label="Çalışan" className="num">{f.active ?? 0}</td><td data-label="Ertelenen" className="num">{f.delayed ?? 0}</td><td data-label="Başarısız" className="num">{f.failed ?? 0}</td></tr>)}
             {!v.kuyruk.firmalar.length && <tr><td colSpan={5} className="empty">Kuyrukta iş yok.</td></tr>}
           </tbody>
         </TableWrap>
+        {v.kuyruk.firmalar.length > 50 && <p className="platform-list-caption">{v.kuyruk.firmalar.length} firmadan ilk 50 kayıt gösteriliyor.</p>}
       </Card>
 
       {v.baglantilar.length > 0 && <Card title="Hata veren bağlantılar" pad={false}>
-        <TableWrap>
+        <TableWrap className="platform-responsive-table platform-health-table">
           <thead><tr><th>Firma</th><th>Bağlantı</th><th>Durum</th><th className="num">Ardışık hata</th><th>Son senkron</th><th>Hata</th></tr></thead>
-          <tbody>{v.baglantilar.slice(0, 100).map((b, n) => <tr key={`${b.tenantId}-${b.aile}-${n}`}><td>{b.unvan}</td><td>{b.aile} · {b.saglayici}</td><td><Badge variant={b.durum === "hata" ? "danger" : "warning"}>{b.durum}</Badge></td><td className="num">{b.ardisikHata}</td><td className="subtle">{zaman(b.sonSenkron)}</td><td style={{ fontSize: "0.85rem" }}>{b.hata ?? "—"}</td></tr>)}</tbody>
+          <tbody>{v.baglantilar.slice(0, 100).map((b, n) => <tr key={`${b.tenantId}-${b.aile}-${n}`}><td data-label="Firma" className="platform-cell-title">{b.unvan}</td><td data-label="Bağlantı">{b.aile} · {b.saglayici}</td><td data-label="Durum"><Badge variant={b.durum === "hata" ? "danger" : "warning"}>{b.durum}</Badge></td><td data-label="Ardışık hata" className="num">{b.ardisikHata}</td><td data-label="Son senkron" className="subtle">{zaman(b.sonSenkron)}</td><td data-label="Hata">{b.hata ?? "—"}</td></tr>)}</tbody>
         </TableWrap>
+        {v.baglantilar.length > 100 && <p className="platform-list-caption">{v.baglantilar.length} bağlantıdan ilk 100 kayıt gösteriliyor.</p>}
       </Card>}
 
       <Card title="Süreçler">

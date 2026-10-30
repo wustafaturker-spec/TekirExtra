@@ -6308,6 +6308,8 @@ model PlatformKullanici {
   createdAt          DateTime    @default(now()) @map("created_at")
   updatedAt          DateTime    @updatedAt @map("updated_at")
 
+  olusturulanGorevler PlatformGorev[] @relation("GoreviOlusturan")
+  sorumluGorevler PlatformGorev[] @relation("GorevSorumlusu")
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari                PlatformAiTavani[]
   abonelikSaglayiciAyarlari  AbonelikSaglayiciAyari[]
@@ -6369,6 +6371,7 @@ model MevzuatDegisiklik {
   kayitlar         MevzuatKayit[]
   olaylar          MevzuatOlay[]
   kabulSenaryolari MevzuatKabulSenaryosu[]
+  gorevler PlatformGorev[]
 
   @@index([durum, yayinZamani])
   @@map("mevzuat_degisiklikleri")
@@ -7369,4 +7372,48 @@ model AbonelikFaturasi {
 
   @@index([odeyenTenantId], map: "abonelik_faturalari_odeyen_idx")
   @@map("abonelik_faturalari")
+}
+
+enum PlatformGorevKapsami {
+  mevzuat
+  platform
+}
+
+enum PlatformGorevDurumu {
+  acik
+  devam_ediyor
+  tamamlandi
+  iptal
+}
+
+enum PlatformGorevOnceligi {
+  dusuk
+  normal
+  yuksek
+}
+
+/// Platform ekibinin kalıcı görevleri. Kiracı bağlantısına açılmaz.
+model PlatformGorev {
+  id String @id @default(uuid()) @db.Uuid
+  baslik String @db.VarChar(200)
+  aciklama String? @db.VarChar(4000)
+  kapsam PlatformGorevKapsami @default(mevzuat)
+  durum PlatformGorevDurumu @default(acik)
+  oncelik PlatformGorevOnceligi @default(normal)
+  sonTarih DateTime? @map("son_tarih") @db.Date
+  sorumluId String? @map("sorumlu_id") @db.Uuid
+  olusturanId String @map("olusturan_id") @db.Uuid
+  degisiklikId String? @map("degisiklik_id") @db.Uuid
+  surum Int @default(1)
+  kapanisAt DateTime? @map("kapanis_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sorumlu PlatformKullanici? @relation("GorevSorumlusu", fields: [sorumluId], references: [id], onDelete: SetNull)
+  olusturan PlatformKullanici @relation("GoreviOlusturan", fields: [olusturanId], references: [id], onDelete: Restrict)
+  degisiklik MevzuatDegisiklik? @relation(fields: [degisiklikId], references: [id], onDelete: SetNull)
+
+  @@index([kapsam, durum, sonTarih])
+  @@index([sorumluId, durum])
+  @@map("platform_gorevleri")
 }

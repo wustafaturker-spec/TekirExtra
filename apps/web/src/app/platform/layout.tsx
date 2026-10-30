@@ -3,22 +3,25 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { Menu, X, LogOut, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui";
 import { platformApi, platformCikis, platformTokenAl } from "@/lib/platform-api";
 
-type PlatformRolu = "yonetici" | "mevzuat_editoru";
+import { PlatformOturumuBaglami, type PlatformRolu } from "@/lib/platform-oturumu";
 
 /** PLT-06: `yalnizYonetici` sayfaları mevzuat editörüne gösterilmez (API de 403 döner). */
 const MENU = [
-  { href: "/platform/firmalar", baslik: "Firmalar", yalnizYonetici: true },
-  { href: "/platform", baslik: "Değişiklikler" },
-  { href: "/platform/tablolar", baslik: "Yürürlükteki değerler" },
-  { href: "/platform/talepler", baslik: "Talepler" },
-  { href: "/platform/denetim", baslik: "Denetim izi" },
-  { href: "/platform/odeme", baslik: "Abonelik ödemesi", yalnizYonetici: true },
-  { href: "/platform/sistem-sagligi", baslik: "Sistem sağlığı", yalnizYonetici: true },
-  { href: "/platform/yapay-zeka", baslik: "Yapay zekâ tavanı", yalnizYonetici: true },
-  { href: "/platform/kullanicilar", baslik: "Kullanıcılar", yalnizYonetici: true },
+  { href: "/platform/ozet", baslik: "Yönetim özeti", ikon: LayoutDashboard },
+  { href: "/platform/gorevler", baslik: "Görev merkezi", ikon: ListTodo },
+  { href: "/platform/firmalar", ikon: Building2, baslik: "Firmalar", yalnizYonetici: true },
+  { href: "/platform", ikon: FilePenLine, baslik: "Değişiklikler" },
+  { href: "/platform/tablolar", ikon: Table2, baslik: "Yürürlükteki değerler" },
+  { href: "/platform/talepler", ikon: Inbox, baslik: "Talepler" },
+  { href: "/platform/denetim", ikon: History, baslik: "Denetim izi" },
+  { href: "/platform/odeme", ikon: CreditCard, baslik: "Abonelik ödemesi", yalnizYonetici: true },
+  { href: "/platform/sistem-sagligi", ikon: Activity, baslik: "Sistem sağlığı", yalnizYonetici: true },
+  { href: "/platform/yapay-zeka", ikon: Sparkles, baslik: "Yapay zekâ tavanı", yalnizYonetici: true },
+  { href: "/platform/kullanicilar", ikon: Users, baslik: "Kullanıcılar", yalnizYonetici: true },
 ];
 
 const ROL_ADI: Record<PlatformRolu, string> = { yonetici: "Platform yöneticisi", mevzuat_editoru: "Mevzuat editörü" };
@@ -30,37 +33,67 @@ const ROL_ADI: Record<PlatformRolu, string> = { yonetici: "Platform yöneticisi"
 export default function PlatformYerlesimi({ children }: { children: ReactNode }) {
   const yol = usePathname();
   const yonlendir = useRouter();
+  const [menuAcik, setMenuAcik] = useState(false);
+  const [kimlikHatasi, setKimlikHatasi] = useState(false);
+  const [tekrar, setTekrar] = useState(0);
   const [ben, setBen] = useState<{ eposta: string; rol: PlatformRolu } | null>(null);
   // PLT-07: davet sayfası da oturumsuz, panel çerçevesi olmadan açılır.
   const girisSayfasi = yol === "/platform/giris" || yol === "/platform/davet";
 
   useEffect(() => {
-    if (girisSayfasi) return;
+    if (girisSayfasi) { setBen(null); return; }
     if (!platformTokenAl()) { yonlendir.replace("/platform/giris"); return; }
-    void platformApi<{ eposta: string; rol?: PlatformRolu }>("/platform/auth/ben").then((b) => setBen({ eposta: b.eposta, rol: b.rol ?? "yonetici" })).catch(() => undefined);
-  }, [girisSayfasi, yonlendir]);
-
+    const kontrol = new AbortController();
+    setKimlikHatasi(false);
+    void platformApi<{ eposta: string; rol?: PlatformRolu }>("/platform/auth/ben", { signal: kontrol.signal })
+      .then((b) => { if (!kontrol.signal.aborted) setBen({ eposta: b.eposta, rol: b.rol ?? "yonetici" }); })
+      .catch(() => { if (!kontrol.signal.aborted) setKimlikHatasi(true); });
+    return () => kontrol.abort();
+  }, [girisSayfasi, yonlendir, tekrar]);
   const editor = ben?.rol === "mevzuat_editoru";
   const menu = MENU.filter((m) => !(editor && m.yalnizYonetici));
   const yasakSayfa = editor && MENU.some((m) => m.yalnizYonetici && yol.startsWith(m.href));
+  useEffect(() => { if (yasakSayfa) yonlendir.replace("/platform"); }, [yasakSayfa, yonlendir]);
+  useEffect(() => { setMenuAcik(false); }, [yol]);
   useEffect(() => {
-    if (yasakSayfa) yonlendir.replace("/platform");
-  }, [yasakSayfa, yonlendir]);
-
+    if (!menuAcik) return;
+    const kapat = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuAcik(false); };
+    document.addEventListener("keydown", kapat);
+    return () => document.removeEventListener("keydown", kapat);
+  }, [menuAcik]);
   if (girisSayfasi) return <>{children}</>;
+  if (!ben) return <main className="platform-session" aria-live="polite"><ShieldCheck size={32} /><h1>Mevzuat Merkezi</h1><p>{kimlikHatasi ? "Oturum bilgileri alınamadı." : "Oturumunuz doğrulanıyor…"}</p>{kimlikHatasi && <Button onClick={() => setTekrar((v) => v + 1)}>Tekrar dene</Button>}</main>;
+  const aktif = (href: string) => href === "/platform" ? yol === href || yol.startsWith("/platform/degisiklik") : yol.startsWith(href);
+  const bolumler = [
+    { ad: "Genel bakış", yollar: ["/platform/ozet", "/platform/gorevler"] },
+    { ad: "Mevzuat yönetimi", yollar: ["/platform", "/platform/tablolar", "/platform/talepler", "/platform/denetim"] },
+    { ad: "Platform yönetimi", yollar: ["/platform/firmalar", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
+  ];
   return (
     <div className="platform-shell">
-      <header className="platform-header">
-        <div className="platform-header__brand"><span className="auth-brand-mark">TE</span><strong>Mevzuat Merkezi</strong><span className="muted">Platform paneli</span></div>
-        <nav className="platform-header__nav" aria-label="Platform menüsü">
-          {menu.map((m) => <Link key={m.href} href={m.href} className={(m.href === "/platform" ? yol === "/platform" || yol.startsWith("/platform/degisiklik") : yol.startsWith(m.href)) ? "is-active" : undefined}>{m.baslik}</Link>)}
+      <a className="platform-skip" href="#platform-icerik">İçeriğe geç</a>
+      <aside id="platform-menu" className={`platform-sidebar${menuAcik ? " is-open" : ""}`} aria-label="Platform gezinmesi">
+        <Link href="/platform/ozet" className="platform-brand"><span className="auth-brand-mark">TE</span><span><strong>Mevzuat Merkezi</strong><small>TekirExtra · Platform</small></span></Link>
+        <nav aria-label="Platform menüsü">
+          {bolumler.map((b) => {
+            const ogeler = menu.filter((m) => b.yollar.includes(m.href));
+            return ogeler.length > 0 && <div className="platform-nav-group" key={b.ad}><p>{b.ad}</p>{ogeler.map((m) => {
+              const Icon = m.ikon;
+              return <Link key={m.href} href={m.href} onClick={() => setMenuAcik(false)} aria-current={aktif(m.href) ? "page" : undefined} className={aktif(m.href) ? "is-active" : undefined}><Icon size={18} aria-hidden="true" />{m.baslik}</Link>;
+            })}</div>;
+          })}
         </nav>
-        <div className="row-tight">
-          {ben && <span className="muted">{ben.eposta} · {ROL_ADI[ben.rol]}</span>}
-          <Button size="sm" onClick={() => { void platformCikis().then(() => yonlendir.replace("/platform/giris")); }}>Çıkış</Button>
-        </div>
-      </header>
-      <main className="platform-main">{yasakSayfa ? null : children}</main>
+        <div className="platform-sidebar-note"><ShieldCheck size={18} /><span>Kontrollü yayın süreci<small>Hazırlama, onay ve denetim tek yerde.</small></span></div>
+      </aside>
+      {menuAcik && <button className="platform-backdrop" aria-label="Menüyü kapat" onClick={() => setMenuAcik(false)} />}
+      <div className="platform-workspace">
+        <header className="platform-topbar">
+          <Button className="platform-menu-toggle" aria-label={menuAcik ? "Menüyü kapat" : "Menüyü aç"} aria-expanded={menuAcik} aria-controls="platform-menu" onClick={() => setMenuAcik(!menuAcik)}>{menuAcik ? <X size={20} /> : <Menu size={20} />}</Button>
+          <div className="platform-breadcrumb">Platform <span>/</span> <strong>{MENU.find((m) => aktif(m.href))?.baslik ?? "Değişiklik detayı"}</strong></div>
+          <div className="platform-account"><span className="platform-avatar" aria-hidden="true">{ben.eposta.slice(0, 1).toLocaleUpperCase("tr-TR")}</span><div><strong>{ben.eposta}</strong><small>{ROL_ADI[ben.rol]}</small></div><Button size="sm" aria-label="Çıkış" data-platform-navigation onClick={() => { void platformCikis().then(() => yonlendir.replace("/platform/giris")); }}><LogOut size={16} aria-hidden="true" /><span>Çıkış</span></Button></div>
+        </header>
+        <main id="platform-icerik" className="platform-main" tabIndex={-1}><PlatformOturumuBaglami.Provider value={ben}>{yasakSayfa ? null : children}</PlatformOturumuBaglami.Provider></main>
+      </div>
     </div>
   );
 }

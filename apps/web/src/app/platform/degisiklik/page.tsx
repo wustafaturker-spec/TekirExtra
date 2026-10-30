@@ -1,8 +1,10 @@
 "use client";
 
+import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { useKaydedilmemisUyarisi } from "@/lib/use-kaydedilmemis-uyarisi";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { MEVZUAT_TUR_TANIMLARI, MEVZUAT_TURLERI, dilimMetni, dilimleriCoz, mevzuatDegerHatalari, mevzuatDegerOzeti, type MevzuatTuru } from "@tekirextra/shared";
 import { KabulSenaryolari, type KabulSenaryosu } from "./kabul-senaryolari";
@@ -49,33 +51,65 @@ function degereCevir(s: TaslakSatir): Record<string, unknown> | null {
   return deger;
 }
 
-function DegisiklikDetayi() {
-  const id = useSearchParams().get("id") ?? "";
+function DegisiklikDetayi({ id }: { id: string }) {
   const yonlendir = useRouter();
   const [d, setD] = useState<Detay | null>(null);
   const [satirlar, setSatirlar] = useState<TaslakSatir[]>([]);
   const [degisti, setDegisti] = useState(false);
+  const [bilgi, setBilgi] = useState({ baslik: "", dayanak: "", yururlukBaslangic: "", aciklama: "" });
+  const [senaryoDegisti, setSenaryoDegisti] = useState(false);
+  const [senaryoIslem, setSenaryoIslem] = useState(false);
+  const [yukleniyor, setYukleniyor] = useState(true);
   const [gerekce, setGerekce] = useState("");
   const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [islem, setIslem] = useState(false);
 
-  const yansit = useCallback((v: Detay) => { setD(v); setSatirlar(v.satirlar.map(taslagaCevir)); setDegisti(false); }, []);
-  const yukle = useCallback(async () => yansit(await platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`)), [id, yansit]);
-  useEffect(() => { if (id && platformTokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Yüklenemedi")); }, [id, yukle]);
+  const bilgiDegisti = Boolean(d && (bilgi.baslik !== d.baslik || bilgi.dayanak !== d.dayanak || bilgi.yururlukBaslangic !== d.yururlukBaslangic || bilgi.aciklama !== (d.aciklama ?? "")));
+  const kirliAlanlar = useRef({ bilgi: false, kalem: false });
+  kirliAlanlar.current = { bilgi: bilgiDegisti, kalem: degisti };
+  const kaydedilmedi = degisti || bilgiDegisti || senaryoDegisti;
+  useKaydedilmemisUyarisi(kaydedilmedi);
+  const yansit = useCallback((v: Detay, bolum: "hepsi" | "bilgi" | "kalem" | "senaryo" = "hepsi") => {
+    setD(v);
+    if (bolum === "hepsi" || bolum === "kalem" || !kirliAlanlar.current.kalem) { setSatirlar(v.satirlar.map(taslagaCevir)); setDegisti(false); }
+    if (bolum === "hepsi" || bolum === "bilgi" || !kirliAlanlar.current.bilgi) setBilgi({ baslik: v.baslik, dayanak: v.dayanak, yururlukBaslangic: v.yururlukBaslangic, aciklama: v.aciklama ?? "" });
+  }, []);
+  const yukle = useCallback(async (signal?: AbortSignal) => {
+    setYukleniyor(true); setHata("");
+    try { const v = await platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`, { signal }); if (!signal?.aborted) yansit(v); }
+    catch (e) { if (!signal?.aborted) setHata(e instanceof Error ? e.message : "Değişiklik yüklenemedi."); }
+    finally { if (!signal?.aborted) setYukleniyor(false); }
+  }, [id, yansit]);
+  useEffect(() => {
+    if (!id || !platformTokenAl()) return;
+    const kontrol = new AbortController();
+    void yukle(kontrol.signal);
+    return () => kontrol.abort();
+  }, [id, yukle]);
 
-  async function calis(is: () => Promise<Detay | void>, mesaj: string) {
+  async function calis(is: () => Promise<Detay>, mesaj: string, bolum: "hepsi" | "bilgi" | "kalem" = "hepsi") {
+    if (islem || senaryoIslem) return;
     setIslem(true); setHata(""); setBasari("");
-    try { const v = await is(); if (v) yansit(v); else await yukle(); setBasari(mesaj); } catch (h) { setHata(h instanceof Error ? h.message : "İşlem başarısız"); } finally { setIslem(false); }
+    try { yansit(await is(), bolum); setBasari(mesaj); }
+    catch (h) { setHata(h instanceof Error ? h.message : "İşlem başarısız."); }
+    finally { setIslem(false); }
+  }
+  async function taslagiSil() {
+    if (islem || senaryoIslem || !window.confirm("Taslak silinsin mi?")) return;
+    setIslem(true); setHata("");
+    try { await platformApi(`/platform/mevzuat/degisiklikler/${id}`, { method: "DELETE" }); yonlendir.replace("/platform"); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Taslak silinemedi."); }
+    finally { setIslem(false); }
   }
   const post = (yol: string, govde?: unknown) => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}/${yol}`, { method: "POST", body: govde ? JSON.stringify(govde) : undefined });
 
   function bilgiKaydet(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const v = new FormData(e.currentTarget);
-    void calis(() => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`, { method: "PATCH", body: JSON.stringify({ baslik: v.get("baslik"), dayanak: v.get("dayanak"), yururlukBaslangic: v.get("yururlukBaslangic"), aciklama: v.get("aciklama") || null }) }), "Bilgiler kaydedildi.");
+    void calis(() => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`, { method: "PATCH", body: JSON.stringify({ baslik: v.get("baslik"), dayanak: v.get("dayanak"), yururlukBaslangic: v.get("yururlukBaslangic"), aciklama: v.get("aciklama") || null }) }), "Bilgiler kaydedildi.", "bilgi");
   }
   const satirlariKaydet = () => calis(() => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}/satirlar`, {
     method: "PUT", body: JSON.stringify({ satirlar: satirlar.map((s) => ({ tur: s.tur, anahtar: s.anahtar.trim(), islem: s.islem, deger: degereCevir(s) })) }),
-  }), "Kalemler kaydedildi.");
+  }), "Kalemler kaydedildi.", "kalem");
   const guncelle = (i: number, ek: Partial<TaslakSatir>) => { setSatirlar((eski) => eski.map((s, j) => (j === i ? { ...s, ...ek } : s))); setDegisti(true); };
   const satirEkle = () => { setSatirlar((eski) => [...eski, { tur: "tevkifat_kodu", anahtar: "", islem: "ekle", alanlar: {} }]); setDegisti(true); };
   /** Tek anahtarlı türde (bordro) anahtar kendiliğinden seçilir; yürürlükteki değer düzenlemeye başlangıç olur. */
@@ -92,7 +126,7 @@ function DegisiklikDetayi() {
   const satirSil = (i: number) => { setSatirlar((eski) => eski.filter((_, j) => j !== i)); setDegisti(true); };
 
   if (!id) return <Alert tone="error">Değişiklik seçilmedi.</Alert>;
-  if (!d) return <><Alert tone="error">{hata}</Alert><p className="muted">Yükleniyor…</p></>;
+  if (!d) return <Card title="Mevzuat değişikliği">{yukleniyor ? <p className="muted" role="status">Değişiklik yükleniyor…</p> : <><Alert tone="error">{hata}</Alert><Button onClick={() => void yukle()}>Tekrar dene</Button></>}<p><Link href="/platform">Değişikliklere dön</Link></p></Card>;
   const duzenle = d.izinler.duzenle;
   // Sunucu onaya gönderirken senaryoları yeniden çalıştırır; tutmadığı bilinen ya da eksik senaryoda düğme baştan kapalı.
   const kabulEngeli = d.kabulGerekli && !d.kabulSenaryolari.length
@@ -101,43 +135,48 @@ function DegisiklikDetayi() {
       ? "Tutmayan kabul senaryosu var; değeri ya da beklentiyi düzeltip yeniden çalıştırın."
       : null;
 
-  return <>
-    <PageHeader title={`#${d.no} ${d.baslik}`} subtitle={`Dayanak: ${d.dayanak} · Yürürlük: ${tarihTR(d.yururlukBaslangic)} · Hazırlayan: ${d.hazirlayan.adSoyad}${d.yayinlayan ? ` · Yayınlayan: ${d.yayinlayan.adSoyad}` : ""}`} />
-    <div className="row-tight"><Link href="/platform">← Değişiklikler</Link><Badge variant={DURUM_ROZETI[d.durum]}>{DURUM_ADI[d.durum]}</Badge></div>
+  return <div className="platform-editor">
+    <Link className="platform-back-link" href="/platform"><ArrowLeft size={16} aria-hidden="true" />Değişiklikler</Link>
+    <PageHeader title={`#${d.no} ${d.baslik}`} subtitle="Düzenlemenin bilgilerini, kalemlerini ve yayın sürecini bu ekrandan yönetin." actions={<Link className="btn btn--ghost" href={`/platform/gorevler?degisiklik=${encodeURIComponent(id)}`}>Görev oluştur</Link>} />
+    <div className="platform-editor-status"><Badge variant={DURUM_ROZETI[d.durum]}>{DURUM_ADI[d.durum]}</Badge>{kaydedilmedi && <Badge variant="warning">Kaydedilmemiş değişiklikler</Badge>}<span><ShieldCheck size={15} aria-hidden="true" /> Yayın için ikinci yetkili kontrolü gerekir.</span></div>
+    <ol className="platform-publish-steps" aria-label="Yayın aşamaları">{(["taslak", "onay_bekliyor", "yayinlandi"] as const).map((durum, i) => <li key={durum} aria-current={d.durum === durum ? "step" : undefined}><span>{i + 1}</span>{DURUM_ADI[durum]}</li>)}</ol>
+    <dl className="platform-editor-metadata"><div><dt>Mevzuat dayanağı</dt><dd>{d.dayanak}</dd></div><div><dt>Yürürlük başlangıcı</dt><dd>{tarihTR(d.yururlukBaslangic)}</dd></div><div><dt>Hazırlayan</dt><dd>{d.hazirlayan.adSoyad}</dd></div><div><dt>Yayınlayan</dt><dd>{d.yayinlayan?.adSoyad ?? "Henüz yayınlanmadı"}</dd></div></dl>
+    <nav className="platform-section-nav" aria-label="Değişiklik bölümleri">{duzenle && <a href="#degisiklik-bilgileri">Bilgiler</a>}<a href="#degisiklik-kalemleri">Kalemler</a>{(d.kabulGerekli || d.kabulSenaryolari.length > 0 || senaryoDegisti) && <a href="#kabul-senaryolari">Kabul senaryoları</a>}<a href="#degisiklik-onayi">Onay ve yayın</a><a href="#degisiklik-gecmisi">Geçmiş</a></nav>
+    <fieldset className="platform-editor-fieldset" disabled={islem || senaryoIslem}>
     <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
     {d.durum === "taslak" && d.retGerekcesi && <Alert tone="warning">Geri çevrildi: {d.retGerekcesi}</Alert>}
     {d.durum !== "yayinlandi" && d.satirlar.length > 0 && d.planHatalari.length > 0 && <Alert tone="warning"><strong>Yayınlanamaz:</strong><ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>{d.planHatalari.map((h) => <li key={h}>{h}</li>)}</ul></Alert>}
 
-    {duzenle && <Card title="Bilgiler">
+    {duzenle && <Card id="degisiklik-bilgileri" title="Bilgiler">
       <form className="form-grid" onSubmit={bilgiKaydet}>
-        <Field label="Başlık"><Input name="baslik" defaultValue={d.baslik} required minLength={3} maxLength={200} /></Field>
-        <Field label="Mevzuat dayanağı"><Input name="dayanak" defaultValue={d.dayanak} required minLength={5} maxLength={500} /></Field>
-        <Field label="Yürürlük başlangıcı"><Input name="yururlukBaslangic" type="date" defaultValue={d.yururlukBaslangic} required /></Field>
-        <Field label="Açıklama"><Input name="aciklama" defaultValue={d.aciklama ?? ""} maxLength={2000} /></Field>
-        <div><Button type="submit" disabled={islem}>Bilgileri kaydet</Button></div>
+        <Field label="Başlık"><Input name="baslik" value={bilgi.baslik} onChange={(e) => setBilgi((v) => ({ ...v, baslik: e.target.value }))} required minLength={3} maxLength={200} /></Field>
+        <Field label="Mevzuat dayanağı"><Input name="dayanak" value={bilgi.dayanak} onChange={(e) => setBilgi((v) => ({ ...v, dayanak: e.target.value }))} required minLength={5} maxLength={500} /></Field>
+        <Field label="Yürürlük başlangıcı"><Input name="yururlukBaslangic" type="date" value={bilgi.yururlukBaslangic} onChange={(e) => setBilgi((v) => ({ ...v, yururlukBaslangic: e.target.value }))} required /></Field>
+        <Field label="Açıklama" htmlFor="degisiklik-aciklama"><textarea id="degisiklik-aciklama" className="input platform-textarea" name="aciklama" value={bilgi.aciklama} onChange={(e) => setBilgi((v) => ({ ...v, aciklama: e.target.value }))} maxLength={2000} rows={3} /></Field>
+        <div><Button type="submit" disabled={islem || !bilgiDegisti}>Bilgileri kaydet</Button></div>
       </form>
     </Card>}
 
-    <Card title="Kalemler" pad={false} actions={duzenle ? <div className="row-tight"><Button size="sm" onClick={satirEkle}>+ Kalem</Button><Button size="sm" variant="primary" disabled={islem || !degisti} onClick={() => void satirlariKaydet()}>Kalemleri kaydet</Button></div> : undefined}>
-      <TableWrap className="mevzuat-kalemler">
-        <thead><tr><th>Tür</th><th>Anahtar</th><th>İşlem</th><th>Yeni değer</th><th>Önceki değer</th>{duzenle && <th />}</tr></thead>
+    <Card id="degisiklik-kalemleri" title="Kalemler" pad={false} actions={duzenle ? <div className="row-tight"><Button size="sm" onClick={satirEkle}>+ Kalem</Button><Button size="sm" variant="primary" disabled={islem || !degisti} onClick={() => void satirlariKaydet()}>Kalemleri kaydet</Button></div> : undefined}>
+      <TableWrap className="mevzuat-kalemler platform-responsive-table platform-editor-table">
+        <thead><tr><th>Tür</th><th>Anahtar</th><th>İşlem</th><th>Yeni değer</th><th>Önceki değer</th>{duzenle && <th>İşlem</th>}</tr></thead>
         <tbody>
           {satirlar.map((s, i) => {
             const tanim = MEVZUAT_TUR_TANIMLARI[s.tur];
             const sorunlar = s.islem === "kaldir" || !s.anahtar ? [] : mevzuatDegerHatalari(s.tur, s.anahtar.trim(), degereCevir(s));
             return <tr key={i}>
-              <td>{duzenle
+              <td data-label="Tür">{duzenle
                 ? <Select aria-label="Tür" style={{ minWidth: "11rem" }} value={s.tur} onChange={(e) => void turSec(i, e.target.value as MevzuatTuru)}>{MEVZUAT_TURLERI.map((t) => <option key={t} value={t}>{MEVZUAT_TUR_TANIMLARI[t].ad}</option>)}</Select>
                 : tanim.ad}</td>
-              <td>{duzenle
+              <td data-label="Anahtar">{duzenle
                 ? tanim.anahtarSecenekleri
                   ? <Select aria-label={tanim.anahtarEtiketi} style={{ minWidth: "10rem" }} value={s.anahtar} onChange={(e) => guncelle(i, { anahtar: e.target.value })}><option value="">Seçin</option>{tanim.anahtarSecenekleri.map(([k, ad]) => <option key={k} value={k}>{ad}</option>)}</Select>
                   : <Input aria-label={tanim.anahtarEtiketi} value={s.anahtar} placeholder={tanim.anahtarIpucu} onChange={(e) => guncelle(i, { anahtar: e.target.value })} style={{ maxWidth: "8rem" }} />
                 : <strong>{tanim.anahtarSecenekleri?.find(([k]) => k === s.anahtar)?.[1] ?? s.anahtar}</strong>}</td>
-              <td>{duzenle
+              <td data-label="Düzenleme">{duzenle
                 ? <Select aria-label="İşlem" style={{ minWidth: "7rem" }} value={s.islem} onChange={(e) => guncelle(i, { islem: e.target.value as Islem })}>{(["ekle", "degistir", "kaldir"] as const).map((x) => <option key={x} value={x}>{ISLEM_ADI[x]}</option>)}</Select>
                 : ISLEM_ADI[s.islem]}</td>
-              <td>{s.islem === "kaldir" ? <span className="muted">Yürürlükten kalkar</span> : duzenle
+              <td data-label="Yeni değer">{s.islem === "kaldir" ? <span className="muted">Yürürlükten kalkar</span> : duzenle
                 ? tanim.etiketli
                   ? <div className="mevzuat-deger mevzuat-deger--etiketli">
                       {tanim.alanlar.map((a) => <label key={a.ad} className={a.tip === "dilimler" ? "mevzuat-alan--genis" : undefined}>{a.etiket}<Input aria-label={a.etiket} placeholder={a.ipucu} value={s.alanlar[a.ad] ?? ""} onChange={(e) => guncelle(i, { alanlar: { ...s.alanlar, [a.ad]: e.target.value } })} /></label>)}
@@ -150,8 +189,8 @@ function DegisiklikDetayi() {
                     {sorunlar.length > 0 && <span className="is-negative" style={{ fontSize: "0.8rem" }}>{sorunlar[0]}</span>}
                   </div>
                 : mevzuatDegerOzeti(s.tur, degereCevir(s))}</td>
-              <td className="mevzuat-onceki">{s.oncekiDeger ? <>{mevzuatDegerOzeti(s.tur, s.oncekiDeger)}<br />{tarihTR(s.oncekiYururluk ?? null)}'den beri</> : "—"}</td>
-              {duzenle && <td><Button size="sm" variant="danger" onClick={() => satirSil(i)}>Sil</Button></td>}
+              <td data-label="Önceki değer" className="mevzuat-onceki">{s.oncekiDeger ? <>{mevzuatDegerOzeti(s.tur, s.oncekiDeger)}<br />{tarihTR(s.oncekiYururluk ?? null)}'den beri</> : "—"}</td>
+              {duzenle && <td data-label="İşlem"><Button size="sm" variant="danger" onClick={() => satirSil(i)}>Sil</Button></td>}
             </tr>;
           })}
           {!satirlar.length && <tr><td colSpan={6}>Henüz kalem yok.</td></tr>}
@@ -160,9 +199,9 @@ function DegisiklikDetayi() {
       {duzenle && degisti && <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>Kaydedilmemiş değişiklik var; onaya göndermeden önce kalemleri kaydedin.</p>}
     </Card>
 
-    {(d.kabulGerekli || d.kabulSenaryolari.length > 0) && <KabulSenaryolari degisiklikId={id} senaryolar={d.kabulSenaryolari} duzenle={duzenle} yayinlandi={d.durum === "yayinlandi"} kalemlerKaydedilmedi={degisti} onDegisti={yansit} />}
+    {(d.kabulGerekli || d.kabulSenaryolari.length > 0 || senaryoDegisti) && <KabulSenaryolari<Detay> degisiklikId={id} senaryolar={d.kabulSenaryolari} duzenle={duzenle} yayinlandi={d.durum === "yayinlandi"} kalemlerKaydedilmedi={degisti || bilgiDegisti} onKayitDurumu={setSenaryoDegisti} onIslemDurumu={setSenaryoIslem} onDegisti={(v) => yansit(v, "senaryo")} />}
 
-    <Card title="Onay ve yayın">
+    <Card id="degisiklik-onayi" title="Onay ve yayın">
       {d.etki && d.satirlar.length > 0 && <div style={{ marginBottom: "1rem" }}>
         <strong>Etki</strong>
         <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>
@@ -174,11 +213,12 @@ function DegisiklikDetayi() {
         </ul>
       </div>}
       <div className="row-tight">
-        {d.izinler.onayaGonder && <Button variant="primary" disabled={islem || degisti || kabulEngeli !== null} onClick={() => void calis(() => post("onaya-gonder"), "Onaya gönderildi. Başka bir platform yetkilisi yayınlayacak.")}>Onaya gönder</Button>}
+        {d.izinler.onayaGonder && <Button variant="primary" disabled={islem || kaydedilmedi || kabulEngeli !== null} onClick={() => void calis(() => post("onaya-gonder"), "Onaya gönderildi. Başka bir platform yetkilisi yayınlayacak.")}>Onaya gönder</Button>}
         {d.izinler.taslagaCek && <Button disabled={islem} onClick={() => void calis(() => post("taslaga-cek"), "Taslağa çekildi.")}>Taslağa çek</Button>}
         {d.izinler.yayinla && <Button variant="primary" disabled={islem || d.planHatalari.length > 0} onClick={() => { if (window.confirm(`#${d.no} ${d.baslik} yayınlanacak ve ${tarihTR(d.yururlukBaslangic)} tarihinden itibaren tüm kiracılar için geçerli olacak. Yayınlanan değişiklik geri alınamaz. Devam edilsin mi?`)) void calis(async () => (await platformApi<{ degisiklik: Detay }>(`/platform/mevzuat/degisiklikler/${id}/yayinla`, { method: "POST" })).degisiklik, "Yayınlandı. Kiracılara bildirim bir sonraki taramada düşer."); }}>Yayınla</Button>}
-        {d.izinler.duzenle && <Button variant="danger" disabled={islem} onClick={() => { if (window.confirm("Taslak silinsin mi?")) void calis(async () => { await platformApi(`/platform/mevzuat/degisiklikler/${id}`, { method: "DELETE" }); yonlendir.replace("/platform"); }, "Silindi."); }}>Taslağı sil</Button>}
+        {d.izinler.duzenle && <Button variant="danger" disabled={islem} onClick={() => void taslagiSil()}>Taslağı sil</Button>}
       </div>
+      {d.izinler.onayaGonder && kaydedilmedi && <p className="platform-field-help">Onaya göndermeden önce bilgi, kalem ve senaryo değişikliklerini kaydedin.</p>}
       {d.izinler.onayaGonder && kabulEngeli && <p className="muted">{kabulEngeli}</p>}
       {d.izinler.geriCevir && <div className="form-grid" style={{ marginTop: "1rem" }}>
         <Field label="Geri çevirme gerekçesi"><Input value={gerekce} onChange={(e) => setGerekce(e.target.value)} placeholder="ör. dayanak sayısı eksik, 603 oranı kılavuzla tutmuyor" /></Field>
@@ -188,14 +228,20 @@ function DegisiklikDetayi() {
       {d.durum === "yayinlandi" && <p className="muted">Yayınlandı: {d.yayinZamani ? new Date(d.yayinZamani).toLocaleString("tr-TR") : ""}. Yayınlanan değişiklik değiştirilemez; düzeltme yeni bir değişiklikle yapılır.</p>}
     </Card>
 
-    <Card title="Geçmiş">
+    <Card id="degisiklik-gecmisi" title="Geçmiş">
       <ul className="mevzuat-olaylar">
         {d.olaylar.map((o) => <li key={o.id}><time>{new Date(o.zaman).toLocaleString("tr-TR")}</time><span><strong>{o.kullanici ?? "Sistem"}</strong> — {OLAY_ADI[o.olay] ?? o.olay}{o.olay === "geri_cevrildi" && o.detay?.gerekce ? `: ${String(o.detay.gerekce)}` : ""}</span></li>)}
       </ul>
+      {!d.olaylar.length && <p className="muted">Henüz işlem kaydı yok.</p>}
     </Card>
-  </>;
+    </fieldset>
+  </div>;
 }
 
+function DegisiklikIcerigi() {
+  const id = useSearchParams().get("id") ?? "";
+  return <DegisiklikDetayi key={id} id={id} />;
+}
 export default function DegisiklikSayfasi() {
-  return <Suspense fallback={<p className="muted">Yükleniyor…</p>}><DegisiklikDetayi /></Suspense>;
+  return <Suspense fallback={<p className="muted" role="status">Yükleniyor…</p>}><DegisiklikIcerigi /></Suspense>;
 }
