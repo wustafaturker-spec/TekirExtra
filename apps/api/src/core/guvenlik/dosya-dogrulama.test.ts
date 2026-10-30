@@ -38,6 +38,9 @@ describe("yükleme kapısı (dosya-dogrulama)", () => {
     await expect(ekstreDosyasiniDogrula({ originalname: "ekstre.csv", buffer: Buffer.from([0x54, 0xfd, 0x6b, 0x3b, 0x31, 0x0a]) })).resolves.toBeUndefined();
     await expect(ekstreDosyasiniDogrula({ originalname: "ekstre.xlsx", buffer: await xlsx() })).resolves.toBeUndefined();
     await expect(ekstreDosyasiniDogrula({ originalname: "ekstre.xls", buffer: Buffer.from("metin") })).rejects.toThrow(".xlsx");
+    // KSB-34: PDF kabul edilir; otomatik çalışan içerik barındıran PDF yine reddedilir.
+    await expect(ekstreDosyasiniDogrula({ originalname: "ekstre.pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF") })).resolves.toBeUndefined();
+    await expect(ekstreDosyasiniDogrula({ originalname: "ekstre.pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj << /OpenAction << /S /JavaScript /JS (app.alert(1)) >> >> endobj\n%%EOF") })).rejects.toThrow("otomatik çalışan");
     await expect(ekstreDosyasiniDogrula({ originalname: "ekstre.csv", buffer: Buffer.from([1, 0, 2]) })).rejects.toThrow("tanınmadı");
   });
 

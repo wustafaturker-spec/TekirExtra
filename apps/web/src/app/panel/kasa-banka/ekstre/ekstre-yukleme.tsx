@@ -6,6 +6,8 @@
  * ilk yüklemede kullanıcı eşler; eşleme hesaba kaydedilir.
  * KSB-32: MT940 ve camt.052/053 standart dosyalarda eşleme adımı yoktur; özet
  * (hesap, dönem, açılış/kapanış, uyarılar) gösterilip doğrudan aktarılır.
+ * KSB-34: metin katmanlı PDF tabloya çevrilip aynı eşleme adımına gelir; PDF
+ * eşlemesi ayrı saklanır, bakiye sağlaması ve tarih çakışması uyarı olarak gösterilir.
  */
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -44,6 +46,18 @@ interface StandartOzet {
   ornekSatirlar: { tarih: string; tutar: string; aciklama: string; karsiUnvan: string | null; bakiye: string | null }[];
 }
 
+interface BakiyeSaglamasi {
+  denetlenen: number;
+  tutarsizSayisi: number;
+  tutarsizlar: { tarih: string; tutar: string; bakiye: string; beklenen: string; aciklama: string }[];
+}
+
+interface PdfOzet {
+  sayfaSayisi: number;
+  bakiyeSaglamasi: BakiyeSaglamasi;
+  cakisma: { mevcutSatir: number; ilkTarih: string; sonTarih: string } | null;
+}
+
 interface Onizleme {
   bankaHesapId: string;
   bankaHesapAdi: string;
@@ -54,6 +68,8 @@ interface Onizleme {
   eslemeKayitli: boolean;
   /** MT940/camt dosyası; varsa eşleme adımı atlanır. */
   standart?: StandartOzet;
+  /** KSB-34: dosya PDF'ten okunduysa. */
+  pdf?: PdfOzet;
 }
 
 const BICIM_ADI: Record<StandartOzet["bicim"], string> = { mt940: "MT940", camt053: "camt.053 gün sonu", camt052: "camt.052 gün içi" };
@@ -117,13 +133,15 @@ export function EkstreYukleme({
       const govde = new FormData();
       govde.append("dosya", dosya);
       govde.append("veri", JSON.stringify(onizleme.standart ? { bankaHesapId: onizleme.bankaHesapId, eslemeyiKaydet: false } : { bankaHesapId: onizleme.bankaHesapId, esleme, eslemeyiKaydet }));
-      const veri = await api<{ okunanSatir: number; yeniSatir: number; yinelenenSatir: number; atlananSatir: number; uyarilar?: string[] }>("/kasa-banka/ekstre/yukle", { method: "POST", body: govde });
+      const veri = await api<{ okunanSatir: number; yeniSatir: number; yinelenenSatir: number; atlananSatir: number; uyarilar?: string[]; pdf?: PdfOzet }>("/kasa-banka/ekstre/yukle", { method: "POST", body: govde });
+      const tutmayan = veri.pdf?.bakiyeSaglamasi.tutarsizSayisi ?? 0;
       onYuklendi(
         `${veri.okunanSatir} hareket okundu; ${veri.yeniSatir} yeni satır eklendi`
           + (veri.yinelenenSatir > 0 ? `, ${veri.yinelenenSatir} satır daha önce yüklenmişti (atlandı)` : "")
           + (veri.atlananSatir > 0 ? `, ${veri.atlananSatir} veri dışı satır atlandı` : "")
           + "."
-          + (veri.uyarilar?.length ? ` Uyarı: ${veri.uyarilar.join(" ")}` : ""),
+          + (veri.uyarilar?.length ? ` Uyarı: ${veri.uyarilar.join(" ")}` : "")
+          + (tutmayan > 0 ? ` Uyarı: bakiye sağlaması ${tutmayan} satırda tutmadı; bu satırları ekstreyle karşılaştırın.` : ""),
         onizleme.bankaHesapId,
       );
     } catch (h) {
@@ -147,10 +165,11 @@ export function EkstreYukleme({
       {!onizleme ? (
         <>
           <p className="muted statement-upload__hint">
-            İnternet şubesinden hesap hareketlerini <strong>Excel (.xlsx)</strong> ya da <strong>CSV</strong> olarak indirin. İlk
+            İnternet şubesinden hesap hareketlerini <strong>Excel (.xlsx)</strong>, <strong>CSV</strong> ya da <strong>PDF</strong> olarak indirin. İlk
             yüklemede hangi sütunun ne olduğunu siz eşlersiniz; eşleme hesaba kaydedilir ve sonraki yüklemelerde sorulmaz.
             Bankanız <strong>MT940</strong> ya da <strong>camt.053</strong> veriyorsa onu tercih edin: sütun eşlemesi gerekmez,
-            bakiye de dosyadan okunur. Aynı dosyayı ikinci kez yüklemek çift kayıt oluşturmaz.
+            bakiye de dosyadan okunur. PDF yalnız internet şubesinden indirilen dijital dosyadan okunur; taranmış ya da
+            fotoğraflanmış ekstre okunmaz. Aynı dosyayı ikinci kez yüklemek çift kayıt oluşturmaz.
           </p>
           <div className="treasury-form-grid">
             <Field label="Banka hesabı *">
@@ -159,8 +178,8 @@ export function EkstreYukleme({
                 {hesaplar.map((h) => <option key={h.id} value={h.id}>{h.ad} — {h.bankaAdi} ({h.dovizCinsi})</option>)}
               </Select>
             </Field>
-            <Field label="Ekstre dosyası (.xlsx, .csv, MT940, camt.053) *">
-              <Input type="file" accept=".xlsx,.csv,.txt,.sta,.mt940,.940,.xml,text/csv,application/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setDosya(e.target.files?.[0] ?? null)} />
+            <Field label="Ekstre dosyası (.xlsx, .csv, .pdf, MT940, camt.053) *">
+              <Input type="file" accept=".xlsx,.csv,.txt,.pdf,.sta,.mt940,.940,.xml,text/csv,application/pdf,application/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setDosya(e.target.files?.[0] ?? null)} />
             </Field>
           </div>
           <div className="row-tight">
@@ -204,8 +223,28 @@ export function EkstreYukleme({
           <div className="row-tight">
             <Badge variant="info">{onizleme.bankaHesapAdi}</Badge>
             <Badge variant="neutral">{onizleme.toplamSatir} satır</Badge>
+            {onizleme.pdf && <Badge variant="neutral">PDF · {onizleme.pdf.sayfaSayisi} sayfa</Badge>}
             {onizleme.eslemeKayitli ? <Badge variant="success">Kayıtlı eşleme kullanılıyor</Badge> : <Badge variant="warning">Eşleme tahmin edildi — kontrol edin</Badge>}
+            {onizleme.pdf && onizleme.pdf.bakiyeSaglamasi.denetlenen > 0 && onizleme.pdf.bakiyeSaglamasi.tutarsizSayisi === 0 && <Badge variant="success">Bakiye sağlaması tuttu</Badge>}
           </div>
+          {onizleme.pdf?.cakisma && (
+            <Alert tone="warning">
+              Bu hesaba {onizleme.pdf.cakisma.ilkTarih} – {onizleme.pdf.cakisma.sonTarih} arasında daha önce {onizleme.pdf.cakisma.mevcutSatir} satır
+              yüklenmiş. Aynı dönemin CSV/Excel'i yüklendiyse PDF'teki açıklamalar farklı olabileceği için satırlar mükerrer
+              korumasına takılmaz; aktarmadan önce dönemi kontrol edin.
+            </Alert>
+          )}
+          {onizleme.pdf && onizleme.pdf.bakiyeSaglamasi.tutarsizSayisi > 0 && (
+            <Alert tone="warning">
+              Önceki bakiye + tutar = bakiye sağlaması {onizleme.pdf.bakiyeSaglamasi.tutarsizSayisi} satırda tutmadı; satır yanlış okunmuş ya da
+              sütun eşlemesi hatalı olabilir.
+              <ul>
+                {onizleme.pdf.bakiyeSaglamasi.tutarsizlar.slice(0, 5).map((t, i) => (
+                  <li key={i}>{t.tarih} · {t.aciklama} · tutar {tutar(t.tutar)}, bakiye {tutar(t.bakiye)} (beklenen {tutar(t.beklenen)})</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
           <div className="statement-upload__preview">
             <TableWrap>
               <thead>
@@ -241,7 +280,7 @@ export function EkstreYukleme({
           </div>
           <label className="checkbox">
             <input type="checkbox" checked={eslemeyiKaydet} onChange={(e) => setEslemeyiKaydet(e.target.checked)} />
-            Bu eşlemeyi hesaba kaydet (sonraki yüklemede sorulmasın)
+            {onizleme.pdf ? "Bu PDF eşlemesini hesaba kaydet (aynı düzendeki PDF'lerde sorulmasın; CSV/Excel eşlemesi ayrı kalır)" : "Bu eşlemeyi hesaba kaydet (sonraki yüklemede sorulmasın)"}
           </label>
           <div className="row-tight">
             <Button variant="primary" onClick={() => void aktar()} disabled={islemde !== null}>

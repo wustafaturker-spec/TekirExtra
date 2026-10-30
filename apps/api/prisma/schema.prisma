@@ -3732,6 +3732,8 @@ model BankaHesap {
   /// KSB-06: bu hesabın ekstre dosyasındaki sütun eşlemesi. Bir kez kurulur,
   /// sonraki yüklemelerde kullanıcıya sorulmaz. Bkz. EkstreSutunEslemesi.
   ekstreEslemesi Json?      @map("ekstre_eslemesi")
+  /// KSB-34: PDF ekstre sütun eşlemesi ({ esleme, basliklar }); CSV/Excel eşlemesinden ayrı.
+  ekstrePdfEslemesi Json?   @map("ekstre_pdf_eslemesi")
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 

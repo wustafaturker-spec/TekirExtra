@@ -18,6 +18,7 @@ import { PrismaService } from "../core/prisma.service";
 import { kuralBul } from "./ekstre-kural";
 import { mutabakatHesapla } from "./ekstre-mutabakat";
 import { StandartEkstreHatasi, standartEkstreOku, type StandartEkstre } from "./ekstre-standart";
+import { bakiyeSaglamasi, pdfEkstreOku, pdfMi, type PdfEkstre } from "./ekstre-pdf";
 import {
   EkstreOkumaHatasi,
   type EkstreSatiri,
@@ -83,6 +84,29 @@ export class EkstreService {
       };
     }
 
+    // KSB-34: PDF'ten çıkan tablo aynı eşleme adımına gelir; eşleme ayrı saklanır.
+    if (pdfMi(dosya)) {
+      const pdf = await this.pdfOku(dosya, hesap);
+      const basliklar = pdf.tablo[0];
+      const kayitliPdf = this.kayitliPdfEslemesi(hesap, basliklar);
+      const esleme = kayitliPdf ?? eslemeTahminEt(basliklar);
+      const { satirlar } = ekstreSatirlariOku(pdf.tablo, esleme);
+      return {
+        bankaHesapId,
+        bankaHesapAdi: hesap.ad,
+        basliklar,
+        ornekSatirlar: pdf.tablo.slice(1, 6),
+        toplamSatir: pdf.tablo.length,
+        esleme,
+        eslemeKayitli: kayitliPdf !== null,
+        pdf: {
+          sayfaSayisi: pdf.sayfaSayisi,
+          bakiyeSaglamasi: this.saglamaOzeti(satirlar),
+          cakisma: await this.tarihCakismasi(tenantId, bankaHesapId, satirlar),
+        },
+      };
+    }
+
     let tablo: string[][];
     try {
       tablo = await ekstreDosyasiOku(dosya);
@@ -125,6 +149,7 @@ export class EkstreService {
     const standart = this.standartOku(dosya, hesap);
     let satirlar: EkstreSatiri[];
     let atlanan = 0;
+    let pdf: PdfEkstre | null = null;
     if (standart) {
       satirlar = standart.satirlar;
       // Sütun eşlemesi standart dosyaya ait değildir; hesaba yazılmaz.
@@ -132,12 +157,17 @@ export class EkstreService {
     } else {
       if (!esleme) throw new BadRequestException("Sütun eşlemesi gerekli");
       let tablo: string[][];
-      try {
-        tablo = await ekstreDosyasiOku(dosya);
-      } catch (hata) {
-        throw new BadRequestException(
-          hata instanceof EkstreOkumaHatasi ? hata.message : "Dosya okunamadı",
-        );
+      if (pdfMi(dosya)) {
+        pdf = await this.pdfOku(dosya, hesap);
+        tablo = pdf.tablo;
+      } else {
+        try {
+          tablo = await ekstreDosyasiOku(dosya);
+        } catch (hata) {
+          throw new BadRequestException(
+            hata instanceof EkstreOkumaHatasi ? hata.message : "Dosya okunamadı",
+          );
+        }
       }
       ({ satirlar, atlanan } = ekstreSatirlariOku(tablo, esleme));
     }
@@ -146,6 +176,10 @@ export class EkstreService {
         "Dosyadan hiç hareket okunamadı. Sütun eşlemesini (özellikle tarih ve tutar) kontrol edin.",
       );
     }
+
+    const pdfOzeti = pdf
+      ? { sayfaSayisi: pdf.sayfaSayisi, bakiyeSaglamasi: this.saglamaOzeti(satirlar), cakisma: await this.tarihCakismasi(tenantId, bankaHesapId, satirlar) }
+      : null;
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       // Hangileri yeni? Tek sorguda mevcut özetleri çekip ayıklıyoruz.
@@ -188,7 +222,9 @@ export class EkstreService {
       if (eslemeyiKaydet) {
         await tx.bankaHesap.update({
           where: { id: bankaHesapId },
-          data: { ekstreEslemesi: esleme as unknown as Prisma.InputJsonValue },
+          data: pdf
+            ? { ekstrePdfEslemesi: { esleme, basliklar: pdf.tablo[0] } as unknown as Prisma.InputJsonValue }
+            : { ekstreEslemesi: esleme as unknown as Prisma.InputJsonValue },
         });
       }
 
@@ -200,6 +236,7 @@ export class EkstreService {
         /** Tarihi/tutarı çözülemeyip atlanan satırlar (başlık, toplam vb.). */
         atlananSatir: atlanan,
         ...(standart ? { bicim: standart.bicim, uyarilar: standart.uyarilar } : {}),
+        ...(pdfOzeti ? { bicim: "pdf" as const, pdf: pdfOzeti } : {}),
       };
     });
   }
@@ -342,6 +379,51 @@ export class EkstreService {
       throw new BadRequestException(`Dosyanın dövizi ${dosyaHesabi.dovizCinsi}, seçilen hesabın ${hesap.dovizCinsi}`);
     }
     return standart;
+  }
+
+  /**
+   * KSB-34: PDF'i okur. Hesap bilgisi alanında (tablo başlığının üstü) TR IBAN
+   * geçiyor ve hiçbiri seçilen hesabınki değilse dosya başka hesabındır.
+   */
+  private async pdfOku(dosya: Buffer, hesap: { ad: string; iban: string | null }): Promise<PdfEkstre> {
+    let pdf: PdfEkstre;
+    try {
+      pdf = await pdfEkstreOku(dosya);
+    } catch (hata) {
+      throw new BadRequestException(hata instanceof EkstreOkumaHatasi ? hata.message : "PDF okunamadı");
+    }
+    const iban = (hesap.iban ?? "").replace(/\s/g, "").toUpperCase();
+    if (iban && pdf.ustIbanlar.length && !pdf.tumIbanlar.includes(iban)) {
+      throw new BadRequestException(`PDF ${pdf.ustIbanlar.join(", ")} hesabına ait; seçilen hesap ${hesap.ad} (${hesap.iban})`);
+    }
+    return pdf;
+  }
+
+  /** Kayıtlı PDF eşlemesi yalnız başlıklar aynıysa kullanılır; banka düzeni değişirse yeniden sorulur. */
+  private kayitliPdfEslemesi(hesap: { ekstrePdfEslemesi: Prisma.JsonValue }, basliklar: string[]): SutunEslemesi | null {
+    const kayit = hesap.ekstrePdfEslemesi as { esleme?: SutunEslemesi; basliklar?: string[] } | null;
+    if (!kayit?.esleme || JSON.stringify(kayit.basliklar) !== JSON.stringify(basliklar)) return null;
+    return kayit.esleme;
+  }
+
+  private saglamaOzeti(satirlar: EkstreSatiri[]) {
+    const { denetlenen, tutarsizlar } = bakiyeSaglamasi(satirlar);
+    return { denetlenen, tutarsizSayisi: tutarsizlar.length, tutarsizlar: tutarsizlar.slice(0, 20) };
+  }
+
+  /**
+   * Dosyanın tarih aralığında hesaba önceden yüklenmiş satır var mı? Aynı
+   * dönemin CSV'si ile PDF'i açıklama farkıyla mükerrer korumasından kaçabilir.
+   */
+  private async tarihCakismasi(tenantId: string, bankaHesapId: string, satirlar: EkstreSatiri[]) {
+    if (!satirlar.length) return null;
+    const tarihler = satirlar.map((s) => s.tarih.getTime());
+    const ilk = new Date(Math.min(...tarihler));
+    const son = new Date(Math.max(...tarihler));
+    const adet = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.bankaEkstreSatir.count({ where: { bankaHesapId, tarih: { gte: ilk, lte: son } } }),
+    );
+    return adet ? { mevcutSatir: adet, ilkTarih: ilk.toISOString().slice(0, 10), sonTarih: son.toISOString().slice(0, 10) } : null;
   }
 
   private async hesapGetir(tenantId: string, bankaHesapId: string) {

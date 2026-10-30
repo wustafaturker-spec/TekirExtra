@@ -31,7 +31,7 @@ export const DOSYA_PROFILLERI = {
   /** Excel içe aktarma (cari, stok, puantaj). */
   excel: ["xlsx"],
   /** Banka ekstresi. */
-  ekstre: ["metin", "xlsx", "xml"],
+  ekstre: ["metin", "xlsx", "xml", "pdf"],
   /** AI-79: asistan sohbetine eklenen fiş/fatura görseli, PDF ya da UBL XML. */
   sohbet: ["pdf", "png", "jpeg", "webp", "xml"],
 } as const satisfies Record<string, readonly DosyaTuru[]>;

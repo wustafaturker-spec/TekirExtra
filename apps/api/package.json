@@ -39,6 +39,7 @@
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
     "otplib": "^13.4.1",
+    "pdfjs-dist": "6.4.299",
     "playwright": "^1.61.1",
     "qrcode-generator": "^2.0.4",
     "redis": "^5.12.1",

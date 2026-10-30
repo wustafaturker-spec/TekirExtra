@@ -119,7 +119,8 @@ export function ekstreTabloOku(buffer: Buffer): string[][] {
 
 /** `1.234,56`, `1,234.56`, `1234.56`, `(1.234,56)` ve `1.234,56 TL` biçimleri. */
 export function tutarCoz(ham: string): number | null {
-  let s = (ham ?? "").trim();
+  // PDF ekstrelerde eksi çoğunlukla Unicode eksi (U+2212) ya da tire.
+  let s = (ham ?? "").trim().replace(/^[−–]/, "-");
   if (!s) return null;
 
   // Muhasebe biçimi: parantez içi = eksi
@@ -271,8 +272,8 @@ const BASLIK_IPUCLARI: Record<keyof Omit<SutunEslemesi, "baslikSatiri">, string[
   tarih: ["tarih", "islem tarihi", "valor tarihi", "valor", "date"],
   aciklama: ["aciklama", "islem", "description", "detay"],
   tutar: ["tutar", "islem tutari", "amount", "miktar"],
-  borc: ["borc", "cikan", "debit", "gider"],
-  alacak: ["alacak", "giren", "credit", "gelir"],
+  borc: ["borc", "cikan", "cikis", "debit", "gider"],
+  alacak: ["alacak", "giren", "giris", "credit", "gelir"],
   dekontNo: ["dekont", "dekont no", "fis", "referans", "reference", "islem no"],
   karsiIban: ["iban", "karsi iban", "hesap no"],
   karsiUnvan: ["unvan", "karsi unvan", "gonderen", "alici", "karsi taraf", "ad soyad"],
