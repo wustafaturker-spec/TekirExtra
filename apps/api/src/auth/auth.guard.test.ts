@@ -113,13 +113,13 @@ describe("platform rolleri (PLT-06)", () => {
   beforeEach(async () => {
     process.env.JWT_SECRET = KIRACI;
     process.env.PLATFORM_JWT_SECRET = PLATFORM;
-    platformToken = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform" }, { secret: PLATFORM });
+    platformToken = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform", sv: 0, oid: "o1" }, { secret: PLATFORM });
   });
   afterEach(() => { delete process.env.PLATFORM_JWT_SECRET; });
 
-  const kurRollu = (token: string, roller: string[] | undefined, db?: { rol: string; aktif: boolean }) => {
+  const kurRollu = (token: string, roller: string[] | undefined, db?: { rol: string; aktif: boolean; oturumSurumu?: number }, oturum = { kullaniciId: "p1", iptalAt: null as Date | null, bitis: new Date(Date.now() + 60_000) }) => {
     const reflector = { getAllAndOverride: (anahtar: string) => (anahtar === PLATFORM_ANAHTAR ? true : anahtar === PLATFORM_ROLLER_ANAHTAR ? roller : false) } as unknown as Reflector;
-    const platformDb = db ? { db: { platformKullanici: { findUnique: async () => db } } } : undefined;
+    const platformDb = db ? { db: { platformKullanici: { findUnique: async () => ({ oturumSurumu: 0, ...db }) }, platformOturum: { findUnique: async () => oturum } } } : undefined;
     const guard = new AuthGuard(new JwtService({ secret: KIRACI }), reflector, undefined, platformDb as never);
     const context = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ headers: { authorization: `Bearer ${token}` } }) }) } as never;
     return istekBaglami.run({}, async () => ({ sonuc: await guard.canActivate(context), platform: aktifPlatformBaglam() }));
@@ -131,12 +131,29 @@ describe("platform rolleri (PLT-06)", () => {
   });
 
   it("mevzuat ucu editöre açıktır; güncel rol token'daki rolün önüne geçer", async () => {
-    const yoneticiTokeni = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform", rol: "yonetici" }, { secret: PLATFORM });
+    const yoneticiTokeni = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform", rol: "yonetici", sv: 0, oid: "o1" }, { secret: PLATFORM });
     await expect(kurRollu(yoneticiTokeni, ["yonetici", "mevzuat_editoru"], { rol: "mevzuat_editoru", aktif: true })).resolves.toMatchObject({ platform: { rol: "mevzuat_editoru" } });
     await expect(kurRollu(yoneticiTokeni, undefined, { rol: "mevzuat_editoru", aktif: true })).rejects.toThrow(ForbiddenException);
   });
 
   it("pasif hesap rolünden önce düşer", async () => {
     await expect(kurRollu(platformToken, ["yonetici", "mevzuat_editoru"], { rol: "yonetici", aktif: false })).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("PLT-25: sürüm ve oturum taşımayan eski token yeniden giriş ister", async () => {
+    const eski = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform", rol: "yonetici" }, { secret: PLATFORM });
+    await expect(kurRollu(eski, undefined, { rol: "yonetici", aktif: true })).rejects.toThrow(/yeniden giriş/);
+  });
+
+  it("PLT-25: sürümü eskimiş token (2FA sıfırlama / tüm oturumları kapatma sonrası) geçmez", async () => {
+    await expect(kurRollu(platformToken, undefined, { rol: "yonetici", aktif: true, oturumSurumu: 1 })).rejects.toThrow(/Oturum kapatıldı/);
+  });
+
+  it("PLT-25: iptal edilmiş, süresi dolmuş ya da başka kullanıcının oturumu geçmez; oturum kimliği bağlama yazılır", async () => {
+    const db = { rol: "yonetici", aktif: true };
+    await expect(kurRollu(platformToken, undefined, db, { kullaniciId: "p1", iptalAt: new Date(), bitis: new Date(Date.now() + 60_000) })).rejects.toThrow(/Oturum kapatıldı/);
+    await expect(kurRollu(platformToken, undefined, db, { kullaniciId: "p1", iptalAt: null, bitis: new Date(Date.now() - 1) })).rejects.toThrow(/Oturum kapatıldı/);
+    await expect(kurRollu(platformToken, undefined, db, { kullaniciId: "p2", iptalAt: null, bitis: new Date(Date.now() + 60_000) })).rejects.toThrow(/Oturum kapatıldı/);
+    await expect(kurRollu(platformToken, undefined, db)).resolves.toMatchObject({ platform: { kullaniciId: "p1", oturumId: "o1" } });
   });
 });

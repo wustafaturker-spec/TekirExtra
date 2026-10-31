@@ -152,3 +152,42 @@ test("2FA yeniden kurulumunda mevcut parola kullanılır ve eksik davet açık h
   await expect(page.getByText("Parola hatalı.")).toBeVisible();
   await expect(page.getByRole("img", { name: "İki adımlı doğrulama karekodu" })).toBeVisible();
 });
+
+test("PLT-25: çıkış oturumu sunucuda token ile iptal ettirir; doğrulanamazsa giriş sayfası açıkça uyarır", async ({ page }) => {
+  const basliklar: (string | undefined)[] = [];
+  let ag = true;
+  await page.route("**/api/v1/platform/auth/cikis", (route) => {
+    basliklar.push(route.request().headers().authorization);
+    return ag ? route.fulfill({ json: { sunucudaIptal: true } }) : route.abort("failed");
+  });
+  await page.goto("/platform/ozet");
+  await page.getByRole("button", { name: "Çıkış", exact: true }).click();
+  await expect(page).toHaveURL(/\/platform\/giris$/);
+  expect(basliklar).toEqual(["Bearer platform-detay-test"]);
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBeNull();
+  await expect(page.getByText(/sunucuda kapatıldığı doğrulanamadı/)).toHaveCount(0);
+
+  ag = false;
+  await page.evaluate(() => sessionStorage.setItem("tekir_platform_access", "platform-detay-test"));
+  await page.goto("/platform/ozet");
+  await page.getByRole("button", { name: "Çıkış", exact: true }).click();
+  await expect(page).toHaveURL(/\/platform\/giris\?cikis=dogrulanamadi$/);
+  await expect(page.getByText(/sunucuda kapatıldığı doğrulanamadı/)).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBeNull();
+});
+
+test("PLT-25: tüm oturumlarımı kapat onayla çalışır, yerel token silinir ve giriş sayfası bildirir", async ({ page }) => {
+  let istek = 0;
+  await page.route("**/api/v1/platform/auth/oturumlari-kapat", (route) => { istek++; return route.fulfill({ json: { kapatilan: 3 } }); });
+  await page.goto("/platform/ozet");
+  await page.getByRole("button", { name: "Tüm oturumlarımı kapat" }).click();
+  const pencere = page.getByRole("dialog", { name: "Tüm oturumlarımı kapat" });
+  await pencere.getByRole("button", { name: "Vazgeç" }).click();
+  expect(istek).toBe(0);
+  await page.getByRole("button", { name: "Tüm oturumlarımı kapat" }).click();
+  await pencere.getByRole("button", { name: "Oturumları kapat" }).click();
+  await expect(page).toHaveURL(/\/platform\/giris\?cikis=tum$/);
+  await expect(page.getByText("Tüm platform oturumlarınız kapatıldı.")).toBeVisible();
+  expect(istek).toBe(1);
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBeNull();
+});

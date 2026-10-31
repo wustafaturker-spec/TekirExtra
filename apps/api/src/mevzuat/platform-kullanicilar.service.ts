@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { totpDogrula } from "../auth/totp-dogrula";
 import type { PlatformRol, Prisma } from "@prisma/client";
 import * as argon2 from "argon2";
@@ -9,6 +9,7 @@ import { generateSecret, generateURI } from "otplib";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { coz, sifrele } from "../core/kripto";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
+import { PlatformOturumDurumService } from "./platform-oturum-durum.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 
 export type DavetTuru = "hesap" | "iki_adim";
@@ -35,7 +36,16 @@ const SECIM = {
 export class PlatformKullanicilarService {
   private readonly logger = new Logger(PlatformKullanicilarService.name);
 
-  constructor(private readonly platform: PlatformPrismaService) {}
+  constructor(
+    private readonly platform: PlatformPrismaService,
+    @Optional() private readonly oturumDurum?: PlatformOturumDurumService,
+  ) {}
+
+  /** PLT-25: sürüm artar ve açık oturumlar iptal edilir; eldeki token'lar 2FA yeniden kurulsa da tekrar geçmez. */
+  private async oturumlariDusur(tx: Prisma.TransactionClient, id: string, neden: string) {
+    await tx.platformKullanici.update({ where: { id }, data: { oturumSurumu: { increment: 1 } } });
+    await tx.platformOturum.updateMany({ where: { kullaniciId: id, iptalAt: null }, data: { iptalAt: new Date(), iptalNedeni: neden } });
+  }
 
   /** PLT-31: her kullanıcının üzerindeki açık platform görevi sayısı da döner; rol düşürme penceresi aktarımı buna göre ister. */
   async listele() {
@@ -112,6 +122,7 @@ export class PlatformKullanicilarService {
         hedefId = hedef.id;
       }
       const guncel = await tx.platformKullanici.update({ where: { id }, data: { rol: yeniRol, aktif: yeniAktif }, select: SECIM });
+      if (mevcut.rol !== guncel.rol || mevcut.aktif !== guncel.aktif) await this.oturumlariDusur(tx, id, mevcut.aktif !== guncel.aktif ? "durum_degisti" : "rol_degisti");
       for (const g of aktarilacak) {
         const { surum } = await tx.platformGorev.update({ where: { id: g.id }, data: { sorumluId: hedefId, surum: { increment: 1 } }, select: { surum: true } });
         await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "platform_gorevi_guncellendi", detay: { gorevId: g.id, baslik: g.baslik, neden: "rol_dusurme_aktarimi", oncekiSorumluId: id, yeniSorumluId: hedefId, surum } } });
@@ -123,7 +134,7 @@ export class PlatformKullanicilarService {
         await tx.mevzuatOlay.create({ data: { kullaniciId, olay: guncel.aktif ? "platform_kullanicisi_aktif_edildi" : "platform_kullanicisi_pasife_alindi", detay: { eposta: mevcut.eposta } } });
       }
       return guncel;
-    });
+    }).finally(() => this.oturumDurum?.kullaniciUnut(id));
   }
 
   /** Telefon kaybı: 2FA geçersizleşir, kullanıcı bağlantıyla (mevcut parolasıyla) yeniden kurana kadar giremez. */
@@ -133,8 +144,12 @@ export class PlatformKullanicilarService {
     const k = await this.bul(id);
     if (k.davetTuru === "hesap") throw new BadRequestException("Kullanıcı daveti henüz kabul etmedi; daveti yeniden gönderin");
     const anahtar = randomBytes(32).toString("base64url");
-    await this.platform.db.platformKullanici.update({ where: { id }, data: { totpSecretSifreli: sifrele(generateSecret()), ...this.davetAlanlari("iki_adim", anahtar) } });
-    await this.olay(kullaniciId, "platform_2fa_sifirlandi", { eposta: k.eposta });
+    await this.platform.db.$transaction(async (tx) => {
+      await tx.platformKullanici.update({ where: { id }, data: { totpSecretSifreli: sifrele(generateSecret()), ...this.davetAlanlari("iki_adim", anahtar) } });
+      await this.oturumlariDusur(tx, id, "2fa_sifirlandi");
+      await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "platform_2fa_sifirlandi", detay: { eposta: k.eposta } } });
+    });
+    this.oturumDurum?.kullaniciUnut(id);
     return this.davetGonder(k, "iki_adim", anahtar);
   }
 
@@ -176,6 +191,7 @@ export class PlatformKullanicilarService {
       data: { parolaHash, davetTuru: null, davetAnahtarOzeti: null, davetSonGecerlilik: null },
     });
     if (!count) throw new BadRequestException("Bağlantı geçersiz veya süresi dolmuş");
+    this.oturumDurum?.kullaniciUnut(k.id);
     await this.olay(k.id, tur === "iki_adim" ? "platform_2fa_yeniden_kuruldu" : "platform_daveti_kabul_edildi", { eposta: k.eposta });
     return { eposta: k.eposta };
   }

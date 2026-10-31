@@ -17,6 +17,7 @@ function kur() {
   const kayitlar: Kayit[] = [];
   const gorevler: { id: string; baslik: string; kapsam: string; durum: string; sorumluId: string | null; surum: number }[] = [];
   const olaylar: { olay: string; kullaniciId: string | null; detay?: Record<string, unknown> }[] = [];
+  const iptaller: [string, string][] = [];
   const eslesir = (k: Record<string, unknown>, w: Record<string, unknown>) => Object.entries(w).every(([a, v]) => (v && typeof v === "object" && "not" in v ? k[a] !== (v as { not: unknown }).not
     : v && typeof v === "object" && "in" in v ? (v as { in: unknown[] }).in.includes(k[a]) : k[a] === v));
   const platformKullanici = {
@@ -25,7 +26,11 @@ function kur() {
     findFirst: async ({ where }: { where: Record<string, unknown> }) => { const k = kayitlar.find((x) => eslesir(x, where)); return k ? { ...k } : null; },
     count: async ({ where }: { where: Record<string, unknown> }) => kayitlar.filter((k) => eslesir(k, where)).length,
     create: async ({ data }: { data: Record<string, unknown> }) => { const k = { id: `p${kayitlar.length + 1}`, aktif: true, sonGiris: null, createdAt: new Date(), ...data } as Kayit; kayitlar.push(k); return k; },
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => Object.assign(kayitlar.find((k) => k.id === where.id)!, data),
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const k = kayitlar.find((x) => x.id === where.id)!;
+      for (const [a, v] of Object.entries(data)) k[a] = v && typeof v === "object" && "increment" in v ? Number(k[a] ?? 0) + (v as { increment: number }).increment : v;
+      return k;
+    },
     updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
       const s = kayitlar.filter((k) => eslesir(k, where)); s.forEach((k) => Object.assign(k, data)); return { count: s.length };
     },
@@ -33,6 +38,8 @@ function kur() {
   const db = {
     platformKullanici,
     mevzuatOlay: { create: async ({ data }: { data: { olay: string; kullaniciId: string | null; detay?: Record<string, unknown> } }) => { olaylar.push(data); return data; } },
+    // PLT-25: iptal edilen oturumlar (kullanıcı, neden).
+    platformOturum: { updateMany: async ({ where, data }: { where: { kullaniciId: string }; data: { iptalNedeni: string } }) => { iptaller.push([where.kullaniciId, data.iptalNedeni]); return { count: 1 }; } },
     platformGorev: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => gorevler.filter((g) => eslesir(g, where)).map((g) => ({ ...g })),
       update: async ({ where, data }: { where: { id: string }; data: { sorumluId: string; surum: { increment: number } } }) => { const g = gorevler.find((x) => x.id === where.id)!; g.sorumluId = data.sorumluId; g.surum += data.surum.increment; return { ...g }; },
@@ -49,7 +56,7 @@ function kur() {
   const ekle = (k: Partial<Kayit>) => { const y = { id: `p${kayitlar.length + 1}`, eposta: `${kayitlar.length}@x.io`, adSoyad: "Kişi", rol: "yonetici", aktif: true, davetTuru: null, davetAnahtarOzeti: null, parolaHash: hash, totpSecretSifreli: "", ...k } as Kayit; kayitlar.push(y); return y; };
   const olarak = <T>(id: string, is: () => Promise<T>) => platformBaglamiylaCalistir({ kullaniciId: id, eposta: "ben@x.io", rol: "yonetici" }, is);
   const gorevEkle = (sorumluId: string, kapsam = "platform", durum = "acik") => { const g = { id: `g${gorevler.length + 1}`, baslik: `Görev ${gorevler.length + 1}`, kapsam, durum, sorumluId, surum: 1 }; gorevler.push(g); return g; };
-  return { servis, kayitlar, olaylar, gorevler, ekle, gorevEkle, olarak };
+  return { servis, kayitlar, olaylar, gorevler, iptaller, ekle, gorevEkle, olarak };
 }
 const anahtarAl = (baglanti?: string) => new URL(baglanti!).searchParams.get("anahtar")!;
 
@@ -173,5 +180,25 @@ describe("rol düşürmede platform görevi aktarımı (PLT-31)", () => {
     t.gorevEkle(ayse.id); t.gorevEkle(ayse.id, "platform", "devam_ediyor"); t.gorevEkle(ayse.id, "platform", "iptal"); t.gorevEkle(ayse.id, "mevzuat");
     const liste = await t.olarak(ben.id, () => t.servis.listele());
     expect(liste.map((k) => k.acikPlatformGorevi)).toEqual([0, 2]);
+  });
+});
+
+describe("oturum sürümü (PLT-25)", () => {
+  it("rol değişikliği, pasife alma ve 2FA sıfırlama sürümü artırır ve açık oturumları iptal eder", async () => {
+    const t = kur();
+    const ben = t.ekle({}); const ayse = t.ekle({}); const mehmet = t.ekle({}); const ali = t.ekle({});
+    await t.olarak(ben.id, () => t.servis.guncelle(ayse.id, { rol: "mevzuat_editoru" }));
+    await t.olarak(ben.id, () => t.servis.guncelle(mehmet.id, { aktif: false }));
+    await t.olarak(ben.id, () => t.servis.ikiAdimSifirla(ali.id));
+    expect([ayse, mehmet, ali].map((k) => k.oturumSurumu)).toEqual([1, 1, 1]);
+    expect(t.iptaller).toEqual([[ayse.id, "rol_degisti"], [mehmet.id, "durum_degisti"], [ali.id, "2fa_sifirlandi"]]);
+  });
+
+  it("değişiklik olmayan güncelleme oturumları düşürmez", async () => {
+    const t = kur();
+    const ben = t.ekle({}); const ayse = t.ekle({});
+    await t.olarak(ben.id, () => t.servis.guncelle(ayse.id, { rol: "yonetici", aktif: true }));
+    expect(ayse.oturumSurumu ?? 0).toBe(0);
+    expect(t.iptaller).toEqual([]);
   });
 });

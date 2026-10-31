@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
 import { MEVZUAT_TURLERI, takvimGunuMu } from "@tekirextra/shared";
@@ -82,11 +82,24 @@ export class PlatformAuthController {
     return sonuc;
   }
 
+  /** PLT-25: oturum sunucuda iptal edilir; token bozuk ya da süresi dolmuşsa yalnız rota işareti silinir. */
   @Public()
   @Post("cikis")
-  @HttpCode(204)
-  cikis(@Res({ passthrough: true }) res: Response) {
+  @HttpCode(200)
+  async cikis(@Headers("authorization") yetki: string | undefined, @Res({ passthrough: true }) res: Response) {
     res.clearCookie(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
+    return { sunucudaIptal: await this.auth.cikis(yetki?.replace(/^Bearer /, "")) };
+  }
+
+  /** PLT-25: kullanıcının tüm platform oturumları kapanır (bu sekme dahil). */
+  @PlatformUcu()
+  @PlatformRolleri("yonetici", "mevzuat_editoru")
+  @Post("oturumlari-kapat")
+  @HttpCode(200)
+  async oturumlariKapat(@Res({ passthrough: true }) res: Response) {
+    const sonuc = await this.auth.tumOturumlariKapat();
+    res.clearCookie(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
+    return sonuc;
   }
 
   @PlatformUcu()

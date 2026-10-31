@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, X, LogOut, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users } from "lucide-react";
-import { Button } from "@/components/ui";
-import { platformApi, platformCikis, platformTokenAl } from "@/lib/platform-api";
+import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users } from "lucide-react";
+import { Alert, Button, Modal, ModalEylem } from "@/components/ui";
+import { platformApi, platformCikis, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
 
 import { PlatformOturumuBaglami, type PlatformRolu } from "@/lib/platform-oturumu";
 
@@ -37,6 +37,20 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   const [kimlikHatasi, setKimlikHatasi] = useState(false);
   const [tekrar, setTekrar] = useState(0);
   const [ben, setBen] = useState<{ eposta: string; rol: PlatformRolu } | null>(null);
+  const [tumOturumlar, setTumOturumlar] = useState(false);
+  const [oturumHatasi, setOturumHatasi] = useState("");
+  const [oturumKapaniyor, setOturumKapaniyor] = useState(false);
+  /** PLT-25: kullanıcının bu sekme dahil bütün platform oturumları sunucuda kapanır. */
+  async function tumOturumlariKapat(e: React.FormEvent) {
+    e.preventDefault();
+    setOturumHatasi(""); setOturumKapaniyor(true);
+    try {
+      await platformApi("/platform/auth/oturumlari-kapat", { method: "POST" });
+      platformTokenYaz(null);
+      yonlendir.replace("/platform/giris?cikis=tum");
+    } catch (h) { setOturumHatasi(h instanceof Error ? h.message : "Oturumlar kapatılamadı."); }
+    finally { setOturumKapaniyor(false); }
+  }
   // PLT-07: davet sayfası da oturumsuz, panel çerçevesi olmadan açılır.
   const girisSayfasi = yol === "/platform/giris" || yol === "/platform/davet";
 
@@ -90,8 +104,16 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
         <header className="platform-topbar">
           <Button className="platform-menu-toggle" aria-label={menuAcik ? "Menüyü kapat" : "Menüyü aç"} aria-expanded={menuAcik} aria-controls="platform-menu" onClick={() => setMenuAcik(!menuAcik)}>{menuAcik ? <X size={20} /> : <Menu size={20} />}</Button>
           <div className="platform-breadcrumb">Platform <span>/</span> <strong>{MENU.find((m) => aktif(m.href))?.baslik ?? "Değişiklik detayı"}</strong></div>
-          <div className="platform-account"><span className="platform-avatar" aria-hidden="true">{ben.eposta.slice(0, 1).toLocaleUpperCase("tr-TR")}</span><div><strong>{ben.eposta}</strong><small>{ROL_ADI[ben.rol]}</small></div><Button size="sm" aria-label="Çıkış" data-platform-navigation onClick={() => { void platformCikis().then(() => yonlendir.replace("/platform/giris")); }}><LogOut size={16} aria-hidden="true" /><span>Çıkış</span></Button></div>
+          <div className="platform-account"><span className="platform-avatar" aria-hidden="true">{ben.eposta.slice(0, 1).toLocaleUpperCase("tr-TR")}</span><div><strong>{ben.eposta}</strong><small>{ROL_ADI[ben.rol]}</small></div><Button size="sm" variant="ghost" aria-label="Tüm oturumlarımı kapat" onClick={() => { setOturumHatasi(""); setTumOturumlar(true); }}><MonitorX size={16} aria-hidden="true" /><span>Tüm oturumlar</span></Button><Button size="sm" aria-label="Çıkış" data-platform-navigation onClick={() => { void platformCikis().then((iptal) => yonlendir.replace(iptal ? "/platform/giris" : "/platform/giris?cikis=dogrulanamadi")); }}><LogOut size={16} aria-hidden="true" /><span>Çıkış</span></Button></div>
         </header>
+        {tumOturumlar && (
+          <Modal baslik="Tüm oturumlarımı kapat" aciklama="Bu sekme dahil, platform hesabınızla açık olan bütün oturumlar sunucuda kapanır; her yerde yeniden giriş yapmanız gerekir." onKapat={() => setTumOturumlar(false)}>
+            <form onSubmit={(e) => void tumOturumlariKapat(e)} className="stack">
+              <Alert tone="error">{oturumHatasi}</Alert>
+              <ModalEylem onVazgec={() => setTumOturumlar(false)} isleniyor={oturumKapaniyor} metin="Oturumları kapat" tehlikeli />
+            </form>
+          </Modal>
+        )}
         <main id="platform-icerik" className="platform-main" tabIndex={-1}><PlatformOturumuBaglami.Provider value={ben}>{yasakSayfa ? null : children}</PlatformOturumuBaglami.Provider></main>
       </div>
     </div>

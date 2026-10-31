@@ -29,6 +29,8 @@ export interface PlatformBaglami {
   eposta: string;
   /** PLT-06; eski çağrılarda yoksa yönetici sayılır. */
   rol?: "yonetici" | "mevzuat_editoru";
+  /** PLT-25: token'ın bağlı olduğu platform oturumu; çıkış yalnız bunu iptal eder. */
+  oturumId?: string;
 }
 
 interface BaglamTutucu {

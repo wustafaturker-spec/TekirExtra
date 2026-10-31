@@ -24,12 +24,15 @@ describe("platform girişi rota koruması işareti (PLT-08)", () => {
 
   it("giriş başarısızsa çerez konmaz; çıkış çerezi siler", async () => {
     vi.stubEnv("OTURUM_ISARETI_SECRET", SIR);
-    const auth = { giris: vi.fn().mockRejectedValue(new Error("Geçersiz")) } as unknown as PlatformAuthService;
+    const cikis = vi.fn().mockResolvedValue(true);
+    const auth = { giris: vi.fn().mockRejectedValue(new Error("Geçersiz")), cikis } as unknown as PlatformAuthService;
     const res = sahteYanit();
     const denetleyici = new PlatformAuthController(auth);
     await expect(denetleyici.giris({ eposta: "ekip@tekirextra.com", parola: "x", totpKodu: "123456" }, res as unknown as Response)).rejects.toThrow("Geçersiz");
     expect(res.cookie).not.toHaveBeenCalled();
-    denetleyici.cikis(res as unknown as Response);
+    // PLT-25: çıkış token'ı sunucuda iptal ettirir ve sonucu bildirir.
+    expect(await denetleyici.cikis("Bearer abc", res as unknown as Response)).toEqual({ sunucudaIptal: true });
+    expect(cikis).toHaveBeenCalledWith("abc");
     expect(res.clearCookie).toHaveBeenCalledWith(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
   });
 });

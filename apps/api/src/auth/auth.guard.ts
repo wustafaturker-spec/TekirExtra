@@ -14,6 +14,7 @@ import { DestekOturumService } from "../core/destek-oturum.service";
 import { baglamKur, DESTEK_KULLANICI_ID, platformBaglamKur } from "../core/istek-baglami";
 import { KullaniciDurumService, type KullaniciDurumu } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
+import { PlatformOturumDurumService } from "../mevzuat/platform-oturum-durum.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { IKI_ADIM_KURULUMU_GEREKLI } from "../core/guvenlik-politikasi";
 import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR, PLATFORM_ANAHTAR, PLATFORM_ROLLER_ANAHTAR, PUBLIC_ANAHTAR, type PlatformRolu } from "./public.decorator";
@@ -37,6 +38,10 @@ export interface PlatformJwtYuku {
   kapsam: "platform";
   /** PLT-06: girişteki rol; guard güncel rolü veritabanından okur. */
   rol?: PlatformRolu;
+  /** PLT-25: kullanıcının oturum sürümü; güncel sürümle eşleşmeyen token geçmez. */
+  sv?: number;
+  /** PLT-25: platform oturumu (`platform_oturumlari.id`); iptal edilen oturumun token'ı geçmez. */
+  oid?: string;
 }
 
 /** Platform anahtarı yoksa platform uçları kapalıdır (kiracı anahtarına düşülmez). */
@@ -60,22 +65,30 @@ export class AuthGuard implements CanActivate {
     @Optional() private readonly platformDb?: PlatformPrismaService,
     @Optional() private readonly destekDurum?: DestekOturumService,
     @Optional() private readonly prisma?: PrismaService,
-  ) {}
+    @Optional() platformOturum?: PlatformOturumDurumService,
+  ) {
+    // Guard'ı yalnız platform bağlantısıyla kuran testlerde de aynı denetim çalışsın.
+    this.platformOturum = platformOturum ?? (platformDb ? new PlatformOturumDurumService(platformDb) : undefined);
+  }
 
-  /** Platform P1-2 / PLT-06 / PLT-07: pasife alınan, rolü değişen ya da 2FA'sı sıfırlanan platform kullanıcısı en geç 10 sn içinde etkilenir. */
-  private readonly platformDurum = new Map<string, { aktif: boolean; rol: PlatformRolu; bitis: number }>();
+  private readonly platformOturum?: PlatformOturumDurumService;
 
-  private async platformKullaniciDurumu(id: string, tokenRolu: PlatformRolu | undefined): Promise<{ aktif: boolean; rol: PlatformRolu }> {
-    if (!this.platformDb) return { aktif: true, rol: tokenRolu ?? "yonetici" };
-    const simdi = Date.now();
-    const k = this.platformDurum.get(id);
-    if (k && k.bitis > simdi) return k;
-    const kayit = await this.platformDb.db.platformKullanici.findUnique({ where: { id }, select: { aktif: true, rol: true, davetTuru: true } });
-    // PLT-07: 2FA'sı sıfırlanıp yeniden kurulumu bekleyen hesabın eldeki token'ı da düşer.
-    const durum = { aktif: Boolean(kayit?.aktif) && !kayit?.davetTuru, rol: (kayit?.rol ?? "mevzuat_editoru") as PlatformRolu };
-    if (this.platformDurum.size > 1_000) this.platformDurum.clear();
-    this.platformDurum.set(id, { ...durum, bitis: simdi + 10_000 });
-    return durum;
+  /**
+   * Platform P1-2 / PLT-06 / PLT-07 / PLT-25: pasife alınan, rolü değişen, 2FA'sı
+   * sıfırlanan ya da oturumu kapatılan platform kullanıcısının token'ı düşer —
+   * aynı süreçte hemen, diğer API süreçlerinde en geç 10 sn içinde.
+   */
+  private async platformKullaniciDurumu(yuk: PlatformJwtYuku): Promise<{ rol: PlatformRolu }> {
+    const s = this.platformOturum;
+    if (!s) return { rol: yuk.rol ?? "yonetici" };
+    // Sürüm ve oturum taşımayan (PLT-25 öncesi) token'lar yeniden giriş ister.
+    if (typeof yuk.sv !== "number" || typeof yuk.oid !== "string") throw new UnauthorizedException("Oturum yenilendi; yeniden giriş yapın");
+    let durum = await s.kullanici(yuk.sub);
+    // Önbellek bayat olabilir (ör. 2FA yeniden kurulup yeni sürümle giriş yapıldı; başka süreç): bir kez taze oku.
+    if (!durum.aktif || durum.oturumSurumu !== yuk.sv) durum = await s.kullanici(yuk.sub, true);
+    if (!durum.aktif) throw new UnauthorizedException("Platform hesabı pasif");
+    if (durum.oturumSurumu !== yuk.sv || !(await s.oturumGecerli(yuk.oid, yuk.sub))) throw new UnauthorizedException("Oturum kapatıldı; yeniden giriş yapın");
+    return { rol: durum.rol };
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -105,12 +118,11 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
       }
       if (platformYuku.kapsam !== "platform") throw new UnauthorizedException("Token geçersiz veya süresi dolmuş");
-      const durum = await this.platformKullaniciDurumu(platformYuku.sub, platformYuku.rol);
-      if (!durum.aktif) throw new UnauthorizedException("Platform hesabı pasif");
+      const durum = await this.platformKullaniciDurumu(platformYuku);
       const roller = this.reflector.getAllAndOverride<PlatformRolu[] | undefined>(PLATFORM_ROLLER_ANAHTAR, [context.getHandler(), context.getClass()]);
       const izinli: PlatformRolu[] = Array.isArray(roller) ? roller : ["yonetici"];
       if (!izinli.includes(durum.rol)) throw new ForbiddenException("Bu işlem için platform yöneticisi yetkisi gerekir");
-      platformBaglamKur({ kullaniciId: platformYuku.sub, eposta: platformYuku.eposta, rol: durum.rol });
+      platformBaglamKur({ kullaniciId: platformYuku.sub, eposta: platformYuku.eposta, rol: durum.rol, ...(platformYuku.oid ? { oturumId: platformYuku.oid } : {}) });
       return true;
     }
 

@@ -6307,9 +6307,12 @@ model PlatformKullanici {
   davetTuru          String?     @map("davet_turu")
   davetAnahtarOzeti  String?     @unique @map("davet_anahtar_ozeti")
   davetSonGecerlilik DateTime?   @map("davet_son_gecerlilik")
+  /// PLT-25: 2FA sıfırlama, rol değişikliği, pasife alma ve "tüm oturumları kapat" artırır; eski sürümlü token geçmez.
+  oturumSurumu       Int         @default(0) @map("oturum_surumu")
   createdAt          DateTime    @default(now()) @map("created_at")
   updatedAt          DateTime    @updatedAt @map("updated_at")
 
+  oturumlar           PlatformOturum[]
   olusturulanGorevler PlatformGorev[] @relation("GoreviOlusturan")
   sorumluGorevler PlatformGorev[] @relation("GorevSorumlusu")
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
@@ -7395,6 +7398,20 @@ enum PlatformGorevOnceligi {
 }
 
 /// Platform ekibinin kalıcı görevleri. Kiracı bağlantısına açılmaz.
+/// PLT-25: her platform girişi bir oturumdur (token'daki `oid`). Çıkış yalnız o oturumu iptal eder.
+model PlatformOturum {
+  id          String            @id @default(uuid()) @db.Uuid
+  kullaniciId String            @map("kullanici_id") @db.Uuid
+  bitis       DateTime
+  iptalAt     DateTime?         @map("iptal_at")
+  iptalNedeni String?           @map("iptal_nedeni")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  kullanici   PlatformKullanici @relation(fields: [kullaniciId], references: [id], onDelete: Cascade)
+
+  @@index([kullaniciId, bitis])
+  @@map("platform_oturumlari")
+}
+
 model PlatformGorev {
   id String @id @default(uuid()) @db.Uuid
   baslik String @db.VarChar(200)

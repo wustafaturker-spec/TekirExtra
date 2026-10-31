@@ -19,10 +19,22 @@ export function platformTokenYaz(token: string | null): void {
   else window.sessionStorage.removeItem(ANAHTAR);
 }
 
-/** Çıkış: token'ı siler, rota koruması işaretini API'ye kaldırtır. */
-export async function platformCikis(): Promise<void> {
-  platformTokenYaz(null);
-  await fetch(`${API_URL}/platform/auth/cikis`, { method: "POST", credentials: "include" }).catch(() => undefined);
+/**
+ * Çıkış (PLT-25): oturum önce sunucuda iptal ettirilir, ardından yerel token her
+ * durumda silinir. `false`: ağ hatası ya da sunucu iptali doğrulayamadı — sekmede
+ * çıkış yapılmıştır ama eldeki token süresi dolana kadar başka yerde geçerli olabilir.
+ */
+export async function platformCikis(): Promise<boolean> {
+  const token = platformTokenAl();
+  try {
+    const yanit = await fetch(`${API_URL}/platform/auth/cikis`, { method: "POST", credentials: "include", headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const govde = yanit.ok ? ((await yanit.json().catch(() => null)) as { sunucudaIptal?: boolean } | null) : null;
+    return !token || govde?.sunucudaIptal === true;
+  } catch {
+    return false;
+  } finally {
+    platformTokenYaz(null);
+  }
 }
 
 export class PlatformApiHata extends Error {

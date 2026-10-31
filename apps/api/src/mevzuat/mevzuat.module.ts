@@ -8,6 +8,7 @@ import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
+import { PlatformOturumDurumService } from "./platform-oturum-durum.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { MevzuatHatirlatmaService } from "./mevzuat-hatirlatma.service";
 import { TahsilatHatirlatmaService } from "./tahsilat-hatirlatma.service";
@@ -22,7 +23,7 @@ import { PlatformGorevService } from "./platform-gorev.service";
 @Global()
 @Module({
   controllers: [PlatformGorevController, MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
-  providers: [PlatformGorevService, MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci],
-  exports: [MevzuatService, PlatformPrismaService],
+  providers: [PlatformGorevService, MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci, PlatformOturumDurumService],
+  exports: [MevzuatService, PlatformPrismaService, PlatformOturumDurumService],
 })
 export class MevzuatModule {}

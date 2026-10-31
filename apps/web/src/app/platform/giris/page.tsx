@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { Alert, Button, Field, Input } from "@/components/ui";
 import { PlatformAuth, PlatformParola } from "@/components/platform-auth";
@@ -13,6 +13,9 @@ export default function PlatformGirisSayfasi() {
   const yonlendir = useRouter();
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
+  const [cikis, setCikis] = useState<string | null>(null);
+  // PLT-25: çıkışın sunucuda doğrulanıp doğrulanmadığı adres çubuğuyla gelir.
+  useEffect(() => { setCikis(new URLSearchParams(window.location.search).get("cikis")); }, []);
 
   async function gonder(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -31,6 +34,8 @@ export default function PlatformGirisSayfasi() {
 
   return <PlatformAuth title="Platforma giriş yapın" description="Platform hesabınızı ve doğrulayıcı uygulamanızdaki 6 haneli kodu kullanın.">
     <Alert tone="error">{hata}</Alert>
+    {cikis === "dogrulanamadi" && <Alert tone="warning">Bu sekmede çıkış yapıldı, ancak oturumun sunucuda kapatıldığı doğrulanamadı (bağlantı hatası). Şüpheniz varsa yeniden girip &ldquo;Tüm oturumlar&rdquo; ile bütün oturumlarınızı kapatın.</Alert>}
+    {cikis === "tum" && <Alert tone="success">Tüm platform oturumlarınız kapatıldı.</Alert>}
     <form onSubmit={(e) => void gonder(e)}><fieldset disabled={yukleniyor} className="platform-auth-fields">
       <Field label="E-posta"><Input name="eposta" type="email" autoComplete="username" required placeholder="ad@firma.com" /></Field>
       <PlatformParola label="Parola" name="parola" autoComplete="current-password" required />
