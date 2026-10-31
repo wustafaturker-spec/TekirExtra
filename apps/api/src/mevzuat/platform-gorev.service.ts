@@ -10,7 +10,7 @@ export interface GorevGirdisi {
 }
 export type GorevGuncellemesi = Partial<Omit<GorevGirdisi, "kapsam">> & { surum: number; durum?: PlatformGorevDurumu };
 export interface GorevFiltresi {
-  durum: "hepsi" | "acik_isler" | PlatformGorevDurumu; arama: string; benim: boolean; geciken: boolean; sayfa: number;
+  durum: "hepsi" | "acik_isler" | PlatformGorevDurumu; arama: string; benim: boolean; geciken: boolean; sorumluPasif: boolean; sayfa: number;
 }
 const ACIK: PlatformGorevDurumu[] = ["acik", "devam_ediyor"];
 const ILISKILER = {
@@ -32,21 +32,27 @@ export class PlatformGorevService {
     const temel = this.kapsam();
     const bugun = bugunTR();
     const geciken = { ...temel, durum: { in: ACIK }, sonTarih: { lt: tarih(bugun)! } } satisfies Prisma.PlatformGorevWhereInput;
+    // PLT-31: pasife alınan kişinin açık işi görünür kalsın ve yeniden atanabilsin.
+    const sorumluPasif = { durum: { in: ACIK }, sorumlu: { aktif: false } } satisfies Prisma.PlatformGorevWhereInput;
     const where: Prisma.PlatformGorevWhereInput = {
       ...temel,
       ...(f.durum === "hepsi" ? {} : { durum: f.durum === "acik_isler" ? { in: ACIK } : f.durum }),
       ...(f.benim ? { sorumluId: kullaniciId } : {}),
       ...(f.arama ? { OR: [{ baslik: { contains: f.arama, mode: "insensitive" } }, { aciklama: { contains: f.arama, mode: "insensitive" } }] } : {}),
-      ...(f.geciken ? { AND: [{ sonTarih: geciken.sonTarih, durum: { in: ACIK } }] } : {}),
+      AND: [
+        ...(f.geciken ? [{ sonTarih: geciken.sonTarih, durum: { in: ACIK } }] : []),
+        ...(f.sorumluPasif ? [sorumluPasif] : []),
+      ],
     };
     const db = this.platform.db;
-    const [kayitlar, toplam, gruplar, gecikenSayisi] = await Promise.all([
+    const [kayitlar, toplam, gruplar, gecikenSayisi, sorumluPasifSayisi] = await Promise.all([
       db.platformGorev.findMany({ where, include: ILISKILER, orderBy: [{ sonTarih: { sort: "asc", nulls: "last" } }, { oncelik: "desc" }, { updatedAt: "desc" }, { id: "asc" }], skip: (f.sayfa - 1) * 25, take: 25 }),
       db.platformGorev.count({ where }),
       db.platformGorev.groupBy({ by: ["durum"], where: temel, _count: { _all: true } }),
       db.platformGorev.count({ where: geciken }),
+      db.platformGorev.count({ where: { ...temel, ...sorumluPasif } }),
     ]);
-    const sayilar = { acik: 0, devam_ediyor: 0, tamamlandi: 0, iptal: 0, geciken: gecikenSayisi };
+    const sayilar = { acik: 0, devam_ediyor: 0, tamamlandi: 0, iptal: 0, geciken: gecikenSayisi, sorumluPasif: sorumluPasifSayisi };
     for (const g of gruplar) sayilar[g.durum] = g._count._all;
     return { kayitlar: kayitlar.map(gorunum), toplam, sayfa: f.sayfa, sayfaBoyutu: 25, sayilar, bugun };
   }
@@ -63,6 +69,8 @@ export class PlatformGorevService {
 
   private async baglariDogrula(tx: Prisma.TransactionClient, kapsam: PlatformGorevKapsami, sorumluId?: string | null, degisiklikId?: string | null) {
     if (sorumluId) {
+      // PLT-31: rol düşürme ile aynı kilit; yöneticiye atama, aynı anda editöre düşürülmesiyle yarışıp sahipsiz görev bırakmasın.
+      if (kapsam === "platform") await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended('platform-kullanici-yetki', 0))::text`;
       const k = await tx.platformKullanici.findFirst({ where: { id: sorumluId, aktif: true, davetTuru: null }, select: { rol: true } });
       if (!k) throw new BadRequestException("Sorumlu, kurulumu tamamlanmış aktif bir platform kullanıcısı olmalı.");
       if (kapsam === "platform" && k.rol !== "yonetici") throw new BadRequestException("Platform görevine yalnız platform yöneticisi atanabilir.");
@@ -90,7 +98,9 @@ export class PlatformGorevService {
       const eski = await tx.platformGorev.findFirst({ where: { id, ...this.kapsam() } });
       if (!eski) throw new NotFoundException("Görev bulunamadı.");
       if (eski.surum !== g.surum) throw new ConflictException("Görev başka biri tarafından değiştirildi. Güncel kaydı açıp tekrar deneyin.");
-      await this.baglariDogrula(tx, eski.kapsam, g.sorumluId, g.degisiklikId);
+      // PLT-31: kapanmış görev yeniden açılırken mevcut sorumlu da denetlenir (o arada editöre düşmüş ya da pasife alınmış olabilir).
+      const yenidenAciliyor = g.durum !== undefined && ACIK.includes(g.durum) && !ACIK.includes(eski.durum);
+      await this.baglariDogrula(tx, eski.kapsam, g.sorumluId !== undefined || !yenidenAciliyor ? g.sorumluId : eski.sorumluId, g.degisiklikId);
       const { surum, sonTarih, ...alanlar } = g;
       const kapanisAt = g.durum && g.durum !== eski.durum ? (g.durum === "tamamlandi" || g.durum === "iptal" ? new Date() : null) : eski.kapanisAt;
       const sonuc = await tx.platformGorev.updateMany({ where: { id, surum }, data: { ...alanlar, ...(sonTarih !== undefined ? { sonTarih: tarih(sonTarih) } : {}), kapanisAt, surum: { increment: 1 } } });

@@ -14,18 +14,18 @@ import { GOREV_DURUMU, GOREV_ONCELIGI, gorevAcik, type Gorev, type GorevListesi,
 import { tarihTR } from "@/lib/mevzuat-gorunum";
 
 type ListeDurumu = GorevDurumu | "hepsi" | "acik_isler";
-interface Filtre { arama: string; durum: ListeDurumu; benim: boolean; geciken: boolean; sayfa: number }
-const VARSAYILAN_FILTRE: Filtre = { arama: "", durum: "acik_isler", benim: false, geciken: false, sayfa: 1 };
+interface Filtre { arama: string; durum: ListeDurumu; benim: boolean; geciken: boolean; sorumluPasif: boolean; sayfa: number }
+const VARSAYILAN_FILTRE: Filtre = { arama: "", durum: "acik_isler", benim: false, geciken: false, sorumluPasif: false, sayfa: 1 };
 function filtreOku(p: Pick<URLSearchParams, "get">): Filtre {
   const durum = p.get("durum") ?? "";
   const sayfa = Number(p.get("sayfa") ?? "1");
-  return { arama: (p.get("arama") ?? "").trim().slice(0, 200), durum: ["hepsi", "acik_isler", ...Object.keys(GOREV_DURUMU)].includes(durum) ? durum as ListeDurumu : "acik_isler", benim: p.get("benim") === "1", geciken: p.get("geciken") === "1", sayfa: Number.isInteger(sayfa) && sayfa > 0 && sayfa <= 100000 ? sayfa : 1 };
+  return { arama: (p.get("arama") ?? "").trim().slice(0, 200), durum: ["hepsi", "acik_isler", ...Object.keys(GOREV_DURUMU)].includes(durum) ? durum as ListeDurumu : "acik_isler", benim: p.get("benim") === "1", geciken: p.get("geciken") === "1", sorumluPasif: p.get("sorumluPasif") === "1", sayfa: Number.isInteger(sayfa) && sayfa > 0 && sayfa <= 100000 ? sayfa : 1 };
 }
 function filtreYaz(ek: Partial<Filtre> | ((f: Filtre) => Filtre)) {
   const url = new URL(window.location.href);
   const onceki = filtreOku(url.searchParams);
   const yeni = typeof ek === "function" ? ek(onceki) : { ...onceki, ...ek };
-  for (const alan of ["arama", "durum", "benim", "geciken", "sayfa"] as const) {
+  for (const alan of ["arama", "durum", "benim", "geciken", "sorumluPasif", "sayfa"] as const) {
     if (yeni[alan] === VARSAYILAN_FILTRE[alan]) url.searchParams.delete(alan);
     else url.searchParams.set(alan, typeof yeni[alan] === "boolean" ? "1" : String(yeni[alan]));
   }
@@ -42,7 +42,7 @@ function GorevMerkezi() {
   const setFiltre = filtreYaz;
   const [arama, setArama] = useState(filtre.arama);
   useEffect(() => { setArama(filtre.arama); }, [filtre.arama]);
-  const sorgu = new URLSearchParams({ arama: filtre.arama, durum: filtre.durum, benim: filtre.benim ? "1" : "0", geciken: filtre.geciken ? "1" : "0", sayfa: String(filtre.sayfa) });
+  const sorgu = new URLSearchParams({ arama: filtre.arama, durum: filtre.durum, benim: filtre.benim ? "1" : "0", geciken: filtre.geciken ? "1" : "0", sorumluPasif: filtre.sorumluPasif ? "1" : "0", sayfa: String(filtre.sayfa) });
   const { veri, yukleniyor, hata: listeHatasi, yenile } = usePlatformVerisi<GorevListesi>(`/platform/gorevler?${sorgu}`);
   const [formAcik, setFormAcik] = useState(false);
   const [secili, setSecili] = useState<Gorev | null>(null);
@@ -56,7 +56,7 @@ function GorevMerkezi() {
     const t = setTimeout(() => filtreYaz({ arama: arama.trim().slice(0, 200), sayfa: 1 }), 300);
     return () => clearTimeout(t);
   }, [arama, filtre.arama]);
-  const filtreAktif = Boolean(filtre.arama || filtre.benim || filtre.geciken || filtre.durum !== "acik_isler" || filtre.sayfa !== 1);
+  const filtreAktif = Boolean(filtre.arama || filtre.benim || filtre.geciken || filtre.sorumluPasif || filtre.durum !== "acik_isler" || filtre.sayfa !== 1);
   async function baglantiyiKopyala() {
     try {
       const url = new URL(window.location.href);
@@ -96,7 +96,7 @@ function GorevMerkezi() {
     </div></section>
     <Card title="Görev listesi" pad={false}>
       <div className="platform-filter-bar"><PlatformArama etiket="Görev ara" deger={arama} onChange={setArama} placeholder="Başlık veya açıklama ara…" /><Field label="Görev durumu"><Select value={filtre.durum} onChange={(e) => goster({ durum: e.target.value as ListeDurumu })}><option value="acik_isler">Açık ve devam edenler</option><option value="hepsi">Tüm durumlar</option>{Object.entries(GOREV_DURUMU).map(([kod, ad]) => <option key={kod} value={kod}>{ad}</option>)}</Select></Field></div>
-      <div className="platform-task-toggles"><Button size="sm" onClick={() => void baglantiyiKopyala()}>Liste bağlantısını kopyala</Button>{filtreAktif && <Button size="sm" onClick={() => { setArama(""); filtreYaz(VARSAYILAN_FILTRE); }}>Filtreleri temizle</Button>}<label><input type="checkbox" checked={filtre.benim} onChange={(e) => goster({ benim: e.target.checked })} />Bana atananlar</label><label><input type="checkbox" checked={filtre.geciken} onChange={(e) => goster({ geciken: e.target.checked })} />Sadece gecikenler</label><span role="status">{yukleniyor ? "Yükleniyor…" : veriHatasi ? "Liste alınamadı" : `${gecerliVeri?.toplam ?? 0} görev`}</span></div>
+      <div className="platform-task-toggles"><Button size="sm" onClick={() => void baglantiyiKopyala()}>Liste bağlantısını kopyala</Button>{filtreAktif && <Button size="sm" onClick={() => { setArama(""); filtreYaz(VARSAYILAN_FILTRE); }}>Filtreleri temizle</Button>}<label><input type="checkbox" checked={filtre.benim} onChange={(e) => goster({ benim: e.target.checked })} />Bana atananlar</label><label><input type="checkbox" checked={filtre.geciken} onChange={(e) => goster({ geciken: e.target.checked })} />Sadece gecikenler</label><label><input type="checkbox" checked={filtre.sorumluPasif} onChange={(e) => goster({ sorumluPasif: e.target.checked })} />Sorumlusu pasif</label><span role="status">{yukleniyor ? "Yükleniyor…" : veriHatasi ? "Liste alınamadı" : `${gecerliVeri?.toplam ?? 0} görev`}</span></div>
       <TableWrap className="platform-responsive-table platform-task-table"><thead><tr><th>Görev</th><th>Durum</th><th>Öncelik</th><th>Sorumlu</th><th>Son tarih</th><th>İşlem</th></tr></thead><tbody>
         {!yukleniyor && !veriHatasi && gecerliVeri?.kayitlar.map((g) => <tr key={g.id}>
           <td data-label="Görev" className="platform-cell-title"><strong>{g.baslik}</strong><div><Badge variant={g.kapsam === "mevzuat" ? "info" : "neutral"}>{g.kapsam === "mevzuat" ? "Mevzuat" : "Platform"}</Badge></div>{g.aciklama && <p className="platform-task-description">{g.aciklama}</p>}{g.degisiklik && <Link className="platform-task-related" href={`/platform/degisiklik?id=${g.degisiklik.id}`}>#{g.degisiklik.no} {g.degisiklik.baslik}</Link>}</td>

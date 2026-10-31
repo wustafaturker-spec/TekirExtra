@@ -13,6 +13,8 @@ interface PlatformKullanici {
   sonGiris: string | null; createdAt: string;
   /** Bekleyen kurulum: "hesap" davet, "iki_adim" 2FA yeniden kurulumu. */
   davetTuru: "hesap" | "iki_adim" | null; davetSonGecerlilik: string | null;
+  /** PLT-31: üzerindeki açık platform görevi; editöre düşürülürken aktarılır. */
+  acikPlatformGorevi: number;
 }
 interface DavetSonucu { gonderildi: boolean; mesaj: string; baglanti?: string }
 
@@ -21,7 +23,7 @@ const zaman = (s: string | null) => (s ? new Date(s).toLocaleString("tr-TR") : "
 
 /** Onay penceresiyle yapılan işlemler. */
 type Onay =
-  | { tur: "rol"; k: PlatformKullanici; rol: PlatformRolu }
+  | { tur: "rol"; k: PlatformKullanici; rol: PlatformRolu; hedefId: string }
   | { tur: "aktif"; k: PlatformKullanici; aktif: boolean }
   | { tur: "iki-adim"; k: PlatformKullanici };
 
@@ -51,6 +53,9 @@ export default function PlatformKullanicilari() {
     && (durumFiltresi === "hepsi" || (durumFiltresi === "pasif" ? !k.aktif : durumFiltresi === "kurulum" ? k.aktif && Boolean(k.davetTuru) : k.aktif && !k.davetTuru))
     && `${k.adSoyad} ${k.eposta}`.toLocaleLowerCase("tr-TR").includes(aranan));
   const kilitli = isleniyor || !benId;
+  // PLT-31: editöre düşen kişi platform görevlerini göremez; açık olanlar başka bir kurulu, aktif yöneticiye aktarılır.
+  const aktarimGerekli = (o: Onay): o is Extract<Onay, { tur: "rol" }> => o.tur === "rol" && o.k.rol === "yonetici" && o.rol !== "yonetici" && o.k.acikPlatformGorevi > 0;
+  const aktarimAdaylari = (k: PlatformKullanici) => (liste ?? []).filter((x) => x.id !== k.id && x.rol === "yonetici" && x.aktif && !x.davetTuru);
 
   function davetSonucuGoster(s: DavetSonucu) {
     if (s.gonderildi) setBasari(s.mesaj);
@@ -88,12 +93,15 @@ export default function PlatformKullanicilari() {
   function onayla(e: React.FormEvent) {
     e.preventDefault();
     if (!onay) return;
+    if (aktarimGerekli(onay) && !onay.hedefId) return;
     const o = onay;
     setOnay(null);
     void calistir(async () => {
       if (o.tur === "rol") {
-        await platformApi(`/platform/kullanicilar/${o.k.id}`, { method: "PATCH", body: JSON.stringify({ rol: o.rol }) });
-        setBasari(`${o.k.adSoyad} artık ${ROL_ADI[o.rol].toLocaleLowerCase("tr-TR")}.`);
+        const aktarim = aktarimGerekli(o) ? { gorevAktarimHedefiId: o.hedefId } : {};
+        await platformApi(`/platform/kullanicilar/${o.k.id}`, { method: "PATCH", body: JSON.stringify({ rol: o.rol, ...aktarim }) });
+        const hedef = aktarimGerekli(o) ? liste?.find((k) => k.id === o.hedefId)?.adSoyad : undefined;
+        setBasari(`${o.k.adSoyad} artık ${ROL_ADI[o.rol].toLocaleLowerCase("tr-TR")}.${hedef ? ` ${o.k.acikPlatformGorevi} açık platform görevi ${hedef} kişisine aktarıldı.` : ""}`);
       } else if (o.tur === "aktif") {
         await platformApi(`/platform/kullanicilar/${o.k.id}`, { method: "PATCH", body: JSON.stringify({ aktif: o.aktif }) });
         setBasari(o.aktif ? `${o.k.adSoyad} aktif edildi.` : `${o.k.adSoyad} pasife alındı; açık oturumu en geç 10 saniyede düşer.`);
@@ -146,7 +154,7 @@ export default function PlatformKullanicilari() {
                     <td data-label="E-posta">{k.eposta}</td>
                     <td data-label="Rol">
                       {ben ? ROL_ADI[k.rol] : (
-                        <Select aria-label={`${k.adSoyad} rolü`} value={k.rol} disabled={kilitli} onChange={(e) => setOnay({ tur: "rol", k, rol: e.target.value as PlatformRolu })}>
+                        <Select aria-label={`${k.adSoyad} rolü`} value={k.rol} disabled={kilitli} onChange={(e) => setOnay({ tur: "rol", k, rol: e.target.value as PlatformRolu, hedefId: "" })}>
                           <option value="yonetici">{ROL_ADI.yonetici}</option>
                           <option value="mevzuat_editoru">{ROL_ADI.mevzuat_editoru}</option>
                         </Select>
@@ -203,9 +211,17 @@ export default function PlatformKullanicilari() {
           <form onSubmit={onayla} className="stack">
             <p>
               {onay.tur === "rol" && <><strong>{onay.k.adSoyad}</strong> kullanıcısının rolü <strong>{ROL_ADI[onay.k.rol]}</strong> → <strong>{ROL_ADI[onay.rol]}</strong> olacak. Açık oturumuna en geç 10 saniyede yansır.</>}
-              {onay.tur === "aktif" && (onay.aktif ? <><strong>{onay.k.adSoyad}</strong> yeniden giriş yapabilecek.</> : <><strong>{onay.k.adSoyad}</strong> giriş yapamayacak; açık oturumu en geç 10 saniyede düşer.</>)}
+              {onay.tur === "aktif" && (onay.aktif ? <><strong>{onay.k.adSoyad}</strong> yeniden giriş yapabilecek.</> : <><strong>{onay.k.adSoyad}</strong> giriş yapamayacak; açık oturumu en geç 10 saniyede düşer.{onay.k.acikPlatformGorevi > 0 && <> Üzerindeki <strong>{onay.k.acikPlatformGorevi}</strong> açık platform görevi görev merkezinde &ldquo;Sorumlusu pasif&rdquo; olarak işaretlenir; yeniden atayın.</>}</>)}
               {onay.tur === "iki-adim" && <><strong>{onay.k.adSoyad}</strong> kullanıcısının 2FA'sı geçersizleşir ve oturumu düşer. Kendisine mevcut parolasıyla 2FA'yı yeniden kuracağı bir bağlantı gider.</>}
             </p>
+            {aktarimGerekli(onay) && (aktarimAdaylari(onay.k).length ? (
+              <Field label={`${onay.k.acikPlatformGorevi} açık platform görevinin aktarılacağı yönetici`}>
+                <Select required value={onay.hedefId} onChange={(e) => setOnay({ ...onay, hedefId: e.target.value })}>
+                  <option value="">Yönetici seçin…</option>
+                  {aktarimAdaylari(onay.k).map((k) => <option key={k.id} value={k.id}>{k.adSoyad}</option>)}
+                </Select>
+              </Field>
+            ) : <Alert tone="warning">Görevleri devralabilecek, kurulumu tamamlanmış başka bir aktif yönetici yok. Önce bir yönetici ekleyin ya da görevleri görev merkezinden yeniden atayın.</Alert>)}
             <ModalEylem onVazgec={() => setOnay(null)} isleniyor={isleniyor} metin="Onayla" tehlikeli={onay.tur !== "rol" && !(onay.tur === "aktif" && onay.aktif)} />
           </form>
         </Modal>

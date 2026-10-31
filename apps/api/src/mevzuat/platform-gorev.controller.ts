@@ -18,6 +18,7 @@ const filtre = z.object({
   arama: z.string().trim().max(200).default(""),
   benim: z.enum(["0", "1"]).default("0").transform((v) => v === "1"),
   geciken: z.enum(["0", "1"]).default("0").transform((v) => v === "1"),
+  sorumluPasif: z.enum(["0", "1"]).default("0").transform((v) => v === "1"),
   sayfa: z.coerce.number().int().min(1).max(100000).default(1),
 });
 function ayristir<T>(sema: z.ZodType<T>, veri: unknown): T {

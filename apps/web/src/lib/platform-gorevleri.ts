@@ -13,6 +13,7 @@ export interface Gorev {
 }
 export interface GorevListesi {
   kayitlar: Gorev[]; toplam: number; sayfa: number; sayfaBoyutu: number; bugun: string;
-  sayilar: Record<GorevDurumu | "geciken", number>;
+  /** PLT-31: sorumluPasif — sorumlusu pasife alınmış açık görevler. */
+  sayilar: Record<GorevDurumu | "geciken" | "sorumluPasif", number>;
 }
 export const gorevAcik = (g: Pick<Gorev, "durum">) => g.durum === "acik" || g.durum === "devam_ediyor";

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const kullanici = (id: string, adSoyad: string, rol = "mevzuat_editoru") => ({ id, adSoyad, eposta: `${id}@example.test`, rol, aktif: true, sonGiris: "2026-10-30T08:00:00Z", createdAt: "2026-01-01", davetTuru: null, davetSonGecerlilik: null });
+const kullanici = (id: string, adSoyad: string, rol = "mevzuat_editoru", acikPlatformGorevi = 0) => ({ id, adSoyad, eposta: `${id}@example.test`, rol, aktif: true, sonGiris: "2026-10-30T08:00:00Z", createdAt: "2026-01-01", davetTuru: null, davetSonGecerlilik: null, acikPlatformGorevi });
 const saglik = {
   zaman: "2026-10-30T08:00:00Z", esikler: { workerNabizDk: 10, saatlikYenidenBaslama: 2, kursorSaat: 3, ardisikHata: 3 },
   worker: { son: { basladiAt: "2026-10-30T07:00:00Z", sonNabizAt: "2026-10-30T07:59:00Z", rssMb: 150, heapMb: 80, heapSinirMb: 400 }, nabizGecikmesiDk: 1, acilis24s: 1, acilislar: [] }, api: null,
@@ -55,6 +55,35 @@ test("kullanıcı kendi rolünü değiştiremez, başka kullanıcının rolü ya
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: "/tmp/platform-kullanicilar-mobile.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("PLT-31: açık platform görevi olan yönetici editöre düşürülürken görevler seçilen yöneticiye aktarılır", async ({ page }) => {
+  const istekler: unknown[] = [];
+  await page.route("**/api/v1/platform/kullanicilar", (route) => route.fulfill({ json: [kullanici("p1", "Yönetici", "yonetici"), kullanici("p2", "Ayşe Yılmaz", "yonetici", 2), kullanici("p3", "Mehmet Demir", "yonetici"), { ...kullanici("p4", "Kurulumdaki Yönetici", "yonetici"), davetTuru: "hesap" }] }));
+  await page.route("**/api/v1/platform/kullanicilar/p2", async (route) => { istekler.push(route.request().postDataJSON()); await route.fulfill({ json: { mesaj: "Kaydedildi" } }); });
+  await page.goto("/platform/kullanicilar");
+  await page.getByLabel("Ayşe Yılmaz rolü").selectOption("mevzuat_editoru");
+  const pencere = page.getByRole("dialog", { name: "Rol değişikliği" });
+  const hedef = pencere.getByLabel("2 açık platform görevinin aktarılacağı yönetici");
+  await expect(hedef.locator("option")).toHaveText(["Yönetici seçin…", "Yönetici", "Mehmet Demir"]);
+  await pencere.getByRole("button", { name: "Onayla" }).click();
+  expect(istekler).toEqual([]);
+  await hedef.selectOption({ label: "Mehmet Demir" });
+  await pencere.getByRole("button", { name: "Onayla" }).click();
+  await expect(page.getByText("Ayşe Yılmaz artık mevzuat editörü. 2 açık platform görevi Mehmet Demir kişisine aktarıldı.")).toBeVisible();
+  expect(istekler).toEqual([{ rol: "mevzuat_editoru", gorevAktarimHedefiId: "p3" }]);
+});
+
+test("PLT-31: pasife alma görev aktarımı istemez, pasif sorumlu uyarısı gösterir", async ({ page }) => {
+  const istekler: unknown[] = [];
+  await page.route("**/api/v1/platform/kullanicilar", (route) => route.fulfill({ json: [kullanici("p1", "Yönetici", "yonetici"), kullanici("p2", "Ayşe Yılmaz", "yonetici", 1)] }));
+  await page.route("**/api/v1/platform/kullanicilar/p2", async (route) => { istekler.push(route.request().postDataJSON()); await route.fulfill({ json: { mesaj: "Kaydedildi" } }); });
+  await page.goto("/platform/kullanicilar");
+  await page.getByRole("row", { name: /Ayşe Yılmaz/ }).getByRole("button", { name: "Pasife al" }).click();
+  const pencere = page.getByRole("dialog", { name: "Kullanıcıyı pasife al" });
+  await expect(pencere).toContainText("1 açık platform görevi görev merkezinde “Sorumlusu pasif” olarak işaretlenir");
+  await pencere.getByRole("button", { name: "Onayla" }).click();
+  expect(istekler).toEqual([{ aktif: false }]);
 });
 
 test("kimlik doğrulanmadan kullanıcı işlemleri açılmaz, davet e-postası gidemezse kurulum bağlantısı korunur", async ({ page }) => {

@@ -25,9 +25,10 @@ async function hazirla(page: Page, ilk = [gorev()], rol = "yonetici") {
         return (!d || d === "hepsi" || (d === "acik_isler" ? acik(g) : g.durum === d))
           && (url.searchParams.get("benim") !== "1" || g.sorumluId === (rol === "yonetici" ? ADMIN : EDITOR))
           && (url.searchParams.get("geciken") !== "1" || acik(g) && Boolean(g.sonTarih && g.sonTarih < "2026-10-30"))
+          && (url.searchParams.get("sorumluPasif") !== "1" || acik(g) && g.sorumlu?.aktif === false)
           && `${g.baslik} ${g.aciklama}`.toLocaleLowerCase("tr-TR").includes((url.searchParams.get("arama") ?? "").toLocaleLowerCase("tr-TR"));
       });
-      return route.fulfill({ json: { kayitlar: rows, toplam: rows.length, sayfa: 1, sayfaBoyutu: 25, bugun: "2026-10-30", sayilar: { acik: scope.filter((g) => g.durum === "acik").length, devam_ediyor: scope.filter((g) => g.durum === "devam_ediyor").length, tamamlandi: scope.filter((g) => g.durum === "tamamlandi").length, iptal: 0, geciken: scope.filter((g) => acik(g) && g.sonTarih && g.sonTarih < "2026-10-30").length } } });
+      return route.fulfill({ json: { kayitlar: rows, toplam: rows.length, sayfa: 1, sayfaBoyutu: 25, bugun: "2026-10-30", sayilar: { acik: scope.filter((g) => g.durum === "acik").length, devam_ediyor: scope.filter((g) => g.durum === "devam_ediyor").length, tamamlandi: scope.filter((g) => g.durum === "tamamlandi").length, iptal: 0, geciken: scope.filter((g) => acik(g) && g.sonTarih && g.sonTarih < "2026-10-30").length, sorumluPasif: scope.filter((g) => acik(g) && g.sorumlu?.aktif === false).length } } });
     }
     if (path.endsWith("/gorevler") && method === "POST") {
       const body = route.request().postDataJSON(); durum.istekler.push({ method, body });
@@ -192,4 +193,15 @@ test("geçersiz filtre değerleri güvenli varsayılanlarla açılır", async ({
   await expect(page.getByLabel("Görev durumu")).toHaveValue("acik_isler");
   await expect(page.getByLabel("Bana atananlar")).not.toBeChecked();
   await expect(page.getByText("Sayfa 1 / 1", { exact: true })).toBeVisible();
+});
+
+test("PLT-31: sorumlusu pasif açık görev özette sayılır ve bağlantı süzülmüş listeyi açar", async ({ page }) => {
+  const pasif = { ...kisi(ADMIN), id: "10000000-0000-4000-8000-000000000003", adSoyad: "Ayrılan Yönetici", aktif: false };
+  await hazirla(page, [gorev({ kapsam: "platform", degisiklikId: null, degisiklik: null, baslik: "Sahipsiz kalan iş", sorumluId: pasif.id, sorumlu: pasif }), gorev({ id: "30000000-0000-4000-8000-000000000002", baslik: "Aktif kişinin görevi" })]);
+  await page.goto("/platform/ozet");
+  await page.getByRole("link", { name: "Sorumlusu pasif görev: 1", exact: true }).click();
+  await expect(page.getByLabel("Sorumlusu pasif", { exact: true })).toBeChecked();
+  await expect(page.getByText("Sahipsiz kalan iş", { exact: true })).toBeVisible();
+  await expect(page.getByText("Hesap pasif")).toBeVisible();
+  await expect(page.getByText("Aktif kişinin görevi", { exact: true })).toHaveCount(0);
 });

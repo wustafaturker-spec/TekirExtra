@@ -17,6 +17,9 @@ export const PLATFORM_DAVET_GECERLILIK_SAAT = 72;
 const ozetle = (anahtar: string) => createHash("sha256").update(anahtar).digest("hex");
 const ROL_ADI: Record<PlatformRol, string> = { yonetici: "platform yöneticisi", mevzuat_editoru: "mevzuat editörü" };
 
+/** PLT-31: yalnız yöneticiye atanabilen, henüz kapanmamış platform görevleri. */
+const ACIK_PLATFORM_GOREVI = { kapsam: "platform", durum: { in: ["acik", "devam_ediyor"] } } satisfies Prisma.PlatformGorevWhereInput;
+
 const SECIM = {
   id: true, eposta: true, adSoyad: true, rol: true, aktif: true, sonGiris: true, createdAt: true, davetTuru: true, davetSonGecerlilik: true,
 } as const;
@@ -34,8 +37,14 @@ export class PlatformKullanicilarService {
 
   constructor(private readonly platform: PlatformPrismaService) {}
 
-  listele() {
-    return this.platform.db.platformKullanici.findMany({ select: SECIM, orderBy: { createdAt: "asc" } });
+  /** PLT-31: her kullanıcının üzerindeki açık platform görevi sayısı da döner; rol düşürme penceresi aktarımı buna göre ister. */
+  async listele() {
+    const [kullanicilar, gorevler] = await Promise.all([
+      this.platform.db.platformKullanici.findMany({ select: SECIM, orderBy: { createdAt: "asc" } }),
+      this.platform.db.platformGorev.groupBy({ by: ["sorumluId"], where: ACIK_PLATFORM_GOREVI, _count: { _all: true } }),
+    ]);
+    const sayilar = new Map(gorevler.map((g) => [g.sorumluId, g._count._all]));
+    return kullanicilar.map((k) => ({ ...k, acikPlatformGorevi: sayilar.get(k.id) ?? 0 }));
   }
 
   async olustur(girdi: { eposta: string; adSoyad: string; rol: PlatformRol }) {
@@ -71,7 +80,13 @@ export class PlatformKullanicilarService {
     return this.davetGonder(k, k.davetTuru as DavetTuru, anahtar);
   }
 
-  async guncelle(id: string, girdi: { rol?: PlatformRol; aktif?: boolean }) {
+  /**
+   * PLT-31: yönetici editöre düşürülürken açık platform görevleri aynı işlemde
+   * seçilen yöneticiye aktarılır; editör bu görevleri göremeyeceği için aktarım
+   * hedefi yoksa rol değişmez. Pasife alma güvenlik işlemidir, bekletilmez;
+   * pasif sorumlunun görevleri görev merkezinde işaretlenir.
+   */
+  async guncelle(id: string, girdi: { rol?: PlatformRol; aktif?: boolean; gorevAktarimHedefiId?: string }) {
     const { kullaniciId } = aktifPlatformBaglam();
     if (id === kullaniciId && girdi.rol !== undefined) throw new BadRequestException("Kendi rolünüzü değiştiremezsiniz; başka bir platform yöneticisi değiştirebilir");
     if (id === kullaniciId && girdi.aktif === false) throw new BadRequestException("Kendi hesabınızı pasife alamazsınız");
@@ -86,9 +101,23 @@ export class PlatformKullanicilarService {
         const digerleri = await tx.platformKullanici.count({ where: { rol: "yonetici", aktif: true, davetTuru: null, id: { not: id } } });
         if (!digerleri) throw new BadRequestException("En az bir aktif platform yöneticisi kalmalıdır; önce başka bir kullanıcıyı yönetici yapın");
       }
+      const aktarilacak = mevcut.rol === "yonetici" && yeniRol !== "yonetici"
+        ? await tx.platformGorev.findMany({ where: { ...ACIK_PLATFORM_GOREVI, sorumluId: id }, select: { id: true, baslik: true }, orderBy: { createdAt: "asc" } })
+        : [];
+      let hedefId: string | null = null;
+      if (aktarilacak.length) {
+        if (!girdi.gorevAktarimHedefiId) throw new BadRequestException(`Kullanıcının ${aktarilacak.length} açık platform görevi var; rolü değiştirmeden önce görevlerin aktarılacağı yöneticiyi seçin`);
+        const hedef = girdi.gorevAktarimHedefiId === id ? null : await tx.platformKullanici.findFirst({ where: { id: girdi.gorevAktarimHedefiId, rol: "yonetici", aktif: true, davetTuru: null }, select: { id: true } });
+        if (!hedef) throw new BadRequestException("Görevler yalnız kurulumu tamamlanmış başka bir aktif platform yöneticisine aktarılabilir");
+        hedefId = hedef.id;
+      }
       const guncel = await tx.platformKullanici.update({ where: { id }, data: { rol: yeniRol, aktif: yeniAktif }, select: SECIM });
+      for (const g of aktarilacak) {
+        const { surum } = await tx.platformGorev.update({ where: { id: g.id }, data: { sorumluId: hedefId, surum: { increment: 1 } }, select: { surum: true } });
+        await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "platform_gorevi_guncellendi", detay: { gorevId: g.id, baslik: g.baslik, neden: "rol_dusurme_aktarimi", oncekiSorumluId: id, yeniSorumluId: hedefId, surum } } });
+      }
       if (mevcut.rol !== guncel.rol) {
-        await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "platform_rolu_degisti", detay: { eposta: mevcut.eposta, eski: mevcut.rol, yeni: guncel.rol } } });
+        await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "platform_rolu_degisti", detay: { eposta: mevcut.eposta, eski: mevcut.rol, yeni: guncel.rol, ...(aktarilacak.length ? { aktarilanGorev: aktarilacak.length, gorevAktarimHedefiId: hedefId } : {}) } } });
       }
       if (mevcut.aktif !== guncel.aktif) {
         await tx.mevzuatOlay.create({ data: { kullaniciId, olay: guncel.aktif ? "platform_kullanicisi_aktif_edildi" : "platform_kullanicisi_pasife_alindi", detay: { eposta: mevcut.eposta } } });

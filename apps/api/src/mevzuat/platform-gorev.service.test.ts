@@ -3,7 +3,7 @@ import { platformBaglamiylaCalistir } from "../core/istek-baglami";
 import { PlatformGorevService, type GorevFiltresi, type GorevGirdisi } from "./platform-gorev.service";
 import { PlatformGorevController } from "./platform-gorev.controller";
 
-const filtre: GorevFiltresi = { arama: "", durum: "acik_isler", benim: false, geciken: false, sayfa: 1 };
+const filtre: GorevFiltresi = { arama: "", durum: "acik_isler", benim: false, geciken: false, sorumluPasif: false, sayfa: 1 };
 const girdi: GorevGirdisi = { baslik: "Dönem kaydını hazırla", aciklama: null, kapsam: "mevzuat", oncelik: "normal", sonTarih: "2027-01-01", sorumluId: null, degisiklikId: null };
 const olarak = <T>(rol: "yonetici" | "mevzuat_editoru", is: () => Promise<T>) => platformBaglamiylaCalistir({ kullaniciId: "p1", eposta: "test@example.invalid", rol }, is);
 function kur(kapsam = "mevzuat") {
@@ -19,6 +19,7 @@ function kur(kapsam = "mevzuat") {
     platformKullanici: { findFirst: vi.fn(async (_q: unknown) => ({ rol: "yonetici" })), findMany: vi.fn(async (_q: unknown) => []) },
     mevzuatDegisiklik: { findUnique: vi.fn(async () => ({ id: "d1" })) },
     mevzuatOlay: { create: vi.fn(async ({ data }) => data) },
+    $queryRaw: vi.fn(async (..._a: unknown[]) => []),
   };
   const db = { ...tx, $transaction: vi.fn(async (fn) => fn(tx)) };
   return { servis: new PlatformGorevService({ db } as never), db, tx };
@@ -74,5 +75,30 @@ describe("platform görevleri", () => {
     expect(() => c.olustur({ ...girdi, sonTarih: "2027-02-30" })).toThrow("geçerli bir takvim tarihi");
     expect(() => c.guncelle("g1", { surum: 1, kapsam: "platform" })).toThrow();
     expect(() => c.guncelle("g1", { surum: 1 })).toThrow("en az bir alan");
+  });
+  it("PLT-31: platform görevine atama rol düşürmeyle aynı yetki kilidini alır; mevzuat ataması almaz", async () => {
+    const t = kur();
+    await olarak("yonetici", () => t.servis.olustur({ ...girdi, kapsam: "platform", sorumluId: "p2" }));
+    expect(t.tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect((t.tx.$queryRaw.mock.calls[0][0] as unknown as string[]).join("")).toContain("platform-kullanici-yetki");
+    await olarak("yonetici", () => t.servis.olustur({ ...girdi, sorumluId: "p2" }));
+    expect(t.tx.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+  it("PLT-31: kapanmış platform görevi, sorumlusu artık yönetici değilse yeniden atanmadan açılamaz", async () => {
+    const t = kur("platform");
+    await olarak("yonetici", () => t.servis.guncelle("g1", { surum: 1, sorumluId: "p2" }));
+    await olarak("yonetici", () => t.servis.guncelle("g1", { surum: 2, durum: "tamamlandi" }));
+    t.tx.platformKullanici.findFirst.mockResolvedValue({ rol: "mevzuat_editoru" });
+    await expect(olarak("yonetici", () => t.servis.guncelle("g1", { surum: 3, durum: "acik" }))).rejects.toThrow("yalnız platform yöneticisi");
+    expect(t.tx.platformKullanici.findFirst.mock.calls.at(-1)?.[0]).toMatchObject({ where: { id: "p2" } });
+    t.tx.platformKullanici.findFirst.mockResolvedValue({ rol: "yonetici" });
+    const acik = await olarak("yonetici", () => t.servis.guncelle("g1", { surum: 3, durum: "acik", sorumluId: "p3" }));
+    expect(acik).toMatchObject({ durum: "acik", sorumluId: "p3", surum: 4 });
+  });
+  it("PLT-31: sorumlusu pasif açık görevler ayrı sayılır ve süzülebilir", async () => {
+    const t = kur();
+    const sonuc = await olarak("yonetici", () => t.servis.listele({ ...filtre, sorumluPasif: true }));
+    expect(sonuc.sayilar).toHaveProperty("sorumluPasif", 0);
+    expect(t.tx.platformGorev.findMany.mock.calls[0][0]).toMatchObject({ where: { AND: [{ durum: { in: ["acik", "devam_ediyor"] }, sorumlu: { aktif: false } }] } });
   });
 });

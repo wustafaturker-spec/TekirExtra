@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, ArrowRight, CalendarClock, ClipboardCheck, FilePlus2, Inbox, RefreshCw, ListTodo, type LucideIcon } from "lucide-react";
+import { Activity, ArrowRight, CalendarClock, ClipboardCheck, FilePlus2, Inbox, RefreshCw, ListTodo, UserX, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Alert, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { usePlatformVerisi } from "@/lib/use-platform-verisi";
@@ -46,7 +46,7 @@ export default function PlatformOzeti() {
   const yonetici = ben?.rol === "yonetici";
   const gorevler = usePlatformVerisi<GorevListesi>("/platform/gorevler?durum=acik_isler&benim=1");
   const gorevVerisi = gorevler.veri;
-  const gorevHatasi = gorevler.hata || (!gorevler.yukleniyor && (!Array.isArray(gorevVerisi?.kayitlar) || !Number.isInteger(gorevVerisi?.toplam) || !Number.isInteger(gorevVerisi?.sayilar?.geciken)) ? "Görev bilgileri alınamadı." : "");
+  const gorevHatasi = gorevler.hata || (!gorevler.yukleniyor && (!Array.isArray(gorevVerisi?.kayitlar) || !Number.isInteger(gorevVerisi?.toplam) || !Number.isInteger(gorevVerisi?.sayilar?.geciken) || !Number.isInteger(gorevVerisi?.sayilar?.sorumluPasif)) ? "Görev bilgileri alınamadı." : "");
   const onay = usePlatformVerisi<Onay[]>("/platform/mevzuat/degisiklikler?durum=onay_bekliyor");
   const talepler = usePlatformVerisi<Talep[]>("/platform/mevzuat/talepler?durum=acik");
   const takvim = usePlatformVerisi<TakvimSatiri[]>("/platform/mevzuat/yayin-takvimi");
@@ -84,6 +84,7 @@ export default function PlatformOzeti() {
     <section aria-labelledby="gorev-ozeti-baslik"><h2 id="gorev-ozeti-baslik" className="platform-dashboard-section-title">Görev takibi</h2><div className="platform-dashboard-metrics">
       <OzetSayaci baslik="Bana atanan açık görev" deger={gorevVerisi?.toplam ?? null} href="/platform/gorevler?benim=1" aciklama="Açık ve devam eden kişisel işleriniz" yukleniyor={gorevler.yukleniyor} hata={gorevHatasi} ikon={ListTodo} />
       <OzetSayaci baslik="Geciken ekip görevi" deger={gorevVerisi?.sayilar?.geciken ?? null} href="/platform/gorevler?geciken=1" aciklama="Yetkinizdeki tüm açık görevler arasında" yukleniyor={gorevler.yukleniyor} hata={gorevHatasi} ikon={CalendarClock} />
+      <OzetSayaci baslik="Sorumlusu pasif görev" deger={gorevVerisi?.sayilar?.sorumluPasif ?? null} href="/platform/gorevler?sorumluPasif=1" aciklama="Pasife alınan kişide kalan açık işler; yeniden atayın" yukleniyor={gorevler.yukleniyor} hata={gorevHatasi} ikon={UserX} />
     </div></section>
     <section aria-labelledby="mevzuat-ozeti-baslik"><h2 id="mevzuat-ozeti-baslik" className="platform-dashboard-section-title">Mevzuat gündemi</h2><div className="platform-dashboard-metrics">
       <OzetSayaci baslik="Onay bekleyen değişiklik" deger={onay.veri ? onaylar.length : null} sinir={200} href="/platform?durum=onay_bekliyor" aciklama="İkinci yetkilinin incelemesini bekliyor" yukleniyor={onay.yukleniyor} hata={onayHatasi} ikon={ClipboardCheck} />

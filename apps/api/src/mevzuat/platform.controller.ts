@@ -297,7 +297,7 @@ const platformKullaniciSemasi = z.object({
   adSoyad: z.string().trim().min(2, "Ad soyad en az 2 karakter").max(120),
   rol: z.enum(["yonetici", "mevzuat_editoru"]),
 });
-const platformKullaniciGuncelleSemasi = z.object({ rol: z.enum(["yonetici", "mevzuat_editoru"]).optional(), aktif: z.boolean().optional() });
+const platformKullaniciGuncelleSemasi = z.object({ rol: z.enum(["yonetici", "mevzuat_editoru"]).optional(), aktif: z.boolean().optional(), gorevAktarimHedefiId: z.uuid().optional() });
 
 /** PLT-07: platform kullanıcıları — yalnız platform yöneticisi. */
 @PlatformUcu()
