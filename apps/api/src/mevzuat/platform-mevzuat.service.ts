@@ -3,6 +3,7 @@ import type { MevzuatDegisiklikDurum, MevzuatTalepDurumu, Prisma } from "@prisma
 import { bugunTR, DONEMSEL_DEGERLER, MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu, yayinTakvimi } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { MevzuatService } from "./mevzuat.service";
+import { editorGorebilirMi, MEVZUAT_EDITOR_OLAYLARI, olayDetayiniMaskele } from "./olay-gorunurlugu";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { kabulCalistir, type KabulSenaryosuGirdisi } from "./bordro-kabul";
 import { yayinPlani, yururluktedir, type PlanKaydi, type PlanSatiri } from "./yayin-plani";
@@ -22,8 +23,6 @@ export interface SatirGirdisi { tur: string; anahtar: string; islem: "ekle" | "d
  * çevrilen değişiklik gerekçesiyle taslağa döner. Yayınlanan değişiklik
  * veritabanı tetikleyicisiyle de değiştirilemez.
  */
-/** PLT-06: yalnız platform yöneticisinin gördüğü olaylar (firma, abonelik, yapay zekâ tavanı). */
-export const PLATFORM_YONETIM_OLAYLARI = ["platform_gorevi_olusturuldu", "platform_gorevi_guncellendi", "firma_askiya_alindi", "firma_askidan_cikarildi", "firma_plani_degisti", "plan_talebi_onaylandi", "plan_talebi_reddedildi", "ai_tavani_degisti", "abonelik_odemesi_alindi", "tahsilat_hatirlatma", "tahsilat_ozeti"] as const;
 
 @Injectable()
 export class PlatformMevzuatService {
@@ -69,7 +68,8 @@ export class PlatformMevzuatService {
       where: { id: { in: [...new Set(d.olaylar.map((o) => o.kullaniciId).filter((x): x is string => Boolean(x)))] } },
       select: { id: true, adSoyad: true },
     })).map((k) => [k.id, k.adSoyad]));
-    const { kullaniciId } = aktifPlatformBaglam();
+    const { kullaniciId, rol } = aktifPlatformBaglam();
+    const editor = rol === "mevzuat_editoru";
     const duzenleyen = this.duzenleyenler(d);
     const plan = d.durum === "yayinlandi" ? null : yayinPlani(mevcut, d.satirlar.map(satirPlani), yururluk);
     const etki = d.durum === "yayinlandi" ? null : await this.etki(d.satirlar, yururluk);
@@ -83,7 +83,8 @@ export class PlatformMevzuatService {
           .sort((a, b) => b.yururlukBaslangic.localeCompare(a.yururlukBaslangic))[0];
         return { ...s, oncekiDeger: onceki ? (onceki as PlanKaydi & { deger: unknown }).deger : null, oncekiYururluk: onceki?.yururlukBaslangic ?? null };
       }),
-      olaylar: d.olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null })),
+      // PLT-26: dört göz denetimi tüm olaylarla yapıldı; yanıt editöre yalnız mevzuat olaylarını taşır.
+      olaylar: d.olaylar.filter((o) => !editor || editorGorebilirMi(o.olay)).map((o) => ({ ...o, detay: olayDetayiniMaskele(o.detay), kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null })),
       planHatalari: plan?.hatalar ?? [],
       etki,
       kabulGerekli: d.satirlar.some(kabulGerekir),
@@ -276,12 +277,12 @@ export class PlatformMevzuatService {
     return anahtar || !tarih ? liste : liste.filter((k) => yururluktedir(k, tarih));
   }
 
-  /** PLT-06: mevzuat editörü firma, abonelik ve yapay zekâ tavanı olaylarını görmez. */
+  /** PLT-06 / PLT-26: mevzuat editörü yalnız açık listedeki mevzuat olaylarını görür; bilinmeyen olay varsayılan kapalıdır. */
   async olaylar(sayfa = 1, yalnizMevzuat = false) {
     const take = 100;
-    const olaylar = await this.db.mevzuatOlay.findMany({ where: yalnizMevzuat ? { olay: { notIn: [...PLATFORM_YONETIM_OLAYLARI] } } : undefined, orderBy: { zaman: "desc" }, skip: (Math.max(1, sayfa) - 1) * take, take, include: { degisiklik: { select: { no: true, baslik: true } } } });
+    const olaylar = await this.db.mevzuatOlay.findMany({ where: yalnizMevzuat ? { olay: { in: [...MEVZUAT_EDITOR_OLAYLARI] } } : undefined, orderBy: { zaman: "desc" }, skip: (Math.max(1, sayfa) - 1) * take, take, include: { degisiklik: { select: { no: true, baslik: true } } } });
     const kullanicilar = new Map((await this.db.platformKullanici.findMany({ select: { id: true, adSoyad: true } })).map((k) => [k.id, k.adSoyad]));
-    return olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null }));
+    return olaylar.map((o) => ({ ...o, detay: olayDetayiniMaskele(o.detay), kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null }));
   }
 
   async talepler(durum?: MevzuatTalepDurumu) {
