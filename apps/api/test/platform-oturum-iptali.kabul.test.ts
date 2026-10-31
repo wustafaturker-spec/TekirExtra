@@ -26,6 +26,9 @@ import type { PlatformPrismaService } from "../src/mevzuat/platform-prisma.servi
 const env = resolve(__dirname, "../.env");
 if (existsSync(env)) process.loadEnvFile(env);
 process.env.PLATFORM_JWT_SECRET ??= "plt25-kabul-platform-anahtari-0123456789";
+// Davet e-postası gönderilmesin; kurulum bağlantısı yanıtta dönsün.
+process.env.SMTP_HOST = "127.0.0.1";
+process.env.SMTP_PORT = "1";
 
 const yonetici = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL });
 function platformAdresi(): string {
@@ -112,7 +115,7 @@ describe("PLT-25 — kalıcı platform oturum iptali (gerçek PostgreSQL)", () =
     const onceki = surec();
     await expect(onceki.istek(eski)).rejects.toThrow(/pasif/); // kurulum beklerken "pasif" önbelleğe alır
     // Yeniden kurulum: davet bilgisi yeni sırrı verir, mevcut parola + ilk kod ile tamamlanır.
-    const anahtar = new URL(davet.baglanti!).searchParams.get("anahtar")!;
+    const anahtar = new URLSearchParams(new URL(davet.baglanti!).hash.slice(1)).get("anahtar")!;
     const bilgi = await a.kullanicilar.davetBilgisi(anahtar);
     await a.kullanicilar.davetTamamla(anahtar, { parola: PAROLA, kod: generateSync({ secret: bilgi.secret }) });
     secret = bilgi.secret;

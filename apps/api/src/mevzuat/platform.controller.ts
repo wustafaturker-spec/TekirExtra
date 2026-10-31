@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
 import { MEVZUAT_TURLERI, takvimGunuMu } from "@tekirextra/shared";
@@ -58,9 +58,9 @@ export class PlatformAuthController {
   @Public()
   @Post("davet/tamamla")
   @HttpCode(200)
-  async davetTamamla(@Body() govde: unknown) {
+  async davetTamamla(@Body() govde: unknown, @Ip() ip: string) {
     const g = ayristir(davetTamamlaSemasi, govde);
-    return this.kullanicilar.davetTamamla(g.anahtar, { parola: g.parola, kod: g.kod });
+    return this.kullanicilar.davetTamamla(g.anahtar, { parola: g.parola, kod: g.kod }, ip);
   }
 
   @Public()

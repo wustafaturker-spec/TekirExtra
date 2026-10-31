@@ -1,7 +1,12 @@
 import * as argon2 from "argon2";
 import { generateSync } from "otplib";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+// Gönderim her zaman düşer (bağlantı yöneticiye döner); gönderilmek istenen ileti incelenir.
+const gonderilen = vi.hoisted(() => [] as { html: string; text: string }[]);
+vi.mock("nodemailer", () => ({ createTransport: () => ({ sendMail: async (m: { html: string; text: string }) => { gonderilen.push(m); throw new Error("connect ECONNREFUSED"); } }) }));
 import { platformBaglamiylaCalistir } from "../core/istek-baglami";
+import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
 import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
 
 process.env.BAGLANTI_SIFRELEME_ANAHTARI ??= "0".repeat(64);
@@ -19,7 +24,8 @@ function kur() {
   const olaylar: { olay: string; kullaniciId: string | null; detay?: Record<string, unknown> }[] = [];
   const iptaller: [string, string][] = [];
   const eslesir = (k: Record<string, unknown>, w: Record<string, unknown>) => Object.entries(w).every(([a, v]) => (v && typeof v === "object" && "not" in v ? k[a] !== (v as { not: unknown }).not
-    : v && typeof v === "object" && "in" in v ? (v as { in: unknown[] }).in.includes(k[a]) : k[a] === v));
+    : v && typeof v === "object" && "in" in v ? (v as { in: unknown[] }).in.includes(k[a])
+    : v && typeof v === "object" && "gt" in v ? (k[a] as Date) > (v as { gt: Date }).gt : k[a] === v));
   const platformKullanici = {
     findUnique: async ({ where }: { where: Record<string, unknown> }) => { const k = kayitlar.find((x) => eslesir(x, where)); return k ? { ...k } : null; },
     findMany: async () => kayitlar,
@@ -56,9 +62,10 @@ function kur() {
   const ekle = (k: Partial<Kayit>) => { const y = { id: `p${kayitlar.length + 1}`, eposta: `${kayitlar.length}@x.io`, adSoyad: "Kişi", rol: "yonetici", aktif: true, davetTuru: null, davetAnahtarOzeti: null, parolaHash: hash, totpSecretSifreli: "", ...k } as Kayit; kayitlar.push(y); return y; };
   const olarak = <T>(id: string, is: () => Promise<T>) => platformBaglamiylaCalistir({ kullaniciId: id, eposta: "ben@x.io", rol: "yonetici" }, is);
   const gorevEkle = (sorumluId: string, kapsam = "platform", durum = "acik") => { const g = { id: `g${gorevler.length + 1}`, baslik: `Görev ${gorevler.length + 1}`, kapsam, durum, sorumluId, surum: 1 }; gorevler.push(g); return g; };
-  return { servis, kayitlar, olaylar, gorevler, iptaller, ekle, gorevEkle, olarak };
+  return { servis, db, kayitlar, olaylar, gorevler, iptaller, ekle, gorevEkle, olarak };
 }
-const anahtarAl = (baglanti?: string) => new URL(baglanti!).searchParams.get("anahtar")!;
+// PLT-30: anahtar URL parçasında (#anahtar=) gelir.
+const anahtarAl = (baglanti?: string) => new URLSearchParams(new URL(baglanti!).hash.slice(1)).get("anahtar")!;
 
 describe("platform kullanıcıları (PLT-07)", () => {
   it("davetle açılan hesap giriş bekler; bağlantıyla parola + 2FA kurulunca açılır, bağlantı ikinci kez çalışmaz", async () => {
@@ -200,5 +207,80 @@ describe("oturum sürümü (PLT-25)", () => {
     await t.olarak(ben.id, () => t.servis.guncelle(ayse.id, { rol: "yonetici", aktif: true }));
     expect(ayse.oturumSurumu ?? 0).toBe(0);
     expect(t.iptaller).toEqual([]);
+  });
+});
+
+describe("davet ve 2FA kurulum güvenliği (PLT-30)", () => {
+  async function davetli() {
+    const t = kur();
+    const ben = t.ekle({});
+    const s = await t.olarak(ben.id, () => t.servis.olustur({ eposta: "yeni@x.io", adSoyad: "Yeni Kişi", rol: "mevzuat_editoru" }));
+    return { ...t, ben, anahtar: anahtarAl(s.davet.baglanti), kisi: t.kayitlar.find((k) => k.eposta === "yeni@x.io")! };
+  }
+
+  it("davet bilgisini yeniden açmak (ikinci sekme) sırrı değiştirmez; ilk sekmenin karekodu geçerli kalır", async () => {
+    const t = await davetli();
+    const ilk = await t.servis.davetBilgisi(t.anahtar);
+    const ikinci = await t.servis.davetBilgisi(t.anahtar);
+    expect(ikinci.secret).toBe(ilk.secret);
+    await t.servis.davetTamamla(t.anahtar, { parola: "YeniParola2026", kod: generateSync({ secret: ilk.secret }) });
+    expect(t.kisi.davetTuru).toBeNull();
+  });
+
+  it("davet yenileme eski bağlantıyı ve eski karekodu iptal eder", async () => {
+    const t = await davetli();
+    const eski = await t.servis.davetBilgisi(t.anahtar);
+    const yeni = anahtarAl((await t.olarak(t.ben.id, () => t.servis.davetYenile(t.kisi.id))).baglanti);
+    await expect(t.servis.davetTamamla(t.anahtar, { parola: "YeniParola2026", kod: generateSync({ secret: eski.secret }) })).rejects.toThrow(/geçersiz/);
+    const bilgi = await t.servis.davetBilgisi(yeni);
+    expect(bilgi.secret).not.toBe(eski.secret);
+    await expect(t.servis.davetTamamla(yeni, { parola: "YeniParola2026", kod: generateSync({ secret: eski.secret }) })).rejects.toThrow(/Doğrulama kodu/);
+    await t.servis.davetTamamla(yeni, { parola: "YeniParola2026", kod: generateSync({ secret: bilgi.secret }) });
+  });
+
+  it("doğrulandıktan sonra kurulum değişirse (yenileme, pasife alma) tamamlama yazılmaz", async () => {
+    for (const degistir of [(k: Record<string, unknown>) => { k.totpSecretSifreli = `${String(k.totpSecretSifreli)}-yeni`; }, (k: Record<string, unknown>) => { k.aktif = false; }]) {
+      const t = await davetli();
+      const { secret } = await t.servis.davetBilgisi(t.anahtar);
+      // Kayıt okunduktan hemen sonra (kod doğrulanırken) başka bir istek kurulumu değiştirir.
+      const oku = t.db.platformKullanici.findUnique;
+      t.db.platformKullanici.findUnique = async (q) => { const k = await oku(q); if (k) degistir(t.kisi); return k; };
+      await expect(t.servis.davetTamamla(t.anahtar, { parola: "YeniParola2026", kod: generateSync({ secret }) })).rejects.toThrow(/Bağlantı geçersiz veya süresi dolmuş; platform yöneticisinden/);
+      expect(t.kisi.davetTuru).toBe("hesap");
+    }
+  });
+
+  it("aynı daveti iki istekten yalnız biri tüketir", async () => {
+    const t = await davetli();
+    const { secret } = await t.servis.davetBilgisi(t.anahtar);
+    const kod = generateSync({ secret });
+    const sonuc = await Promise.allSettled([t.servis.davetTamamla(t.anahtar, { parola: "YeniParola2026", kod }), t.servis.davetTamamla(t.anahtar, { parola: "BaskaParola2026", kod })]);
+    expect(sonuc.filter((s) => s.status === "fulfilled")).toHaveLength(1);
+  });
+
+  it("5 hatalı koddan sonra doğru kod da 429 alır; sınır IP değişse de hesap başına geçerlidir", async () => {
+    const t = await davetli();
+    const { secret } = await t.servis.davetBilgisi(t.anahtar);
+    for (let i = 0; i < 5; i++) await expect(t.servis.davetTamamla(t.anahtar, { parola: "YeniParola2026", kod: "000000" }, `10.0.0.${i}`)).rejects.toThrow(/Doğrulama kodu/);
+    await expect(t.servis.davetTamamla(t.anahtar, { parola: "YeniParola2026", kod: generateSync({ secret }) }, "10.0.0.99")).rejects.toMatchObject({ status: 429 });
+    expect(t.kisi.davetTuru).toBe("hesap");
+  });
+
+  it("davet e-postasının HTML'inde kullanıcı girdisi kaçışlanır; bağlantı URL parçası taşır", async () => {
+    const t = kur();
+    const ben = t.ekle({});
+    gonderilen.length = 0;
+    await t.olarak(ben.id, () => t.servis.olustur({ eposta: "xss@x.io", adSoyad: `Ali <img src=x onerror="alert(1)">`, rol: "mevzuat_editoru" }));
+    expect(gonderilen[0].html).toContain("Ali &lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+    expect(gonderilen[0].html).not.toContain("<img");
+    expect(gonderilen[0].text).toMatch(/\/platform\/davet#anahtar=/);
+    expect(gonderilen[0].text).not.toMatch(/\?anahtar=/);
+  });
+
+  it("aynı IP'den farklı davetlerde 20 hata IP'yi kilitler", async () => {
+    const sayac = GirisDenemeSayaci.bellekte();
+    for (let i = 0; i < 20; i++) await sayac.hataKaydet("platform_davet_ip", "davet-ip:1.2.3.4");
+    expect(await sayac.kilitliMi("davet-ip:1.2.3.4", ["platform_davet_ip"])).toBe(true);
+    expect(await sayac.kilitliMi("davet-ip:5.6.7.8", ["platform_davet_ip"])).toBe(false);
   });
 });

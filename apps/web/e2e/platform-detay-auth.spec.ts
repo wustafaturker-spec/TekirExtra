@@ -191,3 +191,15 @@ test("PLT-25: tüm oturumlarımı kapat onayla çalışır, yerel token silinir 
   expect(istek).toBe(1);
   expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBeNull();
 });
+
+test("PLT-30: e-postadaki #anahtar= bağlantısı açılır, anahtar sunucuya adresle gitmez ve adresten silinir", async ({ page }) => {
+  const govdeler: unknown[] = [];
+  const sayfaIstekleri: string[] = [];
+  page.on("request", (r) => { if (r.resourceType() === "document") sayfaIstekleri.push(r.url()); });
+  await page.route("**/api/v1/platform/auth/davet/bilgi", (route) => { govdeler.push(route.request().postDataJSON()); return route.fulfill({ json: davet() }); });
+  await page.goto("/platform/davet#anahtar=parca-anahtari");
+  await expect(page.getByRole("heading", { name: "Hesabınızı oluşturun", exact: true })).toBeVisible();
+  expect(govdeler).toEqual([{ anahtar: "parca-anahtari" }]);
+  expect(sayfaIstekleri.some((u) => u.includes("parca-anahtari"))).toBe(false);
+  await expect(page).toHaveURL(/\/platform\/davet$/);
+});

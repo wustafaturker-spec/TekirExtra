@@ -28,7 +28,8 @@ export default function PlatformDavetSayfasi() {
   useEffect(() => {
     if (istendi.current) return;
     istendi.current = true;
-    const a = new URLSearchParams(window.location.search).get("anahtar") ?? "";
+    // PLT-30: yeni bağlantılar anahtarı URL parçasında (#anahtar=) taşır, sunucuya gitmez; eski ?anahtar= bağlantıları da açılır.
+    const a = new URLSearchParams(window.location.hash.slice(1)).get("anahtar") ?? new URLSearchParams(window.location.search).get("anahtar") ?? "";
     window.history.replaceState(window.history.state, "", "/platform/davet");
     setAnahtar(a);
     if (!a) { setHata("Bağlantı eksik; e-postadaki bağlantıyı açın veya platform yöneticinizden yeni bir davet isteyin."); setBilgiYukleniyor(false); return; }

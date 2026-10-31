@@ -3,10 +3,13 @@ import { createHash } from "node:crypto";
 import { createClient, type RedisClientType } from "redis";
 import { structuredLogger } from "../core/observability/structured-logger";
 
-export type DenemeTuru = "parola" | "totp" | "platform";
+export type DenemeTuru = "parola" | "totp" | "platform" | "platform_davet" | "platform_davet_ip";
 
-/** Yönetim P1-3: e-posta başına, 15 dakikalık pencerede izin verilen hatalı deneme. */
-export const DENEME_SINIRI: Record<DenemeTuru, number> = { parola: 10, totp: 5, platform: 5 };
+/**
+ * Yönetim P1-3: e-posta başına, 15 dakikalık pencerede izin verilen hatalı deneme.
+ * PLT-30: platform daveti/2FA yeniden kurulumu hesap başına 5, IP başına 20 hatada kilitlenir.
+ */
+export const DENEME_SINIRI: Record<DenemeTuru, number> = { parola: 10, totp: 5, platform: 5, platform_davet: 5, platform_davet_ip: 20 };
 export const KILIT_PENCERESI_MS = 15 * 60_000;
 
 /**

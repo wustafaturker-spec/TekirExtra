@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { totpDogrula } from "../auth/totp-dogrula";
 import type { PlatformRol, Prisma } from "@prisma/client";
 import * as argon2 from "argon2";
@@ -9,6 +9,7 @@ import { generateSecret, generateURI } from "otplib";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { coz, sifrele } from "../core/kripto";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
+import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
 import { PlatformOturumDurumService } from "./platform-oturum-durum.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 
@@ -16,6 +17,8 @@ export type DavetTuru = "hesap" | "iki_adim";
 export const PLATFORM_DAVET_GECERLILIK_SAAT = 72;
 
 const ozetle = (anahtar: string) => createHash("sha256").update(anahtar).digest("hex");
+/** PLT-30: davet e-postasına yazılan kullanıcı girdileri HTML olarak yorumlanmaz. */
+const html = (metin: string) => metin.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const ROL_ADI: Record<PlatformRol, string> = { yonetici: "platform yöneticisi", mevzuat_editoru: "mevzuat editörü" };
 
 /** PLT-31: yalnız yöneticiye atanabilen, henüz kapanmamış platform görevleri. */
@@ -36,10 +39,15 @@ const SECIM = {
 export class PlatformKullanicilarService {
   private readonly logger = new Logger(PlatformKullanicilarService.name);
 
+  private readonly denemeler: GirisDenemeSayaci;
+
   constructor(
     private readonly platform: PlatformPrismaService,
     @Optional() private readonly oturumDurum?: PlatformOturumDurumService,
-  ) {}
+    @Optional() denemeler?: GirisDenemeSayaci,
+  ) {
+    this.denemeler = denemeler ?? GirisDenemeSayaci.bellekte();
+  }
 
   /** PLT-25: sürüm artar ve açık oturumlar iptal edilir; eldeki token'lar 2FA yeniden kurulsa da tekrar geçmez. */
   private async oturumlariDusur(tx: Prisma.TransactionClient, id: string, neden: string) {
@@ -85,7 +93,12 @@ export class PlatformKullanicilarService {
     if (!k.davetTuru) throw new BadRequestException("Bu kullanıcının bekleyen kurulumu yok");
     if (!k.aktif) throw new BadRequestException("Pasif kullanıcıya davet gönderilemez; önce aktif edin");
     const anahtar = randomBytes(32).toString("base64url");
-    await this.platform.db.platformKullanici.update({ where: { id }, data: this.davetAlanlari(k.davetTuru as DavetTuru, anahtar) });
+    // PLT-30: yeniden başlatma eski kurulumu (bağlantı + karekod) iptal eder; o arada tamamlanmış ya da pasife alınmışsa dokunmaz.
+    const { count } = await this.platform.db.platformKullanici.updateMany({
+      where: { id, aktif: true, davetTuru: k.davetTuru },
+      data: { totpSecretSifreli: sifrele(generateSecret()), ...this.davetAlanlari(k.davetTuru as DavetTuru, anahtar) },
+    });
+    if (!count) throw new ConflictException("Kullanıcının kurulum durumu değişti; listeyi yenileyip tekrar deneyin");
     await this.olay(kullaniciId, "platform_daveti_yenilendi", { eposta: k.eposta, tur: k.davetTuru });
     return this.davetGonder(k, k.davetTuru as DavetTuru, anahtar);
   }
@@ -154,13 +167,13 @@ export class PlatformKullanicilarService {
   }
 
   /**
-   * Davet sayfası açılınca: yeni bir 2FA anahtarı üretilir (sayfa yeniden açılırsa
-   * önceki geçersizleşir) ve karekodla döner. Oturum gerektirmez.
+   * Davet sayfası açılınca kurulumun 2FA anahtarı karekodla döner. Oturum gerektirmez.
+   * PLT-30: anahtar davet açılırken/yenilenirken bir kez üretilir; sayfayı yenilemek ya
+   * da ikinci sekmede açmak onu değiştirmez (eskiden ilk sekmenin karekodu bozuluyordu).
    */
   async davetBilgisi(anahtar: string) {
     const k = await this.davetliBul(anahtar);
-    const secret = generateSecret();
-    await this.platform.db.platformKullanici.update({ where: { id: k.id }, data: { totpSecretSifreli: sifrele(secret) } });
+    const secret = coz(k.totpSecretSifreli);
     const otpauthUrl = generateURI({ secret, issuer: "TekirExtra Platform", label: k.eposta });
     const svg = bwipjs.toSVG({ bcid: "qrcode", text: otpauthUrl });
     return {
@@ -169,28 +182,43 @@ export class PlatformKullanicilarService {
     };
   }
 
-  /** "hesap": yeni parola belirlenir; "iki_adim": mevcut parola doğrulanır. İkisinde de ilk 2FA kodu zorunlu. */
-  async davetTamamla(anahtar: string, girdi: { parola: string; kod: string }) {
+  /**
+   * "hesap": yeni parola belirlenir; "iki_adim": mevcut parola doğrulanır. İkisinde de ilk 2FA kodu zorunlu.
+   * PLT-30: hatalı kod/parola hesap başına (5) ve IP başına (20) 15 dakikalık pencerede sayılır.
+   * Davet tek koşullu yazımla tüketilir: o an hâlâ aktif, süresi dolmamış, aynı bağlantı ve
+   * doğrulanan sırla aynı kurulum olmalıdır; yenileme, pasife alma ve eşzamanlı ikinci
+   * tamamlama bu yazımı boşa düşürür.
+   */
+  async davetTamamla(anahtar: string, girdi: { parola: string; kod: string }, ip = "bilinmiyor") {
     const k = await this.davetliBul(anahtar);
     const tur = k.davetTuru as DavetTuru;
+    const hesapAnahtari = `davet:${k.id}`;
+    const ipAnahtari = `davet-ip:${ip}`;
+    if (await this.denemeler.kilitliMi(hesapAnahtari, ["platform_davet"]) || await this.denemeler.kilitliMi(ipAnahtari, ["platform_davet_ip"])) {
+      throw new HttpException("Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.", HttpStatus.TOO_MANY_REQUESTS);
+    }
+    const hatali = async (mesaj: string) => {
+      await this.denemeler.hataKaydet("platform_davet", hesapAnahtari);
+      await this.denemeler.hataKaydet("platform_davet_ip", ipAnahtari);
+      return new BadRequestException(mesaj);
+    };
     if (tur === "hesap") {
       const kural = parolaSemasi.safeParse(girdi.parola);
       if (!kural.success) throw new BadRequestException(kural.error.issues.map((i) => i.message).join("; "));
     }
-    if (!totpDogrula(coz(k.totpSecretSifreli), girdi.kod)) {
-      throw new BadRequestException("Doğrulama kodu geçersiz; uygulamadaki güncel kodu girin");
-    }
+    if (!totpDogrula(coz(k.totpSecretSifreli), girdi.kod)) throw await hatali("Doğrulama kodu geçersiz; uygulamadaki güncel kodu girin");
     let parolaHash = k.parolaHash;
     if (tur === "iki_adim") {
-      if (!(await argon2.verify(k.parolaHash, girdi.parola))) throw new BadRequestException("Parola hatalı");
+      if (!(await argon2.verify(k.parolaHash, girdi.parola))) throw await hatali("Parola hatalı");
     } else {
       parolaHash = await argon2.hash(girdi.parola);
     }
     const { count } = await this.platform.db.platformKullanici.updateMany({
-      where: { id: k.id, davetAnahtarOzeti: k.davetAnahtarOzeti },
+      where: { id: k.id, aktif: true, davetTuru: tur, davetAnahtarOzeti: k.davetAnahtarOzeti, totpSecretSifreli: k.totpSecretSifreli, davetSonGecerlilik: { gt: new Date() } },
       data: { parolaHash, davetTuru: null, davetAnahtarOzeti: null, davetSonGecerlilik: null },
     });
-    if (!count) throw new BadRequestException("Bağlantı geçersiz veya süresi dolmuş");
+    if (!count) throw new BadRequestException("Bağlantı geçersiz veya süresi dolmuş; platform yöneticisinden yeni bağlantı isteyin");
+    await this.denemeler.temizle(hesapAnahtari, ["platform_davet"]);
     this.oturumDurum?.kullaniciUnut(k.id);
     await this.olay(k.id, tur === "iki_adim" ? "platform_2fa_yeniden_kuruldu" : "platform_daveti_kabul_edildi", { eposta: k.eposta });
     return { eposta: k.eposta };
@@ -223,7 +251,8 @@ export class PlatformKullanicilarService {
    * yöneticiye döner; kendisi güvenli bir yoldan iletir.
    */
   private async davetGonder(k: { eposta: string; adSoyad: string; rol: PlatformRol }, tur: DavetTuru, anahtar: string): Promise<{ gonderildi: boolean; mesaj: string; baglanti?: string }> {
-    const baglanti = `${process.env.APP_URL ?? "http://localhost:3100"}/platform/davet?anahtar=${anahtar}`;
+    // PLT-30: anahtar URL parçasında (#) taşınır; tarayıcı onu sunucuya, vekil ve erişim loglarına göndermez.
+    const baglanti = `${process.env.APP_URL ?? "http://localhost:3100"}/platform/davet#anahtar=${anahtar}`;
     const hesap = tur === "hesap";
     const konu = hesap ? "TekirExtra platform paneli daveti" : "TekirExtra platform paneli — iki adımlı doğrulamayı yeniden kurun";
     const giris = hesap
@@ -236,7 +265,7 @@ export class PlatformKullanicilarService {
         to: k.eposta,
         subject: konu,
         text: `Merhaba ${k.adSoyad},\n\n${giris}\n${baglanti}\n\nBağlantı ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerlidir ve bir kez kullanılabilir.`,
-        html: `<p>Merhaba ${k.adSoyad},</p><p>${giris}</p><p><a href="${baglanti}">Kurulumu başlat</a></p><p>Bağlantı ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerlidir ve bir kez kullanılabilir.</p>`,
+        html: `<p>Merhaba ${html(k.adSoyad)},</p><p>${html(giris)}</p><p><a href="${html(baglanti)}">Kurulumu başlat</a></p><p>Bağlantı ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerlidir ve bir kez kullanılabilir.</p>`,
       });
       return { gonderildi: true, mesaj: `${k.eposta} adresine bağlantı gönderildi; ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerli.` };
     } catch (hata) {
