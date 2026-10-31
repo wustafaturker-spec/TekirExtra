@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const env = resolve(__dirname, "../.env");
 if (existsSync(env)) process.loadEnvFile(env);
 
+const anahtar = () => randomBytes(18).toString("base64url");
 const yonetici = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL });
 function platformAdresi(): string {
   if (process.env.DATABASE_URL_PLATFORM) return process.env.DATABASE_URL_PLATFORM;
@@ -57,25 +58,29 @@ describe("elle tahsilat (PLT-09) — gerçek PostgreSQL", () => {
 
   it("ödeme dönemi uzatır, durumu değiştirmez, geçmişe ve ödemelere yazılır; firma listeden çıkar", async () => {
     const once = (await ozet(geciken)).donem_sonu!;
-    const [r] = await platform.$queryRaw<{ s: Date }[]>`SELECT platform_odeme_kaydet(${geciken}::uuid, 3, 1500.50, 'Havale', ${platformKullanici}::uuid, 'ekip@kabul.invalid') AS s`;
+    // 0 TL: tutarı sıfırdan büyük kalıcı ödeme, aynı veritabanındaki pilot worker'da gerçek fatura taslağına dönüşür.
+    // Kuruşlu tutar biçimi platform-odeme-tekrar.kabul.test.ts'te geri alınan transaction içinde sınanır.
+    const [r] = await platform.$queryRaw<{ s: Date }[]>`SELECT yeni_donem_sonu AS s FROM platform_odeme_kaydet(${geciken}::uuid, 3, 0, 'Havale', ${platformKullanici}::uuid, 'ekip@kabul.invalid', ${anahtar()}, 'ozet')`;
     const beklenen = new Date(once); beklenen.setUTCMonth(beklenen.getUTCMonth() + 3);
     expect(Math.abs(r.s.getTime() - beklenen.getTime())).toBeLessThan(3 * 3600_000);
     const sonra = await ozet(geciken);
     expect(sonra.askiya_alinacak).toBe(false);
     expect(sonra.son_odeme_at).toBeInstanceOf(Date);
     const [g] = await platform.$queryRaw<{ gecmis: { odemeler: { aySayisi: number; tutar: number; not: string }[]; degisiklikler: { neden: string; yeniDurum: string }[] } }[]>`SELECT platform_firma_abonelik_gecmisi(${geciken}::uuid) AS gecmis`;
-    expect(g.gecmis.odemeler).toEqual([expect.objectContaining({ aySayisi: 3, tutar: 1500.5, not: "Havale" })]);
-    expect(g.gecmis.degisiklikler[0]).toMatchObject({ yeniDurum: "aktif", neden: expect.stringMatching(/^Ödeme alındı \(ekip@kabul\.invalid\): 3 ay, 1.?500,50 TL; dönem sonu/) });
+    expect(g.gecmis.odemeler).toEqual([expect.objectContaining({ aySayisi: 3, tutar: 0, not: "Havale" })]);
+    expect(g.gecmis.degisiklikler[0]).toMatchObject({ yeniDurum: "aktif", neden: expect.stringMatching(/^Ödeme alındı \(ekip@kabul\.invalid\): 3 ay, 0,00 TL; dönem sonu/) });
   });
 
   it("dönemi olmayan kayıtta dönem bugünden başlar; geçersiz süre ve uygulama rolü reddedilir", async () => {
-    const [r] = await platform.$queryRaw<{ s: Date }[]>`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'ekip@kabul.invalid') AS s`;
+    const [r] = await platform.$queryRaw<{ s: Date }[]>`SELECT yeni_donem_sonu AS s FROM platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'ekip@kabul.invalid', ${anahtar()}, 'ozet')`;
     // PostgreSQL "+1 ay"ı ay sonuna kırpar (31 Ekim → 30 Kasım); JS setUTCMonth taşırdı (→ 1 Aralık).
     const ay = new Date(); const gun = ay.getUTCDate(); ay.setUTCDate(1); ay.setUTCMonth(ay.getUTCMonth() + 1);
     ay.setUTCDate(Math.min(gun, new Date(Date.UTC(ay.getUTCFullYear(), ay.getUTCMonth() + 1, 0)).getUTCDate()));
     expect(Math.abs(r.s.getTime() - ay.getTime())).toBeLessThan(24 * 3600_000);
-    await expect(platform.$queryRaw`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 2, 0, NULL, ${platformKullanici}::uuid, 'x')`).rejects.toThrow(/gecersiz_sure/);
-    await expect(uygulama.$queryRaw`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'x')`).rejects.toThrow(/permission denied/);
+    await expect(platform.$queryRaw`SELECT * FROM platform_odeme_kaydet(${donemsiz}::uuid, 2, 0, NULL, ${platformKullanici}::uuid, 'x', ${anahtar()}, 'ozet')`).rejects.toThrow(/gecersiz_sure/);
+    await expect(uygulama.$queryRaw`SELECT * FROM platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'x', ${anahtar()}, 'ozet')`).rejects.toThrow(/permission denied/);
+    // Tekrar korumasız eski 6 parametreli işlev yok (20261031210000_eski_odeme_islevi_kaldir).
+    await expect(platform.$queryRaw`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'x')`).rejects.toThrow(/does not exist/);
     await expect(platform.$queryRaw`SELECT count(*) FROM abonelik_odemeleri`).rejects.toThrow(/permission denied/);
   });
 });
