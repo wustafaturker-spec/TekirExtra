@@ -1372,6 +1372,22 @@ Tüm firmaları yöneten TekirExtra ekibinin paneli (`/platform`). Platform rol�
 | PLT-23 | ✅ **Takip ve tekrar yok:** bir ödeme için tek fatura (ve tek tahsilat) oluşur. Platformdaki ödeme satırında fatura numarası ve durumu görünür; oluşturulamayan fatura (ör. VKN eksik, faturalayan firma seçilmemiş) "fatura bekliyor" olarak listelenir ve elle yeniden denenir. Firma kendi Abonelik sayfasında kesinleşmiş faturasının PDF'ini indirir. (2026-10-30, 9b1070f) | Y |
 | PLT-24 | ✅ **Platform görev merkezi** (2026-10-30): `/platform/gorevler` ekranında başlık, açıklama, sorumlu, öncelik, son tarih ve isteğe bağlı mevzuat değişikliği bağıyla görev açılır, düzenlenir, tamamlanır ve yeniden açılır; görev silinmez. Kapsam iki türlüdür: **mevzuat** görevlerini editör ve yönetici, **platform** görevlerini yalnız yönetici görür; platform görevi yalnız yöneticiye atanır ve mevzuat değişikliğine bağlanamaz, kapsam sonradan değişmez. Güncelleme sürüm denetimlidir (çakışmada 409, taslak korunur). Oluşturma/güncelleme denetim izine aynı işlemde yazılır. `/platform/ozet` yönetim özeti bana atanan açık görevleri ve geciken ekip görevlerini gösterir; filtreler adres çubuğunda tutulur. Ayrıntı docs/platform-gorev-merkezi.md. Bildirim e-postası ve hatırlatma kapsam dışı. | Y |
 
+#### Platform P0 düzeltmeleri — ister taslağı (2026-10-31)
+
+Aşağıdaki PLT-25–31 numaraları, kod incelemesinde doğrulanan eksikliklerin revize edilmiş **isterleri için ayrılmıştır. **S-01 onayı: 2026-10-31** (ürün sahibi, PLT-25–31 kapsamıyla). Tamamlanan madde ✅ ile işaretlenir. Ayrıntı: [P0 düzeltme imalat planı](PLATFORM-KURUMSAL-YONETIM-IMALAT-PLANI-2026-10-31.md). Eski K01–K06 referansları PLT-25–30'a taşınmıştır; PLT-31 revizyonda eklenmiştir.
+
+| No | İster taslağı | Öncelik |
+|---|---|---|
+| PLT-25 | **Kalıcı platform oturum iptali:** oturum sürümü/kimliği doğrulanır; 2FA sıfırlama ve yeniden kurulum eski token’ı tekrar geçerli yapmaz; çıkış sunucuda iptal üretir; çok süreçte en geç 10 saniyede etkili olur. | P0 — Taslak |
+| PLT-26 | **Denetim görünürlüğü:** editöre yalnız açıkça izinli mevzuat olayları döner; yönetim/giriş/destek/finans olayları ve bilinmeyen yeni olaylar varsayılan kapalıdır. Somut olay listesi P0 planındadır. | P0 — Taslak |
+| PLT-27 | **Atomiklik ve ödeme tekrar koruması:** ödeme/dönem ve olay aynı transaction’da yazılır; aynı işlem anahtarı tek mali etki üretir; plan/askı/karar/ayar yazımları da olayla atomik olur. Outbox ve yeni bildirim mimarisi kapsam dışıdır. | P0 — Taslak |
+| PLT-28 | **Mevzuat sürüm/yarış kontrolü:** başlık, kalem, senaryo ve durum geçişleri üst kayıt kilidi/sürümüyle tutarlı olur; eski sürüm 409 alır ve kullanıcı taslağı korunur; dört göz ve yayın değişmezliği sürer. | P0 — Taslak |
+| PLT-29 | 🔧 **Gerçek takvim tarihi** (geliştirildi 2026-10-31, commit bekliyor; ortak `takvimGunuMu`, platform mevzuat/görev ve kiracı mevzuat okuma uçları): mevzuat tarihleri görevlerdeki ortak doğrulamayla denetlenir; geçersiz tarihin başka güne taşınması engellenir. | P0 — Taslak |
+| PLT-30 | **Davet/2FA güvenliği:** hesap/davet bazında deneme sınırı, kararlı ve sürümlü kurulum, tamamlama anında aktiflik/süre/davet/sır doğrulaması; iki sekmede başarı yanıtıyla farklı sır kalması engellenir. | P0 — Taslak |
+| PLT-31 | **Rol düşürmede göremediği görevin sorumlusu kalmaz:** açık platform görevi atanmış yönetici editöre düşürülürken görevler aynı transaction'da seçilen başka bir aktif yöneticiye aktarılır; aktarım hedefi verilmeden rol değişikliği 400 ile reddedilir. Pasife alma engellenmez (güvenlik işlemi geciktirilmez); sorumlusu pasif açık görevler yönetim özetinde ayrıca işaretlenir. Aktarım görev denetim izine yazılır. PLT-24'ten kalan bilinen açığı kapatır. | P0 — Taslak |
+
+Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLATFORM-KURUMSAL-YONETIM-YOL-HARITASI-2026-10-31.md) **değerlendirme adayıdır**; burada açık geliştirme isteri veya PLT numarası ayrılmamıştır.
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
