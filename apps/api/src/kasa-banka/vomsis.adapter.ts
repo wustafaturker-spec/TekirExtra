@@ -14,6 +14,8 @@ export class VomsisKimlikHatasi extends SaglayiciKimlikHatasi {}
  * dönerse anahtar düşürülüp bir kez yenilenir.
  */
 const TOKEN_OMRU_MS = 20 * 60 * 1000;
+/** Vomsis'in 7 gün sınırının altında kalan sorgu penceresi (gün sınırı yorumuna karşı bir gün pay). */
+const PENCERE_MS = 6 * 86_400_000;
 const tokenOnbellegi = new Map<string, { token: string; bitis: number }>();
 export const vomsisTokenOnbelleginiTemizle = () => tokenOnbellegi.clear();
 const onbellekAnahtari = (c: VomsisConfig) => createHash("sha256").update(`${c.baseUrl ?? ""}\n${c.appKey}\n${c.appSecret}`).digest("hex");
@@ -88,19 +90,30 @@ export class VomsisSaglayicisi implements BankaSaglayicisi {
    * Artımlı çekim: `lastId` ile başlar, gelen en büyük kimlikten devam eder;
    * yanıt boş gelene ya da imleç ilerlemeyene kadar (en çok 20 sayfa). Sağlayıcı
    * tek yanıtta sınırlı satır verirse aradaki hareketler kaçmaz.
+   * Vomsis tek sorguda 7 günden uzun aralığı reddeder ("İki tarih arası 7 gün
+   * olmalıdır"); ilk çekim (son 7 gün + bugün) ve uzun kesinti sonrası çekim bu
+   * yüzden pencerelere bölünür. Her pencere aynı başlangıç imleciyle sorulur;
+   * pencere sınırında iki kez gelen hareket kimliğiyle tekilleşir.
    */
   async hareketler(a: Record<string, unknown>, disHesapId: string, aralik: HareketAraligi) {
     const config = this.ayar(a);
-    const tumu: VomsisHareket[] = [];
-    let imlec = aralik.imlec ?? null;
-    for (let sayfa = 0; sayfa < EN_COK_SAYFA; sayfa++) {
-      const gelen = await this.anahtarla(config, (token) => this.adapter.hareketleriCek(config, token, disHesapId, aralik.baslangic, aralik.bitis, imlec));
-      const enBuyuk = gelen.reduce((m, h) => Math.max(m, Number(h.id)), Number(imlec ?? 0));
-      tumu.push(...gelen);
-      if (!gelen.length || enBuyuk <= Number(imlec ?? 0)) break;
-      imlec = String(enBuyuk);
+    const tumu = new Map<string, VomsisHareket>();
+    const bitis = aralik.bitis.getTime();
+    for (let bas = aralik.baslangic.getTime(); ; bas += PENCERE_MS) {
+      const son = Math.min(bas + PENCERE_MS, bitis);
+      let imlec = aralik.imlec ?? null;
+      for (let sayfa = 0; sayfa < EN_COK_SAYFA; sayfa++) {
+        const gelen = await this.anahtarla(config, (token) => this.adapter.hareketleriCek(config, token, disHesapId, new Date(bas), new Date(son), imlec));
+        const enBuyuk = gelen.reduce((m, h) => Math.max(m, Number(h.id)), Number(imlec ?? 0));
+        for (const h of gelen) tumu.set(String(h.id), h);
+        if (!gelen.length || enBuyuk <= Number(imlec ?? 0)) break;
+        imlec = String(enBuyuk);
+      }
+      if (son >= bitis) break;
     }
-    const hareketler: SaglayiciHareketi[] = tumu.map((h) => ({
+    const enBuyukKimlik = [...tumu.values()].reduce((m, h) => Math.max(m, Number(h.id)), Number(aralik.imlec ?? 0));
+    const imlec = enBuyukKimlik > Number(aralik.imlec ?? 0) ? String(enBuyukKimlik) : (aralik.imlec ?? null);
+    const hareketler: SaglayiciHareketi[] = [...tumu.values()].map((h) => ({
       id: String(h.id),
       tarih: (h.accounting_date || h.system_date).slice(0, 10),
       tutar: (h.type === "borclu" ? -1 : 1) * Math.abs(Number(h.amount)),
