@@ -1,12 +1,10 @@
 import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { z } from "zod";
+import { takvimGunuMu } from "@tekirextra/shared";
 import { PlatformRolleri, PlatformUcu } from "../auth/public.decorator";
 import { PlatformGorevService } from "./platform-gorev.service";
 
-const sonTarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((v) => {
-  const d = new Date(`${v}T00:00:00Z`);
-  return !v.startsWith("0000") && Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === v;
-}, "Son tarih geçerli bir takvim tarihi olmalı.").nullable();
+const sonTarih = z.string().refine(takvimGunuMu, "Son tarih geçerli bir takvim tarihi olmalı.").nullable();
 const alanlar = z.object({
   baslik: z.string().trim().min(3, "Başlık en az 3 karakter olmalı.").max(200),
   aciklama: z.string().trim().max(4000).nullable(),

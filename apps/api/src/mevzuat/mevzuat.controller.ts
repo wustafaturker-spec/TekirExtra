@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { z } from "zod";
-import { bugunTR, MEVZUAT_TURLERI } from "@tekirextra/shared";
+import { bugunTR, MEVZUAT_TURLERI, takvimGunuMu } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { firmaTevkifatTablosu } from "../fatura/tevkifat-tablosu";
 import { MevzuatService } from "./mevzuat.service";
@@ -23,7 +23,7 @@ export class MevzuatController {
   @Get("kod-tablosu")
   kodTablosu(@Query("tarih") tarih?: string) {
     const gun = tarih ?? bugunTR();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(gun)) throw new BadRequestException("Tarih YYYY-MM-DD olmalıdır");
+    if (!takvimGunuMu(gun)) throw new BadRequestException("Tarih YYYY-MM-DD biçiminde geçerli bir takvim günü olmalıdır");
     return this.mevzuat.kodTablosu(gun);
   }
 
@@ -31,7 +31,7 @@ export class MevzuatController {
   @Get("tevkifat-tablosu")
   tevkifatTablosu(@Query("tarih") tarih?: string) {
     const gun = tarih ?? bugunTR();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(gun)) throw new BadRequestException("Tarih YYYY-MM-DD olmalıdır");
+    if (!takvimGunuMu(gun)) throw new BadRequestException("Tarih YYYY-MM-DD biçiminde geçerli bir takvim günü olmalıdır");
     return firmaTevkifatTablosu({ mevzuat: this.mevzuat, ayarlar: this.ayarlar }, gun);
   }
 
@@ -41,7 +41,7 @@ export class MevzuatController {
     if (!t.success) throw new BadRequestException("Geçersiz mevzuat türü");
     if (gecmis === "1") return this.mevzuat.tumKayitlar(t.data);
     const gun = tarih ?? bugunTR();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(gun)) throw new BadRequestException("Tarih YYYY-MM-DD olmalıdır");
+    if (!takvimGunuMu(gun)) throw new BadRequestException("Tarih YYYY-MM-DD biçiminde geçerli bir takvim günü olmalıdır");
     return this.mevzuat.yururluktekiler(t.data, gun);
   }
 

@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { anTR, ayBasiTR, ayTR, gunEkleTR, gunTR, yilBasiTR } from "./tarih";
+import { anTR, ayBasiTR, ayTR, gunEkleTR, gunTR, takvimGunuMu, yilBasiTR } from "./tarih";
+
+describe("takvimGunuMu — PLT-29", () => {
+  it("gerçek günleri kabul eder", () => {
+    for (const g of ["2026-01-01", "2026-02-28", "2028-02-29", "2000-02-29", "2026-12-31", "2026-04-30"]) expect(takvimGunuMu(g)).toBe(true);
+  });
+
+  it("olmayan günü başka güne taşımaz, reddeder", () => {
+    for (const g of ["2026-02-31", "2026-02-29", "1900-02-29", "2026-04-31", "2026-13-01", "2026-00-10", "2026-01-00", "2026-01-32", "0000-01-01"]) expect(takvimGunuMu(g)).toBe(false);
+  });
+
+  it("biçim dışını reddeder", () => {
+    for (const g of ["", "2026-1-01", "2026/01/01", "2026-01-01T00:00:00Z", " 2026-01-01", "20260101"]) expect(takvimGunuMu(g)).toBe(false);
+  });
+});
 
 describe("tarih — Türkiye takvimi", () => {
   it("UTC'de dün olan an Türkiye'de bugündür", () => {

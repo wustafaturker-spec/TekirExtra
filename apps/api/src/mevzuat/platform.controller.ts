@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
-import { MEVZUAT_TURLERI } from "@tekirextra/shared";
+import { MEVZUAT_TURLERI, takvimGunuMu } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { PlatformRolleri, PlatformUcu, Public } from "../auth/public.decorator";
 import { oturumIsaretiSirri, oturumIsaretiUret, PLATFORM_OTURUM_ISARETI_COOKIE, PLATFORM_OTURUM_ISARETI_SURESI_SN } from "../auth/oturum-isareti";
@@ -12,7 +12,7 @@ import { PlatformAiTavanService } from "./platform-ai-tavan.service";
 import { ODEME_SURELERI, PlatformFirmaService } from "./platform-firma.service";
 import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
 
-const tarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalıdır");
+const tarih = z.string().refine(takvimGunuMu, "Tarih YYYY-MM-DD biçiminde geçerli bir takvim günü olmalıdır");
 const degisiklikSemasi = z.object({
   baslik: z.string().trim().min(3, "Başlık en az 3 karakter").max(200),
   dayanak: z.string().trim().min(5, "Mevzuat dayanağı zorunludur (tebliğ/kılavuz adı, sayısı, tarihi)").max(500),

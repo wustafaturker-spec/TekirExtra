@@ -13,6 +13,17 @@
 
 const GUN_BICIMI = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" });
 
+/**
+ * PLT-29: `YYYY-MM-DD` gerçek bir takvim günü mü? Biçim denetimi yetmez:
+ * V8 `new Date("2026-02-31")` değerini sessizce 3 Mart'a taşır. Gün UTC
+ * gece yarısında kurulup geri yazılır; aynı metin dönmüyorsa gün yoktur.
+ */
+export function takvimGunuMu(deger: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(deger) || deger.startsWith("0000")) return false;
+  const an = new Date(`${deger}T00:00:00Z`);
+  return Number.isFinite(an.getTime()) && an.toISOString().slice(0, 10) === deger;
+}
+
 const GUN_MS = 86_400_000;
 
 /** Verilen anın Türkiye takvimindeki günü (`YYYY-MM-DD`). */
