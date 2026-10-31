@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Field, Input, TableWrap } from "@/components/ui";
-import { platformApi } from "@/lib/platform-api";
+import { PlatformApiHata, platformApi } from "@/lib/platform-api";
 
 /** MVZ-14: bordro parametresi değişikliğinin kabul senaryosu (sunucudaki kayıt). */
 export interface KabulSenaryosu {
@@ -65,8 +65,10 @@ const YENI: Taslak = {
 };
 const para = (v: number) => v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function KabulSenaryolari<T>({ degisiklikId, senaryolar, duzenle, yayinlandi, kalemlerKaydedilmedi, onDegisti, onKayitDurumu, onIslemDurumu }: {
+export function KabulSenaryolari<T>({ degisiklikId, surum, senaryolar, duzenle, yayinlandi, kalemlerKaydedilmedi, onDegisti, onKayitDurumu, onIslemDurumu, onCakisma }: {
   degisiklikId: string;
+  /** PLT-28: okunan değişiklik sürümü; senaryo kaydı bununla gider, eskiyse 409. */
+  surum: number;
   senaryolar: KabulSenaryosu[];
   duzenle: boolean;
   yayinlandi: boolean;
@@ -74,6 +76,8 @@ export function KabulSenaryolari<T>({ degisiklikId, senaryolar, duzenle, yayinla
   onDegisti: (d: T) => void;
   onKayitDurumu: (degisti: boolean) => void;
   onIslemDurumu: (islem: boolean) => void;
+  /** PLT-28: kayıt 409 alınca sayfa güncel kaydı çekip karşılaştırma gösterir; senaryo taslağı korunur. */
+  onCakisma?: () => void;
 }) {
   const [taslaklar, setTaslaklar] = useState<Taslak[]>(() => senaryolar.map(taslagaCevir));
   const degistiRef = useRef(false);
@@ -89,10 +93,13 @@ export function KabulSenaryolari<T>({ degisiklikId, senaryolar, duzenle, yayinla
     if (govde && taslaklar.some((t) => Object.values({ ...t.girdi, ...t.beklenen }).some((v) => v.trim() !== "" && !Number.isFinite(sayi(v))) || !Number.isFinite(t.tolerans ? sayi(t.tolerans) : 0.01) || (t.tolerans ? sayi(t.tolerans) : 0.01) < 0)) { setHata("Senaryo alanlarına geçerli sayılar ve sıfırdan küçük olmayan bir tolerans girin."); return; }
     setIslem(true); onIslemDurumu(true); setHata(""); setBasari("");
     try {
-      const sonuc = await platformApi<T>(`/platform/mevzuat/degisiklikler/${degisiklikId}/${yol}`, { method: govde ? "PUT" : "POST", body: govde ? JSON.stringify(govde) : undefined });
+      const sonuc = await platformApi<T>(`/platform/mevzuat/degisiklikler/${degisiklikId}/${yol}`, { method: govde ? "PUT" : "POST", body: govde ? JSON.stringify({ ...govde, surum }) : undefined });
       degistiRef.current = false; setDegisti(false); onKayitDurumu(false); onDegisti(sonuc);
       setBasari(govde ? "Senaryolar kaydedildi." : "Senaryolar çalıştırıldı.");
-    } catch (e) { setHata(e instanceof Error ? e.message : "İşlem başarısız."); }
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "İşlem başarısız.");
+      if (e instanceof PlatformApiHata && e.durum === 409) onCakisma?.();
+    }
     finally { setIslem(false); onIslemDurumu(false); }
   }
 

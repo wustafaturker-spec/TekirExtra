@@ -109,27 +109,27 @@ export class PlatformMevzuatService {
     });
   }
 
-  async guncelle(id: string, girdi: DegisiklikGirdisi) {
+  async guncelle(id: string, girdi: DegisiklikGirdisi, surum: number) {
     await this.db.$transaction(async (tx) => {
-      await this.taslakOlmali(tx, id);
+      await this.taslakOlmali(tx, id, surum);
       await tx.mevzuatDegisiklik.update({
         where: { id },
-        data: { baslik: girdi.baslik.trim(), dayanak: girdi.dayanak.trim(), aciklama: girdi.aciklama?.trim() || null, yururlukBaslangic: new Date(girdi.yururlukBaslangic) },
+        data: { baslik: girdi.baslik.trim(), dayanak: girdi.dayanak.trim(), aciklama: girdi.aciklama?.trim() || null, yururlukBaslangic: new Date(girdi.yururlukBaslangic), surum: { increment: 1 } },
       });
       await this.olay(tx, id, "guncellendi", { baslik: girdi.baslik, dayanak: girdi.dayanak, yururlukBaslangic: girdi.yururlukBaslangic });
     });
   }
 
-  async sil(id: string) {
+  async sil(id: string, surum: number) {
     await this.db.$transaction(async (tx) => {
-      const d = await this.taslakOlmali(tx, id);
+      const d = await this.taslakOlmali(tx, id, surum);
       await this.olay(tx, id, "silindi", { no: d.no, baslik: d.baslik });
       await tx.mevzuatDegisiklik.delete({ where: { id } });
     });
   }
 
   /** Satır listesinin tamamı yazılır; değerler türün kuralıyla denetlenir. */
-  async satirlariYaz(id: string, satirlar: SatirGirdisi[]) {
+  async satirlariYaz(id: string, satirlar: SatirGirdisi[], surum: number) {
     const hatalar: string[] = [];
     satirlar.forEach((s, i) => {
       if (!mevzuatTuruMu(s.tur)) hatalar.push(`${i + 1}. satır: tanımsız tür ${s.tur}`);
@@ -140,7 +140,8 @@ export class PlatformMevzuatService {
     if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
 
     await this.db.$transaction(async (tx) => {
-      await this.taslakOlmali(tx, id);
+      await this.taslakOlmali(tx, id, surum);
+      await this.surumArtir(tx, id);
       await tx.mevzuatDegisiklikSatiri.deleteMany({ where: { degisiklikId: id } });
       await tx.mevzuatDegisiklikSatiri.createMany({
         data: satirlar.map((s, i) => ({
@@ -152,9 +153,9 @@ export class PlatformMevzuatService {
     });
   }
 
-  async onayaGonder(id: string) {
+  async onayaGonder(id: string, surum: number) {
     await this.db.$transaction(async (tx) => {
-      const d = await this.taslakOlmali(tx, id);
+      const d = await this.taslakOlmali(tx, id, surum);
       const satirlar = await tx.mevzuatDegisiklikSatiri.findMany({ where: { degisiklikId: id }, orderBy: { sira: "asc" } });
       const plan = yayinPlani(await this.planKayitlari(tx, satirlar), satirlar.map(satirPlani), gun(d.yururlukBaslangic)!);
       if (plan.hatalar.length) throw new BadRequestException(plan.hatalar.join("; "));
@@ -165,18 +166,18 @@ export class PlatformMevzuatService {
   }
 
   /** Hazırlayan, onay bekleyen değişikliği düzeltmek için geri çeker. */
-  async taslagaCek(id: string) {
+  async taslagaCek(id: string, surum: number) {
     await this.db.$transaction(async (tx) => {
-      const d = await this.onayBekleyenOlmali(tx, id);
+      const d = await this.onayBekleyenOlmali(tx, id, surum);
       if (!this.duzenleyenler(d).has(aktifPlatformBaglam().kullaniciId)) throw new ForbiddenException("Yalnız hazırlayanlar taslağa çekebilir; siz geri çevirebilirsiniz");
       await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "taslak", onayaGonderimZamani: null });
       await this.olay(tx, id, "taslaga_cekildi");
     });
   }
 
-  async geriCevir(id: string, gerekce: string) {
+  async geriCevir(id: string, gerekce: string, surum: number) {
     await this.db.$transaction(async (tx) => {
-      const d = await this.onayBekleyenOlmali(tx, id);
+      const d = await this.onayBekleyenOlmali(tx, id, surum);
       this.dortGoz(d);
       await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "taslak", onayaGonderimZamani: null, retGerekcesi: gerekce.trim() });
       await this.olay(tx, id, "geri_cevrildi", { gerekce: gerekce.trim() });
@@ -188,12 +189,12 @@ export class PlatformMevzuatService {
    * yayın anındaki kayıtlarla yeniden kurulur (onaydan sonra başka bir
    * değişiklik yayınlanmış olabilir).
    */
-  async yayinla(id: string) {
+  async yayinla(id: string, surum: number) {
     const { kullaniciId } = aktifPlatformBaglam();
     return this.db.$transaction(async (tx) => {
       // Aynı anda iki yayını sıraya sokar: kayıt planı tutarlı kalır.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mevzuat_yayin'))`;
-      const d = await this.onayBekleyenOlmali(tx, id);
+      const d = await this.onayBekleyenOlmali(tx, id, surum);
       this.dortGoz(d);
       const satirlar = await tx.mevzuatDegisiklikSatiri.findMany({ where: { degisiklikId: id }, orderBy: { sira: "asc" } });
       const yururluk = gun(d.yururlukBaslangic)!;
@@ -216,9 +217,10 @@ export class PlatformMevzuatService {
   }
 
   /** MVZ-14: kabul senaryolarının tamamı yazılır (yalnız taslakta). */
-  async kabulSenaryolariYaz(id: string, senaryolar: KabulSenaryosuGirdisi[]) {
+  async kabulSenaryolariYaz(id: string, senaryolar: KabulSenaryosuGirdisi[], surum: number) {
     await this.db.$transaction(async (tx) => {
-      await this.taslakOlmali(tx, id);
+      await this.taslakOlmali(tx, id, surum);
+      await this.surumArtir(tx, id);
       await tx.mevzuatKabulSenaryosu.deleteMany({ where: { degisiklikId: id } });
       await tx.mevzuatKabulSenaryosu.createMany({
         data: senaryolar.map((s, i) => ({ degisiklikId: id, sira: i + 1, ad: s.ad, girdiler: s.girdiler as Prisma.InputJsonValue, beklenen: s.beklenen as Prisma.InputJsonValue, tolerans: s.tolerans })),
@@ -230,6 +232,8 @@ export class PlatformMevzuatService {
   /** Senaryoları değişiklikteki bordro değeriyle çalıştırıp sonucu saklar (yayınlanana kadar). */
   async kabulSenaryolariCalistir(id: string) {
     await this.db.$transaction(async (tx) => {
+      // İçerik değişmez (yalnız sonuç yazılır), sürüm istemez; aynı kilitle kalem yazımı ve yayınla sıralanır.
+      await this.kilitle(tx, id);
       const d = await tx.mevzuatDegisiklik.findUnique({ where: { id }, select: { durum: true } });
       if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
       if (d.durum === "yayinlandi") throw new ConflictException("Yayınlanan değişikliğin senaryoları yeniden çalıştırılmaz");
@@ -342,14 +346,33 @@ export class PlatformMevzuatService {
     }
   }
 
-  private async taslakOlmali(tx: Prisma.TransactionClient, id: string) {
+  /**
+   * PLT-28: değişiklik satırını transaction sonuna kadar kilitler ve beklenen sürümü
+   * denetler. Başlık, kalem, senaryo ve durum yazımları aynı satır kilidiyle sıralanır;
+   * denetim ile yazım arasında başka bir işlem araya giremez (ör. kalem yazılırken onaya gönderme).
+   */
+  private async kilitle(tx: Prisma.TransactionClient, id: string, surum?: number) {
+    const [k] = await tx.$queryRaw<{ surum: number }[]>`SELECT surum FROM mevzuat_degisiklikleri WHERE id = ${id}::uuid FOR UPDATE`;
+    if (!k) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
+    if (surum !== undefined && k.surum !== surum) {
+      throw new ConflictException({ statusCode: 409, message: "Değişiklik bu arada başka biri tarafından güncellendi. Taslağınız korunuyor; güncel kaydı yükleyip karşılaştırın.", guncelSurum: k.surum });
+    }
+  }
+
+  private surumArtir(tx: Prisma.TransactionClient, id: string) {
+    return tx.mevzuatDegisiklik.update({ where: { id }, data: { surum: { increment: 1 } }, select: { id: true } });
+  }
+
+  private async taslakOlmali(tx: Prisma.TransactionClient, id: string, surum?: number) {
+    await this.kilitle(tx, id, surum);
     const d = await tx.mevzuatDegisiklik.findUnique({ where: { id } });
     if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
     if (d.durum !== "taslak") throw new ConflictException(d.durum === "yayinlandi" ? "Yayınlanan değişiklik değiştirilemez" : "Onay bekleyen değişiklik düzenlenemez; önce taslağa çekin");
     return d;
   }
 
-  private async onayBekleyenOlmali(tx: Prisma.TransactionClient, id: string) {
+  private async onayBekleyenOlmali(tx: Prisma.TransactionClient, id: string, surum: number) {
+    await this.kilitle(tx, id, surum);
     const d = await tx.mevzuatDegisiklik.findUnique({ where: { id }, include: { olaylar: { select: { kullaniciId: true, olay: true } } } });
     if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
     if (d.durum !== "onay_bekliyor") throw new ConflictException("Değişiklik onay beklemiyor");
@@ -358,7 +381,7 @@ export class PlatformMevzuatService {
 
   /** Eşzamanlı iki işlemden yalnız biri durumu değiştirir. */
   private async durumGecisi(tx: Prisma.TransactionClient, id: string, beklenen: MevzuatDegisiklikDurum, data: Prisma.MevzuatDegisiklikUpdateManyMutationInput & { yayinlayanId?: string }) {
-    const sonuc = await tx.mevzuatDegisiklik.updateMany({ where: { id, durum: beklenen }, data });
+    const sonuc = await tx.mevzuatDegisiklik.updateMany({ where: { id, durum: beklenen }, data: { ...data, surum: { increment: 1 } } });
     if (!sonuc.count) throw new ConflictException("Değişikliğin durumu bu arada değişti; sayfayı yenileyin");
   }
 

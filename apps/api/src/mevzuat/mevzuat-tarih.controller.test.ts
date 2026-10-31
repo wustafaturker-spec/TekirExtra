@@ -20,7 +20,7 @@ describe("PLT-29 — platform mevzuat tarihleri", () => {
     const { servis, c } = platform();
     for (const g of gecersiz) {
       expect(() => c.olustur(govde(g))).toThrow(BadRequestException);
-      await expect(c.guncelle("d1", govde(g))).rejects.toThrow("geçerli bir takvim günü");
+      await expect(c.guncelle("d1", { ...govde(g), surum: 1 })).rejects.toThrow("geçerli bir takvim günü");
     }
     expect(servis.olustur).not.toHaveBeenCalled();
     expect(servis.guncelle).not.toHaveBeenCalled();
@@ -29,9 +29,9 @@ describe("PLT-29 — platform mevzuat tarihleri", () => {
   it("geçerli günü (artık yıl dahil) değiştirmeden geçirir", async () => {
     const { servis, c } = platform();
     await c.olustur(govde("2028-02-29"));
-    await c.guncelle("d1", govde("2027-01-01"));
+    await c.guncelle("d1", { ...govde("2027-01-01"), surum: 3 });
     expect(servis.olustur).toHaveBeenCalledWith(expect.objectContaining({ yururlukBaslangic: "2028-02-29" }));
-    expect(servis.guncelle).toHaveBeenCalledWith("d1", expect.objectContaining({ yururlukBaslangic: "2027-01-01" }));
+    expect(servis.guncelle).toHaveBeenCalledWith("d1", expect.objectContaining({ yururlukBaslangic: "2027-01-01" }), 3);
   });
 
   it("kayıt sorgusunun tarih parametresini de denetler", async () => {

@@ -6371,6 +6371,8 @@ model MevzuatDegisiklik {
   yayinZamani         DateTime?              @map("yayin_zamani")
   /// Son geri çevirmenin gerekçesi; değişiklik taslağa döner.
   retGerekcesi        String?                @map("ret_gerekcesi")
+  /// PLT-28: başlık, kalem, senaryo ve durum yazımlarında beklenen sürüm; her yazım artırır, eskisi 409 alır.
+  surum               Int                    @default(1)
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @updatedAt @map("updated_at")
 

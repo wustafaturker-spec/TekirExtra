@@ -6,6 +6,7 @@ const detay = () => ({
   retGerekcesi: null, yayinZamani: null, hazirlayan: { adSoyad: "Ayşe Yılmaz" }, yayinlayan: null,
   satirlar: [{ tur: "kdv_orani", anahtar: "20", islem: "degistir", deger: { aciklama: "Genel oran" } }], planHatalari: [], etki: { kalemler: [], hesaplanmayan: [] },
   kabulGerekli: true, kabulSenaryolari: [senaryo()], olaylar: [], izinler: { duzenle: true, onayaGonder: true, taslagaCek: false, yayinla: false, geriCevir: false },
+  surum: 1,
 });
 const davet = (tur = "hesap") => ({ eposta: "editor@example.test", adSoyad: "Yeni Editör", tur, secret: "ORNEK-KURULUM-ANAHTARI", karekod: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><rect width="180" height="180" fill="white"/><path d="M10 10h50v50H10zM120 10h50v50h-50zM10 120h50v50H10zM80 80h20v20H80zM120 120h40v40h-40z" fill="black"/></svg>')}` });
 
@@ -16,12 +17,15 @@ test.beforeEach(async ({ page }) => {
 
 test("bilgi, kalem ve senaryo kayıtları diğer bölümlerin taslaklarını korur", async ({ page }) => {
   const v = detay();
+  // PLT-28: her yazım okunan sürümü gönderir; sunucu her kayıtta sürümü artırır.
+  const surumler: number[] = [];
+  const yaz = (govde: { surum: number }) => { surumler.push(govde.surum); v.surum++; };
   await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1", async (route) => {
-    if (route.request().method() === "PATCH") Object.assign(v, route.request().postDataJSON());
+    if (route.request().method() === "PATCH") { const g = route.request().postDataJSON(); yaz(g); const { surum: _s, ...alanlar } = g; Object.assign(v, alanlar); }
     await route.fulfill({ json: v });
   });
-  await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1/satirlar", async (route) => { v.satirlar = route.request().postDataJSON().satirlar; await route.fulfill({ json: v }); });
-  await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1/kabul-senaryolari", async (route) => { v.kabulSenaryolari = route.request().postDataJSON().senaryolar.map((s: object) => ({ ...senaryo(), ...s, basarili: null })); await route.fulfill({ json: v }); });
+  await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1/satirlar", async (route) => { const g = route.request().postDataJSON(); yaz(g); v.satirlar = g.satirlar; await route.fulfill({ json: v }); });
+  await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1/kabul-senaryolari", async (route) => { const g = route.request().postDataJSON(); yaz(g); v.kabulSenaryolari = g.senaryolar.map((s: object) => ({ ...senaryo(), ...s, basarili: null })); await route.fulfill({ json: v }); });
   await page.goto("/platform/degisiklik?id=d1");
   await page.getByLabel("Başlık", { exact: true }).fill("Yeni dönem düzenlemesi");
   await page.locator("#degisiklik-kalemleri").getByRole("textbox", { name: "Açıklama", exact: true }).fill("Kalem taslağı");
@@ -38,6 +42,7 @@ test("bilgi, kalem ve senaryo kayıtları diğer bölümlerin taslaklarını kor
   await expect(page.getByText("Senaryolar kaydedildi.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Onaya gönder", exact: true })).toBeEnabled();
   await expect(page.getByLabel("Başlık", { exact: true })).toHaveValue("Yeni dönem düzenlemesi");
+  expect(surumler).toEqual([1, 2, 3]);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({ path: "/tmp/platform-detay-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -202,4 +207,55 @@ test("PLT-30: e-postadaki #anahtar= bağlantısı açılır, anahtar sunucuya ad
   expect(govdeler).toEqual([{ anahtar: "parca-anahtari" }]);
   expect(sayfaIstekleri.some((u) => u.includes("parca-anahtari"))).toBe(false);
   await expect(page).toHaveURL(/\/platform\/davet$/);
+});
+
+test("PLT-28: kayıt 409 alınca taslak korunur, güncel kayıt karşılaştırılır ve taslak güncel sürüme taşınıp kaydedilir", async ({ page }) => {
+  const v = detay();
+  const gonderilen: { baslik: string; surum: number }[] = [];
+  await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1", async (route) => {
+    if (route.request().method() !== "PATCH") return route.fulfill({ json: v });
+    const g = route.request().postDataJSON();
+    gonderilen.push(g);
+    if (gonderilen.length === 1) {
+      // Bu arada başka bir editör kaydetmiş: sunucu sürüm 2'de, başlık değişmiş.
+      Object.assign(v, { surum: 2, baslik: "Başka editörün başlığı" });
+      return route.fulfill({ status: 409, json: { statusCode: 409, message: "Değişiklik bu arada başka biri tarafından güncellendi. Taslağınız korunuyor; güncel kaydı yükleyip karşılaştırın.", guncelSurum: 2 } });
+    }
+    Object.assign(v, { baslik: g.baslik, surum: v.surum + 1 });
+    return route.fulfill({ json: v });
+  });
+  await page.goto("/platform/degisiklik?id=d1");
+  await page.getByLabel("Başlık", { exact: true }).fill("Benim başlığım");
+  await page.getByRole("button", { name: "Bilgileri kaydet" }).click();
+  const panel = page.getByRole("region", { name: "Güncel kayıtla karşılaştırma" });
+  await expect(panel).toContainText("sürüm 1 → 2");
+  await expect(panel).toContainText("Başka editörün başlığı");
+  await expect(panel).toContainText("sizin taslağınız: Benim başlığım");
+  await expect(page.getByLabel("Başlık", { exact: true })).toHaveValue("Benim başlığım");
+  await panel.getByRole("button", { name: "Taslağımı güncel sürüme taşı" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByLabel("Başlık", { exact: true })).toHaveValue("Benim başlığım");
+  await page.getByRole("button", { name: "Bilgileri kaydet" }).click();
+  await expect(page.getByText("Bilgiler kaydedildi.")).toBeVisible();
+  expect(gonderilen.map((g) => [g.baslik, g.surum])).toEqual([["Benim başlığım", 1], ["Benim başlığım", 2]]);
+});
+
+test("PLT-28: taslağımı bırak seçeneği güncel kaydı açar; onaya gönderme sürümle gider", async ({ page }) => {
+  const v = detay();
+  const istekler: { yol: string; govde: unknown }[] = [];
+  await page.route("**/api/v1/platform/mevzuat/degisiklikler/d1**", async (route) => {
+    const u = new URL(route.request().url());
+    const m = route.request().method();
+    if (m === "GET") return route.fulfill({ json: v });
+    istekler.push({ yol: `${m} ${u.pathname.replace(/.*\/d1/, "")}${u.search}`, govde: route.request().postDataJSON() });
+    if (u.pathname.endsWith("/onaya-gonder")) { Object.assign(v, { surum: 5, baslik: "Sunucudaki başlık" }); return route.fulfill({ status: 409, json: { statusCode: 409, message: "Değişiklik bu arada başka biri tarafından güncellendi." } }); }
+    return route.fulfill({ json: { durum: "ok" } });
+  });
+  page.on("dialog", (d) => void d.dismiss());
+  await page.goto("/platform/degisiklik?id=d1");
+  await page.getByRole("button", { name: "Onaya gönder", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Güncel kayıtla karşılaştırma" });
+  await panel.getByRole("button", { name: "Taslağımı bırak, güncel kaydı aç" }).click();
+  await expect(page.getByLabel("Başlık", { exact: true })).toHaveValue("Sunucudaki başlık");
+  expect(istekler).toEqual([{ yol: "POST /onaya-gonder", govde: { surum: 1 } }]);
 });

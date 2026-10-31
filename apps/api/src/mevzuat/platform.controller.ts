@@ -27,6 +27,9 @@ const satirlarSemasi = z.object({
     deger: z.unknown().optional(),
   })).max(500),
 });
+/** PLT-28: değişikliğe yazan her istek okuduğu sürümü gönderir; eskisiyse 409. */
+const surum = z.coerce.number({ message: "Değişiklik sürümü eksik; sayfayı yenileyin" }).int().positive("Değişiklik sürümü eksik; sayfayı yenileyin");
+const surumSemasi = z.object({ surum });
 const girisSemasi = z.object({ eposta: z.string().email(), parola: z.string().min(1), totpKodu: z.string().regex(/^\d{6}$/, "Doğrulama kodu 6 hane olmalıdır") });
 const talepSemasi = z.object({ durum: z.enum(["acik", "cozuldu", "reddedildi"]), cozumNotu: z.string().trim().max(2000).optional().nullable() });
 
@@ -135,26 +138,29 @@ export class PlatformMevzuatController {
 
   @Patch("degisiklikler/:id")
   async guncelle(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
-    await this.mevzuat.guncelle(id, ayristir(degisiklikSemasi, govde));
+    const { surum: s, ...g } = ayristir(degisiklikSemasi.extend({ surum }), govde);
+    await this.mevzuat.guncelle(id, g, s);
     return this.mevzuat.getir(id);
   }
 
   @Delete("degisiklikler/:id")
-  async sil(@Param("id", ParseUUIDPipe) id: string) {
-    await this.mevzuat.sil(id);
+  async sil(@Param("id", ParseUUIDPipe) id: string, @Query("surum") s?: string) {
+    await this.mevzuat.sil(id, ayristir(surum, s));
     return { durum: "ok" };
   }
 
   @Put("degisiklikler/:id/satirlar")
   async satirlar(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
-    await this.mevzuat.satirlariYaz(id, ayristir(satirlarSemasi, govde).satirlar);
+    const g = ayristir(satirlarSemasi.extend({ surum }), govde);
+    await this.mevzuat.satirlariYaz(id, g.satirlar, g.surum);
     return this.mevzuat.getir(id);
   }
 
   /** MVZ-14: bordro parametresi değişikliğinin kabul senaryoları. */
   @Put("degisiklikler/:id/kabul-senaryolari")
   async kabulSenaryolari(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
-    await this.mevzuat.kabulSenaryolariYaz(id, ayristir(kabulSenaryolariSemasi, govde).senaryolar);
+    const g = ayristir(kabulSenaryolariSemasi.extend({ surum }), govde);
+    await this.mevzuat.kabulSenaryolariYaz(id, g.senaryolar, g.surum);
     return this.mevzuat.getir(id);
   }
 
@@ -170,27 +176,27 @@ export class PlatformMevzuatController {
   }
 
   @Post("degisiklikler/:id/onaya-gonder")
-  async onayaGonder(@Param("id", ParseUUIDPipe) id: string) {
-    await this.mevzuat.onayaGonder(id);
+  async onayaGonder(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    await this.mevzuat.onayaGonder(id, ayristir(surumSemasi, govde).surum);
     return this.mevzuat.getir(id);
   }
 
   @Post("degisiklikler/:id/taslaga-cek")
-  async taslagaCek(@Param("id", ParseUUIDPipe) id: string) {
-    await this.mevzuat.taslagaCek(id);
+  async taslagaCek(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    await this.mevzuat.taslagaCek(id, ayristir(surumSemasi, govde).surum);
     return this.mevzuat.getir(id);
   }
 
   @Post("degisiklikler/:id/geri-cevir")
   async geriCevir(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
-    const { gerekce } = ayristir(z.object({ gerekce: z.string().trim().min(5, "Geri çevirme gerekçesi zorunludur").max(2000) }), govde);
-    await this.mevzuat.geriCevir(id, gerekce);
+    const { gerekce, surum: s } = ayristir(z.object({ gerekce: z.string().trim().min(5, "Geri çevirme gerekçesi zorunludur").max(2000), surum }), govde);
+    await this.mevzuat.geriCevir(id, gerekce, s);
     return this.mevzuat.getir(id);
   }
 
   @Post("degisiklikler/:id/yayinla")
-  async yayinla(@Param("id", ParseUUIDPipe) id: string) {
-    const sonuc = await this.mevzuat.yayinla(id);
+  async yayinla(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const sonuc = await this.mevzuat.yayinla(id, ayristir(surumSemasi, govde).surum);
     return { ...sonuc, degisiklik: await this.mevzuat.getir(id) };
   }
 

@@ -9,7 +9,7 @@ import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap
 import { MEVZUAT_TUR_TANIMLARI, MEVZUAT_TURLERI, dilimMetni, dilimleriCoz, mevzuatDegerHatalari, mevzuatDegerOzeti, type MevzuatTuru } from "@tekirextra/shared";
 import { KabulSenaryolari, type KabulSenaryosu } from "./kabul-senaryolari";
 import { DURUM_ADI, DURUM_ROZETI, ISLEM_ADI, OLAY_ADI, tarihTR, type MevzuatDurum } from "@/lib/mevzuat-gorunum";
-import { platformApi, platformTokenAl } from "@/lib/platform-api";
+import { PlatformApiHata, platformApi, platformTokenAl } from "@/lib/platform-api";
 
 type Islem = "ekle" | "degistir" | "kaldir";
 interface Satir { tur: string; anahtar: string; islem: Islem; deger: Record<string, unknown> | null; oncekiDeger?: unknown; oncekiYururluk?: string | null }
@@ -25,6 +25,8 @@ interface Detay {
   kabulSenaryolari: KabulSenaryosu[];
   olaylar: { id: string; olay: string; zaman: string; kullanici: string | null; detay: Record<string, unknown> | null }[];
   izinler: { duzenle: boolean; onayaGonder: boolean; taslagaCek: boolean; yayinla: boolean; geriCevir: boolean };
+  /** PLT-28: her yazım okunan sürümle gider; başkası araya girdiyse 409. */
+  surum: number;
 }
 
 /** Düzenleyicideki satır: alan değerleri metin olarak tutulur, kaydederken türüne çevrilir. */
@@ -62,6 +64,9 @@ function DegisiklikDetayi({ id }: { id: string }) {
   const [yukleniyor, setYukleniyor] = useState(true);
   const [gerekce, setGerekce] = useState("");
   const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [islem, setIslem] = useState(false);
+  // PLT-28: 409 sonrası sunucudaki güncel kayıt; taslaklar korunur, kullanıcı karşılaştırıp seçer.
+  const [cakisma, setCakisma] = useState<Detay | null>(null);
+  const [senaryoAnahtari, setSenaryoAnahtari] = useState(0);
 
   const bilgiDegisti = Boolean(d && (bilgi.baslik !== d.baslik || bilgi.dayanak !== d.dayanak || bilgi.yururlukBaslangic !== d.yururlukBaslangic || bilgi.aciklama !== (d.aciklama ?? "")));
   const kirliAlanlar = useRef({ bilgi: false, kalem: false });
@@ -86,29 +91,40 @@ function DegisiklikDetayi({ id }: { id: string }) {
     return () => kontrol.abort();
   }, [id, yukle]);
 
+  /** PLT-28: güncel kaydı çeker ama taslaklara dokunmaz; karşılaştırma paneli açılır. */
+  const cakismaYukle = useCallback(async () => {
+    try { setCakisma(await platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`)); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Güncel kayıt yüklenemedi."); }
+  }, [id]);
   async function calis(is: () => Promise<Detay>, mesaj: string, bolum: "hepsi" | "bilgi" | "kalem" = "hepsi") {
     if (islem || senaryoIslem) return;
     setIslem(true); setHata(""); setBasari("");
-    try { yansit(await is(), bolum); setBasari(mesaj); }
-    catch (h) { setHata(h instanceof Error ? h.message : "İşlem başarısız."); }
+    try { yansit(await is(), bolum); setBasari(mesaj); setCakisma(null); }
+    catch (h) {
+      setHata(h instanceof Error ? h.message : "İşlem başarısız.");
+      if (h instanceof PlatformApiHata && h.durum === 409) void cakismaYukle();
+    }
     finally { setIslem(false); }
   }
   async function taslagiSil() {
     if (islem || senaryoIslem || !window.confirm("Taslak silinsin mi?")) return;
     setIslem(true); setHata("");
-    try { await platformApi(`/platform/mevzuat/degisiklikler/${id}`, { method: "DELETE" }); yonlendir.replace("/platform"); }
-    catch (h) { setHata(h instanceof Error ? h.message : "Taslak silinemedi."); }
+    try { await platformApi(`/platform/mevzuat/degisiklikler/${id}?surum=${d?.surum ?? 0}`, { method: "DELETE" }); yonlendir.replace("/platform"); }
+    catch (h) {
+      setHata(h instanceof Error ? h.message : "Taslak silinemedi.");
+      if (h instanceof PlatformApiHata && h.durum === 409) void cakismaYukle();
+    }
     finally { setIslem(false); }
   }
-  const post = (yol: string, govde?: unknown) => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}/${yol}`, { method: "POST", body: govde ? JSON.stringify(govde) : undefined });
+  const post = (yol: string, govde: Record<string, unknown> = {}) => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}/${yol}`, { method: "POST", body: JSON.stringify({ ...govde, surum: d?.surum }) });
 
   function bilgiKaydet(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const v = new FormData(e.currentTarget);
-    void calis(() => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`, { method: "PATCH", body: JSON.stringify({ baslik: v.get("baslik"), dayanak: v.get("dayanak"), yururlukBaslangic: v.get("yururlukBaslangic"), aciklama: v.get("aciklama") || null }) }), "Bilgiler kaydedildi.", "bilgi");
+    void calis(() => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}`, { method: "PATCH", body: JSON.stringify({ baslik: v.get("baslik"), dayanak: v.get("dayanak"), yururlukBaslangic: v.get("yururlukBaslangic"), aciklama: v.get("aciklama") || null, surum: d?.surum }) }), "Bilgiler kaydedildi.", "bilgi");
   }
   const satirlariKaydet = () => calis(() => platformApi<Detay>(`/platform/mevzuat/degisiklikler/${id}/satirlar`, {
-    method: "PUT", body: JSON.stringify({ satirlar: satirlar.map((s) => ({ tur: s.tur, anahtar: s.anahtar.trim(), islem: s.islem, deger: degereCevir(s) })) }),
+    method: "PUT", body: JSON.stringify({ satirlar: satirlar.map((s) => ({ tur: s.tur, anahtar: s.anahtar.trim(), islem: s.islem, deger: degereCevir(s) })), surum: d?.surum }),
   }), "Kalemler kaydedildi.", "kalem");
   const guncelle = (i: number, ek: Partial<TaslakSatir>) => { setSatirlar((eski) => eski.map((s, j) => (j === i ? { ...s, ...ek } : s))); setDegisti(true); };
   const satirEkle = () => { setSatirlar((eski) => [...eski, { tur: "tevkifat_kodu", anahtar: "", islem: "ekle", alanlar: {} }]); setDegisti(true); };
@@ -144,6 +160,21 @@ function DegisiklikDetayi({ id }: { id: string }) {
     <nav className="platform-section-nav" aria-label="Değişiklik bölümleri">{duzenle && <a href="#degisiklik-bilgileri">Bilgiler</a>}<a href="#degisiklik-kalemleri">Kalemler</a>{(d.kabulGerekli || d.kabulSenaryolari.length > 0 || senaryoDegisti) && <a href="#kabul-senaryolari">Kabul senaryoları</a>}<a href="#degisiklik-onayi">Onay ve yayın</a><a href="#degisiklik-gecmisi">Geçmiş</a></nav>
     <fieldset className="platform-editor-fieldset" disabled={islem || senaryoIslem}>
     <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
+    {cakisma && <section className="platform-conflict" role="region" aria-label="Güncel kayıtla karşılaştırma">
+      <Alert tone="warning">Bu değişiklik siz düzenlerken güncellendi (sürüm {d.surum} → {cakisma.surum}). Taslağınız korunuyor; aşağıdaki güncel kayıtla karşılaştırıp seçin.</Alert>
+      <dl className="platform-editor-metadata">
+        <div><dt>Durum</dt><dd>{DURUM_ADI[cakisma.durum]}{cakisma.durum !== d.durum && " (değişti)"}</dd></div>
+        <div><dt>Başlık</dt><dd>{cakisma.baslik}{bilgiDegisti && cakisma.baslik !== bilgi.baslik && <span className="muted"> · sizin taslağınız: {bilgi.baslik}</span>}</dd></div>
+        <div><dt>Dayanak</dt><dd>{cakisma.dayanak}{bilgiDegisti && cakisma.dayanak !== bilgi.dayanak && <span className="muted"> · sizin taslağınız: {bilgi.dayanak}</span>}</dd></div>
+        <div><dt>Yürürlük</dt><dd>{tarihTR(cakisma.yururlukBaslangic)}{bilgiDegisti && cakisma.yururlukBaslangic !== bilgi.yururlukBaslangic && <span className="muted"> · sizin taslağınız: {tarihTR(bilgi.yururlukBaslangic)}</span>}</dd></div>
+        <div><dt>Kalemler</dt><dd>{cakisma.satirlar.length} kalem: {cakisma.satirlar.map((x) => `${MEVZUAT_TUR_TANIMLARI[x.tur as MevzuatTuru]?.ad ?? x.tur} ${x.anahtar}`).join(", ") || "—"}{degisti && <span className="muted"> · sizin taslağınızda {satirlar.length} kalem</span>}</dd></div>
+        <div><dt>Kabul senaryoları</dt><dd>{cakisma.kabulSenaryolari.length}</dd></div>
+      </dl>
+      <div className="row-tight">
+        {cakisma.durum === "taslak" && <Button variant="primary" onClick={() => { yansit(cakisma, "senaryo"); setCakisma(null); setHata(""); setBasari("Taslağınız güncel sürüme taşındı; kontrol edip yeniden kaydedin."); }}>Taslağımı güncel sürüme taşı</Button>}
+        <Button onClick={() => { yansit(cakisma, "hepsi"); setSenaryoAnahtari((n) => n + 1); setSenaryoDegisti(false); setCakisma(null); setHata(""); setBasari("Güncel kayıt açıldı; taslağınız bırakıldı."); }}>Taslağımı bırak, güncel kaydı aç</Button>
+      </div>
+    </section>}
     {d.durum === "taslak" && d.retGerekcesi && <Alert tone="warning">Geri çevrildi: {d.retGerekcesi}</Alert>}
     {d.durum !== "yayinlandi" && d.satirlar.length > 0 && d.planHatalari.length > 0 && <Alert tone="warning"><strong>Yayınlanamaz:</strong><ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>{d.planHatalari.map((h) => <li key={h}>{h}</li>)}</ul></Alert>}
 
@@ -199,7 +230,7 @@ function DegisiklikDetayi({ id }: { id: string }) {
       {duzenle && degisti && <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>Kaydedilmemiş değişiklik var; onaya göndermeden önce kalemleri kaydedin.</p>}
     </Card>
 
-    {(d.kabulGerekli || d.kabulSenaryolari.length > 0 || senaryoDegisti) && <KabulSenaryolari<Detay> degisiklikId={id} senaryolar={d.kabulSenaryolari} duzenle={duzenle} yayinlandi={d.durum === "yayinlandi"} kalemlerKaydedilmedi={degisti || bilgiDegisti} onKayitDurumu={setSenaryoDegisti} onIslemDurumu={setSenaryoIslem} onDegisti={(v) => yansit(v, "senaryo")} />}
+    {(d.kabulGerekli || d.kabulSenaryolari.length > 0 || senaryoDegisti) && <KabulSenaryolari<Detay> key={senaryoAnahtari} degisiklikId={id} surum={d.surum} onCakisma={() => void cakismaYukle()} senaryolar={d.kabulSenaryolari} duzenle={duzenle} yayinlandi={d.durum === "yayinlandi"} kalemlerKaydedilmedi={degisti || bilgiDegisti} onKayitDurumu={setSenaryoDegisti} onIslemDurumu={setSenaryoIslem} onDegisti={(v) => yansit(v, "senaryo")} />}
 
     <Card id="degisiklik-onayi" title="Onay ve yayın">
       {d.etki && d.satirlar.length > 0 && <div style={{ marginBottom: "1rem" }}>
@@ -215,7 +246,7 @@ function DegisiklikDetayi({ id }: { id: string }) {
       <div className="row-tight">
         {d.izinler.onayaGonder && <Button variant="primary" disabled={islem || kaydedilmedi || kabulEngeli !== null} onClick={() => void calis(() => post("onaya-gonder"), "Onaya gönderildi. Başka bir platform yetkilisi yayınlayacak.")}>Onaya gönder</Button>}
         {d.izinler.taslagaCek && <Button disabled={islem} onClick={() => void calis(() => post("taslaga-cek"), "Taslağa çekildi.")}>Taslağa çek</Button>}
-        {d.izinler.yayinla && <Button variant="primary" disabled={islem || d.planHatalari.length > 0} onClick={() => { if (window.confirm(`#${d.no} ${d.baslik} yayınlanacak ve ${tarihTR(d.yururlukBaslangic)} tarihinden itibaren tüm kiracılar için geçerli olacak. Yayınlanan değişiklik geri alınamaz. Devam edilsin mi?`)) void calis(async () => (await platformApi<{ degisiklik: Detay }>(`/platform/mevzuat/degisiklikler/${id}/yayinla`, { method: "POST" })).degisiklik, "Yayınlandı. Kiracılara bildirim bir sonraki taramada düşer."); }}>Yayınla</Button>}
+        {d.izinler.yayinla && <Button variant="primary" disabled={islem || d.planHatalari.length > 0} onClick={() => { if (window.confirm(`#${d.no} ${d.baslik} yayınlanacak ve ${tarihTR(d.yururlukBaslangic)} tarihinden itibaren tüm kiracılar için geçerli olacak. Yayınlanan değişiklik geri alınamaz. Devam edilsin mi?`)) void calis(async () => (await platformApi<{ degisiklik: Detay }>(`/platform/mevzuat/degisiklikler/${id}/yayinla`, { method: "POST", body: JSON.stringify({ surum: d.surum }) })).degisiklik, "Yayınlandı. Kiracılara bildirim bir sonraki taramada düşer."); }}>Yayınla</Button>}
         {d.izinler.duzenle && <Button variant="danger" disabled={islem} onClick={() => void taslagiSil()}>Taslağı sil</Button>}
       </div>
       {d.izinler.onayaGonder && kaydedilmedi && <p className="platform-field-help">Onaya göndermeden önce bilgi, kalem ve senaryo değişikliklerini kaydedin.</p>}
