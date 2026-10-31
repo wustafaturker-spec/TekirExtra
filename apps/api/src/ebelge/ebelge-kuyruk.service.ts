@@ -5,6 +5,7 @@ import { uygulamaAcik, type EbelgeUygulamalari, type Rol } from "@tekirextra/sha
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
+import { BaglantilarService } from "../tenant/baglantilar.service";
 import { redisBaglantisi } from "../core/redis-baglantisi";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
@@ -78,6 +79,22 @@ const durumTopluIsKimligi = (tenantId: string) => `ebelge-durum-toplu-${tenantId
 const mukellefSenkronIsKimligi = () => "gib-mukellef-senkron";
 const eirsaliyeDurumTopluIsKimligi = (tenantId: string) => `eirsaliye-durum-toplu-${tenantId}`;
 const eirsaliyeGelenIsKimligi = (tenantId: string) => `eirsaliye-gelen-${tenantId}`;
+
+/**
+ * GİB mükellef listesi globaldir ama bir kiracının bağlantısıyla indirilir.
+ * Sağlayıcısı bu ortamda çalışmayan (üretimde mock'lu) kiracı seçilirse iş her
+ * turda "atlandı" diye biter, liste eskir ve listeye dayanan kiracıların gelen
+ * taraması ile gönderimi durur (pilot, 2026-10-30). Yalnız çalışan bağlantısı
+ * olan kiracı seçilir.
+ */
+export function listeSenkronKiracisi<T extends { id: string; baglantilar: { saglayici: string }[] }>(
+  tenantlar: T[],
+  uygulamalar: Map<string, EbelgeUygulamalari>,
+): T | undefined {
+  return tenantlar.find(
+    (t) => uygulamalar.get(t.id)?.efatura.acik !== false && t.baglantilar.some((b) => BaglantilarService.taranir(b.saglayici)),
+  );
+}
 
 /** Planlayıcının iş açarken baktığı en uzun irsaliye yanıt süresi; kiracının kendi süresi işte uygulanır. */
 const EIRSALIYE_AZAMI_YANIT_GUNU = 60;
@@ -471,7 +488,10 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       const tenantlar = await yonetim.tenant.findMany({
         where: { baglantilar: { some: { aile: "ebelge", durum: "aktif" } } },
         // EBLG-77: kapalı uygulamanın periyodik işi hiç açılmaz.
-        select: { id: true, vkn: true, efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true },
+        select: {
+          id: true, vkn: true, efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true,
+          baglantilar: { where: { aile: "ebelge", durum: "aktif" }, select: { saglayici: true } },
+        },
       });
       const uygulamalar = new Map<string, EbelgeUygulamalari>();
       for (const tenant of tenantlar) {
@@ -483,7 +503,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       // e-Fatura kanalında anlamlıdır: hiçbir kiracı e-Fatura kullanmıyorsa
       // indirilmez. Durumu bilinmeyen kiracı için indirilir — bilinmezliği
       // zaten listenin kendisi çözecek.
-      const listeKullanan = tenantlar.find((t) => uygulamalar.get(t.id)?.efatura.acik !== false);
+      const listeKullanan = listeSenkronKiracisi(tenantlar, uygulamalar);
       if (listeKullanan && (await this.ebelgeService.mukellefSenkronVaktiGeldi())) {
         await baglamlaCalistir({ tenantId: listeKullanan.id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, () => this.mukellefSenkronKuyrugaEkle());
       }

@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
-import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
+import { EbelgeKuyrukService, listeSenkronKiracisi } from "./ebelge-kuyruk.service";
 
 const bull = vi.hoisted(() => ({
   add: vi.fn(), getJob: vi.fn(), getJobs: vi.fn(), close: vi.fn(), on: vi.fn(), getWorkersCount: vi.fn(),
@@ -296,5 +296,27 @@ describe("EbelgeKuyrukService", () => {
       await isle(service, { id: "j4", name: "ebelge-gonder", data: veri("acik") });
       expect(ebelge.gonder).toHaveBeenCalledWith("fatura-1");
     });
+  });
+});
+
+describe("listeSenkronKiracisi", () => {
+  const acik = { efatura: { acik: null, kaynak: "bilinmiyor" }, earsiv: { acik: null, kaynak: "bilinmiyor" }, eirsaliye: { acik: null, kaynak: "bilinmiyor" } } as const;
+  const kapali = { ...acik, efatura: { acik: false, kaynak: "elle" } } as const;
+
+  it("üretimde mock'lu sağlayıcının kiracısını atlar, çalışan bağlantılı kiracıyı seçer", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_MOCK_ENTEGRATIONS", "");
+    try {
+      const tenantlar = [
+        { id: "izibiz", baglantilar: [{ saglayici: "izibiz" }] },
+        { id: "kapali", baglantilar: [{ saglayici: "nes" }] },
+        { id: "nes", baglantilar: [{ saglayici: "nes" }] },
+      ];
+      const uygulamalar = new Map<string, never>([["izibiz", acik as never], ["kapali", kapali as never], ["nes", acik as never]]);
+      expect(listeSenkronKiracisi(tenantlar, uygulamalar)?.id).toBe("nes");
+      expect(listeSenkronKiracisi(tenantlar.slice(0, 2), uygulamalar)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
