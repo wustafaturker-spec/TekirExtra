@@ -189,7 +189,10 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
   const [aySayisi, setAySayisi] = useState<(typeof ODEME_SURELERI)[number]>(1);
   const [tutar, setTutar] = useState("");
   const [odemeNotu, setOdemeNotu] = useState("");
-  const tutarSayi = Number(tutar.replace(",", "."));
+  // PLT-27: bu ödeme formunun işlem anahtarı; yanıt kaybolup yeniden denenirse aynısı gider, ikinci ödeme oluşmaz.
+  const [islemAnahtari] = useState(() => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""));
+  // "1.500,50" / "1500,5" / "1500.50" → "1500.50"; kuruştan fazla ondalık ya da geçersiz metin null.
+  const tutarMetni = ((v: string) => { const t = v.trim().replace(/\s/g, ""); const n = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t; return /^\d{1,8}(\.\d{1,2})?$/.test(n) ? n : null; })(tutar);
 
   async function calistir(is: () => Promise<{ mesaj: string }>) {
     setIslem(true);
@@ -225,7 +228,7 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
               <div style={{ minWidth: 140 }}><Field label="Süre"><Select value={aySayisi} onChange={(e) => setAySayisi(Number(e.target.value) as (typeof ODEME_SURELERI)[number])}>{ODEME_SURELERI.map((a) => <option key={a} value={a}>{a} ay</option>)}</Select></Field></div>
               <div style={{ minWidth: 140 }}><Field label="Tutar (TL)"><Input inputMode="decimal" value={tutar} onChange={(e) => setTutar(e.target.value)} placeholder="0,00" /></Field></div>
               <div style={{ flex: 1, minWidth: 200 }}><Field label="Not"><Input value={odemeNotu} onChange={(e) => setOdemeNotu(e.target.value)} maxLength={500} placeholder="Örn. havale, dekont no" /></Field></div>
-              <Button variant="primary" disabled={islem || !tutar.trim() || !Number.isFinite(tutarSayi) || tutarSayi < 0} onClick={() => void calistir(() => post(`/platform/firmalar/${firma.tenantId}/odeme`, { aySayisi, tutar: tutarSayi, not: odemeNotu || null }))}>Ödemeyi kaydet</Button>
+              <Button variant="primary" disabled={islem || tutarMetni === null} onClick={() => void calistir(() => post(`/platform/firmalar/${firma.tenantId}/odeme`, { aySayisi, tutar: tutarMetni, not: odemeNotu || null, islemAnahtari }))}>Ödemeyi kaydet</Button>
             </div>
           </div>
         </Card>

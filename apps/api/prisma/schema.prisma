@@ -425,6 +425,10 @@ model AbonelikOdemesi {
   /// PLT-12: KDV hariç tutar ve KDV; elle kayıtta boş (yalnız toplam girilir).
   matrah              Decimal?  @db.Decimal(14, 2)
   kdv                 Decimal?  @db.Decimal(14, 2)
+  /// PLT-27: elle ödemenin istemci işlem anahtarı; aynı anahtar ikinci ödeme yaratmaz, kalıcı referanstır.
+  islemAnahtari       String?   @unique @map("islem_anahtari") @db.VarChar(100)
+  /// PLT-27: firma, süre, tutar, not ve aktörün özeti; aynı anahtar farklı içerikle 409 alır.
+  istekOzeti          String?   @map("istek_ozeti") @db.VarChar(64)
   createdAt           DateTime  @default(now()) @map("created_at")
 
   tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)

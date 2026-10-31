@@ -11,6 +11,8 @@ function kur(hata?: string) {
     }),
     $executeRaw: vi.fn(async () => { if (hata) throw new Error(`ERROR: ${hata}`); return 1; }),
     mevzuatOlay: { create: vi.fn(async ({ data }: { data: { olay: string; detay: unknown; kullaniciId: string } }) => { olaylar.push(data); return data; }) },
+    // PLT-27: işlem ve olay aynı transaction istemcisinde çalışır (geri alma gerçek PostgreSQL kabul testinde).
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
   };
   const erisim = { unut: vi.fn() };
   const servis = new PlatformFirmaService({ db } as never, erisim as never);

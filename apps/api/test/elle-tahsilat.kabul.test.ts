@@ -70,7 +70,9 @@ describe("elle tahsilat (PLT-09) — gerçek PostgreSQL", () => {
 
   it("dönemi olmayan kayıtta dönem bugünden başlar; geçersiz süre ve uygulama rolü reddedilir", async () => {
     const [r] = await platform.$queryRaw<{ s: Date }[]>`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'ekip@kabul.invalid') AS s`;
-    const ay = new Date(); ay.setUTCMonth(ay.getUTCMonth() + 1);
+    // PostgreSQL "+1 ay"ı ay sonuna kırpar (31 Ekim → 30 Kasım); JS setUTCMonth taşırdı (→ 1 Aralık).
+    const ay = new Date(); const gun = ay.getUTCDate(); ay.setUTCDate(1); ay.setUTCMonth(ay.getUTCMonth() + 1);
+    ay.setUTCDate(Math.min(gun, new Date(Date.UTC(ay.getUTCFullYear(), ay.getUTCMonth() + 1, 0)).getUTCDate()));
     expect(Math.abs(r.s.getTime() - ay.getTime())).toBeLessThan(24 * 3600_000);
     await expect(platform.$queryRaw`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 2, 0, NULL, ${platformKullanici}::uuid, 'x')`).rejects.toThrow(/gecersiz_sure/);
     await expect(uygulama.$queryRaw`SELECT platform_odeme_kaydet(${donemsiz}::uuid, 1, 0, NULL, ${platformKullanici}::uuid, 'x')`).rejects.toThrow(/permission denied/);

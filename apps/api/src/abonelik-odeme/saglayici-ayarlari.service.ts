@@ -64,14 +64,15 @@ export class SaglayiciAyarlariService {
       // Aynı anda tek sağlayıcı etkin (kısmi benzersiz indeks de korur).
       ...(girdi.etkin ? [db.abonelikSaglayiciAyari.updateMany({ where: { etkin: true, saglayici: { not: kod } }, data: { etkin: false } })] : []),
       db.abonelikSaglayiciAyari.upsert({ where: { saglayici: kod }, create: { saglayici: kod, ...veri }, update: veri }),
+      // PLT-27: olay ayarla aynı transaction'da; biri yazılamazsa ikisi de geri alınır.
+      db.mevzuatOlay.create({
+        data: {
+          kullaniciId,
+          olay: "abonelik_saglayicisi_guncellendi",
+          detay: { saglayici: kod, ortam: girdi.ortam, etkin: girdi.etkin, degisenAlanlar: Object.keys(girdi.alanlar).filter((a) => girdi.alanlar[a]?.trim()) } as Prisma.InputJsonValue,
+        },
+      }),
     ]);
-    await db.mevzuatOlay.create({
-      data: {
-        kullaniciId,
-        olay: "abonelik_saglayicisi_guncellendi",
-        detay: { saglayici: kod, ortam: girdi.ortam, etkin: girdi.etkin, degisenAlanlar: Object.keys(girdi.alanlar).filter((a) => girdi.alanlar[a]?.trim()) } as Prisma.InputJsonValue,
-      },
-    });
     return { mesaj: girdi.etkin ? `${SAGLAYICI_ADI[kod]} etkin; firmalar abonelik ödemesini bununla yapar.` : `${SAGLAYICI_ADI[kod]} bilgileri kaydedildi.` };
   }
 

@@ -107,3 +107,28 @@ test("değer geçmişi hatadan sonra yeniden yüklenir, tarih silinince eski kay
   expect(istekSayisi).toBe(oncekiIstekSayisi);
   expect(hatalar).toEqual([]);
 });
+
+test("PLT-27: elle ödeme tutarı kuruşlu metin gider; yanıt kaybında yeniden deneme aynı işlem anahtarını kullanır", async ({ page }) => {
+  const govdeler: { tutar: unknown; islemAnahtari: string; aySayisi: number }[] = [];
+  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [firma("t1", "Örnek Makina A.Ş.", false)] }));
+  await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], odemeler: [] } }));
+  await page.route("**/api/v1/platform/firmalar/t1/odeme", (route) => {
+    govdeler.push(route.request().postDataJSON());
+    // İlk yanıt kaybolur (ağ hatası); ikinci deneme başarılı.
+    return govdeler.length === 1 ? route.abort("failed") : route.fulfill({ json: { mesaj: "Ödeme kaydedildi; dönem sonu 01.12.2026." } });
+  });
+  await page.goto("/platform/firmalar");
+  await page.getByRole("row", { name: /Örnek Makina/ }).getByRole("button", { name: "Yönet" }).click();
+  const kaydet = page.getByRole("button", { name: "Ödemeyi kaydet" });
+  await page.getByLabel("Tutar (TL)").fill("1.500,555");
+  await expect(kaydet).toBeDisabled();
+  await page.getByLabel("Tutar (TL)").fill("1.500,50");
+  await kaydet.click();
+  await expect.poll(() => govdeler.length).toBe(1);
+  await expect(kaydet).toBeEnabled();
+  await kaydet.click();
+  await expect(page.getByText("Ödeme kaydedildi; dönem sonu 01.12.2026.")).toBeVisible();
+  expect(govdeler.map((g) => g.tutar)).toEqual(["1500.50", "1500.50"]);
+  expect(govdeler[0].islemAnahtari).toMatch(/^[0-9a-f]{32}$/);
+  expect(govdeler[1].islemAnahtari).toBe(govdeler[0].islemAnahtari);
+});

@@ -70,8 +70,11 @@ export class AbonelikFaturaAyarService {
       ...(firmaDegisti ? { baslangicAt: g.faturalayanTenantId ? new Date() : null } : {}),
       guncelleyenId: kullaniciId, updatedAt: new Date(),
     };
-    await db.abonelikFaturaAyari.upsert({ where: { id: 1 }, create: { id: 1, ...veri }, update: veri });
-    await db.mevzuatOlay.create({ data: { kullaniciId, olay: "abonelik_fatura_ayari_degisti", detay: { faturalayanTenantId: g.faturalayanTenantId, kartHesap: g.kartHesap, elleHesap: g.elleHesap, firmaDegisti } as Prisma.InputJsonValue } });
+    // PLT-27: ayar ve olay kaydı birlikte yazılır.
+    await db.$transaction([
+      db.abonelikFaturaAyari.upsert({ where: { id: 1 }, create: { id: 1, ...veri }, update: veri }),
+      db.mevzuatOlay.create({ data: { kullaniciId, olay: "abonelik_fatura_ayari_degisti", detay: { faturalayanTenantId: g.faturalayanTenantId, kartHesap: g.kartHesap, elleHesap: g.elleHesap, firmaDegisti } as Prisma.InputJsonValue } }),
+    ]);
     return {
       mesaj: !g.faturalayanTenantId
         ? "Otomatik abonelik faturası kapatıldı."

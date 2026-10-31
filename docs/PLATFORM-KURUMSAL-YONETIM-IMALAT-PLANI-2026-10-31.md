@@ -2,7 +2,7 @@
 
 **Tarih:** 31 Ekim 2026  
 **Sürüm:** 2.0 — kapsam daraltma revizyonu  
-**Durum:** S-01 onayı 2026-10-31. Tamamlanan: PLT-29 (93e2b9d), PLT-26 (ca2e3fd), PLT-31 (63e26d5), PLT-25 (03abef5; yayında platform kullanıcıları bir kez yeniden giriş yapar), PLT-30. Diğerleri onaylandı, geliştirme bekliyor.  
+**Durum:** S-01 onayı 2026-10-31. Tamamlanan: PLT-29 (93e2b9d), PLT-26 (ca2e3fd), PLT-31 (63e26d5), PLT-25 (03abef5; yayında platform kullanıcıları bir kez yeniden giriş yapar), PLT-30 (ce75c40), PLT-27 (iki adım tek commit'te; dosyalar ortak). Kalan: PLT-28. Diğerleri onaylandı, geliştirme bekliyor.  
 **Uygulama kapsamı:** Yalnız PLT-25–PLT-31 (PLT-25–30 = eski K01–K06; PLT-31 bu revizyonda eklendi).  
 **Ayrı belge:** [Önerilen küçük P1 ve ihtiyaç odaklı yol haritası](PLATFORM-KURUMSAL-YONETIM-YOL-HARITASI-2026-10-31.md).
 

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { JwtYuku } from "../auth/auth.guard";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
@@ -87,21 +88,25 @@ export class PlatformFirmaService {
     const { kullaniciId, eposta } = aktifPlatformBaglam();
     const kisi = await this.platform.db.platformKullanici.findUnique({ where: { id: kullaniciId }, select: { adSoyad: true } });
     const ad = kisi?.adSoyad ?? eposta;
-    const [satir] = await this.cagir(() =>
-      this.platform.db.$queryRaw<{ oturum_id: string; bitis: Date }[]>`SELECT * FROM platform_destek_oturumu_ac(${tenantId}::uuid, ${kullaniciId}::uuid, ${ad}, ${eposta})`,
-    );
+    // PLT-27: oturum ve olay kaydı birlikte yazılır; olay yazılamazsa oturum da açılmaz.
+    const satir = await this.cagir(() => this.platform.db.$transaction(async (tx) => {
+      const [s] = await tx.$queryRaw<{ oturum_id: string; bitis: Date }[]>`SELECT * FROM platform_destek_oturumu_ac(${tenantId}::uuid, ${kullaniciId}::uuid, ${ad}, ${eposta})`;
+      await this.olay(tx, kullaniciId, "destek_oturumu_acildi", { tenantId, oturumId: s.oturum_id, bitis: s.bitis });
+      return s;
+    }));
     const sureSn = Math.max(1, Math.floor((satir.bitis.getTime() - Date.now()) / 1000));
     const yuk: JwtYuku = { sub: DESTEK_KULLANICI_ID, tenantId, rol: "yonetici", destek: { oid: satir.oturum_id, ad, ep: eposta, pid: kullaniciId } };
     const token = await this.jwt.signAsync(yuk, { secret: process.env.JWT_SECRET, expiresIn: sureSn });
-    await this.olay(kullaniciId, "destek_oturumu_acildi", { tenantId, oturumId: satir.oturum_id, bitis: satir.bitis });
     return { token, oturumId: satir.oturum_id, bitis: satir.bitis };
   }
 
   async destekOturumuKapat(oturumId: string) {
     const { kullaniciId } = aktifPlatformBaglam();
-    const [satir] = await this.platform.db.$queryRaw<{ tenant_id: string | null }[]>`SELECT platform_destek_oturumu_kapat(${oturumId}::uuid, 'platform_kapatti') AS tenant_id`;
-    if (!satir?.tenant_id) throw new NotFoundException("Açık destek oturumu bulunamadı");
-    await this.olay(kullaniciId, "destek_oturumu_kapatildi", { tenantId: satir.tenant_id, oturumId, neden: "platform_kapatti" });
+    await this.platform.db.$transaction(async (tx) => {
+      const [satir] = await tx.$queryRaw<{ tenant_id: string | null }[]>`SELECT platform_destek_oturumu_kapat(${oturumId}::uuid, 'platform_kapatti') AS tenant_id`;
+      if (!satir?.tenant_id) throw new NotFoundException("Açık destek oturumu bulunamadı");
+      await this.olay(tx, kullaniciId, "destek_oturumu_kapatildi", { tenantId: satir.tenant_id, oturumId, neden: "platform_kapatti" });
+    });
     return { mesaj: "Destek oturumu kapatıldı; açık sekme en geç 10 saniyede düşer." };
   }
 
@@ -110,15 +115,26 @@ export class PlatformFirmaService {
     return satir?.gecmis ?? { degisiklikler: [], talepler: [], odemeler: [] };
   }
 
-  /** PLT-09: elle alınan ödeme dönemi uzatır; tutar ve not abonelik geçmişine yazılır. */
-  async odemeKaydet(tenantId: string, aySayisi: (typeof ODEME_SURELERI)[number], tutar: number, not: string | null) {
+  /**
+   * PLT-09: elle alınan ödeme dönemi uzatır; tutar ve not abonelik geçmişine yazılır.
+   * PLT-27: ödeme, dönem uzatma ve olay kaydı tek transaction'dadır. `islemAnahtari`
+   * istemcinin her ödeme formu için ürettiği kimliktir: yanıt kaybolup aynı istek
+   * yeniden gelirse ilk sonuç döner, ikinci ödeme ya da uzatma oluşmaz; aynı anahtar
+   * farklı içerikle (başka tutar, firma, kişi…) gelirse 409. `tutar` kuruş hassasiyetinde metindir.
+   */
+  async odemeKaydet(tenantId: string, aySayisi: (typeof ODEME_SURELERI)[number], tutar: string, not: string | null, islemAnahtari: string) {
     const { kullaniciId, eposta } = aktifPlatformBaglam();
-    const [satir] = await this.cagir(() =>
-      this.platform.db.$queryRaw<{ yeni_donem_sonu: Date }[]>`SELECT platform_odeme_kaydet(${tenantId}::uuid, ${aySayisi}::int, ${tutar}::numeric, ${not}, ${kullaniciId}::uuid, ${eposta}) AS yeni_donem_sonu`,
-    );
-    await this.olay(kullaniciId, "abonelik_odemesi_alindi", { tenantId, aySayisi, tutar, not, yeniDonemSonu: satir.yeni_donem_sonu });
+    const istekOzeti = createHash("sha256").update(JSON.stringify([tenantId, aySayisi, tutar, not ?? "", kullaniciId])).digest("hex");
+    const satir = await this.cagir(() => this.platform.db.$transaction(async (tx) => {
+      const [s] = await tx.$queryRaw<{ yeni_donem_sonu: Date; odeme_id: string; tekrar: boolean }[]>`
+        SELECT * FROM platform_odeme_kaydet(${tenantId}::uuid, ${aySayisi}::int, ${tutar}::numeric, ${not}, ${kullaniciId}::uuid, ${eposta}, ${islemAnahtari}, ${istekOzeti})`;
+      if (!s.tekrar) await this.olay(tx, kullaniciId, "abonelik_odemesi_alindi", { tenantId, aySayisi, tutar, not, yeniDonemSonu: s.yeni_donem_sonu, odemeId: s.odeme_id, islemAnahtari });
+      return s;
+    }));
+    // Erişim önbelleği yalnız commit sonrası düşürülür.
     this.erisim.unut(tenantId);
-    return { mesaj: `Ödeme kaydedildi; dönem sonu ${satir.yeni_donem_sonu.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" })}.`, yeniDonemSonu: satir.yeni_donem_sonu };
+    const gun = satir.yeni_donem_sonu.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" });
+    return { mesaj: satir.tekrar ? `Bu ödeme zaten kaydedilmişti; dönem sonu ${gun}.` : `Ödeme kaydedildi; dönem sonu ${gun}.`, yeniDonemSonu: satir.yeni_donem_sonu, odemeId: satir.odeme_id, tekrar: satir.tekrar };
   }
 
   /** Askıya alma ve geri açma; neden zorunlu ve firmanın abonelik geçmişine de yazılır. */
@@ -127,8 +143,10 @@ export class PlatformFirmaService {
     const { kullaniciId, eposta } = aktifPlatformBaglam();
     const aski = durum === "askida" ? askiNedeni : null;
     const etiket = durum === "askida" ? `Askıya alındı${askiNedeni === "odeme" ? " — ödeme bekleniyor" : ""}` : "Askıdan çıkarıldı";
-    await this.cagir(() => this.platform.db.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, NULL, ${durum}, ${`${etiket} (${eposta}): ${neden}`}, ${aski})`);
-    await this.olay(kullaniciId, durum === "askida" ? "firma_askiya_alindi" : "firma_askidan_cikarildi", { tenantId, neden, ...(aski ? { askiNedeni: aski } : {}) });
+    await this.cagir(() => this.platform.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, NULL, ${durum}, ${`${etiket} (${eposta}): ${neden}`}, ${aski})`;
+      await this.olay(tx, kullaniciId, durum === "askida" ? "firma_askiya_alindi" : "firma_askidan_cikarildi", { tenantId, neden, ...(aski ? { askiNedeni: aski } : {}) });
+    }));
     this.erisim.unut(tenantId);
     return { mesaj: durum === "askida" ? "Firma askıya alındı; salt okunur." : "Firma yeniden etkin." };
   }
@@ -136,24 +154,28 @@ export class PlatformFirmaService {
   async planDegistir(tenantId: string, planKodu: string, neden: string) {
     if (!ABONELIK_PLANLARI.some((p) => p.kod === planKodu)) throw new BadRequestException("Geçersiz plan");
     const { kullaniciId, eposta } = aktifPlatformBaglam();
-    await this.cagir(() => this.platform.db.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, ${planKodu}, NULL, ${`Platform plan değişikliği (${eposta}): ${neden}`})`);
-    await this.olay(kullaniciId, "firma_plani_degisti", { tenantId, planKodu, neden });
+    await this.cagir(() => this.platform.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, ${planKodu}, NULL, ${`Platform plan değişikliği (${eposta}): ${neden}`})`;
+      await this.olay(tx, kullaniciId, "firma_plani_degisti", { tenantId, planKodu, neden });
+    }));
     this.erisim.unut(tenantId);
     return { mesaj: `Plan ${planAdi(planKodu)} yapıldı.` };
   }
 
   async talepKarar(talepId: string, onay: boolean, not: string | null) {
     const { kullaniciId } = aktifPlatformBaglam();
-    const [satir] = await this.cagir(() =>
-      this.platform.db.$queryRaw<{ tenant_id: string }[]>`SELECT platform_abonelik_talebi_karar(${talepId}::uuid, ${onay}, ${not}, ${kullaniciId}::uuid) AS tenant_id`,
-    );
-    await this.olay(kullaniciId, onay ? "plan_talebi_onaylandi" : "plan_talebi_reddedildi", { talepId, tenantId: satir.tenant_id, not });
+    const satir = await this.cagir(() => this.platform.db.$transaction(async (tx) => {
+      const [s] = await tx.$queryRaw<{ tenant_id: string }[]>`SELECT platform_abonelik_talebi_karar(${talepId}::uuid, ${onay}, ${not}, ${kullaniciId}::uuid) AS tenant_id`;
+      await this.olay(tx, kullaniciId, onay ? "plan_talebi_onaylandi" : "plan_talebi_reddedildi", { talepId, tenantId: s.tenant_id, not });
+      return s;
+    }));
     this.erisim.unut(satir.tenant_id);
     return { mesaj: onay ? "Talep onaylandı; yeni plan geçerli." : "Talep reddedildi." };
   }
 
-  private async olay(kullaniciId: string, olay: string, detay: Record<string, unknown>) {
-    await this.platform.db.mevzuatOlay.create({ data: { kullaniciId, olay, detay: detay as Prisma.InputJsonValue } });
+  /** PLT-27: olay, işlemin kendi transaction'ında yazılır; biri düşerse ikisi de geri alınır. */
+  private async olay(tx: Prisma.TransactionClient, kullaniciId: string, olay: string, detay: Record<string, unknown>) {
+    await tx.mevzuatOlay.create({ data: { kullaniciId, olay, detay: detay as Prisma.InputJsonValue } });
   }
 
   private async cagir<T>(is: () => Promise<T>): Promise<T> {
@@ -164,6 +186,9 @@ export class PlatformFirmaService {
       if (mesaj.includes("firma_yok")) throw new NotFoundException("Firma bulunamadı");
       if (mesaj.includes("izin_yok")) throw new BadRequestException("Firma destek izni vermemiş ya da izin süresi dolmuş");
       if (mesaj.includes("talep_bekliyor_degil")) throw new ConflictException("Talep artık beklemiyor (karar verilmiş ya da geri çekilmiş)");
+      if (mesaj.includes("islem_anahtari_cakisma")) throw new ConflictException("Bu form ile farklı bilgilerle bir ödeme zaten kaydedilmiş. Mükerrer kayıt olmaması için önce firmanın ödeme geçmişini kontrol edin; yeni bir ödeme gerekiyorsa paneli kapatıp yeniden açın.");
+      if (mesaj.includes("islem_anahtari_yok")) throw new BadRequestException("İşlem anahtarı eksik ya da geçersiz");
+      if (mesaj.includes("gecersiz_tutar")) throw new BadRequestException("Tutar kuruş hassasiyetinde ve eksi olmayan bir değer olmalı");
       throw hata;
     }
   }

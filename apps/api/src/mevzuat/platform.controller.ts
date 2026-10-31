@@ -247,8 +247,14 @@ const planSemasi = z.object({ planKodu: z.string().min(1).max(40), neden: z.stri
 const kararSemasi = z.object({ onay: z.boolean(), not: z.string().trim().max(500).optional().nullable() });
 const odemeSemasi = z.object({
   aySayisi: z.union(ODEME_SURELERI.map((a) => z.literal(a)) as [z.ZodLiteral<1>, z.ZodLiteral<3>, z.ZodLiteral<6>, z.ZodLiteral<12>], { message: "Süre 1, 3, 6 ya da 12 ay olmalı" }),
-  tutar: z.number({ message: "Tutar girin" }).nonnegative("Tutar eksi olamaz").max(10_000_000),
+  // PLT-27: tutar kuruş hassasiyetinde; kayan nokta hesabına bırakılmaz, metin olarak veritabanına gider.
+  tutar: z.union([z.number(), z.string().trim()], { message: "Tutar girin" })
+    .transform((v) => String(v))
+    .refine((v) => /^\d{1,8}(\.\d{1,2})?$/.test(v), "Tutar en fazla 2 ondalıklı, eksi olmayan bir sayı olmalı")
+    .refine((v) => Number(v) <= 10_000_000, "Tutar en fazla 10.000.000 olabilir"),
   not: z.string().trim().max(500).optional().nullable(),
+  /** PLT-27: istemcinin bu ödeme formu için ürettiği kimlik; yeniden denemede aynısı gönderilir. */
+  islemAnahtari: z.string().regex(/^[A-Za-z0-9_-]{16,100}$/, "İşlem anahtarı eksik ya da geçersiz"),
 });
 
 /** Platform P0-1 / P1-1: firma genel bakışı ve abonelik yönetimi. */
@@ -283,7 +289,7 @@ export class PlatformFirmaController {
   @Post(":tenantId/odeme")
   odeme(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
     const g = ayristir(odemeSemasi, govde);
-    return this.firmalar.odemeKaydet(tenantId, g.aySayisi, g.tutar, g.not || null);
+    return this.firmalar.odemeKaydet(tenantId, g.aySayisi, g.tutar, g.not || null, g.islemAnahtari);
   }
 
   /** PLT-10: izinli firmada salt okunur destek oturumu. */

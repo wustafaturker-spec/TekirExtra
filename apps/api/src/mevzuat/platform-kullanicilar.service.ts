@@ -73,16 +73,16 @@ export class PlatformKullanicilarService {
     }
     const anahtar = randomBytes(32).toString("base64url");
     // Davet kullanılana kadar girilemeyen rastgele parola ve 2FA anahtarı durur.
-    const k = await this.platform.db.platformKullanici.create({
-      data: {
-        eposta, adSoyad: girdi.adSoyad.trim(), rol: girdi.rol,
-        parolaHash: await argon2.hash(randomBytes(32).toString("base64url")),
-        totpSecretSifreli: sifrele(generateSecret()),
-        ...this.davetAlanlari("hesap", anahtar),
-      },
-      select: SECIM,
+    const parolaHash = await argon2.hash(randomBytes(32).toString("base64url"));
+    // PLT-27: hesap ve olay kaydı birlikte yazılır; e-posta ancak commit sonrası gider.
+    const k = await this.platform.db.$transaction(async (tx) => {
+      const yeni = await tx.platformKullanici.create({
+        data: { eposta, adSoyad: girdi.adSoyad.trim(), rol: girdi.rol, parolaHash, totpSecretSifreli: sifrele(generateSecret()), ...this.davetAlanlari("hesap", anahtar) },
+        select: SECIM,
+      });
+      await this.olay(kullaniciId, "platform_kullanicisi_acildi", { eposta, rol: girdi.rol }, tx);
+      return yeni;
     });
-    await this.olay(kullaniciId, "platform_kullanicisi_acildi", { eposta, rol: girdi.rol });
     return { kullanici: k, davet: await this.davetGonder(k, "hesap", anahtar) };
   }
 
@@ -94,12 +94,14 @@ export class PlatformKullanicilarService {
     if (!k.aktif) throw new BadRequestException("Pasif kullanıcıya davet gönderilemez; önce aktif edin");
     const anahtar = randomBytes(32).toString("base64url");
     // PLT-30: yeniden başlatma eski kurulumu (bağlantı + karekod) iptal eder; o arada tamamlanmış ya da pasife alınmışsa dokunmaz.
-    const { count } = await this.platform.db.platformKullanici.updateMany({
-      where: { id, aktif: true, davetTuru: k.davetTuru },
-      data: { totpSecretSifreli: sifrele(generateSecret()), ...this.davetAlanlari(k.davetTuru as DavetTuru, anahtar) },
+    await this.platform.db.$transaction(async (tx) => {
+      const { count } = await tx.platformKullanici.updateMany({
+        where: { id, aktif: true, davetTuru: k.davetTuru },
+        data: { totpSecretSifreli: sifrele(generateSecret()), ...this.davetAlanlari(k.davetTuru as DavetTuru, anahtar) },
+      });
+      if (!count) throw new ConflictException("Kullanıcının kurulum durumu değişti; listeyi yenileyip tekrar deneyin");
+      await this.olay(kullaniciId, "platform_daveti_yenilendi", { eposta: k.eposta, tur: k.davetTuru }, tx);
     });
-    if (!count) throw new ConflictException("Kullanıcının kurulum durumu değişti; listeyi yenileyip tekrar deneyin");
-    await this.olay(kullaniciId, "platform_daveti_yenilendi", { eposta: k.eposta, tur: k.davetTuru });
     return this.davetGonder(k, k.davetTuru as DavetTuru, anahtar);
   }
 
@@ -213,14 +215,16 @@ export class PlatformKullanicilarService {
     } else {
       parolaHash = await argon2.hash(girdi.parola);
     }
-    const { count } = await this.platform.db.platformKullanici.updateMany({
-      where: { id: k.id, aktif: true, davetTuru: tur, davetAnahtarOzeti: k.davetAnahtarOzeti, totpSecretSifreli: k.totpSecretSifreli, davetSonGecerlilik: { gt: new Date() } },
-      data: { parolaHash, davetTuru: null, davetAnahtarOzeti: null, davetSonGecerlilik: null },
+    await this.platform.db.$transaction(async (tx) => {
+      const { count } = await tx.platformKullanici.updateMany({
+        where: { id: k.id, aktif: true, davetTuru: tur, davetAnahtarOzeti: k.davetAnahtarOzeti, totpSecretSifreli: k.totpSecretSifreli, davetSonGecerlilik: { gt: new Date() } },
+        data: { parolaHash, davetTuru: null, davetAnahtarOzeti: null, davetSonGecerlilik: null },
+      });
+      if (!count) throw new BadRequestException("Bağlantı geçersiz veya süresi dolmuş; platform yöneticisinden yeni bağlantı isteyin");
+      await this.olay(k.id, tur === "iki_adim" ? "platform_2fa_yeniden_kuruldu" : "platform_daveti_kabul_edildi", { eposta: k.eposta }, tx);
     });
-    if (!count) throw new BadRequestException("Bağlantı geçersiz veya süresi dolmuş; platform yöneticisinden yeni bağlantı isteyin");
     await this.denemeler.temizle(hesapAnahtari, ["platform_davet"]);
     this.oturumDurum?.kullaniciUnut(k.id);
-    await this.olay(k.id, tur === "iki_adim" ? "platform_2fa_yeniden_kuruldu" : "platform_daveti_kabul_edildi", { eposta: k.eposta });
     return { eposta: k.eposta };
   }
 
@@ -242,8 +246,8 @@ export class PlatformKullanicilarService {
     return k;
   }
 
-  private olay(kullaniciId: string, olay: string, detay: Prisma.InputJsonValue) {
-    return this.platform.db.mevzuatOlay.create({ data: { kullaniciId, olay, detay } });
+  private olay(kullaniciId: string, olay: string, detay: Prisma.InputJsonValue, tx: Pick<Prisma.TransactionClient, "mevzuatOlay"> = this.platform.db) {
+    return tx.mevzuatOlay.create({ data: { kullaniciId, olay, detay } });
   }
 
   /**
