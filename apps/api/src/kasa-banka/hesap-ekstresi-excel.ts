@@ -34,7 +34,7 @@ export async function hesapEkstresiExcel(v: HesapEkstresiVerisi): Promise<Buffer
   sayfa.columns = kolonlar.map((k) => ({ width: k.genislik, style: k.bicim ? { numFmt: k.bicim } : {} }));
   const son = String.fromCharCode(64 + kolonlar.length);
   sayfa.mergeCells(`A1:${son}1`);
-  sayfa.getCell("A1").value = `${v.hesap.tur === "kasa" ? "KASA" : "BANKA"} HESAP EKSTRESİ`;
+  sayfa.getCell("A1").value = `${v.hesap.tur === "kasa" ? "KASA" : v.hesap.tur === "pos" ? "POS" : "BANKA"} HESAP EKSTRESİ`;
   sayfa.getCell("A1").font = { size: 14, bold: true };
   const banka = v.hesap.banka;
   sayfa.getCell("A2").value = `${v.hesap.ad}${banka ? ` · ${banka.bankaAdi}${banka.iban ? ` · ${banka.iban}` : ""}` : ""} · ${birim}`;

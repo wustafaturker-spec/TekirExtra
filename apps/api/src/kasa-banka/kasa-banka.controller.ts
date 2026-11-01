@@ -22,7 +22,7 @@ import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EkstreService } from "./ekstre.service";
 import { EkstreEslestirmeService } from "./ekstre-eslestirme.service";
-import { KasaBankaService, type HesapTuru } from "./kasa-banka.service";
+import { KasaBankaService, type EkstreHesapTuru, type HesapTuru } from "./kasa-banka.service";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
 import { CekBordroService } from "./cek-bordro.service";
@@ -339,14 +339,14 @@ export class KasaBankaController {
 
   @Get("hesaplar/:hesap/ekstre")
   hesapEkstresi(@Param("hesap") hesap: string, @Query() sorgu: unknown) {
-    const { tur, id } = hesapAnahtari(hesap);
+    const { tur, id } = ekstreHesapAnahtari(hesap);
     const { baslangic, bitis } = ayristir(donemSemasi, sorgu);
     return this.service.hesapEkstresi(tur, id, baslangic, bitis);
   }
 
   @Get("hesaplar/:hesap/ekstre/pdf")
   async hesapEkstresiPdf(@Param("hesap") hesap: string, @Query() sorgu: unknown, @Res() res: Response) {
-    const { tur, id } = hesapAnahtari(hesap);
+    const { tur, id } = ekstreHesapAnahtari(hesap);
     const { baslangic, bitis } = ayristir(donemSemasi, sorgu);
     const pdf = await this.service.hesapEkstresiPdf(tur, id, baslangic, bitis);
     res.setHeader("Content-Type", "application/pdf");
@@ -356,7 +356,7 @@ export class KasaBankaController {
 
   @Get("hesaplar/:hesap/ekstre/excel")
   async hesapEkstresiExcel(@Param("hesap") hesap: string, @Query() sorgu: unknown, @Res() res: Response) {
-    const { tur, id } = hesapAnahtari(hesap);
+    const { tur, id } = ekstreHesapAnahtari(hesap);
     const { baslangic, bitis } = ayristir(donemSemasi, sorgu);
     const dosya = await this.service.hesapEkstresiExcel(tur, id, baslangic, bitis);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -627,6 +627,13 @@ export class KasaBankaController {
 function hesapAnahtari(deger: string): { tur: HesapTuru; id: string } {
   const sonuc = z.object({ tur: z.enum(["kasa", "banka"]), id: z.uuid() }).safeParse({ tur: deger.split(":")[0], id: deger.split(":")[1] });
   if (!sonuc.success) throw new BadRequestException("Hesap 'kasa:<id>' ya da 'banka:<id>' biçiminde olmalıdır");
+  return sonuc.data;
+}
+
+/** KSB-39: ekstre uçları POS hesabını da kabul eder ("pos:<uuid>"). */
+function ekstreHesapAnahtari(deger: string): { tur: EkstreHesapTuru; id: string } {
+  const sonuc = z.object({ tur: z.enum(["kasa", "banka", "pos"]), id: z.uuid() }).safeParse({ tur: deger.split(":")[0], id: deger.split(":")[1] });
+  if (!sonuc.success) throw new BadRequestException("Hesap 'kasa:<id>', 'banka:<id>' ya da 'pos:<id>' biçiminde olmalıdır");
   return sonuc.data;
 }
 

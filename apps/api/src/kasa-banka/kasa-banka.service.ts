@@ -50,6 +50,9 @@ export interface KasaBankaBakiye {
 const MAKBUZ_VARSAYILAN_ONEK = { tahsilat: "TM", tediye: "TD" } as const;
 /** P1-9: ekstre ve açılış uçlarında hesap "kasa:<id>" ya da "banka:<id>" olarak anılır. */
 export type HesapTuru = "kasa" | "banka";
+/** KSB-39: ekstre POS hesabını da kapsar; açılış bakiyesi yalnız kasa/banka içindir. */
+export type EkstreHesapTuru = HesapTuru | "pos";
+const ekstreAlani = (tur: EkstreHesapTuru, id: string) => (tur === "pos" ? { posHesapId: id } : hesapAlani(tur, id));
 type AcilisGirdisi = Omit<z.infer<typeof acilisSemasi>, "neden">;
 const hesapAlani = (tur: HesapTuru, id: string) => (tur === "kasa" ? { kasaId: id } : { bankaHesapId: id });
 const tarihTR = (tarih: Date) => tarih.toLocaleDateString("tr-TR", { timeZone: "UTC" });
@@ -1584,13 +1587,16 @@ export class KasaBankaService {
     throw new ConflictException(`Bu işlemden sonra ${hesap.kasaId ? "kasa" : "banka hesabı"} "${kayit?.ad ?? ""}" eksi bakiyeye düşer: ${tutarTR(sonra, kayit?.dovizCinsi ?? "TRY")}. İşlem doğruysa yine de kaydedebilirsiniz.`);
   }
 
-  async hesapEkstresi(tur: HesapTuru, id: string, baslangic?: string, bitis?: string) {
+  async hesapEkstresi(tur: EkstreHesapTuru, id: string, baslangic?: string, bitis?: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const banka = tur === "banka" ? await tx.bankaHesap.findUnique({ where: { id }, select: { id: true, ad: true, dovizCinsi: true, aktif: true, bankaAdi: true, sube: true, hesapNo: true, iban: true } }) : null;
-      const hesap = tur === "kasa" ? await tx.kasa.findUnique({ where: { id }, select: { id: true, ad: true, dovizCinsi: true, aktif: true } }) : banka;
-      if (!hesap) throw new NotFoundException(tur === "kasa" ? "Kasa bulunamadı" : "Banka hesabı bulunamadı");
-      const alan = hesapAlani(tur, id);
+      const hesap =
+        tur === "kasa" ? await tx.kasa.findUnique({ where: { id }, select: { id: true, ad: true, dovizCinsi: true, aktif: true } })
+        : tur === "pos" ? await tx.posHesap.findUnique({ where: { id }, select: { id: true, ad: true, dovizCinsi: true, aktif: true } })
+        : banka;
+      if (!hesap) throw new NotFoundException(tur === "kasa" ? "Kasa bulunamadı" : tur === "pos" ? "POS hesabı bulunamadı" : "Banka hesabı bulunamadı");
+      const alan = ekstreAlani(tur, id);
       const devirGruplari = baslangic
         ? await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: { ...alan, tarih: { lt: new Date(baslangic) } }, _sum: { tutar: true, tutarTry: true } })
         : [];
@@ -1606,7 +1612,7 @@ export class KasaBankaService {
         ? await tx.kasaBankaHareket.findMany({ where: { id: { in: karsiIdler } }, select: { id: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } } } })
         : [];
       const karsiAdi = new Map(karsilar.map((k) => [k.id, k.kasa?.ad ?? k.bankaHesap?.ad ?? k.posHesap?.ad ?? null]));
-      const acilis = (await this.acilislar(tur, [id])).get(id) ?? null;
+      const acilis = tur === "pos" ? null : (await this.acilislar(tur, [id])).get(id) ?? null;
       // Açılış bu tarihten sonraya konamaz; ekran açılış formunu bu tarihle başlatır.
       const ilkHareket = await tx.kasaBankaHareket.findFirst({ where: { ...alan, kaynakTur: { not: "acilis" } }, orderBy: { tarih: "asc" }, select: { tarih: true } });
       const hesaplanan = hesapEkstresiHesapla(devirGruplari.map((g) => ({ tip: g.tip, tutar: g._sum.tutar, tutarTry: g._sum.tutarTry })), hareketler.map((h) => ({
@@ -1637,7 +1643,7 @@ export class KasaBankaService {
     });
   }
 
-  async hesapEkstresiPdf(tur: HesapTuru, id: string, baslangic?: string, bitis?: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+  async hesapEkstresiPdf(tur: EkstreHesapTuru, id: string, baslangic?: string, bitis?: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const { tenantId } = aktifBaglam();
     const [veri, firma, tema] = await Promise.all([
       this.hesapEkstresi(tur, id, baslangic, bitis),
@@ -1652,7 +1658,7 @@ export class KasaBankaService {
     return { buffer, dosyaAdi: `hesap-ekstresi-${dosyaAdiParcasi(veri.hesap.ad)}.pdf` };
   }
 
-  async hesapEkstresiExcel(tur: HesapTuru, id: string, baslangic?: string, bitis?: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+  async hesapEkstresiExcel(tur: EkstreHesapTuru, id: string, baslangic?: string, bitis?: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const veri = await this.hesapEkstresi(tur, id, baslangic, bitis);
     return { buffer: await hesapEkstresiExcel(veri), dosyaAdi: `hesap-ekstresi-${dosyaAdiParcasi(veri.hesap.ad)}.xlsx` };
   }

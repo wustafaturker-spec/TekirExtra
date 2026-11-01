@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiHata, tumSayfalariAl } from "@/lib/api";
 import { BankayaGececekler, type AktarimGrubu } from "./bankaya-gececekler";
@@ -712,6 +713,9 @@ export default function PosHesaplari() {
                   >
                     Ayarlar
                   </Button>
+                  <Link className="btn btn--sm" href={`/panel/kasa-banka/hesap-ekstresi?hesap=pos:${x.id}`}>
+                    Hareketler
+                  </Link>
                   <Button
                     size="sm"
                     disabled={!x.aktif || Number(x.bakiye) <= 0}

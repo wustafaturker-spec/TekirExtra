@@ -55,3 +55,15 @@ describe("islemAdi", () => {
     expect(islemAdi({ tip: "virman_gelis", kaynakTur: "manuel" })).toBe("Virman girişi");
   });
 });
+
+describe("KSB-39 POS hareket adları", () => {
+  it("POS tarafında aktarım, kesinti ve iadeyi ayrı adlandırır; banka tarafı virman kalır", async () => {
+    const { islemAdi, kaynakAdi } = await import("./hesap-ekstresi");
+    expect(islemAdi({ tip: "virman_gidis", kaynakTur: "pos_mutabakat" })).toBe("Bankaya aktarım");
+    expect(islemAdi({ tip: "tediye", kaynakTur: "pos_mutabakat" })).toBe("Komisyon / kesinti");
+    expect(islemAdi({ tip: "tediye", kaynakTur: "pos_iade" })).toBe("İade");
+    expect(islemAdi({ tip: "virman_gelis", kaynakTur: "pos_mutabakat" })).toBe("Virman girişi");
+    expect(islemAdi({ tip: "tahsilat", kaynakTur: "pos_tahsilat" })).toBe("Tahsilat");
+    expect(kaynakAdi("pos_iade")).toBe("POS iadesi");
+  });
+});

@@ -110,7 +110,7 @@ export function hesapEkstresiPdfHtml(v: HesapEkstresiVerisi, firma: HesapEkstres
     <br>VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` · ${kacis(firma.vergiDairesi)} V.D.` : ""}${firmaIletisimSatirlari(firma)}
   </td>
   <td class="baslik">
-    <h1>${v.hesap.tur === "kasa" ? "KASA" : "BANKA"} HESAP EKSTRESİ</h1>
+    <h1>${v.hesap.tur === "kasa" ? "KASA" : v.hesap.tur === "pos" ? "POS" : "BANKA"} HESAP EKSTRESİ</h1>
     <div class="donem">Dönem: <b>${kacis(donem)}</b><br>Düzenlenme: ${tarihBicim(new Date())}</div>
   </td>
 </tr></table>

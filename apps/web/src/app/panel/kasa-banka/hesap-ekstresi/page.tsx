@@ -52,7 +52,7 @@ interface EkstreSatiri {
 }
 
 interface Ekstre {
-  hesap: { tur: "kasa" | "banka"; id: string; ad: string; dovizCinsi: string; banka: { bankaAdi: string; iban: string | null } | null };
+  hesap: { tur: "kasa" | "banka" | "pos"; id: string; ad: string; dovizCinsi: string; banka: { bankaAdi: string; iban: string | null } | null };
   baslangic: string | null;
   bitis: string | null;
   acilis: Acilis | null;
@@ -91,11 +91,18 @@ const ISLEM_RENGI: Record<string, "success" | "danger" | "info" | "warning" | "n
   "Virman çıkışı": "danger",
   Açılış: "info",
   "Ters kayıt": "warning",
+  "Bankaya aktarım": "danger",
+  "Komisyon / kesinti": "warning",
+  İade: "danger",
 };
+
+/** KSB-39: POS hesabının ekstresi; açılış bakiyesi POS'ta yoktur. */
+interface PosHesabi { id: string; ad: string; saglayici: string; dovizCinsi: string; aktif: boolean }
 
 export default function HesapEkstresiSayfasi() {
   const [kasalar, setKasalar] = useState<Hesap[]>([]);
   const [bankalar, setBankalar] = useState<Hesap[]>([]);
+  const [poslar, setPoslar] = useState<PosHesabi[]>([]);
   const [hesapAnahtari, setHesapAnahtari] = useState("");
   const [donem, setDonem] = useState<Donem>("bu_ay");
   const [baslangic, setBaslangic] = useState(() => donemAraligi("bu_ay").baslangic);
@@ -107,10 +114,15 @@ export default function HesapEkstresiSayfasi() {
   const [indiriliyor, setIndiriliyor] = useState<"" | "pdf" | "excel">("");
 
   const hesaplariYukle = useCallback(async () => {
-    const [k, b] = await Promise.all([api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar")]);
+    const [k, b, p] = await Promise.all([
+      api<Hesap[]>("/kasa-banka/kasalar"),
+      api<Hesap[]>("/kasa-banka/bankalar"),
+      api<PosHesabi[]>("/kasa-banka/pos-hesaplari").catch(() => [] as PosHesabi[]),
+    ]);
     setKasalar(k);
     setBankalar(b);
-    return [...k.map((x) => `kasa:${x.id}`), ...b.map((x) => `banka:${x.id}`)];
+    setPoslar(p);
+    return [...k.map((x) => `kasa:${x.id}`), ...b.map((x) => `banka:${x.id}`), ...p.map((x) => `pos:${x.id}`)];
   }, []);
 
   useEffect(() => {
@@ -173,8 +185,8 @@ export default function HesapEkstresiSayfasi() {
     }
   }
 
-  const seciliHesap = [...kasalar, ...bankalar].find((h) => hesapAnahtari.endsWith(h.id)) ?? null;
-  const doviz = ekstre?.hesap.dovizCinsi ?? seciliHesap?.dovizCinsi ?? "TRY";
+  const seciliHesap = hesapAnahtari.startsWith("pos:") ? null : [...kasalar, ...bankalar].find((h) => hesapAnahtari.endsWith(h.id)) ?? null;
+  const doviz = ekstre?.hesap.dovizCinsi ?? seciliHesap?.dovizCinsi ?? poslar.find((p) => hesapAnahtari.endsWith(p.id))?.dovizCinsi ?? "TRY";
   const dovizli = doviz !== "TRY";
   const kolonSayisi = dovizli ? 10 : 8;
 
@@ -182,7 +194,7 @@ export default function HesapEkstresiSayfasi() {
     <div className="account-statement">
       <PageHeader
         title="Hesap ekstresi"
-        subtitle="Kasa ya da banka hesabının dönem başı devrini, yürüyen bakiyesini ve dönem sonu bakiyesini görün; PDF ya da Excel olarak indirin."
+        subtitle="Kasa, banka ya da POS hesabının dönem başı devrini, yürüyen bakiyesini ve dönem sonu bakiyesini görün; PDF ya da Excel olarak indirin."
         actions={
           <>
             <Button onClick={() => void indir("excel")} disabled={!ekstre || Boolean(indiriliyor)}>{indiriliyor === "excel" ? "Hazırlanıyor…" : "Excel"}</Button>
@@ -194,7 +206,7 @@ export default function HesapEkstresiSayfasi() {
       <div className="account-statement__toolbar">
         <Field label="Hesap">
           <Select value={hesapAnahtari} onChange={(e) => setHesapAnahtari(e.target.value)}>
-            {!kasalar.length && !bankalar.length && <option value="">Hesap yok</option>}
+            {!kasalar.length && !bankalar.length && !poslar.length && <option value="">Hesap yok</option>}
             {kasalar.length > 0 && (
               <optgroup label="Kasalar">
                 {kasalar.map((k) => <option key={k.id} value={`kasa:${k.id}`}>{k.ad} · {k.dovizCinsi}{k.aktif ? "" : " (pasif)"}</option>)}
@@ -203,6 +215,11 @@ export default function HesapEkstresiSayfasi() {
             {bankalar.length > 0 && (
               <optgroup label="Banka hesapları">
                 {bankalar.map((b) => <option key={b.id} value={`banka:${b.id}`}>{b.ad} · {b.bankaAdi} · {b.dovizCinsi}{b.aktif ? "" : " (pasif)"}</option>)}
+              </optgroup>
+            )}
+            {poslar.length > 0 && (
+              <optgroup label="POS hesapları">
+                {poslar.map((p) => <option key={p.id} value={`pos:${p.id}`}>{p.ad} · {p.saglayici === "banka" ? "Banka POS'u" : p.saglayici} · {p.dovizCinsi}{p.aktif ? "" : " (pasif)"}</option>)}
               </optgroup>
             )}
           </Select>

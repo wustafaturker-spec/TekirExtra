@@ -17,6 +17,7 @@ export const KAYNAK_ADLARI: Record<string, string> = {
   faturasiz_gelir: "Faaliyet dışı gelir",
   pos_tahsilat: "POS tahsilatı",
   pos_mutabakat: "POS mutabakatı",
+  pos_iade: "POS iadesi",
   cek_senet: "Çek / senet",
   kredi_karti_ekstre: "Kredi kartı",
   odeme_talimati: "Ödeme talimatı",
@@ -32,6 +33,10 @@ export function kaynakAdi(kaynakTur: string): string | null {
 export function islemAdi(h: { tip: string; kaynakTur: string }): string {
   if (h.kaynakTur === "acilis") return "Açılış";
   if (h.kaynakTur === "ters_kayit") return "Ters kayıt";
+  // KSB-39: POS hesabı tarafında aktarım ve kesinti ayrı adlandırılır.
+  if (h.kaynakTur === "pos_mutabakat" && h.tip === "virman_gidis") return "Bankaya aktarım";
+  if (h.kaynakTur === "pos_mutabakat" && h.tip === "tediye") return "Komisyon / kesinti";
+  if (h.kaynakTur === "pos_iade") return "İade";
   if (h.tip === "virman_gelis") return "Virman girişi";
   if (h.tip === "virman_gidis") return "Virman çıkışı";
   return h.tip === "tahsilat" ? "Tahsilat" : "Ödeme";
