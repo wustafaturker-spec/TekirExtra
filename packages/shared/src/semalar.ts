@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+/**
+ * SEC-10: zod 4 nesne şeması oluşturulurken `Function("")` ile eval desteğini
+ * yoklar; tarayıcıda bu, web'in CSP'sinde ('unsafe-eval' yok) ihlal üretir.
+ * Tarayıcıda derlemesiz kip kullanılır (sonuç aynı); sunucu hızlı yolu korur.
+ * Şemalardan önce çalışmalıdır.
+ */
+if (typeof (globalThis as { document?: unknown }).document !== "undefined") z.config({ jitless: true });
+
 /** VKN (10 hane) veya TCKN (11 hane). */
 export const vknTcknSemasi = z
   .string()
