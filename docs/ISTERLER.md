@@ -1425,7 +1425,7 @@ Aşağıdaki PLT-25–31 numaraları, kod incelemesinde doğrulanan eksiklikleri
 
 | No | İster | Öncelik |
 |---|---|---|
-| PLT-42 | ✅ **Sağlayıcıya iade** (2026-11-01; göç `20261102160000_abonelik_iadesi`: `abonelik_iadeleri` + `platform_abonelik_iade_hazirla/kaydet/kilidi_ac`; `PlatformAbonelikIadeService`, `POST /platform/abonelik-odemeleri/:id/iade`): platform yöneticisi firma kartındaki ödeme geçmişinden ya da Ödeme raporundan "İade et" ile tutar (varsayılan iade edilebilir kalan) ve neden girer. Kartla alınmış ödemede para platformun iyzico (ödeme ayrıntısındaki işlem numarasıyla `/payment/refund`) ya da PayTR (sipariş numarasıyla `/odeme/iade`) hesabından iade edilir; sağlayıcı reddederse kayıt yazılmaz. Aynı ödemeye eşzamanlı ikinci iade gitmez (kilit), aynı istek anahtarı ikinci iade üretmez. Ödemeyi alan sağlayıcı/ortam etkin olandan farklıysa sağlayıcıya gönderilmez; "sağlayıcıya gönderme" seçeneğiyle (panelden iade edildiyse) yalnız kayıt yazılır. Sağlayıcı onaylayıp kayıt yazılamazsa kilit kalır, ref ile uyarılır. | Y |
+| PLT-42 | ✅ **Sağlayıcıya iade** (2026-11-01; iyzico sandbox kısmi iadesi canlı doğrulandı — DENEME FİRMASI 3, 10 TL; göç `20261102160000_abonelik_iadesi`: `abonelik_iadeleri` + `platform_abonelik_iade_hazirla/kaydet/kilidi_ac`; `PlatformAbonelikIadeService`, `POST /platform/abonelik-odemeleri/:id/iade`): platform yöneticisi firma kartındaki ödeme geçmişinden ya da Ödeme raporundan "İade et" ile tutar (varsayılan iade edilebilir kalan) ve neden girer. Kartla alınmış ödemede para platformun iyzico (ödeme ayrıntısındaki işlem numarasıyla `/payment/refund`) ya da PayTR (sipariş numarasıyla `/odeme/iade`) hesabından iade edilir; sağlayıcı reddederse kayıt yazılmaz. Aynı ödemeye eşzamanlı ikinci iade gitmez (kilit), aynı istek anahtarı ikinci iade üretmez. Ödemeyi alan sağlayıcı/ortam etkin olandan farklıysa sağlayıcıya gönderilmez; "sağlayıcıya gönderme" seçeneğiyle (panelden iade edildiyse) yalnız kayıt yazılır. Sağlayıcı onaylayıp kayıt yazılamazsa kilit kalır, ref ile uyarılır. | Y |
 | PLT-43 | ✅ **Abonelik dönemi** (2026-11-01; `platform_faturasiz_abonelik_odemeleri` tam iade edilmişi dışlar): tam iadede (iadeler toplamı ödeme tutarına ulaşınca) dönem sonu ödemenin süresi kadar geri alınır; kısmi iadede dönem değişmez. Değişiklik abonelik geçmişine yazılır. Otomatik askı yoktur (PLT-09). Tam iade edilmiş ödeme faturalanmaz. | Y |
 | PLT-44 | ✅ **Faturalayan firmanın kayıtları** (2026-11-01; `AbonelikFaturaService.iadeyiIsle`, `PosService.abonelikIadesiYaz`; abonelik POS iadesi POS ekranından geri alınamaz): tahsilat bir abonelik POS kaydına bağlıysa ona POS iadesi yazılır (POS çıkışı, cari borcu, fatura mahsubunun geri açılması — KSB-43 ile aynı; komisyon değişmez). Banka/kasa tahsilatında ve elle ödemede para hareketi yazılmaz; para bankadan elle iade edilir. İşlem başarısızsa worker 10 dakikada bir en çok 3 kez yeniden dener. | Y |
 | PLT-45 | ✅ **Fatura tarafı** (2026-11-01; `abonelik_faturalari.iade_tutari`, bildirim `abonelik-iade:<id>`): belge kesilmez. Abonelik faturasının iade tutarı tutulur ("iade edildi"/"kısmi iade"); faturalayan firmaya yönetici/muhasebe bildirimi düşer: faturası kesilmişse "… faturası için iptal ya da iade belgesi düzenleyin", POS dışı tahsilatta "para iadesinin kasa/banka kaydını girin". | Y |
@@ -1445,6 +1445,27 @@ Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLA
 - **NFR-05:** KVKK yükümlülükleri karşılanmalıdır: kişisel verilerin envanteri, silme/anonimleştirme yeteneği.
 - **NFR-06:** Oturumlar makul sürede zaman aşımına uğramalı; API erişimi token tabanlı ve yetki denetimli olmalıdır.
 - **NFR-07:** OWASP Top 10 açıklarına karşı önlem alınmalıdır (girdi doğrulama, CSRF, XSS, SQL enjeksiyonu).
+
+#### Güvenlik taraması — SEC-01…14 (2026-11-01)
+
+**S-01 onayı: 2026-11-01** (kullanıcı: "hepsini onaylıyorum"). Kaynak: gitleaks, pnpm audit, Semgrep, Trivy (pilot imajı) ve riskli bölgelerin elle kod denetimi. Bekleyen güvenlik değişiklikleri 8d0c7c5 ile commit edildi (DOMPurify, Next 15.5.28, multer 2.5.0, proxy-addr, TRUST_PROXY, METRICS_TOKEN).
+
+| No | İster | Öncelik |
+|---|---|---|
+| SEC-01 | ✅ **Gelen e-posta HTML'i (kritik)** (2026-11-01; `core/guvenlik/eposta-html.ts` sanitize-html 2.18.1 ile kayıtta, liste ve ayrıntı okumasında; istemci DOMPurify; e2e `eposta-xss.spec.ts` eski sürümde düşer): dışarıdan gelen e-posta HTML'i sunucuda kayıt anında temizlenir (betik, olay öznitelikleri, `javascript:` bağlantıları, form, iframe, stil içi betik atılır); istemci DOMPurify ile ikinci kez temizler. Bağlantılar yeni sekmede `rel="noopener noreferrer"` ile açılır. Eski kayıtlar okunurken de temizlenir. | Y |
+| SEC-02 | **Next.js yükseltmesi (kritik):** web ≥ 15.5.28 (görüntü optimizasyonu RCE/SSRF açıkları); pilot yeni sürümle yeniden çıkarılır. | Y |
+| SEC-03 | **SSRF:** kiracının girdiği servis adresleri (iyzico, Vomsis, pazaryeri, SMS) yalnız https ve sağlayıcının bilinen alan adları; SMTP/IMAP sunucusu iç ağ/özel IP'ye çözülürse reddedilir (bağlantı anında DNS çözümlemesiyle). Hata iletisi iç ağ ayrıntısı taşımaz. | Y |
+| SEC-04 | **Bağımlılıklar:** nodemailer ≥ 10.1.4 (mailparser dahil), body-parser/qs, zod ve diğer üretim bağımlılıklarındaki yüksek açıklar kapatılır; geliştirme araçları (vitest/eslint) ayrı izlenir. | Y |
+| SEC-05 | **Pilot imajı:** çalışma imajı güncel Debian tabanıyla yeniden oluşturulur; düzeltmesi olan kritik/yüksek işletim sistemi paketleri kalmaz. | Y |
+| SEC-06 | **Rate limit ve proxy:** `TRUST_PROXY` yalnız proxy sayısı/alt ağıyla kullanılır (`true` üretimde reddedilir); pilot tüneli için doğru değer verilir. | O |
+| SEC-07 | **/metrics:** üretimde `METRICS_TOKEN` yoksa uç kapalıdır; token zamanlamaya dayanıklı karşılaştırılır. | O |
+| SEC-08 | **Yapay zekâ adresi:** kiracı adresi bağlantı anında çözülür; özel/iç IP'ye çıkan adres reddedilir. | O |
+| SEC-09 | **Formül enjeksiyonu:** bütün Excel/CSV dışa aktarımlarında `= + - @` ile başlayan metinler kaçışlanır (sayılar hariç). | O |
+| SEC-10 | **Web güvenlik başlıkları:** CSP, X-Frame-Options/frame-ancestors, nosniff, Referrer-Policy, Permissions-Policy. | O |
+| SEC-11 | AES-GCM çözmede etiket uzunluğu 16 bayta sabitlenir. | D |
+| SEC-12 | Girişte kayıtlı olmayan e-postada da sabit maliyetli parola karşılaştırması yapılır (zamanlamadan kullanıcı varlığı anlaşılmaz). | D |
+| SEC-13 | Kimliksiz POS/abonelik callback uçlarında `tenantId`/kayıt kimliği UUID olarak doğrulanır (bozuk değer 400). | D |
+| SEC-14 | Access token'ın sessionStorage'dan çıkarılması (HttpOnly/BFF modeli) için tasarım notu; uygulama ayrı karar. | D |
 
 ### 4.3 Veri Bütünlüğü ve Yedekleme
 - **NFR-08:** Mali kayıtlar (kesinleşmiş fatura, kasa/banka fişi) hiçbir koşulda fiziksel silinmemeli; iptal/ters kayıt ile yönetilmelidir.

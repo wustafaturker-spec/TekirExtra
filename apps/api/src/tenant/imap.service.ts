@@ -9,6 +9,7 @@ import { DepoService } from "../ekler/depo.service";
 import { EpostaService } from "./eposta.service";
 import { AiService } from "../ai/ai.service";
 import { coz } from "../core/kripto";
+import { epostaHtmliniTemizle } from "../core/guvenlik/eposta-html";
 import { otomatikBasliklarMi } from "../ai/teklif-talebi/teklif-talebi.kurallari";
 import { yanitlananKimlikler } from "../belgeler/teklif-takibi/teklif-takip.kurallari";
 import { teklifYanitiniEslestir } from "../belgeler/teklif-takibi/teklif-yaniti";
@@ -94,7 +95,8 @@ export class ImapService {
               : (ayar.gondericiEposta || "");
             const konu = parsed.subject || "(Konusuz)";
             const icerikMetin = parsed.text || "";
-            const icerikHtml = typeof parsed.html === "string" ? parsed.html : null;
+            // SEC-01: gönderen herkes olabilir; HTML kayıttan önce temizlenir.
+            const icerikHtml = typeof parsed.html === "string" ? epostaHtmliniTemizle(parsed.html) : null;
             const tarih = parsed.date || new Date();
 
             // Otomatik Cari Eşleştirme (CariHesap veya CariKisi e-postasından)
@@ -256,7 +258,8 @@ export class ImapService {
         sayfa,
         adet,
         sayfaSayisi: Math.ceil(toplam / adet),
-        satirlar,
+        // SEC-01: temizlemeden önce kaydedilmiş eski iletiler de temiz döner.
+        satirlar: satirlar.map((e) => ({ ...e, icerikHtml: epostaHtmliniTemizle(e.icerikHtml) })),
       };
     });
   }
@@ -302,7 +305,7 @@ export class ImapService {
       }),
     );
     if (!eposta) throw new NotFoundException("E-posta bulunamadı");
-    return eposta;
+    return { ...eposta, icerikHtml: epostaHtmliniTemizle(eposta.icerikHtml) };
   }
 
   /**

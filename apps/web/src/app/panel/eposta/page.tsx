@@ -150,14 +150,24 @@ export default function GelenEpostalarSayfasi() {
   const [iletiTaslak, setIletiTaslak] = useState<IletiTaslagi | null>(null);
   const [mobilDetayAcik, setMobilDetayAcik] = useState(false);
 
-  // Gelen e-postanın HTML içeriğini XSS saldırılarına karşı temizle
+  // SEC-01: sunucu kayıtta temizler; burada ikinci kat. Sayfayı etkileyen
+  // style/form öğeleri atılır, bağlantılar yeni sekmede opener'sız açılır.
   const guvenliIcerikHtml = useMemo(() => {
     if (!seciliEposta?.icerikHtml) return "";
     if (typeof window === "undefined") return "";
-    return DOMPurify.sanitize(seciliEposta.icerikHtml, {
+    const temiz = DOMPurify.sanitize(seciliEposta.icerikHtml, {
       USE_PROFILES: { html: true },
-      ADD_ATTR: ["target"],
+      FORBID_TAGS: ["style", "link", "form", "input", "button", "textarea", "select", "option", "base", "meta"],
+      FORBID_ATTR: ["srcset", "action", "formaction"],
+      RETURN_DOM_FRAGMENT: true,
     });
+    temiz.querySelectorAll("a[href]").forEach((a) => {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer nofollow");
+    });
+    const kap = document.createElement("div");
+    kap.appendChild(temiz);
+    return kap.innerHTML;
   }, [seciliEposta?.icerikHtml]);
 
   const [yukleniyor, setYukleniyor] = useState(false);
