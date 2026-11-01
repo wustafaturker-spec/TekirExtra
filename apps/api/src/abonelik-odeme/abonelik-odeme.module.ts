@@ -8,13 +8,15 @@ import { AbonelikOdemeController, AbonelikOdemePublicController } from "./abonel
 import { AbonelikOdemeService } from "./abonelik-odeme.service";
 import { OtomatikYenilemeService } from "./otomatik-yenileme.service";
 import { PlatformAbonelikFaturaController, PlatformOdemeController } from "./platform-odeme.controller";
+import { PlatformOdemeRaporuController } from "./platform-odeme-raporu.controller";
+import { PlatformOdemeRaporuService } from "./platform-odeme-raporu.service";
 import { SaglayiciAyarlariService } from "./saglayici-ayarlari.service";
 
-/** PLT-11…15: abonelik bedelinin ödeme sağlayıcısıyla tahsili; PLT-20…23: abonelik faturası ve tahsilatı. */
+/** PLT-11…15: abonelik bedelinin ödeme sağlayıcısıyla tahsili; PLT-20…23: abonelik faturası ve tahsilatı; PLT-32…37: ödeme raporu. */
 @Module({
   imports: [FaturaModule, CariModule, KasaBankaModule],
-  controllers: [AbonelikOdemeController, AbonelikOdemePublicController, PlatformOdemeController, PlatformAbonelikFaturaController],
-  providers: [AbonelikOdemeService, SaglayiciAyarlariService, OtomatikYenilemeService, AbonelikFaturaService, AbonelikFaturaAyarService],
+  controllers: [AbonelikOdemeController, AbonelikOdemePublicController, PlatformOdemeController, PlatformAbonelikFaturaController, PlatformOdemeRaporuController],
+  providers: [AbonelikOdemeService, SaglayiciAyarlariService, OtomatikYenilemeService, AbonelikFaturaService, AbonelikFaturaAyarService, PlatformOdemeRaporuService],
   exports: [AbonelikOdemeService, SaglayiciAyarlariService],
 })
 export class AbonelikOdemeModule {}

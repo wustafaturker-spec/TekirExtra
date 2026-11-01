@@ -66,6 +66,14 @@ function PlatformFirmalarIcerigi() {
     setSuzgec(secim === "talep" || secim === "askiyaAlinacak" || secim === "askida" || secim === "iptal" ? secim : "hepsi");
   }, [parametreler]);
 
+  // PLT-32: ödeme raporundan gelen `?firma=<id>` o firmanın kartını açar.
+  const istenenFirma = parametreler.get("firma");
+  useEffect(() => {
+    if (!istenenFirma || !firmalar) return;
+    const bulunan = firmalar.find((f) => f.tenantId === istenenFirma);
+    if (bulunan) setSecili(bulunan);
+  }, [istenenFirma, firmalar]);
+
   const sayilar = useMemo(() => ({
     toplam: firmalar?.length ?? 0,
     talep: firmalar?.filter((f) => f.bekleyenTalep).length ?? 0,

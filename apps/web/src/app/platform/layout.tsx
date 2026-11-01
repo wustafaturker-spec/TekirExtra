@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users } from "lucide-react";
+import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText } from "lucide-react";
 import { Alert, Button, Modal, ModalEylem } from "@/components/ui";
 import { platformApi, platformCikis, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
 
@@ -18,6 +18,7 @@ const MENU = [
   { href: "/platform/tablolar", ikon: Table2, baslik: "Yürürlükteki değerler" },
   { href: "/platform/talepler", ikon: Inbox, baslik: "Talepler" },
   { href: "/platform/denetim", ikon: History, baslik: "Denetim izi" },
+  { href: "/platform/odeme-raporu", ikon: ReceiptText, baslik: "Ödeme raporu", yalnizYonetici: true },
   { href: "/platform/odeme", ikon: CreditCard, baslik: "Abonelik ödemesi", yalnizYonetici: true },
   { href: "/platform/sistem-sagligi", ikon: Activity, baslik: "Sistem sağlığı", yalnizYonetici: true },
   { href: "/platform/yapay-zeka", ikon: Sparkles, baslik: "Yapay zekâ tavanı", yalnizYonetici: true },
@@ -66,7 +67,7 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   }, [girisSayfasi, yonlendir, tekrar]);
   const editor = ben?.rol === "mevzuat_editoru";
   const menu = MENU.filter((m) => !(editor && m.yalnizYonetici));
-  const yasakSayfa = editor && MENU.some((m) => m.yalnizYonetici && yol.startsWith(m.href));
+  const yasakSayfa = editor && MENU.some((m) => m.yalnizYonetici && (yol === m.href || yol.startsWith(`${m.href}/`)));
   useEffect(() => { if (yasakSayfa) yonlendir.replace("/platform"); }, [yasakSayfa, yonlendir]);
   useEffect(() => { setMenuAcik(false); }, [yol]);
   useEffect(() => {
@@ -77,11 +78,11 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   }, [menuAcik]);
   if (girisSayfasi) return <>{children}</>;
   if (!ben) return <main className="platform-session" aria-live="polite"><ShieldCheck size={32} /><h1>Mevzuat Merkezi</h1><p>{kimlikHatasi ? "Oturum bilgileri alınamadı." : "Oturumunuz doğrulanıyor…"}</p>{kimlikHatasi && <Button onClick={() => setTekrar((v) => v + 1)}>Tekrar dene</Button>}</main>;
-  const aktif = (href: string) => href === "/platform" ? yol === href || yol.startsWith("/platform/degisiklik") : yol.startsWith(href);
+  const aktif = (href: string) => href === "/platform" ? yol === href || yol.startsWith("/platform/degisiklik") : yol === href || yol.startsWith(`${href}/`);
   const bolumler = [
     { ad: "Genel bakış", yollar: ["/platform/ozet", "/platform/gorevler"] },
     { ad: "Mevzuat yönetimi", yollar: ["/platform", "/platform/tablolar", "/platform/talepler", "/platform/denetim"] },
-    { ad: "Platform yönetimi", yollar: ["/platform/firmalar", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
+    { ad: "Platform yönetimi", yollar: ["/platform/firmalar", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
   ];
   return (
     <div className="platform-shell">

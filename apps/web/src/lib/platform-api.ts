@@ -64,3 +64,28 @@ export async function platformApi<T>(yol: string, secenek: RequestInit = {}): Pr
   }
   return govde as T;
 }
+
+/** Dosya indirir (PLT-37): yanıtı blob olarak alır ve tarayıcıda kaydettirir. */
+export async function platformIndir(yol: string, varsayilanAd: string): Promise<void> {
+  const token = platformTokenAl();
+  const yanit = await fetch(`${API_URL}${yol}`, { credentials: "include", headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (yanit.status === 401) {
+    platformTokenYaz(null);
+    window.location.href = "/platform/giris";
+    throw new PlatformApiHata("Oturum süresi doldu", 401);
+  }
+  if (!yanit.ok) {
+    const govde = (await yanit.json().catch(() => null)) as { message?: string | string[] } | null;
+    const mesaj = govde?.message;
+    throw new PlatformApiHata(Array.isArray(mesaj) ? mesaj.join("; ") : mesaj ?? "Dosya indirilemedi", yanit.status);
+  }
+  const ad = /filename="([^"]+)"/.exec(yanit.headers.get("Content-Disposition") ?? "")?.[1] ?? varsayilanAd;
+  const adres = URL.createObjectURL(await yanit.blob());
+  const baglanti = document.createElement("a");
+  baglanti.href = adres;
+  baglanti.download = ad;
+  document.body.appendChild(baglanti);
+  baglanti.click();
+  baglanti.remove();
+  setTimeout(() => URL.revokeObjectURL(adres), 1000);
+}
