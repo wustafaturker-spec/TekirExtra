@@ -25,8 +25,10 @@ async function bootstrap(): Promise<void> {
     const sayi = Number(trustProxy);
     app.set("trust proxy", Number.isInteger(sayi) ? sayi : trustProxy === "true" ? true : trustProxy);
   }
-  app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb" }));
-  app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true }));
+  // SEC-04: istemciler gövdeyi sıkıştırmaz; sıkıştırılmış gövde (gzip bombası ve
+  // body-parser açma hatası DoS'u) 415 ile reddedilir.
+  app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb", inflate: false }));
+  app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true, inflate: false }));
   const metrics = app.get(MetricsService);
   app.useGlobalFilters(new ObservabilityExceptionFilter(metrics));
   app.setGlobalPrefix("api/v1", { exclude: ["health", "health/ready", "metrics"] });
