@@ -84,6 +84,10 @@ interface Tahsilat {
   komisyonTutari: string | null;
   netTutar: string | null;
   komisyonKaynagi: "tahmin" | "saglayici" | null;
+  kartMarkasi: string | null;
+  kartAilesi: string | null;
+  kartSon4: string | null;
+  fraudDurumu: number | null;
 }
 interface ListeYaniti {
   kayitlar: Tahsilat[];
@@ -823,6 +827,11 @@ export default function PosHesaplari() {
                   <div className="pos-delivery">
                     <Badge variant={durumRengi(t.durum)}>{durumAdi[t.durum] ?? t.durum}</Badge>
                     {t.gecOdeme && <Badge variant="warning">Geç ödeme</Badge>}
+                    {t.fraudDurumu === 0 && (
+                      <span title="iyzico ödemeyi dolandırıcılık incelemesine aldı; teslimi inceleme sonuçlanana kadar bekletin.">
+                        <Badge variant="warning">iyzico incelemesinde</Badge>
+                      </span>
+                    )}
                     {Number(t.iadeEdilen) > 0 && (
                       <Badge variant="info">{Number(t.iadeEdilen) >= Number(t.tutar) ? "İade edildi" : "Kısmi iade"}</Badge>
                     )}
@@ -843,6 +852,7 @@ export default function PosHesaplari() {
                   {/* KSB-36: taksit, komisyon ve bankaya geçecek net */}
                   {t.durum === "odendi" && t.komisyonTutari !== null && (
                     <small>
+                      {t.kartSon4 ? `${[t.kartMarkasi?.replace(/_/g, " "), t.kartAilesi].filter(Boolean).join(" ")} •••• ${t.kartSon4} · ` : ""}
                       {t.taksitSayisi > 1 ? `${t.taksitSayisi} taksit · ` : ""}komisyon {para(t.komisyonTutari, t.dovizCinsi)}
                       {t.komisyonKaynagi === "tahmin" ? " (tahmini)" : ""} · net {para(t.netTutar ?? t.tutar, t.dovizCinsi)}
                     </small>

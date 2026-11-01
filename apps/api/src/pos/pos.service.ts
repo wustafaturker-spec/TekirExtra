@@ -11,13 +11,13 @@ import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { bugunTR, posAcikTaksitler, posAzamiTaksit } from "@tekirextra/shared";
-import { tahminiKomisyonAlanlari, taksitTablosu } from "./taksit";
+import { saglayiciKesintiAlanlari, tahminiKomisyonAlanlari, taksitTablosu } from "./taksit";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { aktarimPlani } from "./aktarim-plani";
 import { PrismaService } from "../core/prisma.service";
 import { coz } from "../core/kripto";
-import { IyzicoAdapter, iyzicoTelefonuDuzenle, type IyzicoConfig } from "./iyzico.adapter";
+import { IyzicoAdapter, iyzicoTelefonuDuzenle, type IyzicoConfig, type IyzicoKesintisi } from "./iyzico.adapter";
 import { EpostaService } from "../tenant/eposta.service";
 import { NetgsmAdapter, type NetgsmConfig } from "./netgsm.adapter";
 import { PaytrAdapter, type PaytrCallback, type PaytrConfig } from "./paytr.adapter";
@@ -43,6 +43,8 @@ async function posFaturaKapamasi(tx: Prisma.TransactionClient, faturaId: string 
 interface OdemeAyrintisi {
   taksit?: number;
   odenen?: Prisma.Decimal;
+  /** KSB-37: sağlayıcının bildirdiği kesinti (iyzico). */
+  kesinti?: IyzicoKesintisi;
 }
 
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -348,7 +350,11 @@ export class PosService {
     const gecOdeme = kayit.durum !== "baslatildi";
     // KSB-36: komisyon ödeme anındaki taksit tablosundan tahmin edilir ve tahsilatta saklanır.
     const hesap = await tx.posHesap.findUnique({ where: { id: kayit.posHesapId }, select: { komisyonOrani: true, islemUcreti: true, taksitOranlari: true } });
-    const komisyon = hesap ? tahminiKomisyonAlanlari(kayit.tutar, hesap, ayrinti.taksit, ayrinti.odenen) : {};
+    const komisyon = {
+      ...(hesap ? tahminiKomisyonAlanlari(kayit.tutar, hesap, ayrinti.taksit, ayrinti.odenen) : {}),
+      // KSB-37: sağlayıcı kesintiyi bildirdiyse tahminin yerine geçer.
+      ...(ayrinti.kesinti ? saglayiciKesintiAlanlari(kayit.tutar, ayrinti.kesinti) : {}),
+    };
     const hak = await tx.posTahsilat.updateMany({
       where: { id: kayit.id, durum: { in: [...ODENEBILIR_DURUMLAR] }, hareketId: null },
       data: { durum: "odendi", saglayiciOdemeId: odemeId, odemeTarihi: simdi, hataMesaji: null, gecOdeme, ...komisyon },
@@ -425,6 +431,27 @@ export class PosService {
       );
     } catch (hata) {
       this.logger.warn(`Geç ödeme bildirimi üretilemedi: ${hata instanceof Error ? hata.message : String(hata)}`);
+    }
+  }
+
+  /** KSB-37: iyzico ödemeyi dolandırıcılık incelemesine aldı; para inceleme sonuçlanana kadar aktarılmayabilir. */
+  private async fraudIncelemesiniBildir(tenantId: string, kayit: { id: string; tutar: Prisma.Decimal; dovizCinsi: string }) {
+    try {
+      await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () =>
+        this.bildirimler.uret({
+          tur: "entegrasyon",
+          onem: "uyari",
+          baslik: "iyzico ödemeyi incelemeye aldı",
+          aciklama: `${kayit.tutar.toFixed(2)} ${kayit.dovizCinsi} tutarlı kart tahsilatı iyzico dolandırıcılık incelemesinde. Tahsilat kaydedildi; inceleme reddedilirse iyzico ödemeyi iptal eder, o durumda tahsilatı iade olarak kaydedin. Mal/hizmet teslimini inceleme sonuçlanana kadar bekletmeniz önerilir.`,
+          birlesimAnahtari: `pos-fraud-inceleme:${kayit.id}`,
+          kaynakTur: "pos_tahsilat",
+          kaynakRef: kayit.id,
+          hedefYol: "/panel/kasa-banka/pos",
+          roller: ["yonetici", "muhasebe"],
+        }),
+      );
+    } catch (hata) {
+      this.logger.warn(`Fraud inceleme bildirimi üretilemedi: ${hata instanceof Error ? hata.message : String(hata)}`);
     }
   }
 
@@ -808,9 +835,10 @@ export class PosService {
       throw new BadRequestException("Ödeme doğrulanamadı");
     }
     const kayitSonucu = await this.prisma.tenantIslem(tenantId, (tx) =>
-      this.odenmisSay(tx, tenantId, kayit, sonuc.odemeId ?? "", "iyzico kart tahsilatı", { taksit: sonuc.taksit, odenen: new Prisma.Decimal(sonuc.odenen) }),
+      this.odenmisSay(tx, tenantId, kayit, sonuc.odemeId ?? "", "iyzico kart tahsilatı", { taksit: sonuc.taksit, odenen: new Prisma.Decimal(sonuc.odenen), kesinti: sonuc.kesinti }),
     );
     if (kayitSonucu.gecOdeme) await this.gecOdemeyiBildir(tenantId, kayit);
+    if (!kayitSonucu.tekrar && sonuc.kesinti?.fraudDurumu === 0) await this.fraudIncelemesiniBildir(tenantId, kayit);
     return kayitSonucu;
   }
 }

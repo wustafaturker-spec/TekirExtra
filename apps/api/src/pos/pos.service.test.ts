@@ -122,6 +122,17 @@ describe("PosService (P1-6)", () => {
       expect([d.taksitSayisi, d.odenenTutar.toFixed(2), d.komisyonTutari.toFixed(2)]).toEqual([3, "1060.00", "35.15"]);
       casus.mockRestore();
     });
+    it("KSB-37: iyzico kesintisini bildirince komisyon sağlayıcıdan yazılır; incelemedeki ödeme bildirilir", async () => {
+      const kesinti = { isyerineGecenKalemleri: ["964.85"], saglayiciKomisyonu: "34.9", saglayiciUcreti: "0.25", kartSon4: "0008", fraudDurumu: 0 };
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ basarili: true, odemeId: "pay", tutar: 1000, fiyat: 1000, odenen: 1000, taksit: 1, dovizCinsi: "TRY", kesinti } as never);
+      const tx = odemeTx();
+      const { service, bildirimler } = kur(tx);
+      await service.callback("t1", "t1", "tok");
+      const d = tx.posTahsilat.updateMany.mock.calls[0][0].data;
+      expect([d.komisyonKaynagi, d.komisyonTutari.toFixed(2), d.netTutar.toFixed(2), d.kartSon4, d.fraudDurumu]).toEqual(["saglayici", "35.15", "964.85", "0008", 0]);
+      expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "pos-fraud-inceleme:t1" }));
+      casus.mockRestore();
+    });
     it("sepet tutarı tahsilattan farklıysa ödemeyi doğrulamaz", async () => {
       const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ basarili: true, odemeId: "pay", tutar: 900, fiyat: 900, odenen: 900, taksit: 1, dovizCinsi: "TRY" } as never);
       const tx = odemeTx();

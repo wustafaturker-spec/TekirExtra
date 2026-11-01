@@ -4081,6 +4081,19 @@ model PosTahsilat {
   netTutar             Decimal?          @map("net_tutar") @db.Decimal(15, 2)
   /// KSB-36: "tahmin" (taksit tablosu) | "saglayici" (KSB-37).
   komisyonKaynagi      String?           @map("komisyon_kaynagi")
+  /// KSB-37: sağlayıcının bildirdiği kesinti ve kart bilgisi (iyzico); tam kart numarası ve ham yanıt saklanmaz.
+  saglayiciKomisyonu   Decimal?          @map("saglayici_komisyonu") @db.Decimal(15, 2)
+  saglayiciUcreti      Decimal?          @map("saglayici_ucreti") @db.Decimal(15, 2)
+  isyerineGecen        Decimal?          @map("isyerine_gecen") @db.Decimal(15, 2)
+  kartMarkasi          String?           @map("kart_markasi")
+  kartAilesi           String?           @map("kart_ailesi")
+  kartTuru             String?           @map("kart_turu")
+  kartBin              String?           @map("kart_bin")
+  kartSon4             String?           @map("kart_son4")
+  /// KSB-37: iyzico fraudStatus — 1 onay, 0 inceleme, -1 ret.
+  fraudDurumu          Int?              @map("fraud_durumu")
+  provizyonKodu        String?           @map("provizyon_kodu")
+  hostReferansi        String?           @map("host_referansi")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 

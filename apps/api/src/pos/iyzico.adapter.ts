@@ -11,6 +11,37 @@ export function iyzicoTelefonuDuzenle(telefon?: string | null): string | undefin
   return `+${rakamlar}`;
 }
 
+const metin = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : String(v));
+const sayi = (v: unknown) => (v === undefined || v === null || v === "" || !Number.isFinite(Number(v)) ? undefined : String(v));
+
+/**
+ * KSB-37: ödeme ayrıntısındaki kesinti ve kart bilgisi. Tutarlar metin döner
+ * (kayan nokta toplamı yapılmaz). BIN ilk 6 haneyle sınırlıdır; tam kart
+ * numarası ve ham yanıt dışarı verilmez.
+ */
+export function iyzicoKesintisi(veri: any) {
+  const kalemler: unknown[] = Array.isArray(veri?.itemTransactions) ? veri.itemTransactions : [];
+  const paylar = kalemler.map((k) => sayi((k as { merchantPayoutAmount?: unknown })?.merchantPayoutAmount));
+  const bin = metin(veri?.binNumber)?.replace(/\D/g, "").slice(0, 6);
+  const son4 = metin(veri?.lastFourDigits)?.replace(/\D/g, "").slice(-4);
+  const fraud = Number(veri?.fraudStatus);
+  return {
+    saglayiciKomisyonu: sayi(veri?.iyziCommissionRateAmount),
+    saglayiciUcreti: sayi(veri?.iyziCommissionFee),
+    // Bir kalemin payı eksikse toplam yanlış olur; o durumda hiç verilmez.
+    isyerineGecenKalemleri: paylar.length && paylar.every((p) => p !== undefined) ? (paylar as string[]) : undefined,
+    kartMarkasi: metin(veri?.cardAssociation),
+    kartAilesi: metin(veri?.cardFamily),
+    kartTuru: metin(veri?.cardType),
+    kartBin: bin || undefined,
+    kartSon4: son4 && son4.length === 4 ? son4 : undefined,
+    fraudDurumu: [1, 0, -1].includes(fraud) && veri?.fraudStatus !== undefined && veri?.fraudStatus !== null ? fraud : undefined,
+    provizyonKodu: metin(veri?.authCode),
+    hostReferansi: metin(veri?.hostReference),
+  };
+}
+export type IyzicoKesintisi = ReturnType<typeof iyzicoKesintisi>;
+
 export class IyzicoAdapter {
   private async istek(config: IyzicoConfig, path: string, govde: Record<string, unknown>, method: "POST" | "DELETE" = "POST"): Promise<any> {
     const body = JSON.stringify(govde); const randomKey = `${Date.now()}${randomBytes(8).toString("hex")}`;
@@ -38,6 +69,7 @@ export class IyzicoAdapter {
       fiyat: Number(veri.price ?? veri.paidPrice ?? 0),
       odenen: Number(veri.paidPrice ?? veri.price ?? 0),
       taksit: Number(veri.installment) >= 1 ? Number(veri.installment) : 1,
+      kesinti: iyzicoKesintisi(veri),
       dovizCinsi: String(veri.currency ?? "TRY"),
       // PLT-14: ödeyen ödeme sayfasında kartını kaydettiyse dolu gelir.
       kart: veri.cardUserKey && veri.cardToken
