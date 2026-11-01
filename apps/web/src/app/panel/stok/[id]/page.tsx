@@ -28,6 +28,7 @@ import {
 import { BELGE_DILI_ADLARI, YABANCI_ACIKLAMA_UZUNLUGU, YABANCI_AD_UZUNLUGU, YABANCI_BELGE_DILLERI, yabanciAdlarNormalize, type YabanciAdlar, birimKisaAdi, bugunTR, olcuAilesi, olcuKatsayisi, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
+import { CariSecici } from "@/components/cari-secici";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -1703,16 +1704,7 @@ function TedarikcilerSekmesi({
         <div className="row">
           <div style={{ flex: 2, minWidth: 220 }}>
             <Field label="Cari *">
-              <Select aria-label="Cari" value={cariId} onChange={(e) => setCariId(e.target.value)}>
-                <option value="">— Cari seçin —</option>
-                {cariler
-                  .filter((c) => !bagliCariIdler.has(c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.kod} · {c.unvan}
-                    </option>
-                  ))}
-              </Select>
+              <CariSecici ariaLabel="Cari" cariler={cariler.filter((c) => !bagliCariIdler.has(c.id))} deger={cariId} onChange={setCariId} />
             </Field>
           </div>
           <div style={{ flex: 1, minWidth: 160 }}>

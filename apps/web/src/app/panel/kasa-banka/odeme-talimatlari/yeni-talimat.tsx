@@ -10,6 +10,7 @@ import { bugunTR, ibanGecerliMi } from "@tekirextra/shared";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { Button, Field, Input, Para, Select, Tarih } from "@/components/ui";
 import { ibanBicimle, type Banka } from "./tipler";
+import { CariSecici } from "@/components/cari-secici";
 
 interface Cari { id: string; kod: string; unvan: string; dovizCinsi: string; aktif: boolean }
 interface CariBanka { id: string; bankaAdi: string; iban: string; hesapSahibi: string | null; paraBirimi: string }
@@ -82,10 +83,7 @@ export function YeniTalimat({ bankalar, onKaydedildi }: { bankalar: Banka[]; onK
           </Select>
         </Field>
         <Field label="Cari">
-          <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
-            <option value="">Cari seçmeden (yalnız IBAN)</option>
-            {cariler.filter((c) => !hesap || c.dovizCinsi === hesap.dovizCinsi).map((c) => <option key={c.id} value={c.id}>{c.kod} · {c.unvan}</option>)}
-          </Select>
+          <CariSecici cariler={cariler.filter((c) => !hesap || c.dovizCinsi === hesap.dovizCinsi)} deger={cariId} onChange={setCariId} placeholder="Cari ara… (boş bırakılırsa yalnız IBAN)" />
         </Field>
         <Field label="Alıcı IBAN">
           <Select value={cariBankaHesapId} onChange={(e) => setCariBankaHesapId(e.target.value)}>

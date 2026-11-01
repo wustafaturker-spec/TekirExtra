@@ -43,6 +43,7 @@ import {
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
+import { CariSecici } from "@/components/cari-secici";
 
 const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
 const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
@@ -1448,10 +1449,7 @@ export default function BelgelerSayfasi() {
                   <small className="muted">Boş bırakılırsa onay anı yazılır.</small>
                 </Field>
                 <Field label="Taşıyan">
-                  <Select value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>
-                    <option value="">Kendi aracımızla</option>
-                    {cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}</option>)}
-                  </Select>
+                  <CariSecici ariaLabel="Taşıyan" cariler={cariler} deger={tasiyiciCariId} onChange={setTasiyiciCariId} placeholder="Taşıyan cari ara… (boşsa kendi aracımızla)" />
                   <small className="muted">Nakliyeci ya da kargo firmasını cari kartından seçin.</small>
                 </Field>
                 {araclar.length > 0 && (
@@ -1502,10 +1500,7 @@ export default function BelgelerSayfasi() {
                   <small className="muted">Boş bırakılırsa onay anı yazılır.</small>
                 </Field>
                 <Field label="Taşıyan">
-                  <Select value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>
-                    <option value="">Kendi aracımızla</option>
-                    {cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}</option>)}
-                  </Select>
+                  <CariSecici ariaLabel="Taşıyan" cariler={cariler} deger={tasiyiciCariId} onChange={setTasiyiciCariId} placeholder="Taşıyan cari ara… (boşsa kendi aracımızla)" />
                   <small className="muted">Nakliyeci ya da kargo firmasını cari kartından seçin.</small>
                 </Field>
                 {araclar.length > 0 && (

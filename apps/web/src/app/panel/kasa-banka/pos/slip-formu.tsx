@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { bugunTR, posAcikTaksitler } from "@tekirextra/shared";
 import { CariBakiye } from "@/components/cari-bakiye";
 import { Alert, Button, Card, Field, Input, Select } from "@/components/ui";
+import { CariSecici } from "@/components/cari-secici";
 
 interface BankaPos { id: string; ad: string; dovizCinsi: string; valorGun: number; taksitOranlari?: { taksit: number; oran: string }[] }
 interface Cari { id: string; kod: string; unvan: string; dovizCinsi: string }
@@ -69,10 +70,7 @@ export function SlipFormu({ hesaplar, cariler, onKapat, onKaydedildi }: { hesapl
           </Select>
         </Field>
         <Field label="Cari hesap">
-          <Select required value={cariId} onChange={(e) => { setCariId(e.target.value); setFaturaId(""); setTutar(""); }}>
-            <option value="">Cari seçin</option>
-            {cariler.filter((c) => !pos || c.dovizCinsi === pos.dovizCinsi).map((c) => <option key={c.id} value={c.id}>{c.kod} · {c.unvan}</option>)}
-          </Select>
+          <CariSecici required cariler={cariler.filter((c) => !pos || c.dovizCinsi === pos.dovizCinsi)} deger={cariId} onChange={(id) => { setCariId(id); setFaturaId(""); setTutar(""); }} />
         </Field>
         <Field label="Açık satış faturası">
           <Select value={faturaId} onChange={(e) => { setFaturaId(e.target.value); const f = faturalar.find((x) => x.id === e.target.value); if (f) setTutar(f.odemeOzeti?.kalan ?? f.genelToplam); }}>

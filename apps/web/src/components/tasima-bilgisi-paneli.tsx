@@ -19,6 +19,7 @@ import { eksikTasiyanAlanlari, tasiyanBelli } from "@/lib/tasima-bilgisi";
 import { idisBelgesiMi, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, plakaTuru, sevkiyatNoGecerliMi } from "@tekirextra/shared";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, teslimatAdresiEksik, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
+import { CariSecici } from "@/components/cari-secici";
 
 interface Cari { id: string; unvan: string; vknTckn?: string | null }
 interface AracKarti { id: string; plaka: string; dorsePlaka: string | null; aciklama: string | null }
@@ -216,10 +217,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
             </Field>
             <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId} />
             <Field label="Taşıyan">
-              <Select aria-label="Taşıyan" value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>
-                <option value="">Kendi aracımızla</option>
-                {cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}{c.vknTckn ? "" : " (VKN yok)"}</option>)}
-              </Select>
+              <CariSecici ariaLabel="Taşıyan" cariler={cariler} deger={tasiyiciCariId} onChange={setTasiyiciCariId} ek={(c) => (c.vknTckn ? null : "VKN yok")} placeholder="Taşıyan cari ara… (boşsa kendi aracımızla)" />
               <small className="muted">Nakliyeci ya da kargo firmasını cari kartından seçin.</small>
             </Field>
             {araclar.length > 0 && (

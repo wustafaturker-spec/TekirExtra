@@ -11,6 +11,7 @@ import { bugunTR } from "@tekirextra/shared";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { Alert, Button, Field, Input, Para, SearchInput, Select, Tarih } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { CariSecici } from "@/components/cari-secici";
 
 export type BordroTuru = "giris" | "ciro" | "tahsile" | "teminata" | "borc_cikis";
 export const BORDRO_ADI: Record<BordroTuru, string> = {
@@ -147,10 +148,7 @@ export function YeniBordro({ tur, onKaydedildi, onVazgec }: { tur: BordroTuru; o
         <Field label="Bordro tarihi"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} /></Field>
         {cariGerekli && (
           <Field label={tur === "giris" ? "Teslim eden müşteri" : tur === "ciro" ? "Ciro edilecek cari" : "Lehtar"}>
-            <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
-              <option value="">Cari seçin</option>
-              {cariler.filter((c) => !girisli || c.dovizCinsi === dovizCinsi).map((c) => <option key={c.id} value={c.id}>{c.kod} · {c.unvan}</option>)}
-            </Select>
+            <CariSecici cariler={cariler.filter((c) => !girisli || c.dovizCinsi === dovizCinsi)} deger={cariId} onChange={setCariId} />
           </Field>
         )}
         {bankali && (

@@ -11,6 +11,7 @@ import { api, tumSayfalariAl } from "@/lib/api";
 import { Button, Field, Input, Para, Select, Tarih } from "@/components/ui";
 import type { Banka, Kart } from "./tipler";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
+import { CariSecici } from "@/components/cari-secici";
 
 export type Gonder = (yol: string, govde: Record<string, unknown>, mesaj: string, method?: "POST" | "PATCH") => Promise<boolean>;
 
@@ -49,10 +50,7 @@ export function CariOdemeFormu({ kart, gonder }: { kart: Kart; gonder: Gonder })
   return (
     <form className="cc-transaction" onSubmit={gonderForm}>
       <Field label="Cari">
-        <Select required value={cariId} onChange={(e) => setCariId(e.target.value)}>
-          <option value="">Cari seçin</option>
-          {cariler.map((c) => <option key={c.id} value={c.id}>{c.kod} · {c.unvan}</option>)}
-        </Select>
+        <CariSecici required cariler={cariler} deger={cariId} onChange={setCariId} />
       </Field>
       <Field label="Açık alış faturası">
         <Select name="faturaId">

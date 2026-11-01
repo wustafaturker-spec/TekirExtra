@@ -757,9 +757,13 @@ test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page })
   await expect(tedarikcilerSekmesi).toHaveAttribute("aria-controls", "stok-detay-panel-tedarikciler");
   await tedarikcilerSekmesi.click();
   await expect(page.getByRole("tabpanel", { name: /Tedarikçiler/ })).toBeVisible();
-  const cariSecimi = page.getByLabel("Cari");
-  await expect(cariSecimi.locator("option", { hasText: "İkinci Sayfa Tedarikçi" })).toHaveCount(1);
-  await expect(cariSecimi.locator("option", { hasText: "İlk Sayfa Tedarikçi" })).toHaveCount(1);
+  await page.getByRole("combobox", { name: "Cari", exact: true }).click();
+  await expect(page.getByRole("option", { name: /İkinci Sayfa Tedarikçi/ })).toHaveCount(1);
+  await expect(page.getByRole("option", { name: /İlk Sayfa Tedarikçi/ })).toHaveCount(1);
+  // Arama: kodla daraltılır.
+  await page.getByRole("combobox", { name: "Cari", exact: true }).fill("C002");
+  await expect(page.getByRole("option", { name: /İkinci Sayfa Tedarikçi/ })).toHaveCount(1);
+  await expect(page.getByRole("option", { name: /İlk Sayfa Tedarikçi/ })).toHaveCount(0);
   expect([...new Set(istekler)]).toEqual(["ilk", "cari-1"]);
 });
 

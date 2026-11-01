@@ -11,6 +11,7 @@ import { CariBakiye } from "@/components/cari-bakiye";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 import { bugunTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { CariSecici } from "@/components/cari-secici";
 
 interface Banka {
   id: string;
@@ -522,25 +523,17 @@ export default function PosHesaplari() {
               </Select>
             </Field>
             <Field label="Cari hesap">
-              <Select
+              <CariSecici
                 required
-                value={seciliCariId}
-                onChange={(e) => {
-                  setSeciliCariId(e.target.value);
+                cariler={cariler.filter((x) => !seciliPos || x.dovizCinsi === seciliPos.dovizCinsi)}
+                deger={seciliCariId}
+                ek={(x) => (cariler.find((c) => c.id === x.id)?.eposta ? null : "e-posta eksik")}
+                onChange={(id) => {
+                  setSeciliCariId(id);
                   setFaturaId("");
                   setTutar("");
                 }}
-              >
-                <option value="">Cari seçin</option>
-                {cariler
-                  .filter((x) => !seciliPos || x.dovizCinsi === seciliPos.dovizCinsi)
-                  .map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.kod} · {x.unvan}
-                      {!x.eposta ? " · e-posta eksik" : ""}
-                    </option>
-                  ))}
-              </Select>
+              />
             </Field>
             <Field label="Açık satış faturası">
               <Select

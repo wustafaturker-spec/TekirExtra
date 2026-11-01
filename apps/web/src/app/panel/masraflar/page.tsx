@@ -10,6 +10,7 @@ import { FisAiDoldurModal, type FisAiDoldurVerisi } from "@/components/fis-ai-do
 import { bugunTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
+import { CariSecici } from "@/components/cari-secici";
 
 interface Kategori { id: string; ad: string; varsayilanKdvOrani: string | null; ustId: string | null; ust: { id: string; ad: string } | null; _count: { altlar: number; masraflar: number } }
 interface Cari { id: string; unvan: string }
@@ -192,7 +193,7 @@ export default function MasraflarSayfasi() {
         <section className="expense-entry__section">
           <div className="expense-entry__section-head"><span className="expense-entry__step">02</span><div><h3>Satıcı bilgileri</h3><p>Cari seçmek zorunlu değildir</p></div></div>
           <div className="expense-entry__grid expense-entry__grid--2">
-            <Field label="Cari hesap"><Select value={cariId} onChange={(e) => setCariId(e.target.value)}><option value="">Cari kullanmadan devam et</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}</option>)}</Select></Field>
+            <Field label="Cari hesap"><CariSecici cariler={cariler} deger={cariId} onChange={setCariId} placeholder="Cari ara… (boş bırakılabilir)" /></Field>
             {!cariId && <Field label="Satıcı / kiraya veren"><Input required value={saticiUnvan} onChange={(e) => setSaticiUnvan(e.target.value)} placeholder="Firma veya kişi adı" /></Field>}
             <Field label="VKN / TCKN"><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} placeholder="İsteğe bağlı" /></Field>
             <Field label="Açıklama"><Input value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Masrafa ilişkin kısa not" /></Field>

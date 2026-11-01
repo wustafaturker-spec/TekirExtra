@@ -18,6 +18,7 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { ROL_ADI } from "@/lib/rol-adlari";
+import { CariSecici } from "@/components/cari-secici";
 
 const ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir", "b2b_bayi", "uretim_planlama", "uretim_operatoru", "depo", "kalite", "maliyet_muhasebesi", "ik"] as const;
 type Rol = (typeof ROLLER)[number];
@@ -335,7 +336,7 @@ export default function KullanicilarSayfasi() {
               </div>
               {!davetle && <div style={{ flex: 1, minWidth: 200 }}><Field label="Parola * (en az 10, harf + rakam)"><Input type="password" value={parola} onChange={(e) => setParola(e.target.value)} required minLength={10} /></Field></div>}
               <div style={{ flex: 1, minWidth: 160 }}><Field label="Maks. İskonto % (opsiyonel)"><Input type="number" step="0.01" min="0" max="100" value={maksIskonto} onChange={(e) => setMaksIskonto(e.target.value)} placeholder="sınırsız" /></Field></div>
-              {rol === "b2b_bayi" && <div style={{ flex: 1, minWidth: 200 }}><Field label="Bağlı Bayi / Cari *"><Select required value={bayiCariId} onChange={(e) => setBayiCariId(e.target.value)}><option value="">Bayi seçin</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select></Field></div>}
+              {rol === "b2b_bayi" && <div style={{ flex: 1, minWidth: 200 }}><Field label="Bağlı Bayi / Cari *"><CariSecici required ariaLabel="Bağlı bayi" cariler={cariler} deger={bayiCariId} onChange={setBayiCariId} placeholder="Bayi ara…" /></Field></div>}
             </div>
             <div><Button variant="primary" type="submit">Kullanıcı Oluştur</Button></div>
           </form>
@@ -383,7 +384,7 @@ export default function KullanicilarSayfasi() {
                     ) : k.ikiAdimZorunlu && k.aktif ? <Badge variant="warning">Zorunlu, kurulmamış</Badge> : <span className="subtle">—</span>}
                   </td>
                   <td className="subtle" style={{ whiteSpace: "nowrap" }}>{k.sonGirisAt ? new Date(k.sonGirisAt).toLocaleString("tr-TR") : "Hiç girmedi"}</td>
-                  <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <Select value={k.bayiCariId ?? ""} onChange={(e) => bayiCariDegistir(k.id, e.target.value)}><option value="">Atanmamış</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select> : <span className="subtle">—</span>}</td>
+                  <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <CariSecici ariaLabel="Bağlı bayi" cariler={cariler} deger={k.bayiCariId ?? ""} onChange={(id) => bayiCariDegistir(k.id, id)} placeholder="Atanmamış — bayi ara…" /> : <span className="subtle">—</span>}</td>
                   <td className="num">{k.maksIskontoYuzdesi === null ? <span className="subtle">Sınırsız</span> : `%${k.maksIskontoYuzdesi}`}</td>
                   <td className="center">
                     <div className="row-tight" style={{ justifyContent: "center", flexWrap: "nowrap" }}>
