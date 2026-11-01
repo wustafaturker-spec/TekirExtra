@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAdresDurumu } from "@/lib/adres-durumu";
 import { Alert, Button, Card, Field, Input, Miktar, PageHeader, Para, SearchInput, Segmented, Select, Tarih } from "@/components/ui";
-import { bugunTR, yilBasiTR } from "@tekirextra/shared";
+import { bugunTR, yilBasiTR, csvHucresi } from "@tekirextra/shared";
 
 /*
  * RPR-14 (inceleme P1-4): toplamlar sunucuda kayıtlı TL tutarlardan gelir
@@ -146,7 +146,7 @@ export default function FaturaPivotSayfasi() {
 
   const csvIndir = () => {
     if (!veri) return;
-    const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+    const q = (v: string) => csvHucresi(v);
     const sayi = (d: Degerler | undefined) => { const v = deger(d, metrik); return v === null ? "" : v.toFixed(metrik === "miktar" ? 3 : 2).replace(".", ","); };
     const satirlar = [
       [q("Fatura pivotu"), q(`${baslangic} – ${bitis}`), q(yon === "tum" ? "Satış + alış" : TIPLER[yon]), q(DURUMLAR[durum]), q(METRIKLER[metrik] + " · TL"), arama ? q(`Arama: ${arama}`) : ""].join(";"),

@@ -14,7 +14,7 @@ import { Prisma } from "@prisma/client";
 import { bordroKalemOlusturSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi } from "./personel.semalar";
 import { hassasCoz, hassasSifrele, personelMaskele } from "./personel-hassas";
-import { metinNormalize } from "@tekirextra/shared";
+import { metinNormalize, tabloMetniGuvenli } from "@tekirextra/shared";
 import { puantajOku, puantajSablonu } from "./puantaj-excel";
 import { bordroHesapla } from "./bordro-hesaplama";
 import { donemBordroMevzuati, mevzuatYokMesaji, type DonemBordroMevzuati } from "./bordro-mevzuati";
@@ -1227,7 +1227,7 @@ export class PersonelService {
     }
 
     const donem = `${yil}/${String(ay).padStart(2, "0")}`;
-    const alan = (deger: string) => `"${deger.replaceAll('"', '""')}"`;
+    const alan = (deger: string) => `"${tabloMetniGuvenli(deger).replaceAll('"', '""')}"`;
     const toplam = satirlar.reduce((t, b) => t.add(b.kalanTutar), new Prisma.Decimal(0));
     // Excel Türkçe karakterleri doğru açsın diye UTF-8 BOM.
     const dosyaIcerigi = "\uFEFF" + ["Ad Soyad;TCKN;IBAN;Tutar;Açıklama", ...satirlar.map((b) =>

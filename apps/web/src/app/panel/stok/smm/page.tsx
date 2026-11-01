@@ -1,4 +1,5 @@
 "use client";
+import { csvHucresi } from "@tekirextra/shared";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -49,7 +50,7 @@ export default function SmmRaporSayfasi() {
   /** RPR-21: ekrandaki (aramayla süzülmüş) satırlar; başlıkta dönem ve yöntem. */
   const csvIndir = () => {
     if (!rapor) return;
-    const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const q = (v: string) => csvHucresi(v);
     const s = (v: number) => v.toFixed(2).replace(".", ",");
     const satirlar = [
       [q("SMM ve kârlılık"), q(`${aralik.baslangic} – ${aralik.bitis}`), q(yontem === "fifo" ? "FIFO" : "Ağırlıklı ortalama"), arama ? q(`Arama: ${arama}`) : ""].join(";"),

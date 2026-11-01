@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useAdresDurumu } from "@/lib/adres-durumu";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
-import { ayBasiTR, bugunTR, gunEkleTR, gunTR, yilBasiTR } from "@tekirextra/shared";
+import { ayBasiTR, bugunTR, gunEkleTR, gunTR, yilBasiTR, csvHucresi } from "@tekirextra/shared";
 
 interface GelirGiderOzet {
   toplamGelir: string;
@@ -147,11 +147,11 @@ export default function GelirGiderRaporuSayfasi() {
     const satirlar = filtrelenmisKalemler.map((k) => [
       k.tarih,
       k.tur === "gelir" ? "Gelir" : "Gider",
-      `"${k.anaKategori.replace(/"/g, '""')}"`,
-      `"${k.altKategori.replace(/"/g, '""')}"`,
-      `"${k.belgeNo.replace(/"/g, '""')}"`,
-      `"${k.cariUnvan.replace(/"/g, '""')}"`,
-      `"${k.aciklama.replace(/"/g, '""')}"`,
+      csvHucresi(k.anaKategori),
+      csvHucresi(k.altKategori),
+      csvHucresi(k.belgeNo),
+      csvHucresi(k.cariUnvan),
+      csvHucresi(k.aciklama),
       k.tutarTry,
       `${k.tutar} ${k.dovizCinsi}`,
     ]);

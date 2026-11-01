@@ -1,3 +1,4 @@
+import { tabloMetniGuvenli } from "@tekirextra/shared";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import * as ExcelJS from "exceljs";
@@ -191,7 +192,8 @@ export class PlatformOdemeRaporuService {
     if (bicim === "csv") {
       // Türkçe Excel: noktalı virgül ayırıcı, virgüllü ondalık, BOM.
       const hucre = (v: string | number) => {
-        const metin = typeof v === "number" ? v.toFixed(2).replace(".", ",") : v;
+        // SEC-09: firma ünvanı kayıt formundan gelir; formül olarak çalışmasın.
+        const metin = typeof v === "number" ? v.toFixed(2).replace(".", ",") : tabloMetniGuvenli(v);
         return /[";\n\r]/.test(metin) ? `"${metin.replace(/"/g, '""')}"` : metin;
       };
       const metin = [basliklar, ...degerler.map((r) => r.map((v, i) => (i === 5 ? String(v) : v)))].map((r) => r.map(hucre).join(";")).join("\r\n");

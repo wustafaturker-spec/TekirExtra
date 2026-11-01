@@ -1,3 +1,4 @@
+import { tabloMetniGuvenli } from "@tekirextra/shared";
 /**
  * ENT-07: toplu ödeme dosyası (saf). Bankaların internet şubesine yüklenen
  * toplu EFT/havale dosyası; biçim kaynak banka hesabının profilinden gelir:
@@ -93,7 +94,8 @@ export function dosyaSatirlari(talimatlar: DosyaTalimati[], profil: OdemeDosyaPr
 }
 
 export function csvUret(talimatlar: DosyaTalimati[], profil: OdemeDosyaProfili): string {
-  const kacis = (h: string) => (h.includes(profil.ayrac) || h.includes('"') ? `"${h.replace(/"/g, '""')}"` : h);
+  // SEC-09: dosya Excel'de de açılır; alıcı ünvanı/açıklama formül olarak çalışmasın.
+  const kacis = (ham: string) => { const h = tabloMetniGuvenli(ham); return h.includes(profil.ayrac) || h.includes('"') ? `"${h.replace(/"/g, '""')}"` : h; };
   return dosyaSatirlari(talimatlar, profil).map((s) => s.map(kacis).join(profil.ayrac)).join("\r\n") + "\r\n";
 }
 

@@ -1,4 +1,5 @@
 "use client";
+import { csvHucresi } from "@tekirextra/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { OdemeFisi, type FisBaslangici, type FisTipi } from "./odeme-fisi";
@@ -368,7 +369,7 @@ export default function KasaBankaSayfasi() {
         h.tutarTry,
       ]),
     ];
-    const b = "\uFEFF" + rows.map((r) => r.map((x) => `"${String(x).replaceAll('"', '""')}"`).join(";")).join("\n");
+    const b = "\uFEFF" + rows.map((r) => r.map(csvHucresi).join(";")).join("\n");
     const u = URL.createObjectURL(new Blob([b], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = u;

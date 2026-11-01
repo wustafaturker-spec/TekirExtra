@@ -24,7 +24,7 @@ import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiEksik, tesli
 import { FormGrubu } from "@/components/form-grubu";
 import { AlanIpucu } from "@/components/alan-ipucu";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili, belgeNoMetni, bugunTR, faturaKurTipi, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili, belgeNoMetni, bugunTR, faturaKurTipi, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi, csvHucresi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -229,7 +229,7 @@ interface BelgeDetay extends Belge {
 const tl = (d: string | number, doviz: string | null | undefined = "TRY"): string => paraBicimi(d, doviz);
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 function csvHucre(deger: string | number | null): string {
-  return "\"" + String(deger ?? "").replaceAll("\"", "\"\"") + "\"";
+  return csvHucresi(deger);
 }
 
 /** SAT-10: satır bazında miktar yalnız siparişten irsaliyeye dönüşümde girilir. */

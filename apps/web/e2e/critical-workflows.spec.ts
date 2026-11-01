@@ -1608,6 +1608,21 @@ test("filtrelenmiş belgeler UTF-8 CSV olarak dışa aktarılır", async ({ page
   expect(icerik).not.toContain("SP-002");
 });
 
+test("SEC-09: CSV'de formülle başlayan cari ünvanı çalışmaz", async ({ page }) => {
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [{
+    id: "b1", no: "SP-001", tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07", genelToplam: "-1200.00", dovizCinsi: "TRY", faturaId: null,
+    cari: { id: "c1", kod: "C001", unvan: '=HYPERLINK("http://kotu.example","Tıkla")' },
+  }] } }));
+  await page.goto("/panel/belgeler");
+  const indirmeSozu = page.waitForEvent("download");
+  await page.getByRole("button", { name: "CSV dışa aktar" }).click();
+  let icerik = "";
+  for await (const parca of await (await indirmeSozu).createReadStream()) icerik += parca.toString("utf8");
+  expect(icerik).toContain(`"'=HYPERLINK(""http://kotu.example"",""Tıkla"")"`);
+  expect(icerik).not.toMatch(/;"=HYPERLINK/);
+  expect(icerik).toContain('"-1200.00"');
+});
+
 test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ page }) => {
   const fatura = (id: string, no: string, unvan: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin", toplamMatrah: "1000.00",

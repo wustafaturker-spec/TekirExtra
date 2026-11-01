@@ -101,3 +101,12 @@ describe("PlatformOdemeRaporuService", () => {
     expect(sayfa.getRow(4).getCell(11).value).toBe(5500);
   });
 });
+
+describe("SEC-09 CSV formül enjeksiyonu", () => {
+  it("formülle başlayan firma ünvanı etkisizleşir", async () => {
+    const { s } = servis({ platform_odeme_raporu: [odeme({ unvan: '=HYPERLINK("http://k.example","Tıkla")' })] });
+    const metin = (await s.disariAktar("2026-11-01", "2026-11-30", {}, "csv")).icerik.toString("utf8");
+    expect(metin).toContain(`;"'=HYPERLINK(""http://k.example"",""Tıkla"")";`);
+    expect(metin).not.toMatch(/;=HYPERLINK/);
+  });
+});

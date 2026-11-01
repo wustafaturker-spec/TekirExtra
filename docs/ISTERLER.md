@@ -1460,7 +1460,7 @@ Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLA
 | SEC-06 | ✅ **Rate limit ve proxy** (2026-11-01; `core/guvenlik/proxy-guveni.ts`; pilot zinciri cloudflared → Next → API yerel olduğundan `loopback`): `TRUST_PROXY` yalnız proxy sayısı/alt ağıyla kullanılır (`true` üretimde reddedilir); pilot tüneli için doğru değer verilir. | O |
 | SEC-07 | ✅ **/metrics** (2026-11-01; API ve worker metrik ucu aynı kural): üretimde `METRICS_TOKEN` yoksa uç kapalıdır; token zamanlamaya dayanıklı karşılaştırılır. | O |
 | SEC-08 | ✅ **Yapay zekâ adresi** (2026-11-01; SEC-03 ile: kiracı adresli istek `disFetch` üzerinden): kiracı adresi bağlantı anında çözülür; özel/iç IP'ye çıkan adres reddedilir. | O |
-| SEC-09 | **Formül enjeksiyonu:** bütün Excel/CSV dışa aktarımlarında `= + - @` ile başlayan metinler kaçışlanır (sayılar hariç). | O |
+| SEC-09 | ✅ **Formül enjeksiyonu** (2026-11-01; ortak `csvHucresi`/`tabloMetniGuvenli` (`packages/shared/src/tablo-hucresi.ts`): web'deki 9 CSV dışa aktarımı, platform ödeme raporu, banka toplu ödeme ve maaş transfer dosyası; mali müşavir/muhasebe aktarımları zaten kaçışlıyordu. xlsx metin hücreleri formül olarak çalışmadığı için değişmedi): bütün Excel/CSV dışa aktarımlarında `= + - @` ile başlayan metinler kaçışlanır (sayılar hariç). | O |
 | SEC-10 | **Web güvenlik başlıkları:** CSP, X-Frame-Options/frame-ancestors, nosniff, Referrer-Policy, Permissions-Policy. | O |
 | SEC-11 | AES-GCM çözmede etiket uzunluğu 16 bayta sabitlenir. | D |
 | SEC-12 | Girişte kayıtlı olmayan e-postada da sabit maliyetli parola karşılaştırması yapılır (zamanlamadan kullanıcı varlığı anlaşılmaz). | D |
