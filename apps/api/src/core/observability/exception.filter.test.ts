@@ -64,3 +64,29 @@ describe("ObservabilityExceptionFilter havuz yoğunluğu (STK-35)", () => {
     expect(setHeader).not.toHaveBeenCalled();
   });
 });
+
+describe("ObservabilityExceptionFilter istek gövdesi hataları (SEC-04)", () => {
+  const calistir = (hata: unknown) => {
+    const json = vi.fn();
+    const status = vi.fn(() => ({ json }));
+    const host = { switchToHttp: () => ({ getRequest: () => ({ headers: {}, method: "POST", path: "/auth/giris" }), getResponse: () => ({ status }) }) };
+    new ObservabilityExceptionFilter({ increment: vi.fn() } as never).catch(hata, host as never);
+    return { status, json };
+  };
+  const govdeHatasi = (status: number, type: string, expose = true) => Object.assign(new Error("x"), { status, type, expose });
+
+  it("sıkıştırılmış gövde 415, bozuk JSON 400, büyük gövde 413 döner", () => {
+    const a = calistir(govdeHatasi(415, "encoding.unsupported"));
+    expect(a.status).toHaveBeenCalledWith(415);
+    expect(a.json).toHaveBeenCalledWith({ statusCode: 415, message: "Sıkıştırılmış istek gövdesi desteklenmiyor" });
+    expect(calistir(govdeHatasi(400, "entity.parse.failed")).status).toHaveBeenCalledWith(400);
+    expect(calistir(govdeHatasi(413, "entity.too.large")).status).toHaveBeenCalledWith(413);
+  });
+
+  it("expose olmayan ya da 5xx durumlu hata 500 kalır, ayrıntı sızmaz", () => {
+    const a = calistir(govdeHatasi(400, "x", false));
+    expect(a.status).toHaveBeenCalledWith(500);
+    expect(a.json).toHaveBeenCalledWith({ message: "Beklenmeyen sunucu hatası" });
+    expect(calistir(govdeHatasi(503, "x")).status).toHaveBeenCalledWith(500);
+  });
+});

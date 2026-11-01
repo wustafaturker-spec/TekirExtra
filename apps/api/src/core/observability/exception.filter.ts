@@ -18,6 +18,24 @@ export function yogunlukHatasiMi(hata: unknown): boolean {
   return typeof kod === "string" && YOGUNLUK_KODLARI.has(kod);
 }
 
+/**
+ * body-parser'ın istek gövdesi hataları (http-errors: `expose` + 4xx `status`):
+ * bozuk JSON, büyük gövde, sıkıştırılmış gövde (SEC-04 `inflate: false`).
+ * İstemci hatasıdır; 500 yerine kendi durumu ve Türkçe iletiyle döner.
+ */
+const GOVDE_HATASI_ILETILERI: Record<string, string> = {
+  "encoding.unsupported": "Sıkıştırılmış istek gövdesi desteklenmiyor",
+  "entity.parse.failed": "İstek gövdesi geçerli JSON değil",
+  "entity.too.large": "İstek gövdesi çok büyük",
+  "charset.unsupported": "İstek karakter kümesi desteklenmiyor",
+};
+export function istemciGovdeHatasi(hata: unknown): { status: number; mesaj: string } | null {
+  if (!(hata instanceof Error)) return null;
+  const h = hata as Error & { status?: unknown; expose?: unknown; type?: unknown };
+  if (h.expose !== true || typeof h.status !== "number" || h.status < 400 || h.status > 499) return null;
+  return { status: h.status, mesaj: GOVDE_HATASI_ILETILERI[String(h.type)] ?? "İstek gövdesi işlenemedi" };
+}
+
 @Catch()
 export class ObservabilityExceptionFilter implements ExceptionFilter {
   constructor(private readonly metrics: MetricsService) {}
@@ -30,11 +48,12 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();
+    const istemci = istemciGovdeHatasi(exception);
     const status = exception instanceof HttpException
       ? exception.getStatus()
       : exception instanceof ZodError
         ? 400
-        : 500;
+        : istemci?.status ?? 500;
     const requestId = String(req.headers["x-request-id"] ?? "unknown");
     this.metrics.increment("errors_total", { status_code: String(status) });
     const logAlanlari = {
@@ -64,7 +83,9 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
             ),
             error: "Bad Request",
           }
-        : { message: "Beklenmeyen sunucu hatası" };
+        : istemci
+          ? { statusCode: istemci.status, message: istemci.mesaj }
+          : { message: "Beklenmeyen sunucu hatası" };
     if (yogun) res.setHeader("Retry-After", String(RETRY_AFTER_SN));
     res.status(status).json(body);
   }
