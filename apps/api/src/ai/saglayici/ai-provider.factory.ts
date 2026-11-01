@@ -30,8 +30,8 @@ export function kiraciAdresiHatasi(adres: string): string | null {
   if (url.username || url.password) return "Adreste kullanıcı adı/parola olamaz.";
   const ana = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (isIP(ana)) return "Adres IP değil alan adı olmalı.";
-  if (!ana.includes(".") || /(^|\.)(localhost|local|internal|lan|home|corp)$/.test(ana)) {
-    return "Yerel ağ adresleri kullanılamaz.";
+  if (!ana.includes(".") || /(^|\.)(localhost|local|internal|lan|home|corp|nip\.io|sslip\.io|xip\.io|localtest\.me)$/.test(ana)) {
+    return "Yerel veya dinamik DNS yönlendirme adresleri kullanılamaz.";
   }
   return null;
 }

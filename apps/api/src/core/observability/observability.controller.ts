@@ -1,4 +1,4 @@
-import { Controller, Get, Header } from "@nestjs/common";
+import { Controller, Get, Header, Headers, UnauthorizedException } from "@nestjs/common";
 import { Public } from "../../auth/public.decorator";
 import { MetricsService } from "./metrics.service";
 
@@ -9,5 +9,14 @@ export class ObservabilityController {
   @Get()
   @Public()
   @Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-  metricsEndpoint(): string { return this.metrics.render(); }
+  metricsEndpoint(@Headers("authorization") authHeader?: string): string {
+    const requiredToken = process.env.METRICS_TOKEN?.trim();
+    if (requiredToken) {
+      const providedToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
+      if (providedToken !== requiredToken) {
+        throw new UnauthorizedException("Geçersiz veya eksik metrik erişim anahtarı");
+      }
+    }
+    return this.metrics.render();
+  }
 }

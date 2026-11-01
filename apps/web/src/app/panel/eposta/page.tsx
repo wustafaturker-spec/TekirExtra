@@ -2,6 +2,7 @@
 
 import { asistaniAc } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import DOMPurify from "dompurify";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Alert } from "@/components/ui";
@@ -148,6 +149,16 @@ export default function GelenEpostalarSayfasi() {
   const [bayraklilar, setBayraklilar] = useState<Record<string, boolean>>({});
   const [iletiTaslak, setIletiTaslak] = useState<IletiTaslagi | null>(null);
   const [mobilDetayAcik, setMobilDetayAcik] = useState(false);
+
+  // Gelen e-postanın HTML içeriğini XSS saldırılarına karşı temizle
+  const guvenliIcerikHtml = useMemo(() => {
+    if (!seciliEposta?.icerikHtml) return "";
+    if (typeof window === "undefined") return "";
+    return DOMPurify.sanitize(seciliEposta.icerikHtml, {
+      USE_PROFILES: { html: true },
+      ADD_ATTR: ["target"],
+    });
+  }, [seciliEposta?.icerikHtml]);
 
   const [yukleniyor, setYukleniyor] = useState(false);
   const [senkronizeEdiliyor, setSenkronizeEdiliyor] = useState(false);
@@ -1209,10 +1220,10 @@ export default function GelenEpostalarSayfasi() {
 
                 {/* İLETİ GÖVDESİ (OUTLOOK BODY TYPOGRAPHY) */}
                 <div className="email-body-content bg-white rounded border border-[#e1dfdd] p-5 text-sm leading-relaxed text-[#242424] min-h-[300px]">
-                  {htmlModu && seciliEposta.icerikHtml ? (
+                  {htmlModu && guvenliIcerikHtml ? (
                     <div
                       className="prose max-w-none text-sm text-[#242424]"
-                      dangerouslySetInnerHTML={{ __html: seciliEposta.icerikHtml }}
+                      dangerouslySetInnerHTML={{ __html: guvenliIcerikHtml }}
                     />
                   ) : (
                     <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed">

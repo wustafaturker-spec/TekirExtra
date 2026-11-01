@@ -7,6 +7,9 @@ const logger = new Logger("AiSaglayici");
 
 function ozelIp(adres: string): boolean {
   const ip = adres.toLowerCase().split("%")[0];
+  if (ip.startsWith("::ffff:")) {
+    return ozelIp(ip.slice(7));
+  }
   if (isIP(ip) === 4) {
     const [a, b] = ip.split(".").map(Number);
     return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;

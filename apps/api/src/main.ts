@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 import { NabizLogger } from "./core/nabiz/nabiz";
@@ -18,7 +19,12 @@ import { json, urlencoded } from "express";
 uretimSirlariniDenetle();
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bodyParser: false, logger: new NabizLogger() });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false, logger: new NabizLogger() });
+  const trustProxy = process.env.TRUST_PROXY;
+  if (trustProxy) {
+    const sayi = Number(trustProxy);
+    app.set("trust proxy", Number.isInteger(sayi) ? sayi : trustProxy === "true" ? true : trustProxy);
+  }
   app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb" }));
   app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true }));
   const metrics = app.get(MetricsService);
