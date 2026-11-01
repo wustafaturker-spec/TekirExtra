@@ -25,4 +25,15 @@ describe("IyzicoAdapter", () => {
     expect(iyzicoKesintisi({ itemTransactions: [{ merchantPayoutAmount: 10 }, {}] }).isyerineGecenKalemleri).toBeUndefined();
     expect(iyzicoKesintisi({}).fraudDurumu).toBeUndefined();
   });
+  it("KSB-43: kalem işlem numaralarını okur ve /payment/refund'a iade gönderir", async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "success", paymentStatus: "SUCCESS", price: 100, paidPrice: 100, itemTransactions: [{ paymentTransactionId: "PTX-1", merchantPayoutAmount: 96 }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "success", paymentTransactionId: "PTX-1", price: 40, hostReference: "H9" }) });
+    vi.stubGlobal("fetch", f);
+    const c = { apiKey: "api", secretKey: "secret", baseUrl: "https://sandbox-api.iyzipay.com" };
+    expect((await new IyzicoAdapter().odemeSonucu(c, "tok")).odemeIslemNolari).toEqual(["PTX-1"]);
+    await expect(new IyzicoAdapter().iadeEt(c, { odemeIslemNo: "PTX-1", tutar: "40.00", dovizCinsi: "TRY", conversationId: "cv" })).resolves.toEqual({ ref: "H9", tutar: "40" });
+    expect(f.mock.calls[1][0]).toBe("https://sandbox-api.iyzipay.com/payment/refund");
+    expect(JSON.parse(f.mock.calls[1][1].body)).toMatchObject({ paymentTransactionId: "PTX-1", price: "40.00", currency: "TRY", conversationId: "cv" });
+  });
 });

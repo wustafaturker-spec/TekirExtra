@@ -47,6 +47,9 @@ interface OdemeAyrintisi {
   kesinti?: IyzicoKesintisi;
 }
 
+/** KSB-43: sağlayıcı iadesi sürerken tahsilattaki kilit; yanıtsız kalırsa bu süreden sonra düşer. */
+const IADE_KILIDI_MS = 10 * 60 * 1000;
+
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 /** Ödemesi gelebilecek (sağlayıcıda para çekilebilecek) talep durumları. */
 const ODENEBILIR_DURUMLAR = ["baslatildi", "suresi_doldu", "iptal"] as const;
@@ -111,7 +114,7 @@ export class PosService {
             posHesap: { select: { id: true, ad: true, saglayici: true } },
             cari: { select: { id: true, kod: true, unvan: true } },
             fatura: { select: { id: true, no: true } },
-            iadeler: { select: { id: true, tutar: true, tarih: true, neden: true }, orderBy: { createdAt: "asc" } },
+            iadeler: { select: { id: true, tutar: true, tarih: true, neden: true, saglayiciyaGonderildi: true }, orderBy: { createdAt: "asc" } },
           },
         }),
         tx.posTahsilat.count({ where }),
@@ -566,9 +569,111 @@ export class PosService {
    * faturaya mahsup edilmiş kısım geri açılır. İade sağlayıcı/banka
    * panelinden ayrıca yapılır.
    */
-  async iade(id: string, girdi: { tutar: string; tarih: string; neden: string }) {
+  /**
+   * KSB-43: iyzico/PayTR tahsilatında iade önce sağlayıcıya gönderilir; sağlayıcı
+   * onaylarsa TekirExtra kaydı yazılır, reddederse hiçbir şey yazılmaz.
+   * `saglayiciyaGonder: false` ("panelden zaten iade ettim") ve banka POS'u
+   * slibi yalnız kayıttır. Aynı tahsilata eşzamanlı ikinci sağlayıcı iadesi,
+   * tahsilattaki iade kilidiyle engellenir (10 dk sonra kendiliğinden düşer).
+   */
+  async iade(id: string, girdi: { tutar: string; tarih: string; neden: string; saglayiciyaGonder?: boolean }) {
     const { tenantId, userId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "POS iadesi");
+    const on = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.posTahsilat.findUnique({ where: { id }, include: { posHesap: { include: { baglanti: true } }, iadeler: { select: { tutar: true } } } }),
+    );
+    if (!on || on.durum !== "odendi" || !on.hareketId) throw new BadRequestException("Yalnız ödenmiş POS tahsilatı iade edilebilir");
+    const saglayici = on.kanal !== "slip" && ["iyzico", "paytr"].includes(on.posHesap.saglayici) ? (on.posHesap.saglayici as "iyzico" | "paytr") : null;
+    const gonder = Boolean(saglayici) && girdi.saglayiciyaGonder !== false;
+    const kilitTaze = on.iadeKilidi && on.iadeKilidi.getTime() > Date.now() - IADE_KILIDI_MS;
+    if (kilitTaze) throw new ConflictException("Bu tahsilat için sağlayıcıya gönderilmiş, sonucu beklenen bir iade var; birkaç dakika sonra tekrar deneyin");
+    if (!gonder) return this.iadeYaz(tenantId, userId, id, girdi, { saglayiciyaGonderildi: false });
+
+    const tutar = new Prisma.Decimal(girdi.tutar);
+    const kalan = on.iadeler.reduce((t, i) => t.sub(i.tutar), on.tutar);
+    if (tutar.gt(kalan)) throw new BadRequestException(`İade tutarı iade edilebilir kalanı (${kalan.toFixed(2)} ${on.dovizCinsi}) aşıyor`);
+    if (!on.posHesap.baglanti || !on.saglayiciOdemeId) throw new BadRequestException("Tahsilatın sağlayıcı bağlantısı ya da ödeme numarası yok; iadeyi 'sağlayıcıya gönderme' seçerek elle kaydedin");
+    // Kayıt sağlayıcı onayından sonra yazılır; kur eksikliği gibi bir engel para iade edildikten sonra çıkmasın.
+    if (on.dovizCinsi !== "TRY") await this.prisma.tenantIslem(tenantId, (tx) => kurZorunlu(tx, on.dovizCinsi, new Date(girdi.tarih), "satis", tenantId));
+    const kilit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.posTahsilat.updateMany({
+        where: { id, OR: [{ iadeKilidi: null }, { iadeKilidi: { lt: new Date(Date.now() - IADE_KILIDI_MS) } }] },
+        data: { iadeKilidi: new Date() },
+      }),
+    );
+    if (kilit.count !== 1) throw new ConflictException("Bu tahsilat için sağlayıcıya gönderilmiş, sonucu beklenen bir iade var; birkaç dakika sonra tekrar deneyin");
+    const kilidiAc = async () => {
+      try {
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id }, data: { iadeKilidi: null } }));
+      } catch {
+        /* kilit 10 dk sonra kendiliğinden düşer */
+      }
+    };
+
+    let ref: string;
+    try {
+      // Her iade isteği tek işlem numarasıyla gider (iyzico conversationId / PayTR reference_no).
+      const islemNo = randomBytes(16).toString("hex");
+      if (saglayici === "iyzico") {
+        const config = this.config(on.posHesap.baglanti.sifreliConfig);
+        if (!on.saglayiciToken) throw new Error("iyzico ödeme anahtarı (token) yok");
+        const ayrinti = await new IyzicoAdapter().odemeSonucu(config, on.saglayiciToken);
+        if (ayrinti.odemeIslemNolari.length !== 1) throw new Error("iyzico ödemesinde tek sepet kalemi bulunamadı");
+        ref = (await new IyzicoAdapter().iadeEt(config, { odemeIslemNo: ayrinti.odemeIslemNolari[0], tutar: tutar.toFixed(2), dovizCinsi: on.dovizCinsi, conversationId: islemNo })).ref;
+      } else {
+        ref = (await new PaytrAdapter().iadeEt(this.paytrConfig(on.posHesap.baglanti.sifreliConfig), { merchantOid: on.saglayiciOdemeId, tutar: tutar.toFixed(2), referans: islemNo })).ref;
+      }
+    } catch (hata) {
+      await kilidiAc();
+      const mesaj = hata instanceof Error ? hata.message : String(hata);
+      throw new BadGatewayException(`${saglayici === "iyzico" ? "iyzico" : "PayTR"} iadeyi gerçekleştirmedi: ${mesaj}. TekirExtra'da kayıt yazılmadı.`);
+    }
+    try {
+      return await this.iadeYaz(tenantId, userId, id, girdi, { saglayiciyaGonderildi: true, saglayiciIadeRef: ref });
+    } catch (hata) {
+      // Para müşteriye döndü ama kayıt yazılamadı: kilit kalkar, bekleyen iade tahsilatta saklanır ve bildirilir.
+      const mesaj = hata instanceof Error ? hata.message : String(hata);
+      this.logger.error(`Sağlayıcı iadesi kaydedilemedi (${id}, ${tutar.toFixed(2)} ${on.dovizCinsi}, ref ${ref}): ${mesaj}`);
+      try {
+        await this.prisma.tenantIslem(tenantId, (tx) =>
+          tx.posTahsilat.update({ where: { id }, data: { iadeKilidi: null, bekleyenSaglayiciIade: { tutar: tutar.toFixed(2), tarih: girdi.tarih, neden: girdi.neden, ref } } }),
+        );
+      } catch (yazmaHatasi) {
+        this.logger.error(`Bekleyen sağlayıcı iadesi de yazılamadı (${id}): ${yazmaHatasi instanceof Error ? yazmaHatasi.message : String(yazmaHatasi)}`);
+      }
+      await this.kayitsizIadeyiBildir(tenantId, on, tutar, ref);
+      throw new ConflictException(`İade sağlayıcıda yapıldı (ref ${ref}) ama TekirExtra kaydı yazılamadı: ${mesaj}. Sorunu giderip iadeyi 'sağlayıcıya gönderme' seçerek elle kaydedin; sağlayıcıya yeniden göndermeyin.`);
+    }
+  }
+
+  private async kayitsizIadeyiBildir(tenantId: string, kayit: { id: string; dovizCinsi: string }, tutar: Prisma.Decimal, ref: string) {
+    try {
+      await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () =>
+        this.bildirimler.uret({
+          tur: "entegrasyon",
+          onem: "kritik",
+          baslik: "POS iadesi sağlayıcıda yapıldı, kayıt bekliyor",
+          aciklama: `${tutar.toFixed(2)} ${kayit.dovizCinsi} iade sağlayıcıda gerçekleşti (ref ${ref}) ama TekirExtra kaydı yazılamadı. İadeyi "sağlayıcıya gönderme" seçerek elle kaydedin; sağlayıcıya yeniden göndermeyin.`,
+          birlesimAnahtari: `pos-kayitsiz-iade:${kayit.id}:${ref}`,
+          kaynakTur: "pos_tahsilat",
+          kaynakRef: kayit.id,
+          hedefYol: "/panel/kasa-banka/pos",
+          roller: ["yonetici", "muhasebe"],
+        }),
+      );
+    } catch (hata) {
+      this.logger.warn(`Kayıtsız iade bildirimi üretilemedi: ${hata instanceof Error ? hata.message : String(hata)}`);
+    }
+  }
+
+  /** İadenin TekirExtra kaydı: POS çıkışı, cari borcu, fatura mahsubunun geri açılması. */
+  private async iadeYaz(
+    tenantId: string,
+    userId: string,
+    id: string,
+    girdi: { tutar: string; tarih: string; neden: string },
+    saglayici: { saglayiciyaGonderildi: boolean; saglayiciIadeRef?: string },
+  ) {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM pos_tahsilatlari WHERE id = ${id}::uuid FOR UPDATE`;
       const kayit = await tx.posTahsilat.findUnique({
@@ -625,8 +730,10 @@ export class PosService {
         },
       });
       const iade = await tx.posIade.create({
-        data: { tenantId, posTahsilatId: kayit.id, tutar, tarih, neden: girdi.neden, hareketId: hareket.id, userId },
+        data: { tenantId, posTahsilatId: kayit.id, tutar, tarih, neden: girdi.neden, hareketId: hareket.id, userId, ...saglayici },
       });
+      // KSB-43: kayıt yazıldı; kilit ve (elle tamamlanan) bekleyen sağlayıcı iadesi temizlenir.
+      await tx.posTahsilat.update({ where: { id: kayit.id }, data: { iadeKilidi: null, bekleyenSaglayiciIade: Prisma.DbNull } });
       await this.kapamayiIadeyleEsitle(tx, tenantId, kayit.id);
       return iade;
     });
@@ -637,6 +744,8 @@ export class PosService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const iade = await tx.posIade.findUnique({ where: { id: iadeId }, include: { hareket: true } });
       if (!iade) throw new NotFoundException("POS iadesi bulunamadı");
+      // KSB-43: para sağlayıcı üzerinden müşteriye döndü; kayıt geri alınırsa defter sağlayıcıyla çelişir.
+      if (iade.saglayiciyaGonderildi) throw new BadRequestException("Sağlayıcıya gönderilmiş iade geri alınamaz; para müşteriye iade edildi");
       await this.donemKilidi.tarihDogrula(tenantId, iade.tarih, "POS iadesini geri alma", tx);
       if (iade.hareket.ekstreSatirId) throw new BadRequestException("İade banka ekstresine bağlı; önce ekstre eşleşmesini geri alın");
       const cariler = await tx.cariHareket.findMany({ where: { kaynakTur: "pos_iade", kaynakRef: iade.hareketId } });

@@ -79,7 +79,7 @@ interface Tahsilat {
   gecOdeme: boolean;
   iptalNedeni: string | null;
   iadeEdilen: string;
-  iadeler: { id: string; tutar: string; tarih: string; neden: string }[];
+  iadeler: { id: string; tutar: string; tarih: string; neden: string; saglayiciyaGonderildi: boolean }[];
   taksitSayisi: number;
   odenenTutar: string | null;
   komisyonTutari: string | null;
@@ -888,10 +888,17 @@ export default function PosHesaplari() {
                   {t.iptalNedeni && <small>İptal: {t.iptalNedeni}</small>}
                   {t.iadeler.map((i) => (
                     <small key={i.id} className="pos-refund">
-                      İade {para(i.tutar, t.dovizCinsi)} · {new Date(i.tarih).toLocaleDateString("tr-TR")} · {i.neden}{" "}
-                      <button type="button" className="link-button" onClick={() => islemAc({ tur: "iade_geri_al", tahsilat: t, iade: i })}>
-                        geri al
-                      </button>
+                      İade {para(i.tutar, t.dovizCinsi)} · {new Date(i.tarih).toLocaleDateString("tr-TR")} · {i.neden}
+                      {i.saglayiciyaGonderildi ? (
+                        <> · {t.posHesap.saglayici === "paytr" ? "PayTR" : "iyzico"} üzerinden iade edildi</>
+                      ) : (
+                        <>
+                          {t.kanal !== "slip" && " · elle"}{" "}
+                          <button type="button" className="link-button" onClick={() => islemAc({ tur: "iade_geri_al", tahsilat: t, iade: i })}>
+                            geri al
+                          </button>
+                        </>
+                      )}
                     </small>
                   ))}
                 </td>

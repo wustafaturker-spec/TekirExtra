@@ -15,6 +15,18 @@ export class PaytrAdapter {
     if (!yanit.ok || govde.status !== "success" || !govde.id || !govde.link) throw new Error(`PayTR ödeme linki oluşturulamadı: ${govde.reason ?? yanit.statusText}`);
     return { id: govde.id, link: govde.link };
   }
+  /**
+   * KSB-43: PayTR iade servisi (`/odeme/iade`). Tutar nokta ayraçlı TL metnidir
+   * (ör. "10.25"); imza merchant_id + merchant_oid + return_amount + salt.
+   */
+  async iadeEt(config: PaytrConfig, girdi: { merchantOid: string; tutar: string; referans: string }) {
+    const token = hmac(`${config.merchantId}${girdi.merchantOid}${girdi.tutar}${config.merchantSalt}`, config.merchantKey);
+    const form = new URLSearchParams({ merchant_id: config.merchantId, merchant_oid: girdi.merchantOid, return_amount: girdi.tutar, paytr_token: token, reference_no: girdi.referans });
+    const yanit = await fetch("https://www.paytr.com/odeme/iade", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }, body: form });
+    const govde = await yanit.json().catch(() => ({})) as { status?: string; err_no?: string; err_msg?: string; reference_no?: string };
+    if (!yanit.ok || govde.status !== "success") throw new Error(`PayTR iadeyi reddetti: ${govde.err_msg ?? yanit.statusText}${govde.err_no ? ` (${govde.err_no})` : ""}`);
+    return { ref: govde.reference_no ?? girdi.referans };
+  }
   callbackDogrula(config: PaytrConfig, girdi: PaytrCallback): boolean {
     const beklenen = hmac(`${girdi.callback_id}${girdi.merchant_oid}${config.merchantSalt}${girdi.status}${girdi.total_amount}`, config.merchantKey);
     const a = Buffer.from(beklenen); const b = Buffer.from(girdi.hash ?? ""); return a.length === b.length && timingSafeEqual(a, b);

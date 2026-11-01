@@ -4096,6 +4096,10 @@ model PosTahsilat {
   hostReferansi        String?           @map("host_referansi")
   /// KSB-38: sağlayıcıdan son durum sorgusu; worker aynı talebi 30 dakikada bir sorgular.
   saglayiciSorguTarihi DateTime?         @map("saglayici_sorgu_tarihi")
+  /// KSB-43: sağlayıcıya iade isteği sürerken konur; aynı tahsilata eşzamanlı ikinci iade gitmez.
+  iadeKilidi           DateTime?         @map("iade_kilidi")
+  /// KSB-43: sağlayıcı iadeyi onayladı ama TekirExtra kaydı yazılamadı; { tutar, tarih, neden, ref }.
+  bekleyenSaglayiciIade Json?            @map("bekleyen_saglayici_iade")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 
@@ -4154,6 +4158,9 @@ model PosIade {
   neden         String
   hareketId     String   @unique @map("hareket_id") @db.Uuid
   userId        String?  @map("user_id") @db.Uuid
+  /// KSB-43: iade sağlayıcının iade servisiyle yapıldı; false = elle (sağlayıcı panelinden ya da banka POS'u).
+  saglayiciyaGonderildi Boolean @default(false) @map("saglayiciya_gonderildi")
+  saglayiciIadeRef      String? @map("saglayici_iade_ref")
   createdAt     DateTime @default(now()) @map("created_at")
 
   posTahsilat PosTahsilat      @relation(fields: [posTahsilatId], references: [id], onDelete: Cascade)

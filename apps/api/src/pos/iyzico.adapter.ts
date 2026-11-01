@@ -70,6 +70,10 @@ export class IyzicoAdapter {
       odenen: Number(veri.paidPrice ?? veri.price ?? 0),
       taksit: Number(veri.installment) >= 1 ? Number(veri.installment) : 1,
       kesinti: iyzicoKesintisi(veri),
+      // KSB-43: iade sepet kalemi bazındadır; kalemlerin ödeme işlem numaraları.
+      odemeIslemNolari: (Array.isArray(veri.itemTransactions) ? veri.itemTransactions : [])
+        .map((k: { paymentTransactionId?: unknown }) => metin(k?.paymentTransactionId))
+        .filter((x: string | undefined): x is string => Boolean(x)),
       dovizCinsi: String(veri.currency ?? "TRY"),
       // PLT-14: ödeyen ödeme sayfasında kartını kaydettiyse dolu gelir.
       kart: veri.cardUserKey && veri.cardToken
@@ -83,6 +87,22 @@ export class IyzicoAdapter {
     const veri = await this.istek(config, "/payment/auth", girdi);
     if (!veri.paymentId) throw new Error("iyzico ödeme numarası dönmedi");
     return { odemeId: String(veri.paymentId), tutar: Number(veri.paidPrice ?? veri.price ?? 0), dovizCinsi: String(veri.currency ?? "TRY") };
+  }
+
+  /**
+   * KSB-43: sepet kalemi iadesi (`/payment/refund`). Kısmi iade desteklenir;
+   * tutar kalemin ödenen tutarını ve iade edilebilir kalanı aşamaz. Başarısızlıkta
+   * iyzico'nun iletisiyle hata fırlatır.
+   */
+  async iadeEt(config: IyzicoConfig, girdi: { odemeIslemNo: string; tutar: string; dovizCinsi: string; conversationId: string }) {
+    const veri = await this.istek(config, "/payment/refund", {
+      locale: "tr",
+      conversationId: girdi.conversationId,
+      paymentTransactionId: girdi.odemeIslemNo,
+      price: girdi.tutar,
+      currency: girdi.dovizCinsi,
+    });
+    return { ref: metin(veri.hostReference) ?? metin(veri.paymentTransactionId) ?? girdi.odemeIslemNo, tutar: String(veri.price ?? girdi.tutar) };
   }
 
   async kartSil(config: IyzicoConfig, cardUserKey: string, cardToken: string) {

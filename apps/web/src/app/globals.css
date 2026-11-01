@@ -4176,6 +4176,9 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 /* KSB-40: POS hesabı dönem özeti */
 .pos-ozet { line-height: 1.35; }
 .pos-section-head > select { width: auto; min-width: 9rem; }
+/* KSB-43: iade formunda sağlayıcıya gönderme seçeneği */
+.pos-iade-secenek { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); }
+.pos-iade-secenek span { display: grid; gap: .15rem; }
 .pos-form__wide { grid-column: span 2; }
 .pos-refund { color: var(--text-muted); display: block; font-size: .72rem; margin-top: .2rem; }
 .pos-account-grid article > div:last-child > .pos-actions { justify-content: flex-end; }

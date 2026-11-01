@@ -142,6 +142,83 @@ describe("PosService (P1-6)", () => {
     });
   });
 
+  describe("KSB-43 sağlayıcıya iade", () => {
+    const odenmis = (saglayici: "iyzico" | "paytr", ek: Record<string, unknown> = {}) => ({
+      id: "t1", durum: "odendi", tutar: D(1000), dovizCinsi: "TRY", posHesapId: "p1", cariId: "c1", faturaId: null, hareketId: "h0", kanal: "baglanti",
+      saglayiciToken: "tok", saglayiciOdemeId: saglayici === "iyzico" ? "38611970" : "OID1", iadeKilidi: null,
+      posHesap: { ad: `${saglayici} POS`, saglayici, baglanti: { sifreliConfig: "x" } },
+      hareket: { faturaMahsubu: null }, iadeler: [], ...ek,
+    });
+    const tx = (kayit: unknown) => ({
+      $queryRaw: vi.fn(),
+      posTahsilat: { findUnique: vi.fn().mockResolvedValue(kayit), update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      kasaBankaHareket: { create: vi.fn(async ({ data }) => ({ id: "ih", ...data })) },
+      cariHareket: { create: vi.fn() },
+      posIade: { create: vi.fn(async ({ data }) => data) },
+    });
+    it("iyzico'ya kalem işlem numarasıyla iade gönderir, onaydan sonra kaydı yazar", async () => {
+      const sonuc = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ odemeIslemNolari: ["PTX-1"] } as never);
+      const iade = vi.spyOn(IyzicoAdapter.prototype, "iadeEt").mockResolvedValue({ ref: "HOST-9", tutar: "400.00" });
+      const t = tx(odenmis("iyzico"));
+      await kur(t).service.iade("t1", { tutar: "400", tarih: "2026-11-01", neden: "Müşteri iadesi" });
+      expect(iade.mock.calls[0][1]).toMatchObject({ odemeIslemNo: "PTX-1", tutar: "400.00", dovizCinsi: "TRY" });
+      expect(t.posIade.create.mock.calls[0][0].data).toMatchObject({ saglayiciyaGonderildi: true, saglayiciIadeRef: "HOST-9" });
+      expect(t.posTahsilat.updateMany.mock.calls[0][0].data).toHaveProperty("iadeKilidi");
+      sonuc.mockRestore(); iade.mockRestore();
+    });
+    it("sağlayıcı reddederse hiçbir kayıt yazmaz, kilidi kaldırır", async () => {
+      const sonuc = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ odemeIslemNolari: ["PTX-1"] } as never);
+      const iade = vi.spyOn(IyzicoAdapter.prototype, "iadeEt").mockRejectedValue(new Error("Refund amount exceeds"));
+      const t = tx(odenmis("iyzico"));
+      await expect(kur(t).service.iade("t1", { tutar: "400", tarih: "2026-11-01", neden: "Müşteri iadesi" })).rejects.toThrow(/iadeyi gerçekleştirmedi: Refund amount exceeds/);
+      expect(t.kasaBankaHareket.create).not.toHaveBeenCalled();
+      expect(t.posIade.create).not.toHaveBeenCalled();
+      expect(t.posTahsilat.update).toHaveBeenCalledWith({ where: { id: "t1" }, data: { iadeKilidi: null } });
+      sonuc.mockRestore(); iade.mockRestore();
+    });
+    it("PayTR'ye sipariş numarasıyla iade gönderir", async () => {
+      const iade = vi.spyOn(PaytrAdapter.prototype, "iadeEt").mockResolvedValue({ ref: "R1" });
+      const t = tx(odenmis("paytr"));
+      await kur(t).service.iade("t1", { tutar: "250.5", tarih: "2026-11-01", neden: "Müşteri iadesi" });
+      expect(iade.mock.calls[0][1]).toMatchObject({ merchantOid: "OID1", tutar: "250.50" });
+      expect(t.posIade.create.mock.calls[0][0].data).toMatchObject({ saglayiciyaGonderildi: true, saglayiciIadeRef: "R1" });
+      iade.mockRestore();
+    });
+    it("'sağlayıcıya gönderme' seçilirse sağlayıcı çağrılmaz, iade elle işaretlenir", async () => {
+      const iade = vi.spyOn(IyzicoAdapter.prototype, "iadeEt");
+      const t = tx(odenmis("iyzico"));
+      await kur(t).service.iade("t1", { tutar: "400", tarih: "2026-11-01", neden: "Panelden iade edildi", saglayiciyaGonder: false });
+      expect(iade).not.toHaveBeenCalled();
+      expect(t.posIade.create.mock.calls[0][0].data).toMatchObject({ saglayiciyaGonderildi: false });
+      iade.mockRestore();
+    });
+    it("sürmekte olan bir sağlayıcı iadesi varken ikinci iadeyi reddeder", async () => {
+      const iade = vi.spyOn(IyzicoAdapter.prototype, "iadeEt");
+      const t = tx(odenmis("iyzico", { iadeKilidi: new Date() }));
+      await expect(kur(t).service.iade("t1", { tutar: "400", tarih: "2026-11-01", neden: "Müşteri iadesi" })).rejects.toThrow(/sonucu beklenen bir iade var/);
+      // Kilit yarışında başka istek önce davrandıysa da sağlayıcıya gitmez.
+      const t2 = tx(odenmis("iyzico"));
+      t2.posTahsilat.updateMany.mockResolvedValue({ count: 0 });
+      await expect(kur(t2).service.iade("t1", { tutar: "400", tarih: "2026-11-01", neden: "Müşteri iadesi" })).rejects.toThrow(/sonucu beklenen bir iade var/);
+      expect(iade).not.toHaveBeenCalled();
+      iade.mockRestore();
+    });
+    it("sağlayıcı onaylayıp kayıt yazılamazsa bekleyen iadeyi saklar ve kritik bildirim üretir", async () => {
+      const iade = vi.spyOn(PaytrAdapter.prototype, "iadeEt").mockResolvedValue({ ref: "R1" });
+      const t = tx(odenmis("paytr"));
+      t.kasaBankaHareket.create.mockRejectedValue(new Error("db kesildi"));
+      const { service, bildirimler } = kur(t);
+      await expect(service.iade("t1", { tutar: "100", tarih: "2026-11-01", neden: "Müşteri iadesi" })).rejects.toThrow(/sağlayıcıda yapıldı \(ref R1\)/);
+      expect(t.posTahsilat.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ bekleyenSaglayiciIade: expect.objectContaining({ ref: "R1", tutar: "100.00" }) }) }));
+      expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ onem: "kritik" }));
+      iade.mockRestore();
+    });
+    it("sağlayıcıya gönderilmiş iade geri alınamaz", async () => {
+      const t = { posIade: { findUnique: vi.fn().mockResolvedValue({ id: "i1", saglayiciyaGonderildi: true, tarih: new Date(), hareket: {} }) } };
+      await expect(kur(t).service.iadeGeriAl("i1", "Yanlış girildi")).rejects.toThrow(/geri alınamaz/);
+    });
+  });
+
   describe("KSB-38 sağlayıcıdan sorgulama", () => {
     function sorguTx(ek: Record<string, unknown> = {}) {
       return {
@@ -232,14 +309,14 @@ describe("PosService (P1-6)", () => {
 
   describe("iade", () => {
     const tahsilat = (iadeler: { tutar: number; mahsup: number }[]) => ({
-      id: "t1", durum: "odendi", tutar: D(1000), dovizCinsi: "TRY", posHesapId: "p1", cariId: "c1", faturaId: "f1",
-      posHesap: { ad: "Ziraat POS" },
+      id: "t1", durum: "odendi", tutar: D(1000), dovizCinsi: "TRY", posHesapId: "p1", cariId: "c1", faturaId: "f1", hareketId: "h0", kanal: "slip",
+      posHesap: { ad: "Ziraat POS", saglayici: "banka" },
       hareket: { faturaMahsubu: D(800) },
       iadeler: iadeler.map((i) => ({ tutar: D(i.tutar), hareket: { faturaMahsubu: D(-i.mahsup) } })),
     });
     const iadeTx = (kayit: unknown) => ({
       $queryRaw: vi.fn(),
-      posTahsilat: { findUnique: vi.fn().mockResolvedValue(kayit) },
+      posTahsilat: { findUnique: vi.fn().mockResolvedValue(kayit), update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       kasaBankaHareket: { create: vi.fn(async ({ data }) => ({ id: "ih", ...data })) },
       cariHareket: { create: vi.fn() },
       posIade: { create: vi.fn(async ({ data }) => data) },

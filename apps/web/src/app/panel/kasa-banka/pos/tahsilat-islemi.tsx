@@ -14,7 +14,7 @@ export type TahsilatIslemTuru = "iptal" | "iade" | "slip_geri_al" | "iade_geri_a
 
 export interface IslemHedefi {
   tur: TahsilatIslemTuru;
-  tahsilat: { id: string; tutar: string; dovizCinsi: string; iadeEdilen: string; cari: { unvan: string }; posHesap: { ad: string } };
+  tahsilat: { id: string; tutar: string; dovizCinsi: string; iadeEdilen: string; kanal?: string; cari: { unvan: string }; posHesap: { ad: string; saglayici?: string } };
   iade?: { id: string; tutar: string };
 }
 
@@ -35,6 +35,10 @@ export function TahsilatIslemi({ hedef, onKapat, onTamam }: { hedef: IslemHedefi
   const [tarih, setTarih] = useState(bugunTR());
   const [hata, setHata] = useState("");
   const [isleniyor, setIsleniyor] = useState(false);
+  // KSB-43: iyzico/PayTR bağlantı tahsilatında iade varsayılan olarak sağlayıcıya da gönderilir.
+  const saglayici = tahsilat.kanal !== "slip" && (tahsilat.posHesap.saglayici === "iyzico" || tahsilat.posHesap.saglayici === "paytr") ? tahsilat.posHesap.saglayici : null;
+  const saglayiciAdi = saglayici === "iyzico" ? "iyzico" : "PayTR";
+  const [saglayiciyaGonder, setSaglayiciyaGonder] = useState(true);
 
   async function gonder(e: FormEvent) {
     e.preventDefault();
@@ -45,8 +49,13 @@ export function TahsilatIslemi({ hedef, onKapat, onTamam }: { hedef: IslemHedefi
         await api(`/pos/tahsilatlar/${tahsilat.id}/iptal`, { method: "POST", body: JSON.stringify({ neden }) });
         onTamam("Ödeme bağlantısı iptal edildi. Müşteri bağlantıyı yine de öderse tahsilat kaydedilir ve bildirim düşer.");
       } else if (tur === "iade") {
-        await api(`/pos/tahsilatlar/${tahsilat.id}/iade`, { method: "POST", body: JSON.stringify({ tutar: Number(tutar).toFixed(2), tarih, neden }) });
-        onTamam(`${para(tutar, tahsilat.dovizCinsi)} iade kaydedildi; cari borçlandı, faturaya mahsup edilen kısım yeniden açıldı. İadeyi sağlayıcı/banka panelinden de yapmayı unutmayın.`);
+        const gonderildi = Boolean(saglayici) && saglayiciyaGonder;
+        await api(`/pos/tahsilatlar/${tahsilat.id}/iade`, { method: "POST", body: JSON.stringify({ tutar: Number(tutar).toFixed(2), tarih, neden, ...(saglayici ? { saglayiciyaGonder } : {}) }) });
+        onTamam(
+          gonderildi
+            ? `${para(tutar, tahsilat.dovizCinsi)} ${saglayiciAdi} üzerinden müşteriye iade edildi ve kaydedildi; cari borçlandı, faturaya mahsup edilen kısım yeniden açıldı.`
+            : `${para(tutar, tahsilat.dovizCinsi)} iade kaydedildi; cari borçlandı, faturaya mahsup edilen kısım yeniden açıldı.${saglayici ? ` Para ${saglayiciAdi}'ya gönderilmedi; iadenin ${saglayiciAdi} panelinden yapıldığından emin olun.` : " İadeyi banka POS'undan da yapmayı unutmayın."}`,
+        );
       } else if (tur === "slip_geri_al") {
         await api(`/pos/tahsilatlar/${tahsilat.id}/slip-geri-al`, { method: "POST", body: JSON.stringify({ neden }) });
         onTamam("Slip tahsilatı geri alındı; POS ve cari hareketleri silindi.");
@@ -80,6 +89,19 @@ export function TahsilatIslemi({ hedef, onKapat, onTamam }: { hedef: IslemHedefi
             <Field label="İade tarihi">
               <Input required type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} />
             </Field>
+            {saglayici && (
+              <label className="pos-form__wide pos-iade-secenek">
+                <input type="checkbox" checked={saglayiciyaGonder} onChange={(e) => setSaglayiciyaGonder(e.target.checked)} />
+                <span>
+                  <strong>Parayı {saglayiciAdi} üzerinden müşteriye iade et</strong>
+                  <small className="muted">
+                    {saglayiciyaGonder
+                      ? `${saglayiciAdi} iadeyi onaylarsa kayıt yazılır; reddederse hiçbir şey yazılmaz. Gönderilen iade sonradan geri alınamaz.`
+                      : `İade yalnız TekirExtra'ya kaydedilir; ${saglayiciAdi} panelinden zaten iade ettiyseniz bu seçeneği kullanın.`}
+                  </small>
+                </span>
+              </label>
+            )}
           </>
         )}
         <Field label="Gerekçe" className={tur === "iade" ? undefined : "pos-form__wide"}>

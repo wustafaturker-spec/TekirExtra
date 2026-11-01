@@ -15,7 +15,11 @@ export const posSlipSemasi = z.object({
   /** KSB-36 */
   taksitSayisi: z.number().int().min(1).max(12).optional(),
 });
-export const posIadeSemasi = z.object({ tutar: tutarSemasi, tarih: z.string().date("Geçersiz tarih (YYYY-AA-GG)"), neden: nedenSemasi });
+export const posIadeSemasi = z.object({
+  tutar: tutarSemasi, tarih: z.string().date("Geçersiz tarih (YYYY-AA-GG)"), neden: nedenSemasi,
+  /** KSB-43: iyzico/PayTR tahsilatında varsayılan true; false = sağlayıcı panelinden zaten iade edildi. */
+  saglayiciyaGonder: z.boolean().optional(),
+});
 /** KSB-40: dönem özeti; boşsa bu ay. */
 export const posOzetSemasi = z.object({
   baslangic: z.string().date("Geçersiz başlangıç tarihi").optional(),
