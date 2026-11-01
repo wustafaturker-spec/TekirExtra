@@ -299,3 +299,18 @@ describe("faturasız kapatılan kur farkı (KSB-28)", () => {
     expect(dengeli(aleyh)).toBe(true);
   });
 });
+
+describe("POS iadesi (KSB-41)", () => {
+  it("KSB-41: POS iadesi cariyi borçlandırıp POS'u alacaklandırır; aktarımdaki komisyon masrafı ters çevrilmez", () => {
+    const g = girdi();
+    g.hesaplar.set("pos:p", { tur: "pos", id: "p", ad: "iyzico", dovizCinsi: "TRY", sira: 1, muhasebeKodu: "108.01.001" });
+    const m = { id: "km", tarih: "2026-09-15", belgeNo: null, aciklama: "iyzico komisyon/kesinti", saticiUnvan: "iyzico", kategoriAd: "Banka ve POS Komisyonları", kategoriKodu: "653.01", cariId: null, matrah: D("35.15"), kdvTutari: D(0), toplam: D("35.15"), stopajTutari: D(0), kur: D(1), dovizCinsi: "TRY" };
+    const komisyon = hareket({ id: "kh", tip: "tediye", tutar: D("35.15"), tutarTry: D("35.15"), hesap: { tur: "pos", id: "p" }, kaynakTur: "pos_mutabakat", masrafId: "km", makbuzNo: null });
+    const iade = hareket({ id: "ih", tip: "tediye", tutar: D(400), tutarTry: D(400), hesap: { tur: "pos", id: "p" }, kaynakTur: "pos_iade", cariId: "m", faturaTipi: "satis", makbuzNo: null });
+    const { fisler } = fisleriUret({ ...g, masraflar: [m], tumMasraflar: new Map([["km", m]]), hareketler: [komisyon, iade] });
+    const iadeFisi = fisler.find((f) => f.kaynak.tur === "hareket" && f.kaynak.id === "ih")!;
+    expect(ozet(iadeFisi)).toEqual(["120.01.M001 B 400.00", "108.01.001 A 400.00"]);
+    expect(ozet(fisler.find((f) => f.kaynak.tur === "masraf")!)[0]).toBe("653.01 B 35.15");
+    expect(fisler.flatMap((f) => f.satirlar).filter((s) => s.hesapKodu.startsWith("653") && s.alacak.gt(0))).toEqual([]);
+  });
+});

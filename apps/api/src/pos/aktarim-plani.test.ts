@@ -49,6 +49,11 @@ describe("aktarimPlani", () => {
     expect(plan.gruplar[0]).toMatchObject({ brut: "900.00", onerilenKomisyon: "27.58", net: "872.42" });
   });
 
+  it("KSB-41: kısmi iade komisyonu azaltmaz; kalanın tamamı aktarılırken tahsilatın komisyonunun tamamı önerilir", () => {
+    const t = [{ id: "x", odemeTarihi: an("2026-10-01T10:00:00"), net: D(600), komisyon: D("35.15") }];
+    expect(aktarimPlani(D(600), t, hesap, "2026-10-02").gruplar[0]).toMatchObject({ brut: "600.00", onerilenKomisyon: "35.15", net: "564.85" });
+  });
+
   it("tahsilatlardan büyük bakiyenin artanını dağıtılamayan olarak verir; sıfır ve eksi bakiyede plan boştur", () => {
     expect(aktarimPlani(D(2500), tahsilatlar, hesap, "2026-10-02").dagitilamayan).toBe("200.00");
     expect(aktarimPlani(D(0), tahsilatlar, hesap, "2026-10-02").gruplar).toEqual([]);

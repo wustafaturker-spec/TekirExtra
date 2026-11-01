@@ -259,5 +259,21 @@ describe("PosService (P1-6)", () => {
       expect(tx.kasaBankaHareket.create.mock.calls[0][0].data.faturaMahsubu.toFixed(2)).toBe("-300.00");
       expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "borc", kaynakTur: "pos_iade" });
     });
+
+    it("KSB-41: iade komisyona dokunmaz; POS'tan iade tutarı kadar çıkar, masraf açılmaz", async () => {
+      const tx = {
+        ...iadeTx({ ...tahsilat([]), komisyonTutari: D("35.15"), netTutar: D("964.85"), komisyonKaynagi: "saglayici" }),
+        posTahsilat: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+        masraf: { create: vi.fn() },
+        masrafKategori: { upsert: vi.fn() },
+      };
+      tx.posTahsilat.findUnique.mockResolvedValue({ ...tahsilat([]), komisyonTutari: D("35.15"), netTutar: D("964.85"), komisyonKaynagi: "saglayici" });
+      const { service } = kur(tx);
+      await service.iade("t1", { tutar: "1000", tarih: "2026-10-02", neden: "Tam iade" });
+      expect(tx.kasaBankaHareket.create.mock.calls[0][0].data.tutar.toFixed(2)).toBe("1000.00");
+      for (const c of [...tx.posTahsilat.update.mock.calls, ...tx.posTahsilat.updateMany.mock.calls])
+        expect(Object.keys(c[0].data)).not.toEqual(expect.arrayContaining(["komisyonTutari"]));
+      expect(tx.masraf.create).not.toHaveBeenCalled();
+    });
   });
 });
