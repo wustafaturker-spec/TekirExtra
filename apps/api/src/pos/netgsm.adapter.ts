@@ -1,3 +1,4 @@
+import { disFetch } from "../core/guvenlik/dis-istek";
 export interface NetgsmConfig {
   kullaniciAdi: string;
   parola: string;
@@ -18,7 +19,7 @@ export function netgsmTelefonuDuzenle(telefon: string): string {
 export class NetgsmAdapter {
   async smsGonder(config: NetgsmConfig, telefon: string, mesaj: string): Promise<NetgsmGonderimSonucu> {
     const adres = `${(config.servisAdresi ?? "https://api.netgsm.com.tr").replace(/\/$/, "")}/sms/rest/v2/send`;
-    const yanit = await fetch(adres, {
+    const yanit = await disFetch(adres, {
       method: "POST",
       headers: {
         Authorization: `Basic ${Buffer.from(`${config.kullaniciAdi}:${config.parola}`).toString("base64")}`,

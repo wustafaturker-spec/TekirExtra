@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServiceUnavailableException } from "@nestjs/common";
 import { AiProviderFactory, kiraciAdresiHatasi } from "./ai-provider.factory";
 
-vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.215.14", family: 4 }]) }));
 
 describe("AiProviderFactory", () => {
   afterEach(() => {
@@ -71,7 +71,7 @@ describe("AiProviderFactory", () => {
     await expect(AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-x", baseUrl: "https://ai.example.com/v1" }).metinUret({ prompt: "x" })).rejects.toThrow(/yanıt vermedi/);
     expect(fetchSahte).not.toHaveBeenCalled();
 
-    vi.mocked(lookup).mockResolvedValueOnce([{ address: "203.0.113.10", family: 4 }] as never);
+    vi.mocked(lookup).mockResolvedValueOnce([{ address: "93.184.215.14", family: 4 }] as never);
     fetchSahte.mockResolvedValueOnce({ status: 302, ok: false });
     await expect(AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-x", baseUrl: "https://ai.example.com/v1" }).metinUret({ prompt: "x" })).rejects.toThrow(/yönlendirme/);
     expect(fetchSahte.mock.calls[0][1].redirect).toBe("manual");

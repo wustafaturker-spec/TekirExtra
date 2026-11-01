@@ -1454,12 +1454,12 @@ Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLA
 |---|---|---|
 | SEC-01 | ✅ **Gelen e-posta HTML'i (kritik)** (2026-11-01; `core/guvenlik/eposta-html.ts` sanitize-html 2.18.1 ile kayıtta, liste ve ayrıntı okumasında; istemci DOMPurify; e2e `eposta-xss.spec.ts` eski sürümde düşer): dışarıdan gelen e-posta HTML'i sunucuda kayıt anında temizlenir (betik, olay öznitelikleri, `javascript:` bağlantıları, form, iframe, stil içi betik atılır); istemci DOMPurify ile ikinci kez temizler. Bağlantılar yeni sekmede `rel="noopener noreferrer"` ile açılır. Eski kayıtlar okunurken de temizlenir. | Y |
 | SEC-02 | **Next.js yükseltmesi (kritik):** web ≥ 15.5.28 (görüntü optimizasyonu RCE/SSRF açıkları); pilot yeni sürümle yeniden çıkarılır. | Y |
-| SEC-03 | **SSRF:** kiracının girdiği servis adresleri (iyzico, Vomsis, pazaryeri, SMS) yalnız https ve sağlayıcının bilinen alan adları; SMTP/IMAP sunucusu iç ağ/özel IP'ye çözülürse reddedilir (bağlantı anında DNS çözümlemesiyle). Hata iletisi iç ağ ayrıntısı taşımaz. | Y |
+| SEC-03 | ✅ **SSRF** (2026-11-01; `core/guvenlik/dis-istek.ts`: kayıtta biçim + bilinen sağlayıcı alan adı, bağlantıda undici `lookup` ile çözülen IP denetimi, yönlendirme izlenmez; SMTP/IMAP çözülen genel IP'ye sabitlenir, portlar 25/465/587/2525 ve 143/993; Sovos istek fonksiyonu enjekte edilir): kiracının girdiği servis adresleri (iyzico, Vomsis, pazaryeri, SMS) yalnız https ve sağlayıcının bilinen alan adları; SMTP/IMAP sunucusu iç ağ/özel IP'ye çözülürse reddedilir (bağlantı anında DNS çözümlemesiyle). Hata iletisi iç ağ ayrıntısı taşımaz. | Y |
 | SEC-04 | **Bağımlılıklar:** nodemailer ≥ 10.1.4 (mailparser dahil), body-parser/qs, zod ve diğer üretim bağımlılıklarındaki yüksek açıklar kapatılır; geliştirme araçları (vitest/eslint) ayrı izlenir. | Y |
 | SEC-05 | **Pilot imajı:** çalışma imajı güncel Debian tabanıyla yeniden oluşturulur; düzeltmesi olan kritik/yüksek işletim sistemi paketleri kalmaz. | Y |
 | SEC-06 | **Rate limit ve proxy:** `TRUST_PROXY` yalnız proxy sayısı/alt ağıyla kullanılır (`true` üretimde reddedilir); pilot tüneli için doğru değer verilir. | O |
 | SEC-07 | **/metrics:** üretimde `METRICS_TOKEN` yoksa uç kapalıdır; token zamanlamaya dayanıklı karşılaştırılır. | O |
-| SEC-08 | **Yapay zekâ adresi:** kiracı adresi bağlantı anında çözülür; özel/iç IP'ye çıkan adres reddedilir. | O |
+| SEC-08 | ✅ **Yapay zekâ adresi** (2026-11-01; SEC-03 ile: kiracı adresli istek `disFetch` üzerinden): kiracı adresi bağlantı anında çözülür; özel/iç IP'ye çıkan adres reddedilir. | O |
 | SEC-09 | **Formül enjeksiyonu:** bütün Excel/CSV dışa aktarımlarında `= + - @` ile başlayan metinler kaçışlanır (sayılar hariç). | O |
 | SEC-10 | **Web güvenlik başlıkları:** CSP, X-Frame-Options/frame-ancestors, nosniff, Referrer-Policy, Permissions-Policy. | O |
 | SEC-11 | AES-GCM çözmede etiket uzunluğu 16 bayta sabitlenir. | D |

@@ -14,6 +14,7 @@ import {
 import { BAGLANTI_AILELERI, BANKA_SAGLAYICILARI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI, SMS_SAGLAYICILARI } from "@tekirextra/shared";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
+import { disAdresHatasi, disFetch } from "../core/guvenlik/dis-istek";
 import { degisiklikleriBul } from "../core/denetim-farki";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -25,9 +26,36 @@ import { seriEngelleri } from "./seri-dogrulama";
  * üretimde de kullanılabilir; listede olmayan yalnızca mock ile çalışır.
  */
 const GERCEK_ADAPTORLER: Record<string, () => EntegratorAdapter> = {
-  sovos: () => new SovosEntegratorAdapter(),
+  sovos: () => new SovosEntegratorAdapter(disFetch),
   nes: () => new NesEntegratorAdapter(),
 };
+
+/**
+ * SEC-03: alan adı sabit olan sağlayıcılarda servis adresi yalnız o alan adında
+ * olabilir (test/canlı alt alanları dahil). e-Belge entegratörlerinin adresi
+ * kiracıya özel verildiği için yalnız genel https adresi denetlenir.
+ */
+const SAGLAYICI_ALANLARI: Record<string, readonly string[]> = {
+  iyzico: ["iyzipay.com"],
+  paytr: ["paytr.com"],
+  netgsm: ["netgsm.com.tr"],
+  vomsis: ["vomsis.com"],
+  hepsiburada: ["hepsiburada.com"],
+  trendyol: ["trendyol.com"],
+  n11: ["n11.com"],
+  amazon_tr: ["amazon.com"],
+};
+const ADRES_ALANLARI = ["servisAdresi", "earsivServisAdresi", "irsaliyeServisAdresi"] as const;
+const ADRES_ETIKETI: Record<(typeof ADRES_ALANLARI)[number], string> = { servisAdresi: "Servis adresi", earsivServisAdresi: "e-Arşiv servis adresi", irsaliyeServisAdresi: "e-İrsaliye servis adresi" };
+
+export function servisAdresiHatasi(saglayici: string, config: Partial<Record<(typeof ADRES_ALANLARI)[number], string | undefined>>): string | null {
+  for (const alan of ADRES_ALANLARI) {
+    const adres = config[alan]?.trim();
+    const hata = adres ? disAdresHatasi(adres, SAGLAYICI_ALANLARI[saglayici]) : null;
+    if (hata) return `${ADRES_ETIKETI[alan]}: ${hata}`;
+  }
+  return null;
+}
 
 export const baglantiOlusturSemasi = z.object({
   aile: z.enum(BAGLANTI_AILELERI),
@@ -55,6 +83,8 @@ export const baglantiOlusturSemasi = z.object({
 }).superRefine((girdi, ctx) => {
   const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : girdi.aile === "sms" ? SMS_SAGLAYICILARI : girdi.aile === "banka" ? BANKA_SAGLAYICILARI : [];
   if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
+  const adresHatasi = servisAdresiHatasi(girdi.saglayici, girdi.config);
+  if (adresHatasi) ctx.addIssue({ code: "custom", path: ["config"], message: adresHatasi });
   // GİB e-Fatura ve e-Arşiv serilerinin farklı olmasını ister; aynı önek
   // girilirse hata gönderim anında entegratörden döner, formda yakalamak daha
   // ucuz.
@@ -255,6 +285,8 @@ export class BaglantilarService {
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.baglanti.findUnique({ where: { id } });
       if (!mevcut) throw new NotFoundException("Bağlantı bulunamadı");
+      const adresHatasi = servisAdresiHatasi(mevcut.saglayici, girdi.config);
+      if (adresHatasi) throw new BadRequestException(adresHatasi);
 
       let onceki: Record<string, unknown> = {};
       try {

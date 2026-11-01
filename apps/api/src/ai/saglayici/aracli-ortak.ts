@@ -1,29 +1,14 @@
 import { Logger, ServiceUnavailableException } from "@nestjs/common";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { disFetch, ozelIpMi } from "../../core/guvenlik/dis-istek";
 import { SAGLAYICI_ZAMAN_ASIMI_MS } from "./ai-provider.interface";
 
 const logger = new Logger("AiSaglayici");
 
-function ozelIp(adres: string): boolean {
-  const ip = adres.toLowerCase().split("%")[0];
-  if (ip.startsWith("::ffff:")) {
-    return ozelIp(ip.slice(7));
-  }
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
-  }
-  if (isIP(ip) === 6) {
-    return ip === "::" || ip === "::1" || ip.startsWith("fc") || ip.startsWith("fd") || /^fe[89ab]/.test(ip) || ip.startsWith("ff") || ip.startsWith("2001:db8:");
-  }
-  return true;
-}
-
 export async function dnsAdresiniDogrula(url: string): Promise<void> {
   const anaMakine = new URL(url).hostname.replace(/^\[|\]$/g, "");
   const adresler = await lookup(anaMakine, { all: true, verbatim: true });
-  if (!adresler.length || adresler.some((a) => ozelIp(a.address))) {
+  if (!adresler.length || adresler.some((a) => ozelIpMi(a.address))) {
     throw new ServiceUnavailableException("Sağlayıcı adresi özel veya yerel bir ağa çözümleniyor.");
   }
 }
@@ -33,7 +18,8 @@ export async function saglayiciIstegi(ad: string, url: string, basliklar: Record
   let yanit: Response;
   try {
     if (secenek.dnsDogrula) await dnsAdresiniDogrula(url);
-    yanit = await fetch(url, {
+    // SEC-08: kiracı adresinde bağlantı IP'si de denetlenir (DNS rebinding).
+    yanit = await (secenek.dnsDogrula ? disFetch : fetch)(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...basliklar },
       body: JSON.stringify(govde),

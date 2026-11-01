@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { disFetch } from "../core/guvenlik/dis-istek";
 
 export interface IyzicoConfig { apiKey: string; secretKey: string; baseUrl: string }
 
@@ -47,7 +48,7 @@ export class IyzicoAdapter {
     const body = JSON.stringify(govde); const randomKey = `${Date.now()}${randomBytes(8).toString("hex")}`;
     const signature = createHmac("sha256", config.secretKey).update(randomKey + path + body).digest("hex");
     const auth = Buffer.from(`apiKey:${config.apiKey}&randomKey:${randomKey}&signature:${signature}`).toString("base64");
-    const yanit = await fetch(`${config.baseUrl}${path}`, { method, headers: { Authorization: `IYZWSv2 ${auth}`, "x-iyzi-rnd": randomKey, "Content-Type": "application/json" }, body });
+    const yanit = await disFetch(`${config.baseUrl}${path}`, { method, headers: { Authorization: `IYZWSv2 ${auth}`, "x-iyzi-rnd": randomKey, "Content-Type": "application/json" }, body });
     const veri = await yanit.json().catch(() => ({})) as any;
     if (!yanit.ok || veri.status !== "success") throw new Error(veri.errorMessage ?? `iyzico servisi HTTP ${yanit.status}`);
     return veri;

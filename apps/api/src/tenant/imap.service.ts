@@ -10,6 +10,7 @@ import { EpostaService } from "./eposta.service";
 import { AiService } from "../ai/ai.service";
 import { coz } from "../core/kripto";
 import { epostaHtmliniTemizle } from "../core/guvenlik/eposta-html";
+import { guvenliAdresCoz } from "../core/guvenlik/dis-istek";
 import { otomatikBasliklarMi } from "../ai/teklif-talebi/teklif-talebi.kurallari";
 import { yanitlananKimlikler } from "../belgeler/teklif-takibi/teklif-takip.kurallari";
 import { teklifYanitiniEslestir } from "../belgeler/teklif-takibi/teklif-yaniti";
@@ -39,8 +40,11 @@ export class ImapService {
     const { ImapFlow } = await import("imapflow");
     const { simpleParser } = await import("mailparser");
 
+    // SEC-03: özel IP'ye çözülen sunucuya bağlanılmaz; bağlantı çözülen IP'ye sabitlenir.
+    const sunucu = await guvenliAdresCoz(ayar.imapHost);
     const client = new ImapFlow({
-      host: ayar.imapHost,
+      host: sunucu.ip,
+      servername: sunucu.servername,
       port: ayar.imapPort ?? 993,
       secure: (ayar.imapGuvenlik ?? "ssl") === "ssl",
       auth: { user: ayar.imapKullaniciAdi, pass: parola },

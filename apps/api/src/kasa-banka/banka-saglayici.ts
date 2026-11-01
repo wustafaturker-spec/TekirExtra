@@ -1,3 +1,4 @@
+import { disFetch } from "../core/guvenlik/dis-istek";
 /**
  * KSB-30: banka hareketi sağlayıcıları için ortak altyapı.
  *
@@ -82,7 +83,7 @@ export async function bankaIstegi(saglayici: string, url: string, init: RequestI
   let sonHata: unknown;
   for (let deneme = 1; deneme <= BANKA_HTTP.deneme; deneme++) {
     try {
-      const yanit = await fetch(url, { ...init, signal: AbortSignal.timeout(BANKA_HTTP.zamanAsimiMs) });
+      const yanit = await disFetch(url, { ...init, signal: AbortSignal.timeout(BANKA_HTTP.zamanAsimiMs) });
       if (!geciciMi(yanit.status) || deneme === BANKA_HTTP.deneme) return yanit;
       await BANKA_HTTP.bekle(beklemeSuresi(yanit, deneme));
     } catch (hata) {

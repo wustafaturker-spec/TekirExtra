@@ -6,14 +6,21 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { coz, sifrele } from "../core/kripto";
 import { degisiklikleriBul } from "../core/denetim-farki";
+import { anaMakineHatasi, guvenliAdresCoz } from "../core/guvenlik/dis-istek";
+
+/** SEC-03: kiracının sunucusuna yalnız posta portlarından bağlanılır (iç ağ port taraması olmasın). */
+export const SMTP_PORTLARI = [25, 465, 587, 2525] as const;
+export const IMAP_PORTLARI = [143, 993] as const;
+const sunucuAdi = (v: string) => anaMakineHatasi(v) === null;
 
 export const epostaAyarlariSemasi = z.object({
-  host: z.string().min(1).max(255), port: z.number().int().min(1).max(65535),
+  host: z.string().trim().min(1).max(255).refine(sunucuAdi, { message: "SMTP sunucusu genel bir alan adı olmalı (IP, yerel ağ ya da dinamik DNS adresi kullanılamaz)" }),
+  port: z.number().int().refine((p) => (SMTP_PORTLARI as readonly number[]).includes(p), { message: `SMTP portu ${SMTP_PORTLARI.join(", ")} olmalı` }),
   guvenlik: z.enum(["yok", "starttls", "ssl"]), kullaniciAdi: z.string().max(255).optional(), parola: z.string().max(500).optional(),
   gondericiAdi: z.string().min(1).max(120), gondericiEposta: z.email(), yanitAdresi: z.email().optional().or(z.literal("")),
   // IMAP (Gelen e-posta)
-  imapHost: z.string().max(255).optional().or(z.literal("")),
-  imapPort: z.number().int().min(1).max(65535).optional().default(993),
+  imapHost: z.string().trim().max(255).refine(sunucuAdi, { message: "IMAP sunucusu genel bir alan adı olmalı (IP, yerel ağ ya da dinamik DNS adresi kullanılamaz)" }).optional().or(z.literal("")),
+  imapPort: z.number().int().refine((p) => (IMAP_PORTLARI as readonly number[]).includes(p), { message: `IMAP portu ${IMAP_PORTLARI.join(", ")} olmalı` }).optional().default(993),
   imapGuvenlik: z.enum(["ssl", "starttls", "yok"]).optional().default("ssl"),
   imapKullaniciAdi: z.string().max(255).optional().or(z.literal("")),
   imapParola: z.string().max(500).optional().or(z.literal("")),
@@ -38,7 +45,9 @@ export class EpostaService {
     const baglam = this.baglam(); const ayar = baglam ? await this.saklananAyar(baglam.tenantId) : null;
     if (!ayar) return { transport: createTransport({ ...sureler, host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false }), from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>" };
     const parola = ayar.sifreliParola ? coz(ayar.sifreliParola) : undefined;
-    return { transport: createTransport({ ...sureler, host: ayar.host, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
+    // SEC-03: ad bağlantıdan önce çözülür, özel IP reddedilir ve bağlantı o IP'ye sabitlenir; sertifika asıl adla doğrulanır.
+    const { ip, servername } = await guvenliAdresCoz(ayar.host);
+    return { transport: createTransport({ ...sureler, host: ip, tls: { servername }, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
   }
   private async kaydet(alici: string, konu: string, tur: string, durum: string, ekSayisi: number, hata?: unknown) {
     const baglam = this.baglam(); if (!baglam) return;
@@ -121,8 +130,10 @@ export class EpostaService {
     }
     const parola = coz(ayar.imapSifreliParola);
     const { ImapFlow } = await import("imapflow");
+    const sunucu = await guvenliAdresCoz(ayar.imapHost).catch((h: unknown) => { throw new BadRequestException(h instanceof Error ? h.message : "IMAP sunucusu kullanılamaz"); });
     const client = new ImapFlow({
-      host: ayar.imapHost,
+      host: sunucu.ip,
+      servername: sunucu.servername,
       port: ayar.imapPort ?? 993,
       secure: (ayar.imapGuvenlik ?? "ssl") === "ssl",
       auth: { user: ayar.imapKullaniciAdi, pass: parola },

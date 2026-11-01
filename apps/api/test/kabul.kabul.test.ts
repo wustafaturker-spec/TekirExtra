@@ -101,7 +101,7 @@ async function entegratorBagla(jeton: string, saglayici = "izibiz") {
     body: {
       aile: "ebelge",
       saglayici,
-      config: { kullaniciAdi: "kabul-test", parola: "gizli", servisAdresi: "https://test" },
+      config: { kullaniciAdi: "kabul-test", parola: "gizli", servisAdresi: "https://efatura.entegrator.example.com" },
     },
   });
   expect(olustur.durum, JSON.stringify(olustur.veri)).toBe(201);
