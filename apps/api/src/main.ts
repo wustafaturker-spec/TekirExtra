@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
+import { trustProxyDegeri } from "./core/guvenlik/proxy-guveni";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
@@ -20,11 +21,8 @@ uretimSirlariniDenetle();
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false, logger: new NabizLogger() });
-  const trustProxy = process.env.TRUST_PROXY;
-  if (trustProxy) {
-    const sayi = Number(trustProxy);
-    app.set("trust proxy", Number.isInteger(sayi) ? sayi : trustProxy === "true" ? true : trustProxy);
-  }
+  const trustProxy = trustProxyDegeri(process.env.TRUST_PROXY);
+  if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
   // SEC-04: istemciler gövdeyi sıkıştırmaz; sıkıştırılmış gövde (gzip bombası ve
   // body-parser açma hatası DoS'u) 415 ile reddedilir.
   app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb", inflate: false }));
