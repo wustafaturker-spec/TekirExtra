@@ -5,7 +5,8 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Download, RefreshCw } from "lucide-react";
 import { ayBasiTR, bugunTR, takvimGunuMu, yilBasiTR } from "@tekirextra/shared";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, Select, Stat, StatGrid, TableWrap, Tabs, Tarih } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Para, Select, Stat, StatGrid, TableWrap, Tabs, Tarih } from "@/components/ui";
+import { AbonelikIadeFormu } from "@/components/abonelik-iade-formu";
 import { PlatformArama, PlatformListeDurumu } from "@/components/platform-liste";
 import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 import { platformIndir } from "@/lib/platform-api";
@@ -19,8 +20,10 @@ interface Satir {
   odemeId: string; tenantId: string; unvan: string; vkn: string | null; zaman: string; aySayisi: number;
   toplam: string; matrah: string; kdv: string; kdvHesaplandi: boolean; kaynak: "elle" | "saglayici"; saglayici: string | null; kanal: Kanal;
   oncekiDonemSonu: string | null; yeniDonemSonu: string; not: string | null; kaydeden: string | null; fatura: { no: string | null; durum: string } | null;
+  /** PLT-46: iade toplamı. */
+  iade: string;
 }
-interface Ozet { adet: number; toplam: string; matrah: string; kdv: string; hesaplananVar: boolean; kanallar: { kanal: Kanal; adet: number; toplam: string }[] }
+interface Ozet { adet: number; toplam: string; matrah: string; kdv: string; hesaplananVar: boolean; iade: string; net: string; kanallar: { kanal: Kanal; adet: number; toplam: string }[] }
 interface Rapor {
   aralik: { baslangic: string; bitis: string };
   ozet: Ozet;
@@ -128,6 +131,7 @@ function OdemeRaporu() {
   }, [arama, filtre.arama]);
   const [hata, setHata] = useState("");
   const [indiriliyor, setIndiriliyor] = useState("");
+  const [basari, setBasari] = useState("");
 
   const aralikHatasi = filtre.bitis < filtre.baslangic ? "Bitiş tarihi başlangıçtan önce olamaz." : "";
   const suzgecSorgusu = new URLSearchParams({ baslangic: filtre.baslangic, bitis: filtre.bitis });
@@ -231,7 +235,8 @@ function OdemeRaporu() {
         </Card>
       )}
 
-      {filtre.sekme === "odemeler" && <OdemelerSekmesi rapor={rapor} aylik={aylik} sayfaDegistir={(sayfa) => filtreYaz({ sayfa })} />}
+      {basari && <Alert tone="success">{basari}</Alert>}
+      {filtre.sekme === "odemeler" && <OdemelerSekmesi rapor={rapor} aylik={aylik} sayfaDegistir={(sayfa) => filtreYaz({ sayfa })} onIade={(mesaj) => { setBasari(mesaj); rapor.yenile(); aylik.yenile(); }} />}
       {filtre.sekme === "sorunlu" && <SorunluSekmesi veri={sorunlu} />}
       {filtre.sekme === "yaklasan" && <YaklasanSekmesi veri={yaklasan} gun={filtre.gun} gunDegistir={(gun) => filtreYaz({ gun })} />}
     </div>
@@ -241,8 +246,9 @@ function OdemeRaporu() {
 type Veri<T> = { veri: T | null; yukleniyor: boolean; hata: string; yenile: () => void };
 
 /* ─── PLT-32/34: ödemeler ────────────────────────────────────────────────── */
-function OdemelerSekmesi({ rapor, aylik, sayfaDegistir }: { rapor: Veri<Rapor>; aylik: Veri<Aylik>; sayfaDegistir: (sayfa: number) => void }) {
+function OdemelerSekmesi({ rapor, aylik, sayfaDegistir, onIade }: { rapor: Veri<Rapor>; aylik: Veri<Aylik>; sayfaDegistir: (sayfa: number) => void; onIade: (mesaj: string) => void }) {
   const r = rapor.veri;
+  const [iadeSatiri, setIadeSatiri] = useState<Satir | null>(null);
   const degisim = r ? fark(r.ozet.toplam, r.onceki.ozet.toplam) : null;
   const sonSayfa = r ? Math.max(1, Math.ceil(r.toplamKayit / r.adet)) : 1;
   return (
@@ -257,6 +263,9 @@ function OdemelerSekmesi({ rapor, aylik, sayfaDegistir }: { rapor: Veri<Rapor>; 
         <Stat label="Matrah" value={r ? tl(r.ozet.matrah) : "…"} hint={r ? <>Önceki dönem: {tl(r.onceki.ozet.matrah)}</> : undefined} />
         <Stat label="KDV" value={r ? tl(r.ozet.kdv) : "…"} hint={r?.ozet.hesaplananVar ? "Elle girilen ödemelerden hesaplanan KDV içerir" : r ? <>Önceki dönem: {tl(r.onceki.ozet.kdv)}</> : undefined} />
         <Stat label="Ödeme sayısı" value={r ? r.ozet.adet.toLocaleString("tr-TR") : "…"} hint={r ? `Önceki dönem: ${r.onceki.ozet.adet.toLocaleString("tr-TR")}` : undefined} />
+        {r && Number(r.ozet.iade) > 0 && (
+          <Stat label="İade" tone="danger" value={tl(r.ozet.iade)} hint={<>Net tahsilat (iadeler düşülmüş): {tl(r.ozet.net)}</>} />
+        )}
       </StatGrid>
 
       {r && r.ozet.kanallar.length > 0 && (
@@ -284,11 +293,11 @@ function OdemelerSekmesi({ rapor, aylik, sayfaDegistir }: { rapor: Veri<Rapor>; 
           <thead>
             <tr>
               <th>Tarih</th><th>Firma</th><th>Kaynak</th><th>Süre / dönem sonu</th>
-              <th className="num">Matrah</th><th className="num">KDV</th><th className="num">Toplam</th><th>Fatura</th><th>Kaydeden</th>
+              <th className="num">Matrah</th><th className="num">KDV</th><th className="num">Toplam</th><th>Fatura</th><th>Kaydeden</th><th></th>
             </tr>
           </thead>
           <tbody>
-            <PlatformListeDurumu sutun={9} yukleniyor={rapor.yukleniyor} hata={rapor.hata} bos={Boolean(r && r.kayitlar.length === 0)} baslik="Bu dönemde ödeme yok" aciklama="Tarih aralığını ya da süzgeçleri değiştirin." onTekrar={rapor.yenile} />
+            <PlatformListeDurumu sutun={10} yukleniyor={rapor.yukleniyor} hata={rapor.hata} bos={Boolean(r && r.kayitlar.length === 0)} baslik="Bu dönemde ödeme yok" aciklama="Tarih aralığını ya da süzgeçleri değiştirin." onTekrar={rapor.yenile} />
             {!rapor.yukleniyor && r?.kayitlar.map((s) => {
               const f = FATURA[(s.fatura?.durum ?? "yok") as FaturaDurumu] ?? { ad: s.fatura?.durum ?? "", ton: "neutral" as const };
               return (
@@ -299,9 +308,10 @@ function OdemelerSekmesi({ rapor, aylik, sayfaDegistir }: { rapor: Veri<Rapor>; 
                   <td data-label="Süre / dönem sonu">{s.aySayisi} ay<small className="muted payment-report-sub">{s.oncekiDonemSonu ? <><Tarih deger={s.oncekiDonemSonu} /> → </> : null}<Tarih deger={s.yeniDonemSonu} /></small></td>
                   <td data-label="Matrah" className="num">{tl(s.matrah)}{s.kdvHesaplandi && <small className="muted payment-report-sub" title="Elle girilen toplamdan %20 KDV ile ayrıştırıldı">hesaplanan</small>}</td>
                   <td data-label="KDV" className="num">{tl(s.kdv)}</td>
-                  <td data-label="Toplam" className="num"><strong>{tl(s.toplam)}</strong></td>
+                  <td data-label="Toplam" className="num"><strong>{tl(s.toplam)}</strong>{Number(s.iade) > 0 && <small className="payment-report-sub"><Badge variant="danger">{Number(s.iade) >= Number(s.toplam) ? "İade edildi" : `İade ${Number(s.iade).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`}</Badge></small>}</td>
                   <td data-label="Fatura"><Badge variant={f.ton}>{f.ad}</Badge>{s.fatura?.no && <small className="muted payment-report-sub">{s.fatura.no}</small>}</td>
                   <td data-label="Kaydeden">{s.kaydeden ?? <span className="muted">—</span>}{s.not && <small className="muted payment-report-sub" title={s.not}>{s.not.length > 40 ? `${s.not.slice(0, 40)}…` : s.not}</small>}</td>
+                  <td data-label="">{Number(s.toplam) - Number(s.iade) > 0.004 && <Button size="sm" onClick={() => setIadeSatiri(s)}>İade et</Button>}</td>
                 </tr>
               );
             })}
@@ -317,6 +327,15 @@ function OdemelerSekmesi({ rapor, aylik, sayfaDegistir }: { rapor: Veri<Rapor>; 
           </div>
         )}
       </Card>
+      {iadeSatiri && (
+        <Modal baslik="Abonelik ödemesini iade et" aciklama={`${iadeSatiri.unvan} · ${new Date(iadeSatiri.zaman).toLocaleString("tr-TR")}`} onKapat={() => setIadeSatiri(null)}>
+          <AbonelikIadeFormu
+            odeme={{ id: iadeSatiri.odemeId, tutar: iadeSatiri.toplam, iade: iadeSatiri.iade, kaynak: iadeSatiri.kaynak, saglayici: iadeSatiri.saglayici, aySayisi: iadeSatiri.aySayisi }}
+            onVazgec={() => setIadeSatiri(null)}
+            onTamam={(mesaj) => { setIadeSatiri(null); onIade(mesaj); }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

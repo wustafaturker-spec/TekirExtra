@@ -167,7 +167,7 @@ export class PlatformOdemeRaporuService {
   async disariAktar(baslangic: string, bitis: string, suzgec: RaporSuzgeci, bicim: "xlsx" | "csv"): Promise<{ icerik: Buffer; tur: string; dosyaAdi: string }> {
     const { bas, bit } = this.aralik(baslangic, bitis);
     const satirlar = suz(await this.odemeler(bas, bit), suzgec);
-    const basliklar = ["Tarih", "Firma", "VKN", "Kaynak", "Sağlayıcı", "Süre (ay)", "Önceki dönem sonu", "Yeni dönem sonu", "Matrah", "KDV", "Toplam", "KDV hesaplandı", "Fatura durumu", "Fatura no", "Kaydeden", "Not"];
+    const basliklar = ["Tarih", "Firma", "VKN", "Kaynak", "Sağlayıcı", "Süre (ay)", "Önceki dönem sonu", "Yeni dönem sonu", "Matrah", "KDV", "Toplam", "İade", "KDV hesaplandı", "Fatura durumu", "Fatura no", "Kaydeden", "Not"];
     const degerler = satirlar.map((x) => [
       trZaman(x.zaman),
       x.unvan,
@@ -180,6 +180,7 @@ export class PlatformOdemeRaporuService {
       Number(x.matrah),
       Number(x.kdv),
       Number(x.toplam),
+      Number(x.iade),
       x.kdvHesaplandi ? "Evet" : "Hayır",
       FATURA_DURUMU_ADI[(x.fatura?.durum ?? "yok") as keyof typeof FATURA_DURUMU_ADI] ?? x.fatura?.durum ?? "",
       x.fatura?.no ?? "",
@@ -202,9 +203,9 @@ export class PlatformOdemeRaporuService {
     for (const r of degerler) sayfa.addRow(r);
     const ozet = ozetle(satirlar);
     sayfa.addRow([]);
-    sayfa.addRow(["Toplam", "", "", "", "", "", "", "", Number(ozet.matrah), Number(ozet.kdv), Number(ozet.toplam)]).font = { bold: true };
-    for (const kolon of [9, 10, 11]) sayfa.getColumn(kolon).numFmt = "#,##0.00";
-    sayfa.columns.forEach((k, i) => { k.width = [17, 34, 13, 20, 11, 9, 16, 16, 13, 12, 13, 14, 26, 18, 18, 30][i]; });
+    sayfa.addRow(["Toplam", "", "", "", "", "", "", "", Number(ozet.matrah), Number(ozet.kdv), Number(ozet.toplam), Number(ozet.iade)]).font = { bold: true };
+    for (const kolon of [9, 10, 11, 12]) sayfa.getColumn(kolon).numFmt = "#,##0.00";
+    sayfa.columns.forEach((k, i) => { k.width = [17, 34, 13, 20, 11, 9, 16, 16, 13, 12, 13, 12, 14, 26, 18, 18, 30][i]; });
     sayfa.views = [{ state: "frozen", ySplit: 1 }];
     const icerik = Buffer.from(await kitap.xlsx.writeBuffer());
     return { icerik, tur: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", dosyaAdi: `${dosyaKoku}.xlsx` };

@@ -897,7 +897,9 @@ export default function PosHesaplari() {
                   {t.iadeler.map((i) => (
                     <small key={i.id} className="pos-refund">
                       İade {para(i.tutar, t.dovizCinsi)} · {new Date(i.tarih).toLocaleDateString("tr-TR")} · {i.neden}
-                      {i.saglayiciyaGonderildi ? (
+                      {t.kanal === "abonelik" ? (
+                        <> · platformdan iade</>
+                      ) : i.saglayiciyaGonderildi ? (
                         <> · {t.posHesap.saglayici === "paytr" ? "PayTR" : "iyzico"} üzerinden iade edildi</>
                       ) : (
                         <>

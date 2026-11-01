@@ -89,7 +89,7 @@ describe("PlatformOdemeRaporuService", () => {
     const metin = csv.icerik.toString("utf8");
     expect(metin.startsWith("﻿Tarih;Firma;")).toBe(true);
     expect(metin).toContain('"Noktalı; ""Tırnaklı"" A.Ş."');
-    expect(metin).toContain(";4583,33;916,67;5500,00;Evet;Tahsil edildi;ABF1;Admin;");
+    expect(metin).toContain(";4583,33;916,67;5500,00;0,00;Evet;Tahsil edildi;ABF1;Admin;");
     expect(csv.dosyaAdi).toBe("platform-odemeleri-2026-11-01-2026-11-30.csv");
 
     const xlsx = await s.disariAktar("2026-11-01", "2026-11-30", {}, "xlsx");

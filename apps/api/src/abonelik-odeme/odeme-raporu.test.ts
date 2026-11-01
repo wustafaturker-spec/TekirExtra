@@ -91,6 +91,8 @@ describe("PLT-34 özet", () => {
       matrah: "1182.33",
       kdv: "236.47",
       hesaplananVar: true,
+      iade: "0.00",
+      net: "1418.80",
       kanallar: [
         { kanal: "elle", adet: 1, toplam: "120.00" },
         { kanal: "panel", adet: 2, toplam: "1298.80" },
@@ -99,7 +101,12 @@ describe("PLT-34 özet", () => {
   });
 
   it("boş kümede sıfırlar", () => {
-    expect(ozetle([])).toEqual({ adet: 0, toplam: "0.00", matrah: "0.00", kdv: "0.00", hesaplananVar: false, kanallar: [] });
+    expect(ozetle([])).toEqual({ adet: 0, toplam: "0.00", matrah: "0.00", kdv: "0.00", hesaplananVar: false, iade: "0.00", net: "0.00", kanallar: [] });
+  });
+
+  it("PLT-46: iadeler toplanır, net tahsilat iadeler düşülerek verilir", () => {
+    const o = ozetle([satirCevir(ham({ iade_tutari: "1198.80" })), satirCevir(ham({ iade_tutari: "100.00" })), satirCevir(ham())]);
+    expect(o).toMatchObject({ toplam: "3596.40", iade: "1298.80", net: "2297.60" });
   });
 });
 

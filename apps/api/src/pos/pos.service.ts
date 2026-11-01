@@ -670,6 +670,22 @@ export class PosService {
     }
   }
 
+  /**
+   * PLT-44: platformdan yapılan abonelik iadesinin faturalayan firmadaki POS kaydı.
+   * Yalnız `kanal = abonelik` tahsilatına yazılır; para sağlayıcıda zaten iade edilmiştir.
+   * Aynı platform iadesi (`ref`) ikinci kez yazılmaz.
+   */
+  async abonelikIadesiYaz(tenantId: string, posTahsilatId: string, girdi: { tutar: string; tarih: string; neden: string }, saglayici: { saglayiciyaGonderildi: boolean; saglayiciIadeRef: string }) {
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "Abonelik iadesi");
+    const mevcut = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.posTahsilat.findUnique({ where: { id: posTahsilatId }, select: { kanal: true } });
+      if (!kayit || kayit.kanal !== "abonelik") throw new BadRequestException("Abonelik POS tahsilatı bulunamadı");
+      return tx.posIade.findFirst({ where: { posTahsilatId, saglayiciIadeRef: saglayici.saglayiciIadeRef } });
+    });
+    if (mevcut) return mevcut;
+    return this.iadeYaz(tenantId, SISTEM_USER_ID, posTahsilatId, girdi, saglayici);
+  }
+
   /** İadenin TekirExtra kaydı: POS çıkışı, cari borcu, fatura mahsubunun geri açılması. */
   private async iadeYaz(
     tenantId: string,
@@ -746,8 +762,10 @@ export class PosService {
   async iadeGeriAl(iadeId: string, neden: string) {
     const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const iade = await tx.posIade.findUnique({ where: { id: iadeId }, include: { hareket: true } });
+      const iade = await tx.posIade.findUnique({ where: { id: iadeId }, include: { hareket: true, posTahsilat: { select: { kanal: true } } } });
       if (!iade) throw new NotFoundException("POS iadesi bulunamadı");
+      // PLT-44: abonelik iadesi platformda yapılır ve abonelik dönemini değiştirir; buradan geri alınamaz.
+      if (iade.posTahsilat.kanal === "abonelik") throw new BadRequestException("Abonelik iadesi buradan geri alınamaz; platformda yapılan iadenin kaydıdır");
       // KSB-43: para sağlayıcı üzerinden müşteriye döndü; kayıt geri alınırsa defter sağlayıcıyla çelişir.
       if (iade.saglayiciyaGonderildi) throw new BadRequestException("Sağlayıcıya gönderilmiş iade geri alınamaz; para müşteriye iade edildi");
       await this.donemKilidi.tarihDogrula(tenantId, iade.tarih, "POS iadesini geri alma", tx);

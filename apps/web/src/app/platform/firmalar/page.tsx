@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { PlatformArama, PlatformListeDurumu } from "@/components/platform-liste";
+import { AbonelikIadeFormu } from "@/components/abonelik-iade-formu";
 import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select, TableWrap } from "@/components/ui";
 import { platformApi } from "@/lib/platform-api";
@@ -23,12 +24,15 @@ interface Gecmis {
   degisiklikler: { zaman: string; oncekiPlan: string | null; yeniPlan: string; oncekiDurum: string | null; yeniDurum: string; neden: string | null }[];
   talepler: { id: string; zaman: string; mevcutPlan: string; istenenPlan: string; durum: string; aciklama: string | null; kararNotu: string | null }[];
   /** PLT-15: elle (PLT-09) ve sağlayıcıyla alınan ödemeler, başarısız denemeler. */
-  odemeler?: { id?: string; zaman: string; aySayisi: number; tutar: number; kdv: number | null; kaynak?: "elle" | "saglayici"; saglayici?: string | null; not: string | null; yeniDonemSonu: string; fatura?: AbonelikFaturasi | null }[];
+  odemeler?: { id?: string; zaman: string; aySayisi: number; tutar: number; kdv: number | null; kaynak?: "elle" | "saglayici"; saglayici?: string | null; not: string | null; yeniDonemSonu: string; fatura?: AbonelikFaturasi | null; iadeler?: OdemeIadesi[] }[];
   basarisizDenemeler?: { zaman: string; saglayici: string; kaynak: string; aySayisi: number; toplam: number; hata: string | null }[];
   askiNedeni?: "odeme" | "diger" | null;
   /** PLT-14: otomatik yenileme kartı (anahtarlar dönmez). */
   kart?: { saglayici: string; son4: string | null; kartMarkasi: string | null; otomatikYenileme: boolean; aySayisi: number; denemeSayisi: number; sonDeneme: string | null; sonHata: string | null } | null;
 }
+/** PLT-46: ödemenin platformdan iadeleri. */
+interface OdemeIadesi { id: string; zaman: string; tutar: number; neden: string; saglayiciyaGonderildi: boolean; ref: string | null; kaydeden: string | null; faturalayanDurumu: "bekliyor" | "yazildi" | "gerekmiyor" | "hata"; faturalayanHata: string | null }
+const FATURALAYAN_DURUMU: Record<OdemeIadesi["faturalayanDurumu"], string> = { bekliyor: "faturalayan kaydı bekliyor", yazildi: "faturalayana işlendi", gerekmiyor: "fatura yoktu", hata: "faturalayan kaydı yazılamadı" };
 /** PLT-23: ödemenin faturalayan firmadaki faturası. */
 interface AbonelikFaturasi { no: string | null; durum: "bekliyor" | "taslak" | "kesinlesti" | "tahsil_edildi" | "hata"; hata: string | null }
 const FATURA_DURUMU: Record<AbonelikFaturasi["durum"], { ad: string; ton: "success" | "danger" | "neutral" | "warning" }> = {
@@ -197,6 +201,8 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
   const [aySayisi, setAySayisi] = useState<(typeof ODEME_SURELERI)[number]>(1);
   const [tutar, setTutar] = useState("");
   const [odemeNotu, setOdemeNotu] = useState("");
+  // PLT-42: satırın altında açılan iade formu (firma kartı zaten bir pencere).
+  const [iadeOdemeId, setIadeOdemeId] = useState<string | null>(null);
   // PLT-27: bu ödeme formunun işlem anahtarı; yanıt kaybolup yeniden denenirse aynısı gider, ikinci ödeme oluşmaz.
   const [islemAnahtari] = useState(() => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""));
   // "1.500,50" / "1500,5" / "1500.50" → "1500.50"; kuruştan fazla ondalık ya da geçersiz metin null.
@@ -266,12 +272,30 @@ function FirmaYonet({ firma, onKapat, onTamam }: { firma: Firma; onKapat: () => 
         {gecmis?.odemeler?.length ? (
           <Card title="Ödemeler" pad={false}>
             <TableWrap>
-              <thead><tr><th>Zaman</th><th>Yöntem</th><th>Süre</th><th className="num">Toplam</th><th>Yeni dönem sonu</th><th>Fatura</th><th>Not</th></tr></thead>
-              <tbody>{gecmis.odemeler.map((o, i) => (
-                <tr key={o.id ?? i}><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(o.zaman).toLocaleString("tr-TR")}</td><td>{o.kaynak === "saglayici" ? <Badge variant="info">{o.saglayici === "paytr" ? "PayTR" : "iyzico"}</Badge> : "Elle"}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL{o.kdv !== null && <div className="subtle" style={{ fontSize: "0.8rem" }}>KDV {tl(o.kdv)}</div>}</td><td>{tarih(o.yeniDonemSonu)}</td>
+              <thead><tr><th>Zaman</th><th>Yöntem</th><th>Süre</th><th className="num">Toplam</th><th>Yeni dönem sonu</th><th>Fatura</th><th>Not</th><th>İade</th></tr></thead>
+              <tbody>{gecmis.odemeler.map((o, i) => {
+                const iadeToplami = (o.iadeler ?? []).reduce((t, x) => t + Number(x.tutar), 0);
+                const iadeEdilebilir = Boolean(o.id) && Number(o.tutar) - iadeToplami > 0.004;
+                return <Fragment key={o.id ?? i}>
+                <tr><td className="subtle" style={{ whiteSpace: "nowrap" }}>{new Date(o.zaman).toLocaleString("tr-TR")}</td><td>{o.kaynak === "saglayici" ? <Badge variant="info">{o.saglayici === "paytr" ? "PayTR" : "iyzico"}</Badge> : "Elle"}</td><td>{o.aySayisi} ay</td><td className="num">{tl(o.tutar)} TL{o.kdv !== null && <div className="subtle" style={{ fontSize: "0.8rem" }}>KDV {tl(o.kdv)}</div>}</td><td>{tarih(o.yeniDonemSonu)}</td>
                   <td>{o.fatura ? <><Badge variant={FATURA_DURUMU[o.fatura.durum]?.ton ?? "neutral"}>{FATURA_DURUMU[o.fatura.durum]?.ad ?? o.fatura.durum}</Badge>{o.fatura.no && <div className="subtle" style={{ fontSize: "0.8rem" }}>{o.fatura.no}</div>}{o.fatura.hata && <div className="subtle" style={{ fontSize: "0.8rem" }}>{o.fatura.hata}</div>}</> : <span className="subtle">—</span>}</td>
-                  <td>{o.not ?? "—"}</td></tr>
-              ))}</tbody>
+                  <td>{o.not ?? "—"}</td>
+                  <td>
+                    {(o.iadeler ?? []).map((x) => <div key={x.id} className="subtle" style={{ fontSize: "0.8rem" }} title={`${x.neden}${x.faturalayanHata ? ` — ${x.faturalayanHata}` : ""}`}>
+                      <Badge variant={x.faturalayanDurumu === "hata" ? "danger" : "info"}>İade {tl(x.tutar)} TL</Badge> {new Date(x.zaman).toLocaleDateString("tr-TR")} · {x.saglayiciyaGonderildi ? `${o.saglayici === "paytr" ? "PayTR" : "iyzico"} üzerinden` : "elle"} · {FATURALAYAN_DURUMU[x.faturalayanDurumu] ?? x.faturalayanDurumu}
+                    </div>)}
+                    {iadeEdilebilir && iadeOdemeId !== o.id && <Button size="sm" onClick={() => setIadeOdemeId(o.id!)}>İade et</Button>}
+                    {!iadeEdilebilir && iadeToplami > 0 && <span className="subtle" style={{ fontSize: "0.8rem" }}>Tamamı iade edildi</span>}
+                  </td></tr>
+                {iadeOdemeId === o.id && o.id && <tr><td colSpan={8}>
+                  <AbonelikIadeFormu
+                    odeme={{ id: o.id, unvan: firma.unvan, tutar: o.tutar, iade: iadeToplami, kaynak: o.kaynak ?? "elle", saglayici: o.saglayici ?? null, aySayisi: o.aySayisi }}
+                    onVazgec={() => setIadeOdemeId(null)}
+                    onTamam={(mesaj) => { setIadeOdemeId(null); gecmisYenile(); onTamam(mesaj); }}
+                  />
+                </td></tr>}
+                </Fragment>;
+              })}</tbody>
             </TableWrap>
           </Card>
         ) : null}

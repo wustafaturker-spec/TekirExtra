@@ -38,6 +38,8 @@ export interface HamOdemeSatiri {
   kaydeden: string | null;
   fatura_no: string | null;
   fatura_durumu: string | null;
+  /** PLT-46: ödemenin iade toplamı. */
+  iade_tutari?: Prisma.Decimal | string | number | null;
 }
 
 export interface OdemeSatiri {
@@ -60,6 +62,8 @@ export interface OdemeSatiri {
   not: string | null;
   kaydeden: string | null;
   fatura: { no: string | null; durum: string } | null;
+  /** PLT-46: iade toplamı; 0 ise iade yok. */
+  iade: string;
 }
 
 export interface RaporSuzgeci {
@@ -108,6 +112,7 @@ export function satirCevir(h: HamOdemeSatiri): OdemeSatiri {
     not: h.odeme_notu,
     kaydeden: h.kaydeden,
     fatura: h.fatura_durumu ? { no: h.fatura_no, durum: h.fatura_durumu } : null,
+    iade: yaz(d(h.iade_tutari ?? 0)),
   };
 }
 
@@ -131,16 +136,20 @@ export interface RaporOzeti {
   kdv: string;
   /** Toplamlarda elle kayıttan ayrıştırılmış KDV var. */
   hesaplananVar: boolean;
+  /** PLT-46: iade toplamı ve iadeler düşülmüş net tahsilat (KDV dahil). */
+  iade: string;
+  net: string;
   kanallar: { kanal: OdemeKanali; adet: number; toplam: string }[];
 }
 
 export function ozetle(satirlar: OdemeSatiri[]): RaporOzeti {
-  let toplam = d(0), matrah = d(0), kdv = d(0);
+  let toplam = d(0), matrah = d(0), kdv = d(0), iade = d(0);
   const kanallar = new Map<OdemeKanali, { adet: number; toplam: Prisma.Decimal }>();
   for (const x of satirlar) {
     toplam = toplam.add(x.toplam);
     matrah = matrah.add(x.matrah);
     kdv = kdv.add(x.kdv);
+    iade = iade.add(x.iade);
     const k = kanallar.get(x.kanal) ?? { adet: 0, toplam: d(0) };
     kanallar.set(x.kanal, { adet: k.adet + 1, toplam: k.toplam.add(x.toplam) });
   }
@@ -150,6 +159,8 @@ export function ozetle(satirlar: OdemeSatiri[]): RaporOzeti {
     matrah: yaz(matrah),
     kdv: yaz(kdv),
     hesaplananVar: satirlar.some((x) => x.kdvHesaplandi),
+    iade: yaz(iade),
+    net: yaz(toplam.sub(iade)),
     kanallar: ODEME_KANALLARI.filter((k) => kanallar.has(k)).map((k) => ({ kanal: k, adet: kanallar.get(k)!.adet, toplam: yaz(kanallar.get(k)!.toplam) })),
   };
 }

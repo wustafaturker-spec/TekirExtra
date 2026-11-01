@@ -1,2 +1,2 @@
 import { Module } from "@nestjs/common"; import { TenantModule } from "../tenant/tenant.module"; import { BildirimlerModule } from "../bildirimler/bildirimler.module"; import { PosController } from "./pos.controller"; import { PosService } from "./pos.service"; import { PosZamanlayiciService } from "./pos-zamanlayici.service";
-@Module({ imports: [TenantModule, BildirimlerModule], controllers: [PosController], providers: [PosService, PosZamanlayiciService] }) export class PosModule {}
+@Module({ imports: [TenantModule, BildirimlerModule], controllers: [PosController], providers: [PosService, PosZamanlayiciService], exports: [PosService] }) export class PosModule {}

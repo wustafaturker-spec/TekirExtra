@@ -5,6 +5,7 @@ import { SAGLAYICI_ALANLARI, type AbonelikSaglayiciKodu } from "./abonelik-sagla
 import { SaglayiciAyarlariService } from "./saglayici-ayarlari.service";
 import { AbonelikFaturaAyarService } from "./abonelik-fatura-ayar.service";
 import { AbonelikFaturaService } from "./abonelik-fatura.service";
+import { PlatformAbonelikIadeService } from "./platform-abonelik-iade.service";
 
 const kayitSemasi = z.object({
   ortam: z.enum(["test", "canli"]),
@@ -66,5 +67,27 @@ export class PlatformAbonelikFaturaController {
   async yenidenDene(@Param("odemeId", ParseUUIDPipe) odemeId: string) {
     const bag = await this.fatura.yenidenDene(odemeId);
     return { mesaj: bag?.durum === "taslak" ? "Taslak fatura açıldı." : bag?.durum === "tahsil_edildi" ? "Tahsilat açıldı." : `Durum: ${bag?.durum ?? "bilinmiyor"}${bag?.hata ? ` — ${bag.hata}` : ""}`, bag };
+  }
+}
+
+const iadeSemasi = z.object({
+  tutar: z.string().trim().regex(/^\d{1,10}(\.\d{1,2})?$/, "Tutar en çok iki ondalıklı olmalı").refine((v) => Number(v) > 0, "Tutar sıfırdan büyük olmalı"),
+  neden: z.string().trim().min(3, "İade nedeni en az 3 karakter olmalı").max(300),
+  saglayiciyaGonder: z.boolean().default(true),
+  islemAnahtari: z.string().regex(/^[A-Za-z0-9_-]{16,100}$/, "Geçersiz işlem anahtarı"),
+});
+
+/** PLT-42…46: abonelik ödemesinin platformdan iadesi; yalnız platform yöneticisi. */
+@PlatformUcu()
+@Controller("platform/abonelik-odemeleri")
+export class PlatformAbonelikIadeController {
+  constructor(private readonly iade: PlatformAbonelikIadeService) {}
+
+  @Post(":odemeId/iade")
+  @HttpCode(200)
+  iadeEt(@Param("odemeId", ParseUUIDPipe) odemeId: string, @Body() govde: unknown) {
+    const sonuc = iadeSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.iade.iadeEt(odemeId, sonuc.data);
   }
 }

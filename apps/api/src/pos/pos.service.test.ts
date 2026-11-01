@@ -222,8 +222,12 @@ describe("PosService (P1-6)", () => {
       iade.mockRestore();
     });
     it("sağlayıcıya gönderilmiş iade geri alınamaz", async () => {
-      const t = { posIade: { findUnique: vi.fn().mockResolvedValue({ id: "i1", saglayiciyaGonderildi: true, tarih: new Date(), hareket: {} }) } };
+      const t = { posIade: { findUnique: vi.fn().mockResolvedValue({ id: "i1", saglayiciyaGonderildi: true, tarih: new Date(), hareket: {}, posTahsilat: { kanal: "baglanti" } }) } };
       await expect(kur(t).service.iadeGeriAl("i1", "Yanlış girildi")).rejects.toThrow(/geri alınamaz/);
+    });
+    it("PLT-44: platformdan yapılan abonelik iadesi POS ekranından geri alınamaz", async () => {
+      const t = { posIade: { findUnique: vi.fn().mockResolvedValue({ id: "i1", saglayiciyaGonderildi: false, tarih: new Date(), hareket: {}, posTahsilat: { kanal: "abonelik" } }) } };
+      await expect(kur(t).service.iadeGeriAl("i1", "Yanlış girildi")).rejects.toThrow(/Abonelik iadesi buradan geri alınamaz/);
     });
   });
 

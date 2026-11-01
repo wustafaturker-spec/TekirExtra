@@ -5759,3 +5759,14 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 
 /* PLT-40: POS satırında kart ve işlem numaraları */
 .pos-ids { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* PLT-42: abonelik iadesi formu (firma kartı ve ödeme raporu) */
+.subscription-refund { display: grid; gap: 0.75rem; padding: 0.25rem 0; }
+.subscription-refund__summary { margin: 0; font-size: 0.875rem; }
+.subscription-refund__fields { display: grid; grid-template-columns: minmax(140px, 200px) 1fr; gap: 0.75rem; }
+.subscription-refund__fields .field { margin: 0; }
+.subscription-refund__check { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; font-size: 0.875rem; }
+.subscription-refund__check small { color: var(--text-muted); }
+.subscription-refund__note { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
+.subscription-refund__actions { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+@media (max-width: 600px) { .subscription-refund__fields { grid-template-columns: 1fr; } }

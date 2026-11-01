@@ -16,6 +16,9 @@ import { IYZICO_ADRESI, SAGLAYICI_ADI } from "./abonelik-saglayici";
 import { SaglayiciAyarlariService } from "./saglayici-ayarlari.service";
 import { IyzicoAdapter, type IyzicoKesintisi } from "../pos/iyzico.adapter";
 import { saglayiciKesintiAlanlari, tahminiKomisyonAlanlari } from "../pos/taksit";
+import { PosService } from "../pos/pos.service";
+import { BildirimService } from "../bildirimler/bildirim.service";
+import { bugunTR } from "@tekirextra/shared";
 
 /** PLT-21: faturalayan firmadaki hizmet kartı; yoksa bir kez açılır. */
 export const ABONELIK_STOK_KODU = "TEKIREXTRA-ABONELIK";
@@ -49,6 +52,10 @@ export function abonelikAciklamasi(o: Pick<FaturasizOdeme, "plan_kodu" | "ay_say
   return `TekirExtra ${plan} abonelik, ${o.ay_sayisi} ay (${tarihTR(bas)}–${tarihTR(o.yeni_donem_sonu)}); ödeme ${tarihTR(o.odeme_at)}, ${odeme}`;
 }
 
+/** Sistem işlemleri (bildirim üretimi) için kullanıcı kimliği. */
+const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
+const tlYazi = (d: Prisma.Decimal) => Number(d).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 /**
  * PLT-20…23: abonelik ödemesi → faturalayan firmada taslak satış faturası;
  * fatura orada kesinleşince tahsilat açılır ve faturayı kapatır. Bir ödeme için
@@ -69,6 +76,8 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
     private readonly cari: CariService,
     private readonly kasa: KasaBankaService,
     private readonly saglayicilar: SaglayiciAyarlariService,
+    private readonly pos: PosService,
+    private readonly bildirimler: BildirimService,
   ) {}
 
   /** PLT-39: platformun iyzico hesabından ödeme ayrıntısı (testte değiştirilebilir). */
@@ -91,8 +100,13 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
     if (this.calisiyor) return { islenen: 0, hata: 0 };
     this.calisiyor = true;
     try {
+      // PLT-44: faturalayan tarafında işlenmemiş abonelik iadeleri (faturalama kapalı olsa da).
+      const iadeSonucu = await this.bekleyenIadeleriIsle().catch((h) => {
+        this.logger.error(JSON.stringify({ event: "subscription_refund_loop_failed", error: kisalt(h) }));
+        return { islenen: 0, hata: 1 };
+      });
       const ayar = await this.ayar();
-      if (!ayar?.faturalayanTenantId) return { islenen: 0, hata: 0 };
+      if (!ayar?.faturalayanTenantId) return iadeSonucu;
       const odemeler = await this.platform.db.$queryRaw<FaturasizOdeme[]>`SELECT * FROM platform_faturasiz_abonelik_odemeleri()`;
       let islenen = 0; let hata = 0;
       for (const o of odemeler) {
@@ -164,6 +178,89 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
         ...(g.ayrinti.kesinti ? saglayiciKesintiAlanlari(g.tutar, g.ayrinti.kesinti) : {}),
       },
     });
+  }
+
+  /** PLT-44: worker döngüsü — bekleyen iadeler (en çok 3 deneme). */
+  async bekleyenIadeleriIsle(): Promise<{ islenen: number; hata: number }> {
+    const bekleyenler = await this.prisma.$queryRaw<{ iade_id: string; tenant_id: string }[]>`SELECT * FROM abonelik_bekleyen_iadeler()`;
+    let islenen = 0; let hata = 0;
+    for (const b of bekleyenler) {
+      if (await this.iadeyiIsle(b.iade_id, b.tenant_id)) islenen++; else hata++;
+    }
+    return { islenen, hata };
+  }
+
+  /**
+   * PLT-44/45: platformdan yapılan iadenin faturalayan firmadaki sonuçları. Tahsilat
+   * bir abonelik POS kaydına bağlıysa POS iadesi yazılır; abonelik faturasının iade
+   * toplamı güncellenir ve faturalayan firmaya belge/kasa kaydı için bildirim düşer.
+   * Belge kendiliğinden kesilmez. Başarısızlıkta deneme sayılır; 3. denemede "hata".
+   */
+  async iadeyiIsle(iadeId: string, odeyenTenantId: string): Promise<boolean> {
+    const iade = await this.prisma.tenantIslem(odeyenTenantId, (tx) =>
+      tx.abonelikIadesi.findUnique({ where: { id: iadeId }, include: { odeme: { select: { tutar: true, iadeler: { select: { tutar: true } } } }, tenant: { select: { unvan: true } } } }),
+    );
+    if (!iade || iade.faturalayanDurumu !== "bekliyor") return true;
+    const durumYaz = (veri: { faturalayanDurumu: string; faturalayanHata?: string | null; faturalayanDeneme?: number }) =>
+      this.prisma.tenantIslem(odeyenTenantId, (tx) => tx.abonelikIadesi.update({ where: { id: iadeId }, data: veri }));
+    try {
+      const bag = await this.prisma.abonelikFaturasi.findUnique({ where: { odemeId: iade.odemeId } });
+      if (!bag) {
+        await durumYaz({ faturalayanDurumu: "gerekmiyor", faturalayanHata: null });
+        return true;
+      }
+      const faturalayan = bag.faturalayanTenantId;
+      let posYazildi = false;
+      if (bag.tahsilatHareketId) {
+        const pt = await this.prisma.tenantIslem(faturalayan, (tx) => tx.posTahsilat.findFirst({ where: { hareketId: bag.tahsilatHareketId!, kanal: "abonelik" }, select: { id: true } }));
+        if (pt) {
+          await this.pos.abonelikIadesiYaz(
+            faturalayan,
+            pt.id,
+            { tutar: iade.tutar.toFixed(2), tarih: bugunTR(), neden: `Abonelik iadesi — ${iade.neden}`.slice(0, 450) },
+            { saglayiciyaGonderildi: iade.saglayiciyaGonderildi, saglayiciIadeRef: iade.saglayiciIadeRef ?? `abonelik-iade:${iade.id}` },
+          );
+          posYazildi = true;
+        }
+      }
+      const toplamIade = iade.odeme.iadeler.reduce((t, i) => t.add(i.tutar), new Prisma.Decimal(0));
+      await this.prisma.abonelikFaturasi.update({ where: { odemeId: iade.odemeId }, data: { iadeTutari: toplamIade, updatedAt: new Date() } });
+      const fatura = bag.faturaId
+        ? await this.prisma.tenantIslem(faturalayan, (tx) => tx.fatura.findUnique({ where: { id: bag.faturaId! }, select: { id: true, no: true, durum: true } }))
+        : null;
+      const tam = toplamIade.gte(iade.odeme.tutar);
+      const unvan = iade.tenant.unvan.trim();
+      const belge = fatura?.no
+        ? `${fatura.no} faturası için iptal ya da iade belgesi düzenleyin.`
+        : fatura
+          ? "Bu ödemenin abonelik faturası henüz kesinleşmedi; taslağı gözden geçirin."
+          : "Bu ödeme için henüz fatura açılmamıştı.";
+      const kasa = posYazildi
+        ? "POS iadesi kaydedildi."
+        : bag.tahsilatHareketId
+          ? "Tahsilat POS dışında bir hesaba işlenmişti; para iadesinin kasa/banka kaydını girin."
+          : "";
+      await baglamlaCalistir({ tenantId: faturalayan, userId: SISTEM_USER_ID, rol: "yonetici" }, () =>
+        this.bildirimler.uret({
+          tur: "entegrasyon",
+          onem: "uyari",
+          baslik: `Abonelik ödemesi ${tam ? "iade edildi" : "kısmen iade edildi"}: ${unvan}`.slice(0, 200),
+          aciklama: `${unvan} firmasının abonelik ödemesinden ${tlYazi(iade.tutar)} TL iade edildi (${iade.neden}). ${belge} ${kasa}`.trim(),
+          birlesimAnahtari: `abonelik-iade:${iade.id}`,
+          kaynakTur: "abonelik_iadesi",
+          kaynakRef: iade.id,
+          hedefYol: fatura ? `/panel/fatura?faturaId=${fatura.id}` : "/panel/kasa-banka/pos",
+          roller: ["yonetici", "muhasebe"],
+        }),
+      );
+      await durumYaz({ faturalayanDurumu: "yazildi", faturalayanHata: null });
+      return true;
+    } catch (h) {
+      const deneme = iade.faturalayanDeneme + 1;
+      this.logger.error(JSON.stringify({ event: "subscription_refund_billing_side_failed", iadeId, deneme, error: kisalt(h) }));
+      await durumYaz({ faturalayanDurumu: deneme >= 3 ? "hata" : "bekliyor", faturalayanHata: kisalt(h), faturalayanDeneme: deneme }).catch(() => undefined);
+      return false;
+    }
   }
 
   /** PLT-41: kart hesabı POS iken tahsil edilmiş, POS kaydı olmayan abonelik tahsilatlarını tamamlar. */

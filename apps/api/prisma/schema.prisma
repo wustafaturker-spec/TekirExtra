@@ -165,6 +165,7 @@ model Tenant {
   abonelikDegisiklikleri    AbonelikDegisikligi[]
   abonelikTalepleri         AbonelikTalebi[]
   abonelikOdemeleri         AbonelikOdemesi[]
+  abonelikIadeleri         AbonelikIadesi[]
   abonelikOdemeDenemeleri   AbonelikOdemeDenemesi[]
   abonelikKarti             AbonelikKarti?
   abonelikFaturaAyarlari    AbonelikFaturaAyari[]
@@ -429,14 +430,45 @@ model AbonelikOdemesi {
   islemAnahtari       String?   @unique @map("islem_anahtari") @db.VarChar(100)
   /// PLT-27: firma, süre, tutar, not ve aktörün özeti; aynı anahtar farklı içerikle 409 alır.
   istekOzeti          String?   @map("istek_ozeti") @db.VarChar(64)
+  /// PLT-42: sağlayıcıya iade sürerken konur; 10 dakikada kendiliğinden düşer.
+  iadeKilidi          DateTime? @map("iade_kilidi")
   createdAt           DateTime  @default(now()) @map("created_at")
 
   tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   denemeler AbonelikOdemeDenemesi[]
   fatura    AbonelikFaturasi?
+  iadeler   AbonelikIadesi[]
 
   @@index([tenantId, createdAt])
   @@map("abonelik_odemeleri")
+}
+
+/// PLT-42…46: abonelik ödemesinin platformdan iadesi. Satırı yalnız platform işlevi
+/// yazar (platform_abonelik_iade_kaydet); uygulama rolü okur ve faturalayan tarafının durumunu günceller.
+model AbonelikIadesi {
+  id                   String    @id @default(uuid()) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  odemeId              String    @map("odeme_id") @db.Uuid
+  tutar                Decimal   @db.Decimal(14, 2)
+  neden                String    @db.VarChar(500)
+  saglayiciyaGonderildi Boolean  @default(false) @map("saglayiciya_gonderildi")
+  saglayiciIadeRef     String?   @map("saglayici_iade_ref") @db.VarChar(100)
+  platformKullaniciId  String?   @map("platform_kullanici_id") @db.Uuid
+  /// PLT-43: tam iadede dönem sonu geri alınır; kısmi iadede ikisi de boş.
+  oncekiDonemSonu      DateTime? @map("onceki_donem_sonu")
+  yeniDonemSonu        DateTime? @map("yeni_donem_sonu")
+  islemAnahtari        String    @unique @map("islem_anahtari") @db.VarChar(100)
+  /// PLT-44: bekliyor | yazildi | gerekmiyor | hata
+  faturalayanDurumu    String    @default("bekliyor") @map("faturalayan_durumu") @db.VarChar(20)
+  faturalayanHata      String?   @map("faturalayan_hata") @db.VarChar(500)
+  faturalayanDeneme    Int       @default(0) @map("faturalayan_deneme")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  odeme  AbonelikOdemesi @relation(fields: [odemeId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, odemeId])
+  @@map("abonelik_iadeleri")
 }
 
 /// PLT-13/14: abonelik ödeme girişimi (panel, e-posta bağlantısı ya da otomatik yenileme).
@@ -7411,6 +7443,8 @@ model AbonelikFaturasi {
   hata                String?         @db.VarChar(500)
   tahsilatHareketId   String?         @map("tahsilat_hareket_id") @db.Uuid
   deneme              Int             @default(0)
+  /// PLT-45: ödemenin iade toplamı ("iade edildi" / "kısmi iade"); belge kendiliğinden kesilmez.
+  iadeTutari          Decimal         @default(0) @map("iade_tutari") @db.Decimal(14, 2)
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @default(now()) @map("updated_at")
   odeme               AbonelikOdemesi @relation(fields: [odemeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
