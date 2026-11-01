@@ -68,6 +68,14 @@ describe("SEC-03 bağlantı anı denetimi (gerçek ağ)", () => {
     expect(await (await fetch(`http://localhost:${port}/acik`)).text()).toBe("ic-servis");
   });
 
+  it("IP ile yazılmış özel adres de engellenir (ad çözümlemesi olmadan)", async () => {
+    for (const adres of [`http://127.0.0.1:${port}/gizli`, `http://[::1]:${port}/gizli`, "http://169.254.169.254/latest/meta-data"]) {
+      const hata = await disFetch(adres).catch((h: Error & { cause?: Error }) => h.cause?.message ?? h.message);
+      expect(hata).toMatch(/özel veya yerel/);
+    }
+    expect(gelen).not.toContain("/gizli");
+  });
+
   it("SMTP/IMAP için çözülen IP sabitlenir; özel adres reddedilir", async () => {
     await expect(guvenliAdresCoz("localhost")).rejects.toThrow(/özel veya yerel|Yerel/);
     await expect(guvenliAdresCoz("127.0.0.1")).rejects.toThrow();

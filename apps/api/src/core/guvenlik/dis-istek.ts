@@ -127,7 +127,10 @@ export const disAgent = new Agent({ connect: { lookup: guvenliLookup as never } 
  * Kiracının belirlediği adrese istek. Yönlendirme izlenmez (genel adres iç
  * ağa yönlendirebilir); bağlantı IP'si {@link guvenliLookup} ile denetlenir.
  */
-export function disFetch(url: string | URL, init: RequestInit = {}): Promise<Response> {
+export async function disFetch(url: string | URL, init: RequestInit = {}): Promise<Response> {
+  // IP ile yazılmış adreste ad çözümlemesi (dolayısıyla lookup denetimi) yapılmaz; burada denetlenir.
+  const anaMakine = new URL(url).hostname.replace(/^\[|\]$/g, "");
+  if (isIP(anaMakine) && ozelIpMi(anaMakine) && !yerelIzinli()) throw new TypeError("fetch failed", { cause: new OzelAdresHatasi(anaMakine) });
   return fetch(url, { redirect: "manual", ...init, dispatcher: disAgent } as RequestInit);
 }
 
@@ -143,5 +146,7 @@ export async function guvenliAdresCoz(anaMakine: string): Promise<{ ip: string; 
   if (yerelIzinli()) return { ip: ad, servername: ad };
   const adresler = await dnsLookupAsync(ad, { all: true, verbatim: true });
   if (!adresler.length || adresler.some((a) => ozelIpMi(a.address))) throw new OzelAdresHatasi(ad);
-  return { ip: adresler[0].address, servername: ad };
+  // IP sabitlenince Node'un IPv6→IPv4 geri düşmesi olmaz; IPv4 varsa o seçilir.
+  const secilen = adresler.find((a) => a.family === 4) ?? adresler[0];
+  return { ip: secilen.address, servername: ad };
 }
