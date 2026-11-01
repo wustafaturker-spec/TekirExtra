@@ -2234,5 +2234,6 @@ test("platform ödemesi geciken firmayı süzer ve elle ödemeyle dönemi uzatı
   await pencere.getByLabel("Not").fill("Havale");
   await pencere.getByRole("button", { name: "Ödemeyi kaydet" }).click();
   await expect(page.getByText("Ödeme kaydedildi; dönem sonu 01.01.2027.")).toBeVisible();
-  expect(odeme).toEqual({ aySayisi: 3, tutar: 1500.5, not: "Havale" });
+  // PLT-27: tutar kuruş kaybı olmasın diye metin gider; tekrar koruması için işlem anahtarı eklenir.
+  expect(odeme).toEqual({ aySayisi: 3, tutar: "1500.50", not: "Havale", islemAnahtari: expect.stringMatching(/^[0-9a-f]{32}$/) });
 });
