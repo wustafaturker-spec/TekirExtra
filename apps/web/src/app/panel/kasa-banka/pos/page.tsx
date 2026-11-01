@@ -338,6 +338,15 @@ export default function PosHesaplari() {
       if (yeni.odemeSayfasiUrl) window.open(yeni.odemeSayfasiUrl, "_blank", "noopener,noreferrer");
     });
   }
+  /** KSB-38: bildirimi gelmemiş iyzico ödemesini sağlayıcıdan sorgular; ödenmemişse durum değişmez. */
+  async function saglayicidanSorgula(id: string) {
+    await calistir(`sorgula-${id}`, async () => {
+      const s = await api<{ odendi: boolean; mesaj: string }>(`/pos/tahsilatlar/${id}/sorgula`, { method: "POST" });
+      if (s.odendi) setBasari(s.mesaj);
+      else setHata(s.mesaj);
+      await yukle();
+    });
+  }
   async function kopyala(link: string) {
     try {
       await navigator.clipboard.writeText(link);
@@ -904,6 +913,16 @@ export default function PosHesaplari() {
                       >
                         Yeniden dene
                       </Button>
+                    )}
+                    {["baslatildi", "suresi_doldu", "iptal"].includes(t.durum) && t.kanal !== "slip" && t.posHesap.saglayici === "iyzico" && (
+                      <Button size="sm" disabled={islemde === `sorgula-${t.id}`} onClick={() => void saglayicidanSorgula(t.id)}>
+                        {islemde === `sorgula-${t.id}` ? "Sorgulanıyor…" : "iyzico'dan sorgula"}
+                      </Button>
+                    )}
+                    {t.durum === "baslatildi" && t.posHesap.saglayici === "paytr" && (
+                      <small className="muted" title="PayTR Link API ödeme öncesinde sorgulanabilir sipariş numarası vermez.">
+                        PayTR ödemesi bildirimle kaydedilir
+                      </small>
                     )}
                     {t.durum === "baslatildi" && (
                       <Button size="sm" variant="danger" onClick={() => islemAc({ tur: "iptal", tahsilat: t })}>

@@ -4,6 +4,7 @@ import { PosService } from "./pos.service";
 import { nabizla } from "../core/nabiz/nabiz";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
+const YARIM_SAAT_MS = 30 * 60 * 1000;
 
 /**
  * P1-6: süresi dolan ödeme bağlantılarını worker'da saatlik kapatır. Liste
@@ -14,7 +15,9 @@ const BIR_SAAT_MS = 60 * 60 * 1000;
 export class PosZamanlayiciService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PosZamanlayiciService.name);
   private zamanlayici?: NodeJS.Timeout;
+  private sorguZamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
+  private sorguluyor = false;
 
   constructor(private readonly pos: PosService) {}
 
@@ -22,10 +25,33 @@ export class PosZamanlayiciService implements OnModuleInit, OnModuleDestroy {
     if (process.env.TEKIR_WORKER !== "1") return;
     setImmediate(() => void nabizla("pos-zamanlayici", () => this.calistir()));
     this.zamanlayici = setInterval(() => void nabizla("pos-zamanlayici", () => this.calistir()), BIR_SAAT_MS);
+    // KSB-38: bildirimi gelmemiş iyzico ödemeleri yarım saatte bir sorgulanır.
+    this.sorguZamanlayici = setInterval(() => void nabizla("pos-durum-sorgusu", () => this.sorgula()), YARIM_SAAT_MS);
   }
 
   onModuleDestroy(): void {
     if (this.zamanlayici) clearInterval(this.zamanlayici);
+    if (this.sorguZamanlayici) clearInterval(this.sorguZamanlayici);
+  }
+
+  async sorgula(): Promise<void> {
+    if (this.sorguluyor) return;
+    this.sorguluyor = true;
+    try {
+      let toplam = 0;
+      for (const tenantId of await this.tenantIdleriAl()) {
+        try {
+          toplam += await this.pos.bekleyenleriSorgula(tenantId);
+        } catch (hata) {
+          this.logger.warn(`iyzico durum sorgusu atlandı (${tenantId}): ${hata instanceof Error ? hata.message : String(hata)}`);
+        }
+      }
+      if (toplam) this.logger.log(`${toplam} iyzico ödemesi sorgu ile kaydedildi`);
+    } catch (hata) {
+      this.logger.error("iyzico durum sorgusu başarısız", hata instanceof Error ? hata.stack : String(hata));
+    } finally {
+      this.sorguluyor = false;
+    }
   }
 
   private async tenantIdleriAl(): Promise<string[]> {

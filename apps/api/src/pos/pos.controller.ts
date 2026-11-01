@@ -63,6 +63,10 @@ export class PosController {
   @Post("tahsilatlar/:id/yeniden-dene") @Roller("yonetici", "muhasebe") yenidenDene(@Param("id") id: string) {
     return this.service.yenidenDene(id);
   }
+  /** KSB-38 */
+  @Post("tahsilatlar/:id/sorgula") @Roller("yonetici", "muhasebe") sorgula(@Param("id", ParseUUIDPipe) id: string) {
+    return this.service.saglayicidanSorgula(id);
+  }
   // P1-6: iptal, banka POS slibi, iade ve bankaya geçecekler.
   @Post("tahsilatlar/:id/iptal") @Roller("yonetici", "muhasebe") iptal(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
     return this.service.iptal(id, ayristir(posNedenSemasi, govde).neden);

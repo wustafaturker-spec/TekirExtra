@@ -823,8 +823,7 @@ export class PosService {
     if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari };
     const sonuc = await new IyzicoAdapter().odemeSonucu(this.config(kayit.posHesap.baglanti!.sifreliConfig), token);
     // KSB-36: vade farkı müşteriye yansıtılmışsa ödenen sepet tutarından büyüktür; sepet tutarı tahsilata eşit olmalı.
-    const fiyat = new Prisma.Decimal(sonuc.fiyat);
-    if (!sonuc.basarili || !fiyat.equals(kayit.tutar) || new Prisma.Decimal(sonuc.odenen).lt(fiyat) || sonuc.dovizCinsi !== kayit.dovizCinsi) {
+    if (!sonuc.basarili || !this.iyzicoUyusur(kayit, sonuc)) {
       // Süresi dolmuş/iptal talebin durumu korunur; yalnız açık talep başarısız sayılır.
       await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.posTahsilat.updateMany({
@@ -834,11 +833,96 @@ export class PosService {
       );
       throw new BadRequestException("Ödeme doğrulanamadı");
     }
+    return this.iyzicoOdemesiniKaydet(tenantId, kayit, sonuc);
+  }
+
+  /** iyzico'nun doğruladığı ödemeyi yazar (callback ve KSB-38 sorgusu ortak). */
+  private async iyzicoOdemesiniKaydet(
+    tenantId: string,
+    kayit: Parameters<PosService["odenmisSay"]>[2] & { dovizCinsi: string },
+    sonuc: Awaited<ReturnType<IyzicoAdapter["odemeSonucu"]>>,
+  ) {
     const kayitSonucu = await this.prisma.tenantIslem(tenantId, (tx) =>
       this.odenmisSay(tx, tenantId, kayit, sonuc.odemeId ?? "", "iyzico kart tahsilatı", { taksit: sonuc.taksit, odenen: new Prisma.Decimal(sonuc.odenen), kesinti: sonuc.kesinti }),
     );
     if (kayitSonucu.gecOdeme) await this.gecOdemeyiBildir(tenantId, kayit);
     if (!kayitSonucu.tekrar && sonuc.kesinti?.fraudDurumu === 0) await this.fraudIncelemesiniBildir(tenantId, kayit);
     return kayitSonucu;
+  }
+
+  /** iyzico yanıtı tahsilatla uyuşuyor mu: sepet tutarı eşit, ödenen ondan küçük değil, döviz aynı (KSB-36). */
+  private iyzicoUyusur(kayit: { tutar: Prisma.Decimal; dovizCinsi: string }, sonuc: Awaited<ReturnType<IyzicoAdapter["odemeSonucu"]>>) {
+    const fiyat = new Prisma.Decimal(sonuc.fiyat);
+    return fiyat.equals(kayit.tutar) && !new Prisma.Decimal(sonuc.odenen).lt(fiyat) && sonuc.dovizCinsi === kayit.dovizCinsi;
+  }
+
+  /** KSB-38: kullanıcının "Sağlayıcıdan sorgula" düğmesi. */
+  async saglayicidanSorgula(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.sorgula(tenantId, id);
+  }
+
+  /**
+   * KSB-38: bildirimi gelmemiş iyzico talebini sağlayıcıdan sorgular. Ödenmemiş
+   * çıkarsa talebin durumu değişmez (müşteri hâlâ ödeyebilir); ödenmişse callback
+   * ile aynı akış işler (tekrar koruması ve geç ödeme kuralı dahil).
+   */
+  private async sorgula(tenantId: string, id: string): Promise<{ odendi: boolean; mesaj: string }> {
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.posTahsilat.findUnique({ where: { id }, include: { posHesap: { include: { baglanti: true } } } }),
+    );
+    if (!kayit) throw new NotFoundException("POS tahsilatı bulunamadı");
+    if (kayit.posHesap.saglayici === "paytr")
+      throw new BadRequestException("PayTR ödemeleri sorgulanamaz: Link API ödeme öncesinde sorgulanabilir bir sipariş numarası vermez, ödeme PayTR bildirimiyle kaydedilir");
+    if (kayit.durum === "odendi") return { odendi: true, mesaj: "Tahsilat zaten ödendi olarak kayıtlı" };
+    if (kayit.posHesap.saglayici !== "iyzico" || !(ODENEBILIR_DURUMLAR as readonly string[]).includes(kayit.durum) || !kayit.saglayiciToken || !kayit.posHesap.baglanti)
+      throw new BadRequestException("Bu talep sağlayıcıdan sorgulanamaz");
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id }, data: { saglayiciSorguTarihi: new Date() } }));
+    let sonuc: Awaited<ReturnType<IyzicoAdapter["odemeSonucu"]>>;
+    try {
+      sonuc = await new IyzicoAdapter().odemeSonucu(this.config(kayit.posHesap.baglanti.sifreliConfig), kayit.saglayiciToken);
+    } catch (hata) {
+      return { odendi: false, mesaj: `iyzico'da tamamlanmış ödeme bulunamadı (${hata instanceof Error ? hata.message : String(hata)})` };
+    }
+    if (!sonuc.basarili) return { odendi: false, mesaj: "iyzico'da tamamlanmış ödeme yok; müşteri henüz ödememiş" };
+    if (!this.iyzicoUyusur(kayit, sonuc)) {
+      this.logger.warn(`iyzico sorgusu tahsilatla uyuşmadı: ${id}`);
+      return { odendi: false, mesaj: "iyzico ödemesi tahsilat tutarı ya da dövizi ile uyuşmuyor; iyzico panelinden kontrol edin" };
+    }
+    const s = await this.iyzicoOdemesiniKaydet(tenantId, kayit, sonuc);
+    return { odendi: true, mesaj: s.tekrar ? "Tahsilat zaten ödendi olarak kayıtlı" : "iyzico'da ödeme bulundu, tahsilat kaydedildi" };
+  }
+
+  /**
+   * KSB-38 (worker): son 8 günde açılmış, bildirimi gelmemiş iyzico taleplerini
+   * tek tek ve sınırlı sayıda sorgular. Yeni açılmış talep (10 dk) callback'i
+   * bekler; aynı talep 30 dakikadan sık sorgulanmaz, en eski sorgulanan öne alınır.
+   */
+  async bekleyenleriSorgula(tenantId: string, sinir = 20): Promise<number> {
+    const simdi = Date.now();
+    const adaylar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.posTahsilat.findMany({
+        where: {
+          durum: { in: [...ODENEBILIR_DURUMLAR] },
+          hareketId: null,
+          saglayiciToken: { not: null },
+          createdAt: { gte: new Date(simdi - 8 * 24 * 60 * 60 * 1000), lt: new Date(simdi - 10 * 60 * 1000) },
+          posHesap: { saglayici: "iyzico", baglanti: { durum: "aktif" } },
+          OR: [{ saglayiciSorguTarihi: null }, { saglayiciSorguTarihi: { lt: new Date(simdi - 30 * 60 * 1000) } }],
+        },
+        orderBy: [{ saglayiciSorguTarihi: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
+        take: sinir,
+        select: { id: true },
+      }),
+    );
+    let odenen = 0;
+    for (const a of adaylar) {
+      try {
+        if ((await this.sorgula(tenantId, a.id)).odendi) odenen++;
+      } catch (hata) {
+        this.logger.warn(`iyzico durum sorgusu başarısız (${a.id}): ${hata instanceof Error ? hata.message : String(hata)}`);
+      }
+    }
+    return odenen;
   }
 }

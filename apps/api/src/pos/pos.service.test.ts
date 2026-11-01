@@ -142,6 +142,70 @@ describe("PosService (P1-6)", () => {
     });
   });
 
+  describe("KSB-38 sağlayıcıdan sorgulama", () => {
+    function sorguTx(ek: Record<string, unknown> = {}) {
+      return {
+        posHesap: { findUnique: vi.fn().mockResolvedValue({ komisyonOrani: D("2"), islemUcreti: D(0), taksitOranlari: [] }) },
+        posTahsilat: {
+          findUnique: vi.fn().mockResolvedValue({ id: "t1", durum: "suresi_doldu", saglayiciToken: "tok", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(500), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "iyzico", baglanti: { sifreliConfig: "x" } }, ...ek }),
+          findMany: vi.fn().mockResolvedValue([{ id: "t1" }, { id: "t2" }]),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          update: vi.fn(),
+        },
+        kasaBankaHareket: { create: vi.fn().mockResolvedValue({ id: "h1" }) },
+        cariHareket: { create: vi.fn() },
+      };
+    }
+    it("ödenmemiş talebin durumuna dokunmaz", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ basarili: false, tutar: 0, fiyat: 0, odenen: 0, taksit: 1, dovizCinsi: "TRY" } as never);
+      const tx = sorguTx();
+      const s = await kur(tx).service.saglayicidanSorgula("t1");
+      expect(s.odendi).toBe(false);
+      expect(tx.posTahsilat.updateMany).not.toHaveBeenCalled();
+      expect(tx.posTahsilat.update.mock.calls[0][0].data).toHaveProperty("saglayiciSorguTarihi");
+      casus.mockRestore();
+    });
+    it("sağlayıcı hata dönerse ödenmedi der, durumu değiştirmez", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockRejectedValue(new Error("Token bulunamadı"));
+      const tx = sorguTx();
+      await expect(kur(tx).service.saglayicidanSorgula("t1")).resolves.toMatchObject({ odendi: false, mesaj: expect.stringContaining("Token bulunamadı") });
+      expect(tx.posTahsilat.updateMany).not.toHaveBeenCalled();
+      casus.mockRestore();
+    });
+    it("ödenmiş çıkarsa tahsilatı geç ödeme olarak kaydeder", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ basarili: true, odemeId: "pay", tutar: 500, fiyat: 500, odenen: 500, taksit: 1, dovizCinsi: "TRY" } as never);
+      const tx = sorguTx();
+      const { service, bildirimler } = kur(tx);
+      await expect(service.saglayicidanSorgula("t1")).resolves.toMatchObject({ odendi: true });
+      expect(tx.posTahsilat.updateMany.mock.calls[0][0].data).toMatchObject({ durum: "odendi", gecOdeme: true });
+      expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "pos-gec-odeme:t1" }));
+      casus.mockRestore();
+    });
+    it("tutarı uyuşmayan ödemeyi kaydetmez", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ basarili: true, odemeId: "pay", tutar: 400, fiyat: 400, odenen: 400, taksit: 1, dovizCinsi: "TRY" } as never);
+      const tx = sorguTx();
+      await expect(kur(tx).service.saglayicidanSorgula("t1")).resolves.toMatchObject({ odendi: false });
+      expect(tx.posTahsilat.updateMany).not.toHaveBeenCalled();
+      casus.mockRestore();
+    });
+    it("PayTR talebi sorgulanmaz", async () => {
+      const tx = sorguTx({ posHesap: { saglayici: "paytr", baglanti: { sifreliConfig: "x" } } });
+      await expect(kur(tx).service.saglayicidanSorgula("t1")).rejects.toThrow(/PayTR ödemeleri sorgulanamaz/);
+    });
+    it("worker yalnız uygun iyzico taleplerini sınırlı sayıda seçer, birinin hatası diğerini durdurmaz", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu")
+        .mockRejectedValueOnce(new Error("ağ"))
+        .mockResolvedValueOnce({ basarili: true, odemeId: "pay", tutar: 500, fiyat: 500, odenen: 500, taksit: 1, dovizCinsi: "TRY" } as never);
+      const tx = sorguTx();
+      const sayi = await kur(tx).service.bekleyenleriSorgula("t1", 5);
+      expect(sayi).toBe(1);
+      const sorgu = tx.posTahsilat.findMany.mock.calls[0][0];
+      expect(sorgu.take).toBe(5);
+      expect(sorgu.where).toMatchObject({ durum: { in: ["baslatildi", "suresi_doldu", "iptal"] }, hareketId: null, posHesap: { saglayici: "iyzico", baglanti: { durum: "aktif" } } });
+      casus.mockRestore();
+    });
+  });
+
   describe("iade", () => {
     const tahsilat = (iadeler: { tutar: number; mahsup: number }[]) => ({
       id: "t1", durum: "odendi", tutar: D(1000), dovizCinsi: "TRY", posHesapId: "p1", cariId: "c1", faturaId: "f1",
