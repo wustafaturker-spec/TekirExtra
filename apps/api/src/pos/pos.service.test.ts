@@ -192,6 +192,14 @@ describe("PosService (P1-6)", () => {
       expect(t.posIade.create.mock.calls[0][0].data).toMatchObject({ saglayiciyaGonderildi: false });
       iade.mockRestore();
     });
+    it("PLT-40: abonelik tahsilatı iade edilemez; sağlayıcı çağrılmaz", async () => {
+      const iade = vi.spyOn(IyzicoAdapter.prototype, "iadeEt");
+      const t = tx(odenmis("iyzico", { kanal: "abonelik" }));
+      await expect(kur(t).service.iade("t1", { tutar: "400", tarih: "2026-11-01", neden: "Müşteri iadesi" })).rejects.toThrow(/abonelik iadesi platform tarafında/);
+      expect(iade).not.toHaveBeenCalled();
+      expect(t.posIade.create).not.toHaveBeenCalled();
+      iade.mockRestore();
+    });
     it("sürmekte olan bir sağlayıcı iadesi varken ikinci iadeyi reddeder", async () => {
       const iade = vi.spyOn(IyzicoAdapter.prototype, "iadeEt");
       const t = tx(odenmis("iyzico", { iadeKilidi: new Date() }));

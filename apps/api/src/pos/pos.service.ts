@@ -95,6 +95,8 @@ export class PosService {
               { cari: { kod: { contains: girdi.arama, mode: "insensitive" } } },
               { fatura: { no: { contains: girdi.arama, mode: "insensitive" } } },
               { hataMesaji: { contains: girdi.arama, mode: "insensitive" } },
+              // PLT-40: sağlayıcının ödeme numarasıyla da bulunur.
+              { saglayiciOdemeId: { contains: girdi.arama } },
             ],
           }
         : {}),
@@ -583,6 +585,8 @@ export class PosService {
       tx.posTahsilat.findUnique({ where: { id }, include: { posHesap: { include: { baglanti: true } }, iadeler: { select: { tutar: true } } } }),
     );
     if (!on || on.durum !== "odendi" || !on.hareketId) throw new BadRequestException("Yalnız ödenmiş POS tahsilatı iade edilebilir");
+    // PLT-40: abonelik tahsilatı platformun ödemesidir; iadesi platform tarafında yapılır.
+    if (on.kanal === "abonelik") throw new BadRequestException("Abonelik tahsilatı buradan iade edilemez; abonelik iadesi platform tarafında yapılır");
     const saglayici = on.kanal !== "slip" && ["iyzico", "paytr"].includes(on.posHesap.saglayici) ? (on.posHesap.saglayici as "iyzico" | "paytr") : null;
     const gonder = Boolean(saglayici) && girdi.saglayiciyaGonder !== false;
     const kilitTaze = on.iadeKilidi && on.iadeKilidi.getTime() > Date.now() - IADE_KILIDI_MS;

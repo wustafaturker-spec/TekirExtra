@@ -89,7 +89,20 @@ interface Tahsilat {
   kartMarkasi: string | null;
   kartAilesi: string | null;
   kartSon4: string | null;
+  kartBin: string | null;
+  kartTuru: string | null;
+  saglayiciOdemeId: string | null;
+  provizyonKodu: string | null;
+  hostReferansi: string | null;
+  saglayiciKomisyonu: string | null;
+  saglayiciUcreti: string | null;
   fraudDurumu: number | null;
+}
+
+/** PLT-40: "5526 08•• •••• 0006" — BIN'in ilk 6 hanesi ve son 4; tam kart numarası saklanmaz. */
+function maskeliKart(bin: string | null, son4: string | null): string | null {
+  if (!son4) return null;
+  return bin && bin.length === 6 ? `${bin.slice(0, 4)} ${bin.slice(4)}•• •••• ${son4}` : `•••• ${son4}`;
 }
 /** KSB-40 */
 interface HesapOzeti {
@@ -852,11 +865,13 @@ export default function PosHesaplari() {
                 </td>
                 <td>
                   <strong>{t.posHesap.ad}</strong>
-                  <small>{t.kanal === "slip" ? `Slip${t.slipNo ? ` · ${t.slipNo}` : ""}` : t.posHesap.saglayici}</small>
+                  <small>{t.kanal === "slip" ? `Slip${t.slipNo ? ` · ${t.slipNo}` : ""}` : t.kanal === "abonelik" ? `Abonelik · ${t.posHesap.saglayici}` : t.posHesap.saglayici}</small>
                 </td>
                 <td>
                   {t.kanal === "slip" ? (
                     <small>Cihazda çekildi</small>
+                  ) : t.kanal === "abonelik" ? (
+                    <Badge variant="info">Abonelik</Badge>
                   ) : (
                     <div className="pos-delivery">
                       <Badge variant={t.epostaGonderimTarihi ? "success" : t.epostaHatasi ? "danger" : "neutral"}>E-posta</Badge>
@@ -900,9 +915,24 @@ export default function PosHesaplari() {
                   {/* KSB-36: taksit, komisyon ve bankaya geçecek net */}
                   {t.durum === "odendi" && t.komisyonTutari !== null && (
                     <small>
-                      {t.kartSon4 ? `${[t.kartMarkasi?.replace(/_/g, " "), t.kartAilesi].filter(Boolean).join(" ")} •••• ${t.kartSon4} · ` : ""}
+                      {t.kartSon4 ? `${[t.kartMarkasi?.replace(/_/g, " "), t.kartAilesi].filter(Boolean).join(" ")} ${maskeliKart(t.kartBin, t.kartSon4)} · ` : ""}
                       {t.taksitSayisi > 1 ? `${t.taksitSayisi} taksit · ` : ""}komisyon {para(t.komisyonTutari, t.dovizCinsi)}
                       {t.komisyonKaynagi === "tahmin" ? " (tahmini)" : ""} · net {para(t.netTutar ?? t.tutar, t.dovizCinsi)}
+                    </small>
+                  )}
+                  {/* PLT-40: kart no (BIN + son 4), ödeme ve provizyon numaraları, sağlayıcı kesintisinin dökümü */}
+                  {t.durum === "odendi" && t.kanal !== "slip" && t.saglayiciOdemeId && (
+                    <small className="pos-ids">
+                      {[
+                        `Ödeme no ${t.saglayiciOdemeId}`,
+                        t.provizyonKodu && `Provizyon ${t.provizyonKodu}`,
+                      ].filter(Boolean).join(" · ")}
+                    </small>
+                  )}
+                  {t.durum === "odendi" && t.komisyonKaynagi === "saglayici" && (t.saglayiciKomisyonu !== null || t.saglayiciUcreti !== null) && (
+                    <small className="pos-ids">
+                      {t.posHesap.saglayici === "iyzico" ? "iyzico" : "Sağlayıcı"} komisyonu {para(t.saglayiciKomisyonu ?? "0", t.dovizCinsi)}
+                      {t.saglayiciUcreti !== null && Number(t.saglayiciUcreti) > 0 ? ` + işlem ücreti ${para(t.saglayiciUcreti, t.dovizCinsi)}` : ""}
                     </small>
                   )}
                   {t.odenenTutar !== null && Number(t.odenenTutar) > Number(t.tutar) && (
@@ -968,7 +998,12 @@ export default function PosHesaplari() {
                         İptal
                       </Button>
                     )}
-                    {t.durum === "odendi" && Number(t.iadeEdilen) < Number(t.tutar) && (
+                    {t.durum === "odendi" && t.kanal === "abonelik" && (
+                      <small className="muted" title="Abonelik ödemesi platformun tahsilatıdır; iadesi platform tarafında yapılır.">
+                        İade platformdan yapılır
+                      </small>
+                    )}
+                    {t.durum === "odendi" && t.kanal !== "abonelik" && Number(t.iadeEdilen) < Number(t.tutar) && (
                       <Button size="sm" onClick={() => islemAc({ tur: "iade", tahsilat: t })}>
                         İade
                       </Button>

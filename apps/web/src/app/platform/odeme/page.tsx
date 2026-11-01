@@ -54,16 +54,18 @@ export default function PlatformOdeme() {
 }
 
 type HesapTuru = "kasa" | "banka" | "pos";
-interface Hesap { tur: HesapTuru; id: string; ad: string; doviz: string }
+interface Hesap { tur: HesapTuru; id: string; ad: string; doviz: string; saglayici?: string | null }
 interface Sorunlu { odemeId: string; firma: string; durum: "bekliyor" | "hata" | "kesinlesti"; faturaNo: string | null; hata: string | null; deneme: number; guncellendi: string }
 interface FaturaAyari {
   faturalayan: { tenantId: string; unvan: string } | null;
+  etkinSaglayici: string | null;
   kartHesap: { tur: HesapTuru; id: string } | null;
   elleHesap: { tur: HesapTuru; id: string } | null;
   baslangicAt: string | null;
   hesaplar: Hesap[];
   sorunlu: Sorunlu[];
 }
+const SAGLAYICI_ADI: Record<string, string> = { iyzico: "iyzico", paytr: "PayTR" };
 const HESAP_TURU: Record<HesapTuru, string> = { kasa: "Kasa", banka: "Banka", pos: "POS" };
 const SORUN: Record<Sorunlu["durum"], string> = { bekliyor: "Fatura bekliyor", hata: "Fatura açılamadı", kesinlesti: "Tahsilat açılamadı" };
 const hesapDegeri = (h: { tur: HesapTuru; id: string } | null) => (h ? `${h.tur}:${h.id}` : "");
@@ -82,7 +84,7 @@ function FaturaKarti({ onBasari, onHata }: { onBasari: (m: string) => void; onHa
   const [taslak, setTaslak] = useState<{ firma: string; kart: string; elle: string } | null>(null);
   const [islem, setIslem] = useState(false);
   const ayar: FaturaAyari | null = veri ? {
-    faturalayan: veri.faturalayan ?? null, kartHesap: veri.kartHesap ?? null, elleHesap: veri.elleHesap ?? null,
+    faturalayan: veri.faturalayan ?? null, etkinSaglayici: veri.etkinSaglayici ?? null, kartHesap: veri.kartHesap ?? null, elleHesap: veri.elleHesap ?? null,
     baslangicAt: veri.baslangicAt ?? null, hesaplar: Array.isArray(veri.hesaplar) ? veri.hesaplar : [], sorunlu: Array.isArray(veri.sorunlu) ? veri.sorunlu : [],
   } : null;
   const firma = taslak?.firma ?? ayar?.faturalayan?.tenantId ?? "";
@@ -91,6 +93,10 @@ function FaturaKarti({ onBasari, onHata }: { onBasari: (m: string) => void; onHa
   const { veri: firmaHesaplari, yukleniyor: hesapYukleniyor, hata: hesapHatasi, yenile: hesapYenile } = usePlatformVerisi<Hesap[]>(ayar && firma && firma !== ayar.faturalayan?.tenantId ? `/platform/abonelik-fatura/hesaplar/${encodeURIComponent(firma)}` : null);
   const hesaplar = firma === ayar?.faturalayan?.tenantId ? ayar.hesaplar : Array.isArray(firmaHesaplari) ? firmaHesaplari : [];
   const tlHesaplar = hesaplar.filter((h) => h.doviz === "TRY");
+  // PLT-38: kartla alınan ödeme yalnız etkin sağlayıcının TL POS hesabına işlenir.
+  const kartHesaplari = tlHesaplar.filter((h) => h.tur === "pos" && (!ayar?.etkinSaglayici || h.saglayici === ayar.etkinSaglayici));
+  const seciliKart = hesaplar.find((h) => hesapDegeri(h) === kart);
+  const kartUyumsuz = Boolean(kart && seciliKart && !kartHesaplari.some((h) => hesapDegeri(h) === kart));
   const degisti = Boolean(ayar && (firma !== (ayar.faturalayan?.tenantId ?? "") || kart !== hesapDegeri(ayar.kartHesap) || elle !== hesapDegeri(ayar.elleHesap)));
   const taslakYaz = (ek: Partial<{ firma: string; kart: string; elle: string }>) => setTaslak({ firma, kart, elle, ...ek });
 
@@ -111,16 +117,18 @@ function FaturaKarti({ onBasari, onHata }: { onBasari: (m: string) => void; onHa
   }
 
   if (!ayar) return <Card id="abonelik-faturasi" title="Abonelik faturası">{yuklemeHatasi ? <><Alert tone="error">{yuklemeHatasi}</Alert><Button onClick={yenile}>Fatura ayarını yeniden yükle</Button></> : <p className="muted" role="status">Fatura ayarları yükleniyor…</p>}</Card>;
-  const hesapSecimi = (deger: string, anahtar: "kart" | "elle", etiket: string) => <Field label={etiket}>
+  const hesapSecimi = (deger: string, anahtar: "kart" | "elle", etiket: string, liste: Hesap[], ipucu?: string) => <div><Field label={etiket}>
     <Select value={deger} disabled={!firma || islem || hesapYukleniyor || Boolean(hesapHatasi)} onChange={(e) => taslakYaz({ [anahtar]: e.target.value })}>
       <option value="">— Seçilmedi (tahsilat açılmaz) —</option>
-      {tlHesaplar.map((h) => <option key={`${h.tur}:${h.id}`} value={`${h.tur}:${h.id}`}>{HESAP_TURU[h.tur]} · {h.ad}</option>)}
+      {anahtar === "kart" && kartUyumsuz && seciliKart && <option value={deger}>{HESAP_TURU[seciliKart.tur]} · {seciliKart.ad} (uygun değil)</option>}
+      {liste.map((h) => <option key={`${h.tur}:${h.id}`} value={`${h.tur}:${h.id}`}>{HESAP_TURU[h.tur]} · {h.ad}</option>)}
     </Select>
-  </Field>;
+  </Field>{ipucu && <small className="platform-field-help">{ipucu}</small>}</div>;
 
   return <Card id="abonelik-faturasi" title="Abonelik faturası" className="platform-invoice-card">
     <div className="stack">
       <div className="row-tight">{ayar.faturalayan ? <Badge variant="success">Açık · {ayar.faturalayan.unvan}</Badge> : <Badge variant="neutral">Kapalı</Badge>}{ayar.baslangicAt && <span className="subtle">{new Date(ayar.baslangicAt).toLocaleString("tr-TR")} sonrası ödemeler faturalanır</span>}</div>
+      {kartUyumsuz && <Alert tone="warning">Seçili kart hesabı ({seciliKart?.ad}) {ayar.etkinSaglayici ? `etkin sağlayıcının (${SAGLAYICI_ADI[ayar.etkinSaglayici] ?? ayar.etkinSaglayici}) POS hesabı değil` : "bir POS hesabı değil"}. Kartla alınan ödemelerin tahsilatı POS işlemlerinde görünmez; uygun bir POS hesabı seçip kaydedin.</Alert>}
       {degisti && <Alert tone="warning">Kaydedilmemiş ayarlar var. Seçimleriniz Kaydet düğmesine bastığınızda uygulanır.</Alert>}
       <p className="platform-field-help">Ödemeler seçilen firmada taslak satış faturasına dönüşür. Kesinleştirme ve gönderim, o firmanın Faturalar ekranında yapılır. Kesinleşen faturanın tahsilatı seçilen hesaba işlenir.</p>
       {firmaHatasi && <Alert tone="error">Firma listesi yüklenemedi: {firmaHatasi} <Button size="sm" onClick={firmaYenile}>Firmaları yeniden yükle</Button></Alert>}
@@ -130,8 +138,8 @@ function FaturaKarti({ onBasari, onHata }: { onBasari: (m: string) => void; onHa
           {ayar.faturalayan && !firmalar?.some((f) => f.tenantId === ayar.faturalayan!.tenantId) && <option value={ayar.faturalayan.tenantId}>{ayar.faturalayan.unvan}</option>}
           {(firmalar ?? []).map((f) => <option key={f.tenantId} value={f.tenantId}>{f.unvan} · {f.vkn}</option>)}
         </Select></Field>
-        {hesapSecimi(kart, "kart", "Kartla alınan ödemelerin hesabı")}
-        {hesapSecimi(elle, "elle", "Elle (havale) alınan ödemelerin hesabı")}
+        {hesapSecimi(kart, "kart", "Kartla alınan ödemelerin hesabı", kartHesaplari, ayar.etkinSaglayici ? `Yalnız ${SAGLAYICI_ADI[ayar.etkinSaglayici] ?? ayar.etkinSaglayici} POS hesapları; tahsilat POS işlemleri listesine komisyon ve kart bilgisiyle düşer.` : "Yalnız POS hesapları.")}
+        {hesapSecimi(elle, "elle", "Elle (havale) alınan ödemelerin hesabı", tlHesaplar)}
       </div>
       {hesapYukleniyor && <p className="platform-field-help" role="status">Seçilen firmanın hesapları yükleniyor…</p>}
       {hesapHatasi && <Alert tone="error">Hesaplar yüklenemedi: {hesapHatasi} <Button size="sm" onClick={hesapYenile}>Hesapları yeniden yükle</Button></Alert>}

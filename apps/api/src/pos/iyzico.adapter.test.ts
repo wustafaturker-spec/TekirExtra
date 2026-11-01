@@ -36,4 +36,16 @@ describe("IyzicoAdapter", () => {
     expect(f.mock.calls[1][0]).toBe("https://sandbox-api.iyzipay.com/payment/refund");
     expect(JSON.parse(f.mock.calls[1][1].body)).toMatchObject({ paymentTransactionId: "PTX-1", price: "40.00", currency: "TRY", conversationId: "cv" });
   });
+  it("PLT-39: ödeme ayrıntısını ödeme numarasıyla okur; kesinti ve kart bilgisi ödeme sonucuyla aynı biçimde", async () => {
+    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      status: "success", paymentStatus: "SUCCESS", paymentId: "38613598", price: 10000, paidPrice: 10000, installment: 1, currency: "TRY",
+      iyziCommissionRateAmount: 349, iyziCommissionFee: 0.25, binNumber: "552608", lastFourDigits: "0006", cardAssociation: "MASTER_CARD", cardFamily: "Paraf", cardType: "CREDIT_CARD", authCode: "138486", hostReference: "H1",
+      itemTransactions: [{ paymentTransactionId: "PTX-9", merchantPayoutAmount: 9650.75 }],
+    }) });
+    vi.stubGlobal("fetch", f);
+    const a = await new IyzicoAdapter().odemeAyrintisi({ apiKey: "api", secretKey: "secret", baseUrl: "https://sandbox-api.iyzipay.com" }, "38613598");
+    expect(f.mock.calls[0][0]).toBe("https://sandbox-api.iyzipay.com/payment/detail");
+    expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ paymentId: "38613598", locale: "tr" });
+    expect(a).toMatchObject({ basarili: true, odemeId: "38613598", fiyat: 10000, odemeIslemNolari: ["PTX-9"], kesinti: { saglayiciKomisyonu: "349", saglayiciUcreti: "0.25", isyerineGecenKalemleri: ["9650.75"], kartBin: "552608", kartSon4: "0006", provizyonKodu: "138486" } });
+  });
 });

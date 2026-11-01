@@ -82,6 +82,26 @@ export class IyzicoAdapter {
     };
   }
 
+  /**
+   * PLT-39: tamamlanmış ödemenin ayrıntısı ödeme numarasıyla (`/payment/detail`).
+   * Kesinti, kart ve işlem numaraları ödeme sonucundakiyle aynı biçimde döner.
+   */
+  async odemeAyrintisi(config: IyzicoConfig, odemeId: string) {
+    const veri = await this.istek(config, "/payment/detail", { locale: "tr", paymentId: odemeId });
+    return {
+      basarili: veri.paymentStatus === "SUCCESS",
+      odemeId: veri.paymentId ? String(veri.paymentId) : odemeId,
+      fiyat: Number(veri.price ?? veri.paidPrice ?? 0),
+      odenen: Number(veri.paidPrice ?? veri.price ?? 0),
+      taksit: Number(veri.installment) >= 1 ? Number(veri.installment) : 1,
+      kesinti: iyzicoKesintisi(veri),
+      odemeIslemNolari: (Array.isArray(veri.itemTransactions) ? veri.itemTransactions : [])
+        .map((k: { paymentTransactionId?: unknown }) => metin(k?.paymentTransactionId))
+        .filter((x: string | undefined): x is string => Boolean(x)),
+      dovizCinsi: String(veri.currency ?? "TRY"),
+    };
+  }
+
   /** PLT-14: kayıtlı kartla, kullanıcı olmadan (non-3D) çekim. Başarısızlıkta hata fırlatır. */
   async kayitliKartlaOde(config: IyzicoConfig, girdi: Record<string, unknown>) {
     const veri = await this.istek(config, "/payment/auth", girdi);

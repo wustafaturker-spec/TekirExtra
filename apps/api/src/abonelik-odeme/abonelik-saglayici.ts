@@ -84,7 +84,7 @@ export interface AbonelikOdemeSaglayicisi {
   kartSil(kart: Record<string, string>): Promise<void>;
 }
 
-const IYZICO_ADRESI: Record<SaglayiciOrtami, string> = { test: "https://sandbox-api.iyzipay.com", canli: "https://api.iyzipay.com" };
+export const IYZICO_ADRESI: Record<SaglayiciOrtami, string> = { test: "https://sandbox-api.iyzipay.com", canli: "https://api.iyzipay.com" };
 
 function iyzicoOrtak(g: OdemeGirdisi) {
   const adres = { contactName: g.firmaUnvani, address: g.alici.adres, city: g.alici.il, country: "Türkiye" };

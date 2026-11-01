@@ -10,7 +10,7 @@ export interface FaturaAyarGirdisi {
   elleHesap: { tur: HesapTuru; id: string } | null;
 }
 
-interface HesapSatiri { tur: HesapTuru; id: string; ad: string; doviz: string }
+interface HesapSatiri { tur: HesapTuru; id: string; ad: string; doviz: string; saglayici: string | null }
 
 /**
  * PLT-20: faturalayan firma ve tahsilat hesapları (platform tarafı). Ayar ilk
@@ -34,6 +34,8 @@ export class AbonelikFaturaAyarService {
       : new Map<string, string>();
     return {
       faturalayan: firma ? { tenantId: firma.tenant_id, unvan: firma.unvan.trim() } : null,
+      // PLT-38: kart hesabı bu sağlayıcıdaki bir POS hesabı olmalı.
+      etkinSaglayici: await this.etkinSaglayici(),
       kartHesap: ayar?.kartHesapTur && ayar.kartHesapId ? { tur: ayar.kartHesapTur, id: ayar.kartHesapId } : null,
       elleHesap: ayar?.elleHesapTur && ayar.elleHesapId ? { tur: ayar.elleHesapTur, id: ayar.elleHesapId } : null,
       baslangicAt: ayar?.baslangicAt ?? null,
@@ -41,6 +43,11 @@ export class AbonelikFaturaAyarService {
       // PLT-23: fatura bekleyen / hata veren / tahsilatı açılamayan ödemeler.
       sorunlu: sorunlu.map((s) => ({ odemeId: s.odemeId, firma: adlar.get(s.odeyenTenantId) ?? s.odeyenTenantId, durum: s.durum, faturaNo: s.faturaNo, hata: s.hata, deneme: s.deneme, guncellendi: s.updatedAt })),
     };
+  }
+
+  /** Etkin abonelik ödeme sağlayıcısı (iyzico | paytr); yoksa null. */
+  private async etkinSaglayici(): Promise<string | null> {
+    return (await this.platform.db.abonelikSaglayiciAyari.findFirst({ where: { etkin: true }, select: { saglayici: true } }))?.saglayici ?? null;
   }
 
   hesaplar(tenantId: string) {
@@ -59,6 +66,13 @@ export class AbonelikFaturaAyarService {
         const bulunan = hesaplar.find((x) => x.tur === h.tur && x.id === h.id);
         if (!bulunan) throw new BadRequestException(`${ad} tahsilat hesabı faturalayan firmada bulunamadı`);
         if (bulunan.doviz !== "TRY") throw new BadRequestException(`${ad} tahsilat hesabı TL olmalı (${bulunan.ad}: ${bulunan.doviz})`);
+      }
+      // PLT-38: kartla alınan ödeme yalnız etkin abonelik sağlayıcısının POS hesabına işlenir.
+      if (g.kartHesap) {
+        if (g.kartHesap.tur !== "pos") throw new BadRequestException("Kartla alınan ödemelerin hesabı bir POS hesabı olmalı");
+        const pos = hesaplar.find((x) => x.tur === "pos" && x.id === g.kartHesap!.id);
+        const etkin = await this.etkinSaglayici();
+        if (etkin && pos?.saglayici !== etkin) throw new BadRequestException(`Kart hesabı, etkin abonelik sağlayıcısının (${etkin}) POS hesabı olmalı`);
       }
     }
     const eski = await db.abonelikFaturaAyari.findUnique({ where: { id: 1 } });

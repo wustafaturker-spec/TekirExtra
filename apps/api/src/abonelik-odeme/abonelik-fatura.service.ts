@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CariService } from "../cari/cari.service";
@@ -11,7 +12,10 @@ import { KasaBankaService } from "../kasa-banka/kasa-banka.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { adSoyadAyir } from "./abonelik-odeme.service";
 import { ABONELIK_KDV_ORANI, fiyatPlani } from "./abonelik-tutari";
-import { SAGLAYICI_ADI } from "./abonelik-saglayici";
+import { IYZICO_ADRESI, SAGLAYICI_ADI } from "./abonelik-saglayici";
+import { SaglayiciAyarlariService } from "./saglayici-ayarlari.service";
+import { IyzicoAdapter, type IyzicoKesintisi } from "../pos/iyzico.adapter";
+import { saglayiciKesintiAlanlari, tahminiKomisyonAlanlari } from "../pos/taksit";
 
 /** PLT-21: faturalayan firmadaki hizmet kartı; yoksa bir kez açılır. */
 export const ABONELIK_STOK_KODU = "TEKIREXTRA-ABONELIK";
@@ -64,7 +68,11 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
     private readonly fatura: FaturaService,
     private readonly cari: CariService,
     private readonly kasa: KasaBankaService,
+    private readonly saglayicilar: SaglayiciAyarlariService,
   ) {}
+
+  /** PLT-39: platformun iyzico hesabından ödeme ayrıntısı (testte değiştirilebilir). */
+  iyzico = new IyzicoAdapter();
 
   onModuleInit(): void {
     this.fatura.kesinlesinceCalistir((tenantId, faturaId) => this.faturaKesinlesti(tenantId, faturaId));
@@ -93,10 +101,99 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(JSON.stringify({ event: "subscription_invoice_failed", odemeId: o.odeme_id, error: kisalt(h) }));
         }
       }
+      // PLT-41: POS hesabına tahsil edilmiş ama POS kaydı açılmamış abonelik tahsilatları.
+      try { islenen += await this.eksikPosKayitlariniTamamla(ayar.faturalayanTenantId); } catch (h) {
+        hata++;
+        this.logger.error(JSON.stringify({ event: "subscription_pos_backfill_failed", error: kisalt(h) }));
+      }
       return { islenen, hata };
     } finally {
       this.calisiyor = false;
     }
+  }
+
+  /**
+   * PLT-39: kartla abonelik ödemesinin sağlayıcı ayrıntısı. iyzico'da ödeme
+   * numarasıyla platformun iyzico hesabından okunur (kart, komisyon, işlem
+   * numaraları); PayTR komisyon bildirmez. Okunamazsa yalnız ödeme numarası döner
+   * ve komisyon POS hesabının oranlarıyla tahmin edilir. Ağ çağrısı transaction dışındadır.
+   */
+  async kartOdemesiAyrintisi(odeyenTenantId: string, odemeId: string, posSaglayici: string | null): Promise<{ saglayiciOdemeId: string | null; kesinti?: IyzicoKesintisi }> {
+    const deneme = await this.prisma.tenantIslem(odeyenTenantId, (tx) =>
+      tx.abonelikOdemeDenemesi.findFirst({ where: { abonelikOdemesiId: odemeId, durum: "odendi" }, select: { saglayici: true, ortam: true, saglayiciOdemeId: true } }),
+    );
+    const saglayiciOdemeId = deneme?.saglayiciOdemeId ?? null;
+    if (!deneme || !saglayiciOdemeId || deneme.saglayici !== "iyzico" || posSaglayici !== "iyzico") return { saglayiciOdemeId };
+    const etkin = await this.saglayicilar.etkin();
+    if (etkin?.saglayici !== "iyzico" || etkin.ortam !== deneme.ortam) return { saglayiciOdemeId };
+    try {
+      const a = await this.iyzico.odemeAyrintisi({ apiKey: etkin.config.apiKey, secretKey: etkin.config.secretKey, baseUrl: IYZICO_ADRESI[etkin.ortam] }, saglayiciOdemeId);
+      return { saglayiciOdemeId, kesinti: a.basarili ? a.kesinti : undefined };
+    } catch (h) {
+      this.logger.warn(JSON.stringify({ event: "subscription_payment_detail_failed", odemeId, error: kisalt(h) }));
+      return { saglayiciOdemeId };
+    }
+  }
+
+  /**
+   * PLT-40: abonelik tahsilatını POS işlem listesine bağlar. Hareket zaten
+   * yazılmıştır (cari ve fatura kapaması onunla); burada yalnız ona bağlı POS
+   * tahsilatı açılır. Bağ, hareketin kasa-banka ekranından geri alınmasını da engeller.
+   */
+  private async posTahsilatiAc(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    g: { posHesapId: string; hareketId: string; cariId: string; faturaId: string; tutar: Prisma.Decimal; odemeTarihi: Date; ayrinti: { saglayiciOdemeId: string | null; kesinti?: IyzicoKesintisi } },
+  ) {
+    const pos = await tx.posHesap.findUniqueOrThrow({ where: { id: g.posHesapId } });
+    return tx.posTahsilat.create({
+      data: {
+        tenantId,
+        posHesapId: pos.id,
+        cariId: g.cariId,
+        faturaId: g.faturaId,
+        tutar: g.tutar,
+        dovizCinsi: pos.dovizCinsi,
+        durum: "odendi",
+        kanal: "abonelik",
+        saglayiciOdemeId: g.ayrinti.saglayiciOdemeId,
+        hareketId: g.hareketId,
+        odemeTarihi: g.odemeTarihi,
+        makbuzAnahtari: randomBytes(32).toString("hex"),
+        ...tahminiKomisyonAlanlari(g.tutar, pos, 1),
+        ...(g.ayrinti.kesinti ? saglayiciKesintiAlanlari(g.tutar, g.ayrinti.kesinti) : {}),
+      },
+    });
+  }
+
+  /** PLT-41: kart hesabı POS iken tahsil edilmiş, POS kaydı olmayan abonelik tahsilatlarını tamamlar. */
+  async eksikPosKayitlariniTamamla(faturalayan: string): Promise<number> {
+    const baglar = await this.prisma.abonelikFaturasi.findMany({
+      where: { faturalayanTenantId: faturalayan, durum: "tahsil_edildi", tahsilatHareketId: { not: null } },
+      select: { odemeId: true, odeyenTenantId: true, tahsilatHareketId: true },
+    });
+    let acilan = 0;
+    for (const b of baglar) {
+      const hareket = await this.prisma.tenantIslem(faturalayan, (tx) =>
+        tx.kasaBankaHareket.findFirst({ where: { id: b.tahsilatHareketId!, posHesapId: { not: null }, posTahsilat: null }, select: { id: true, posHesapId: true, posHesap: { select: { saglayici: true } } } }),
+      );
+      if (!hareket?.posHesapId) continue;
+      const odeme = await this.prisma.tenantIslem(b.odeyenTenantId, (tx) => tx.abonelikOdemesi.findUniqueOrThrow({ where: { id: b.odemeId }, select: { createdAt: true, kaynak: true } }));
+      if (odeme.kaynak !== "saglayici") continue;
+      const ayrinti = await this.kartOdemesiAyrintisi(b.odeyenTenantId, b.odemeId, hareket.posHesap?.saglayici ?? null);
+      const acildi = await this.prisma.tenantIslem(faturalayan, async (tx) => {
+        await tx.$queryRaw`SELECT id FROM kasa_banka_hareketleri WHERE id = ${hareket.id}::uuid FOR UPDATE`;
+        const h = await tx.kasaBankaHareket.findFirst({ where: { id: hareket.id, posTahsilat: null }, select: { id: true, posHesapId: true, cariId: true, faturaId: true, tutar: true } });
+        if (!h?.posHesapId || !h.cariId || !h.faturaId) return false;
+        await this.posTahsilatiAc(tx, faturalayan, { posHesapId: h.posHesapId, hareketId: h.id, cariId: h.cariId, faturaId: h.faturaId, tutar: h.tutar, odemeTarihi: odeme.createdAt, ayrinti });
+        return true;
+      });
+      if (acildi) {
+        acilan++;
+        this.logger.log(JSON.stringify({ event: "subscription_pos_record_backfilled", odemeId: b.odemeId, komisyonKaynagi: ayrinti.kesinti ? "saglayici" : "tahmin" }));
+      }
+    }
+    return acilan;
   }
 
   /** Faturalayan firmada işi yapacak gerçek kullanıcı (denetim izi için): ilk aktif yönetici. */
@@ -184,6 +281,11 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
     const kart = odeme.kaynak === "saglayici";
     const hesapTur = kart ? ayar?.kartHesapTur : ayar?.elleHesapTur;
     const hesapId = kart ? ayar?.kartHesapId : ayar?.elleHesapId;
+    // PLT-39/40: kartla ödeme POS hesabına işlenecekse sağlayıcı ayrıntısı önceden (transaction dışında) okunur.
+    const posHesabi = hesapTur === "pos" && hesapId && kart
+      ? await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: hesapId }, select: { saglayici: true } }))
+      : null;
+    const ayrinti = posHesabi ? await this.kartOdemesiAyrintisi(bag.odeyenTenantId, bag.odemeId, posHesabi.saglayici) : null;
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const f = await faturaKilitleVeKalaniGetir(tx, faturaId);
       if (f.durum !== "kesin") return { durum: "taslak" as const, faturaNo: f.no, hareketId: null, hata: null };
@@ -194,7 +296,11 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
         tip: "tahsilat", tutar: f.kalan.toFixed(2), dovizCinsi: "TRY", tarih: gunTR(odeme.createdAt), faturaId,
         aciklama: `${f.no ?? "Abonelik faturası"} abonelik tahsilatı (${kart ? "kart" : "havale/elle"})`,
       } as Parameters<KasaBankaService["hareketOlustur"]>[2]);
-      return { durum: "tahsil_edildi" as const, faturaNo: f.no, hareketId: (hareket as { id?: string })?.id ?? null, hata: null };
+      const hareketId = (hareket as { id?: string })?.id ?? null;
+      if (ayrinti && hareketId && f.cariId) {
+        await this.posTahsilatiAc(tx, tenantId, { posHesapId: hesapId, hareketId, cariId: f.cariId, faturaId, tutar: f.kalan, odemeTarihi: odeme.createdAt, ayrinti });
+      }
+      return { durum: "tahsil_edildi" as const, faturaNo: f.no, hareketId, hata: null };
     }).catch((h) => ({ durum: "kesinlesti" as const, faturaNo: null, hareketId: null, hata: `Tahsilat açılamadı: ${kisalt(h)}` }));
     await this.prisma.abonelikFaturasi.update({
       where: { odemeId: bag.odemeId },

@@ -3,6 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const bosFatura = { faturalayan: null, kartHesap: null, elleHesap: null, baslangicAt: null, hesaplar: [], sorunlu: [] };
 const firmalar = [{ tenantId: "a", unvan: "Firma A", vkn: "1234567890" }, { tenantId: "b", unvan: "Firma B", vkn: "9999999999" }, { tenantId: "c", unvan: "Firma C", vkn: "1111111111" }];
 const hesap = (id: string, ad: string, doviz = "TRY") => ({ tur: "banka", id, ad, doviz });
+const posHesabi = (id: string, ad: string, saglayici = "iyzico") => ({ tur: "pos", id, ad, doviz: "TRY", saglayici });
 const satir = (page: Page, unvan: string) => page.getByRole("row").filter({ has: page.getByRole("spinbutton", { name: `${unvan} özel tavan`, exact: true }) });
 
 test.beforeEach(async ({ page }) => {
@@ -52,7 +53,7 @@ test("fatura hesabı yüklenemediğinde kayıt engellenir ve geciken eski firma 
   await page.route("**/api/v1/platform/abonelik-fatura/hesaplar/*", (route) => {
     const id = new URL(route.request().url()).pathname.split("/").pop();
     if (id === "a") { ilkIstegiAl(route); return; }
-    return route.fulfill(id === "c" ? { status: 503, json: { message: "Hesap servisi kapalı." } } : { json: [hesap("b1", "B tahsilat"), hesap("usd", "Dolar hesabı", "USD")] });
+    return route.fulfill(id === "c" ? { status: 503, json: { message: "Hesap servisi kapalı." } } : { json: [hesap("b1", "B tahsilat"), posHesabi("p1", "B POS (iyzico)"), hesap("usd", "Dolar hesabı", "USD")] });
   });
   await page.route("**/api/v1/platform/abonelik-fatura", async (route) => { if (route.request().method() === "PUT") { govde = route.request().postDataJSON(); await route.fulfill({ json: { mesaj: "Fatura ayarı kaydedildi." } }); } else await route.fulfill({ json: bosFatura }); });
   page.on("dialog", (d) => void d.accept());
@@ -62,31 +63,33 @@ test("fatura hesabı yüklenemediğinde kayıt engellenir ve geciken eski firma 
   const eski = await ilkIstek;
   await kart.getByLabel("Faturalayan firma").selectOption("b");
   const secim = kart.getByLabel("Kartla alınan ödemelerin hesabı");
-  await expect(secim.locator("option")).toHaveText(["— Seçilmedi (tahsilat açılmaz) —", "Banka · B tahsilat"]);
+  // PLT-38: kartla alınan ödemelerin hesabı yalnız POS olabilir.
+  await expect(secim.locator("option")).toHaveText(["— Seçilmedi (tahsilat açılmaz) —", "POS · B POS (iyzico)"]);
   await eski.fulfill({ json: [hesap("a1", "A tahsilat")] }).catch(() => undefined);
   await expect(secim.locator("option")).toHaveCount(2);
   await kart.getByLabel("Faturalayan firma").selectOption("c");
   await expect(kart.getByText(/Hesap servisi kapalı/)).toBeVisible();
   await expect(kart.getByRole("button", { name: "Kaydet", exact: true })).toBeDisabled();
   await kart.getByLabel("Faturalayan firma").selectOption("b");
-  await secim.selectOption("banka:b1");
+  await secim.selectOption("pos:p1");
+  await kart.getByLabel("Elle (havale) alınan ödemelerin hesabı").selectOption("banka:b1");
   await kart.getByRole("button", { name: "Kaydet", exact: true }).click();
   await expect(page.getByText("Fatura ayarı kaydedildi.")).toBeVisible();
-  expect(govde).toEqual({ faturalayanTenantId: "b", kartHesap: { tur: "banka", id: "b1" }, elleHesap: null });
+  expect(govde).toEqual({ faturalayanTenantId: "b", kartHesap: { tur: "pos", id: "p1" }, elleHesap: { tur: "banka", id: "b1" } });
 });
 
 test("fatura yeniden denemesi kaydedilmemiş ayarları korur", async ({ page }) => {
   await page.route("**/api/v1/platform/abonelik-fatura", (route) => route.fulfill({ json: { ...bosFatura, faturalayan: firmalar[0], sorunlu: [{ odemeId: "o1", firma: "Müşteri", durum: "hata", faturaNo: null, hata: "Geçersiz VKN", deneme: 2, guncellendi: "2026-10-30T08:00:00Z" }] } }));
-  await page.route("**/api/v1/platform/abonelik-fatura/hesaplar/b", (route) => route.fulfill({ json: [hesap("b1", "B tahsilat")] }));
+  await page.route("**/api/v1/platform/abonelik-fatura/hesaplar/b", (route) => route.fulfill({ json: [hesap("b1", "B tahsilat"), posHesabi("p1", "B POS (iyzico)")] }));
   await page.route("**/api/v1/platform/abonelik-fatura/o1/yeniden-dene", (route) => route.fulfill({ json: { mesaj: "İşleme alındı." } }));
   await page.goto("/platform/odeme");
   const kart = page.locator(".platform-invoice-card");
   await kart.getByLabel("Faturalayan firma").selectOption("b");
-  await kart.getByLabel("Kartla alınan ödemelerin hesabı").selectOption("banka:b1");
+  await kart.getByLabel("Kartla alınan ödemelerin hesabı").selectOption("pos:p1");
   await kart.getByRole("button", { name: "Yeniden dene", exact: true }).click();
   await expect(page.getByText("İşleme alındı.")).toBeVisible();
   await expect(kart.getByLabel("Faturalayan firma")).toHaveValue("b");
-  await expect(kart.getByLabel("Kartla alınan ödemelerin hesabı")).toHaveValue("banka:b1");
+  await expect(kart.getByLabel("Kartla alınan ödemelerin hesabı")).toHaveValue("pos:p1");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: "/tmp/platform-fatura-mobile.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -115,4 +118,13 @@ test("sağlayıcı kaydından sonra gizli alan temizlenir, diğer sağlayıcın�
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: "/tmp/platform-odeme-mobile.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("PLT-38: etkin sağlayıcıdan başka POS gösterilmez; kayıtlı uygunsuz kart hesabı uyarı verir", async ({ page }) => {
+  await page.route("**/api/v1/platform/abonelik-fatura", (route) => route.fulfill({ json: { ...bosFatura, faturalayan: firmalar[1], etkinSaglayici: "iyzico", kartHesap: { tur: "banka", id: "b1" }, hesaplar: [hesap("b1", "B tahsilat"), posHesabi("p1", "B POS (iyzico)"), posHesabi("p2", "B PayTR (paytr)", "paytr")] } }));
+  await page.goto("/platform/odeme");
+  const kart = page.locator(".platform-invoice-card");
+  await expect(kart.getByText(/Seçili kart hesabı \(B tahsilat\) etkin sağlayıcının \(iyzico\) POS hesabı değil/)).toBeVisible();
+  await expect(kart.getByLabel("Kartla alınan ödemelerin hesabı").locator("option")).toHaveText(["— Seçilmedi (tahsilat açılmaz) —", "Banka · B tahsilat (uygun değil)", "POS · B POS (iyzico)"]);
+  await expect(kart.getByText("Yalnız iyzico POS hesapları", { exact: false })).toBeVisible();
 });
