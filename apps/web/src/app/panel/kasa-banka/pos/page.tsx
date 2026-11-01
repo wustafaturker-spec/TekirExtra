@@ -90,6 +90,28 @@ interface Tahsilat {
   kartSon4: string | null;
   fraudDurumu: number | null;
 }
+/** KSB-40 */
+interface HesapOzeti {
+  posHesapId: string;
+  dovizCinsi: string;
+  adet: number;
+  komisyonsuzAdet: number;
+  brut: string;
+  komisyonSaglayici: string;
+  komisyonTahmin: string;
+  iade: string;
+  net: string;
+  aktarilabilir: string;
+}
+type OzetDonemi = "bu_ay" | "gecen_ay";
+function ozetAraligi(d: OzetDonemi): { baslangic: string; bitis: string } {
+  const bugun = bugunTR();
+  if (d === "bu_ay") return { baslangic: `${bugun.slice(0, 8)}01`, bitis: bugun };
+  const [y, a] = bugun.split("-").map(Number);
+  const [gy, ga] = a === 1 ? [y - 1, 12] : [y, a - 1];
+  const ay = String(ga).padStart(2, "0");
+  return { baslangic: `${gy}-${ay}-01`, bitis: `${gy}-${ay}-${String(new Date(Date.UTC(gy, ga, 0)).getUTCDate()).padStart(2, "0")}` };
+}
 interface ListeYaniti {
   kayitlar: Tahsilat[];
   toplam: number;
@@ -164,6 +186,14 @@ export default function PosHesaplari() {
   useEffect(() => {
     void yukle();
   }, [yukle]);
+  const [ozetDonemi, setOzetDonemi] = useState<OzetDonemi>("bu_ay");
+  const [ozetler, setOzetler] = useState<Record<string, HesapOzeti>>({});
+  useEffect(() => {
+    const { baslangic, bitis } = ozetAraligi(ozetDonemi);
+    api<{ hesaplar: HesapOzeti[] }>(`/pos/hesap-ozetleri?baslangic=${baslangic}&bitis=${bitis}`)
+      .then((s) => setOzetler(Object.fromEntries(s.hesaplar.map((h) => [h.posHesapId, h]))))
+      .catch(() => setOzetler({}));
+  }, [ozetDonemi, yenile]);
   useEffect(() => {
     if (!seciliCariId) {
       setCariDetay(null);
@@ -673,6 +703,10 @@ export default function PosHesaplari() {
             <span>SAĞLAYICI HESAPLARI</span>
             <h2>POS bakiyeleri</h2>
           </div>
+          <Select aria-label="Özet dönemi" value={ozetDonemi} onChange={(e) => setOzetDonemi(e.target.value as OzetDonemi)}>
+            <option value="bu_ay">Bu ay</option>
+            <option value="gecen_ay">Geçen ay</option>
+          </Select>
         </div>
         <div className="pos-account-grid">
           {hesaplar.map((x) => (
@@ -697,6 +731,7 @@ export default function PosHesaplari() {
                     {x.baglanti?.durum === "aktif" ? "Bağlantı hazır" : (x.baglanti?.sonSenkronHatasi ?? "Bağlantı kontrol edilmeli")}
                   </span>
                 )}
+                {ozetler[x.id] && <PosOzetSatiri o={ozetler[x.id]} />}
               </div>
               <div>
                 <small>Bekleyen alacak</small>
@@ -974,5 +1009,19 @@ export default function PosHesaplari() {
         </div>
       </Card>
     </div>
+  );
+}
+
+/** KSB-40: POS hesabının dönem özeti; komisyonu yazılmamış eski tahsilatlar ayrıca belirtilir. */
+function PosOzetSatiri({ o }: { o: HesapOzeti }) {
+  const komisyon = Number(o.komisyonSaglayici) + Number(o.komisyonTahmin);
+  return (
+    <small className="pos-ozet">
+      {o.adet} tahsilat · brüt {para(o.brut, o.dovizCinsi)} · komisyon {para(komisyon, o.dovizCinsi)}
+      {Number(o.komisyonTahmin) > 0 && ` (${para(o.komisyonTahmin, o.dovizCinsi)} tahmini)`}
+      {Number(o.iade) > 0 && ` · iade ${para(o.iade, o.dovizCinsi)}`} · net {para(o.net, o.dovizCinsi)}
+      {o.komisyonsuzAdet > 0 && ` · ${o.komisyonsuzAdet} eski tahsilatta komisyon yok`}
+      {" · "}aktarılabilir {para(o.aktarilabilir, o.dovizCinsi)}
+    </small>
   );
 }

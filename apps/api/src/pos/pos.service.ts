@@ -673,6 +673,64 @@ export class PosService {
     await cariDenklestir(tx, tenantId, kayit.cariId);
   }
 
+  /**
+   * KSB-40: POS hesaplarının dönem özeti (varsayılan bu ay, İstanbul günleri).
+   * Tahsilat: dönemde ödenen; komisyon tahsilatta yazılı olandır (sağlayıcı /
+   * tahmin ayrı, komisyonu yazılmamış eski tahsilat sayısı ayrıca döner);
+   * iade: dönemde yapılan. Bakiye ve aktarılabilir (valörü gelmiş) güncel değerdir.
+   */
+  async hesapOzetleri(girdi: { baslangic?: string; bitis?: string } = {}) {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const baslangic = girdi.baslangic ?? `${bugun.slice(0, 8)}01`;
+    const bitis = girdi.bitis ?? bugun;
+    const bas = new Date(`${baslangic}T00:00:00+03:00`);
+    const son = new Date(`${bitis}T23:59:59.999+03:00`);
+    const [gruplar, iadeler, plan] = await Promise.all([
+      this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.posTahsilat.groupBy({
+          by: ["posHesapId", "komisyonKaynagi"],
+          where: { durum: "odendi", odemeTarihi: { gte: bas, lte: son } },
+          _count: { _all: true },
+          _sum: { tutar: true, komisyonTutari: true },
+        }),
+      ),
+      this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.posIade.findMany({
+          where: { tarih: { gte: new Date(baslangic), lte: new Date(bitis) } },
+          select: { tutar: true, posTahsilat: { select: { posHesapId: true } } },
+        }),
+      ),
+      this.bankayaGececekler(),
+    ]);
+    const S = (v?: Prisma.Decimal | null) => v ?? new Prisma.Decimal(0);
+    return {
+      baslangic,
+      bitis,
+      hesaplar: plan.map((p) => {
+        const g = gruplar.filter((x) => x.posHesapId === p.posHesap.id);
+        const brut = g.reduce((t, x) => t.add(S(x._sum.tutar)), new Prisma.Decimal(0));
+        const saglayici = g.filter((x) => x.komisyonKaynagi === "saglayici").reduce((t, x) => t.add(S(x._sum.komisyonTutari)), new Prisma.Decimal(0));
+        const tahmin = g.filter((x) => x.komisyonKaynagi === "tahmin").reduce((t, x) => t.add(S(x._sum.komisyonTutari)), new Prisma.Decimal(0));
+        const iade = iadeler.filter((i) => i.posTahsilat.posHesapId === p.posHesap.id).reduce((t, i) => t.add(i.tutar), new Prisma.Decimal(0));
+        const aktarilabilir = p.gruplar.filter((x) => x.vadesiGeldi).reduce((t, x) => t.add(x.net), new Prisma.Decimal(0));
+        return {
+          posHesapId: p.posHesap.id,
+          dovizCinsi: p.posHesap.dovizCinsi,
+          adet: g.reduce((t, x) => t + x._count._all, 0),
+          komisyonsuzAdet: g.filter((x) => !x.komisyonKaynagi).reduce((t, x) => t + x._count._all, 0),
+          brut: brut.toFixed(2),
+          komisyonSaglayici: saglayici.toFixed(2),
+          komisyonTahmin: tahmin.toFixed(2),
+          iade: iade.toFixed(2),
+          net: brut.sub(saglayici).sub(tahmin).sub(iade).toFixed(2),
+          bakiye: p.bakiye,
+          aktarilabilir: aktarilabilir.toFixed(2),
+        };
+      }),
+    };
+  }
+
   /** Her aktif POS hesabı için bankaya geçecek tutarlar, valör tarihine göre. */
   async bankayaGececekler() {
     const { tenantId } = aktifBaglam();

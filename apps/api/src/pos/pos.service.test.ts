@@ -206,6 +206,30 @@ describe("PosService (P1-6)", () => {
     });
   });
 
+  describe("KSB-40 hesap özeti", () => {
+    it("dönem tahsilatını, komisyonu kaynağına göre, iadeyi ve valörü gelmiş aktarılabiliri özetler", async () => {
+      const tx = {
+        posTahsilat: {
+          groupBy: vi.fn().mockResolvedValue([
+            { posHesapId: "p1", komisyonKaynagi: "saglayici", _count: { _all: 2 }, _sum: { tutar: D(1000), komisyonTutari: D("30.50") } },
+            { posHesapId: "p1", komisyonKaynagi: "tahmin", _count: { _all: 1 }, _sum: { tutar: D(500), komisyonTutari: D(10) } },
+            { posHesapId: "p1", komisyonKaynagi: null, _count: { _all: 1 }, _sum: { tutar: D(200), komisyonTutari: null } },
+            { posHesapId: "p2", komisyonKaynagi: "tahmin", _count: { _all: 1 }, _sum: { tutar: D(99), komisyonTutari: D(1) } },
+          ]),
+        },
+        posIade: { findMany: vi.fn().mockResolvedValue([{ tutar: D(50), posTahsilat: { posHesapId: "p1" } }]) },
+      };
+      const { service } = kur(tx);
+      vi.spyOn(service, "bankayaGececekler").mockResolvedValue([
+        { posHesap: { id: "p1", dovizCinsi: "TRY" }, bakiye: "1200.00", gruplar: [{ vadesiGeldi: true, net: "700.00" }, { vadesiGeldi: false, net: "400.00" }] },
+      ] as never);
+      const s = await service.hesapOzetleri({ baslangic: "2026-10-01", bitis: "2026-10-31" });
+      expect(s.hesaplar).toEqual([{ posHesapId: "p1", dovizCinsi: "TRY", adet: 4, komisyonsuzAdet: 1, brut: "1700.00", komisyonSaglayici: "30.50", komisyonTahmin: "10.00", iade: "50.00", net: "1609.50", bakiye: "1200.00", aktarilabilir: "700.00" }]);
+      // Dönem İstanbul günüyle sınırlanır.
+      expect(tx.posTahsilat.groupBy.mock.calls[0][0].where.odemeTarihi.gte.toISOString()).toBe("2026-09-30T21:00:00.000Z");
+    });
+  });
+
   describe("iade", () => {
     const tahsilat = (iadeler: { tutar: number; mahsup: number }[]) => ({
       id: "t1", durum: "odendi", tutar: D(1000), dovizCinsi: "TRY", posHesapId: "p1", cariId: "c1", faturaId: "f1",

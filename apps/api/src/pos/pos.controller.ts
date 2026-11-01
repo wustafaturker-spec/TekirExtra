@@ -15,7 +15,7 @@ import {
 import type { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { Public } from "../auth/public.decorator";
-import { posIadeSemasi, posNedenSemasi, posSlipSemasi, posTahsilatBaslatSemasi, posTahsilatListeSemasi } from "./pos.semalar";
+import { posIadeSemasi, posNedenSemasi, posOzetSemasi, posSlipSemasi, posTahsilatBaslatSemasi, posTahsilatListeSemasi } from "./pos.semalar";
 import type { z } from "zod";
 
 function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
@@ -85,6 +85,10 @@ export class PosController {
   }
   @Post("iadeler/:id/geri-al") @Roller("yonetici", "muhasebe") iadeGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
     return this.service.iadeGeriAl(id, ayristir(posNedenSemasi, govde).neden);
+  }
+  /** KSB-40 */
+  @Get("hesap-ozetleri") @Roller("yonetici", "muhasebe", "salt_okunur") hesapOzetleri(@Query() sorgu: unknown) {
+    return this.service.hesapOzetleri(ayristir(posOzetSemasi, sorgu));
   }
   @Get("bankaya-gececekler") @Roller("yonetici", "muhasebe", "salt_okunur") bankayaGececekler() {
     return this.service.bankayaGececekler();

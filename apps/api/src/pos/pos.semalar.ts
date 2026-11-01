@@ -16,3 +16,8 @@ export const posSlipSemasi = z.object({
   taksitSayisi: z.number().int().min(1).max(12).optional(),
 });
 export const posIadeSemasi = z.object({ tutar: tutarSemasi, tarih: z.string().date("Geçersiz tarih (YYYY-AA-GG)"), neden: nedenSemasi });
+/** KSB-40: dönem özeti; boşsa bu ay. */
+export const posOzetSemasi = z.object({
+  baslangic: z.string().date("Geçersiz başlangıç tarihi").optional(),
+  bitis: z.string().date("Geçersiz bitiş tarihi").optional(),
+}).refine((d) => !d.baslangic || !d.bitis || d.baslangic <= d.bitis, { message: "Başlangıç tarihi bitişten sonra olamaz" });
