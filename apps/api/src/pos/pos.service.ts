@@ -10,7 +10,8 @@ import {
 import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
-import { bugunTR } from "@tekirextra/shared";
+import { bugunTR, posAcikTaksitler, posAzamiTaksit } from "@tekirextra/shared";
+import { tahminiKomisyonAlanlari, taksitTablosu } from "./taksit";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { aktarimPlani } from "./aktarim-plani";
@@ -36,6 +37,12 @@ async function posFaturaKapamasi(tx: Prisma.TransactionClient, faturaId: string 
   if (!faturaId) return {};
   const fatura = await faturaKilitleVeKalaniGetir(tx, faturaId);
   return { faturaKarsiligi: tutar, faturaMahsubu: mahsupAyir(tutar, fatura.kalan).mahsup };
+}
+
+/** KSB-36: sağlayıcı yanıtından gelen taksit ve müşterinin ödediği tutar. */
+interface OdemeAyrintisi {
+  taksit?: number;
+  odenen?: Prisma.Decimal;
 }
 
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -204,6 +211,7 @@ export class PosService {
           eposta: cari.eposta,
           callbackUrl: `${callbackKoku}/api/v1/pos/paytr/callback/${tenantId}/${kayit.id}`,
           callbackId: kayit.id.replace(/-/g, ""),
+          azamiTaksit: posAzamiTaksit(taksitTablosu(kaynak.taksitOranlari)),
         });
         const tamamlanan = await this.prisma.tenantIslem(tenantId, (tx) =>
           tx.posTahsilat.update({ where: { id: kayit.id }, data: { saglayiciToken: sonuc.id, odemeSayfasiUrl: sonuc.link } }),
@@ -223,6 +231,8 @@ export class PosService {
         currency: kaynak.dovizCinsi,
         basketId: girdi.faturaId ?? kayit.id,
         paymentGroup: "PRODUCT",
+        // KSB-35: yalnız komisyonu tanımlı taksitler açılır; tablo boşsa tek çekim.
+        enabledInstallments: kaynak.dovizCinsi === "TRY" ? posAcikTaksitler(taksitTablosu(kaynak.taksitOranlari)) : [1],
         callbackUrl: `${callbackKoku}/api/v1/pos/iyzico/callback/${tenantId}/${kayit.id}`,
         buyer: {
           id: cari.id,
@@ -297,13 +307,17 @@ export class PosService {
     const doviz = girdi.currency === "TL" ? "TRY" : girdi.currency;
     if (doviz !== kayit.dovizCinsi || !new Prisma.Decimal(girdi.payment_amount).div(100).equals(kayit.tutar))
       throw new BadRequestException("PayTR ödeme tutarı veya dövizi uyuşmuyor");
-    await this.odemeyiKaydet(tenantId, kayit, girdi.merchant_oid, "PayTR kart tahsilatı");
+    // KSB-36: total_amount müşterinin ödediğidir (vade farkı dahil); taksit gelmezse tek çekim.
+    await this.odemeyiKaydet(tenantId, kayit, girdi.merchant_oid, "PayTR kart tahsilatı", {
+      taksit: Number(girdi.installment_count) || 1,
+      odenen: girdi.total_amount ? new Prisma.Decimal(girdi.total_amount).div(100) : undefined,
+    });
     return "OK";
   }
 
-  private async odemeyiKaydet(tenantId: string, kayit: any, odemeId: string, aciklama: string) {
+  private async odemeyiKaydet(tenantId: string, kayit: any, odemeId: string, aciklama: string, ayrinti: OdemeAyrintisi = {}) {
     if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari };
-    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) => this.odenmisSay(tx, tenantId, kayit, odemeId, aciklama));
+    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) => this.odenmisSay(tx, tenantId, kayit, odemeId, aciklama, ayrinti));
     if (sonuc.gecOdeme) await this.gecOdemeyiBildir(tenantId, kayit);
     return sonuc;
   }
@@ -328,12 +342,16 @@ export class PosService {
     },
     odemeId: string,
     aciklama: string,
+    ayrinti: OdemeAyrintisi = {},
   ) {
     const simdi = new Date();
     const gecOdeme = kayit.durum !== "baslatildi";
+    // KSB-36: komisyon ödeme anındaki taksit tablosundan tahmin edilir ve tahsilatta saklanır.
+    const hesap = await tx.posHesap.findUnique({ where: { id: kayit.posHesapId }, select: { komisyonOrani: true, islemUcreti: true, taksitOranlari: true } });
+    const komisyon = hesap ? tahminiKomisyonAlanlari(kayit.tutar, hesap, ayrinti.taksit, ayrinti.odenen) : {};
     const hak = await tx.posTahsilat.updateMany({
       where: { id: kayit.id, durum: { in: [...ODENEBILIR_DURUMLAR] }, hareketId: null },
-      data: { durum: "odendi", saglayiciOdemeId: odemeId, odemeTarihi: simdi, hataMesaji: null, gecOdeme },
+      data: { durum: "odendi", saglayiciOdemeId: odemeId, odemeTarihi: simdi, hataMesaji: null, gecOdeme, ...komisyon },
     });
     if (hak.count !== 1) return { basarili: true, tekrar: true, gecOdeme: false, makbuzAnahtari: kayit.makbuzAnahtari };
     await this.tahsilatiYaz(tx, tenantId, kayit, simdi, aciklama);
@@ -445,6 +463,7 @@ export class PosService {
     tarih: string;
     slipNo?: string | null;
     aciklama?: string | null;
+    taksitSayisi?: number;
   }) {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "POS slip tahsilatı");
@@ -470,6 +489,7 @@ export class PosService {
           dovizCinsi: pos.dovizCinsi,
           durum: "odendi",
           kanal: "slip",
+          ...tahminiKomisyonAlanlari(new Prisma.Decimal(girdi.tutar), pos, pos.dovizCinsi === "TRY" ? girdi.taksitSayisi : 1),
           slipNo: girdi.slipNo || null,
           odemeTarihi: tarih,
           makbuzAnahtari: randomBytes(32).toString("hex"),
@@ -644,7 +664,7 @@ export class PosService {
         where: { posHesapId: { in: hesaplar.map((h) => h.id) }, durum: "odendi", odemeTarihi: { not: null } },
         orderBy: { odemeTarihi: "desc" },
         take: 2000,
-        select: { id: true, posHesapId: true, odemeTarihi: true, tutar: true, iadeler: { select: { tutar: true } } },
+        select: { id: true, posHesapId: true, odemeTarihi: true, tutar: true, komisyonTutari: true, iadeler: { select: { tutar: true } } },
       });
       const bugun = bugunTR();
       return hesaplar.map((h) => {
@@ -658,7 +678,7 @@ export class PosService {
           bakiye,
           tahsilatlar
             .filter((t) => t.posHesapId === h.id)
-            .map((t) => ({ id: t.id, odemeTarihi: t.odemeTarihi!, net: t.iadeler.reduce((k, i) => k.sub(i.tutar), t.tutar) })),
+            .map((t) => ({ id: t.id, odemeTarihi: t.odemeTarihi!, net: t.iadeler.reduce((k, i) => k.sub(i.tutar), t.tutar), komisyon: t.komisyonTutari })),
           h,
           bugun,
         );
@@ -775,7 +795,9 @@ export class PosService {
     if (!kayit || !kayit.saglayiciToken || kayit.saglayiciToken !== token) throw new BadRequestException("Geçersiz ödeme callback tokenı");
     if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari };
     const sonuc = await new IyzicoAdapter().odemeSonucu(this.config(kayit.posHesap.baglanti!.sifreliConfig), token);
-    if (!sonuc.basarili || !new Prisma.Decimal(sonuc.tutar).equals(kayit.tutar) || sonuc.dovizCinsi !== kayit.dovizCinsi) {
+    // KSB-36: vade farkı müşteriye yansıtılmışsa ödenen sepet tutarından büyüktür; sepet tutarı tahsilata eşit olmalı.
+    const fiyat = new Prisma.Decimal(sonuc.fiyat);
+    if (!sonuc.basarili || !fiyat.equals(kayit.tutar) || new Prisma.Decimal(sonuc.odenen).lt(fiyat) || sonuc.dovizCinsi !== kayit.dovizCinsi) {
       // Süresi dolmuş/iptal talebin durumu korunur; yalnız açık talep başarısız sayılır.
       await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.posTahsilat.updateMany({
@@ -786,7 +808,7 @@ export class PosService {
       throw new BadRequestException("Ödeme doğrulanamadı");
     }
     const kayitSonucu = await this.prisma.tenantIslem(tenantId, (tx) =>
-      this.odenmisSay(tx, tenantId, kayit, sonuc.odemeId ?? "", "iyzico kart tahsilatı"),
+      this.odenmisSay(tx, tenantId, kayit, sonuc.odemeId ?? "", "iyzico kart tahsilatı", { taksit: sonuc.taksit, odenen: new Prisma.Decimal(sonuc.odenen) }),
     );
     if (kayitSonucu.gecOdeme) await this.gecOdemeyiBildir(tenantId, kayit);
     return kayitSonucu;

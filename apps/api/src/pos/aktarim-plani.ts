@@ -26,6 +26,8 @@ export interface PlanTahsilati {
   odemeTarihi: Date;
   /** Tahsilat tutarı eksi iadeleri. */
   net: Prisma.Decimal;
+  /** KSB-36: tahsilata yazılmış komisyon; boşsa (eski kayıt) hesabın oranı kullanılır. */
+  komisyon?: Prisma.Decimal | null;
 }
 
 export interface AktarimGrubu {
@@ -41,29 +43,34 @@ export interface AktarimGrubu {
 export function aktarimPlani(
   bakiye: Prisma.Decimal,
   tahsilatlar: PlanTahsilati[],
-  hesap: { valorGun: number; komisyonOrani: Prisma.Decimal | string | number },
+  hesap: { valorGun: number; komisyonOrani: Prisma.Decimal | string | number; islemUcreti?: Prisma.Decimal | string | number },
   bugun: string,
 ): { gruplar: AktarimGrubu[]; dagitilamayan: string } {
   let kalan = bakiye.gt(0) ? bakiye : D(0);
-  const paylar: { id: string; valor: string; tutar: Prisma.Decimal }[] = [];
+  const paylar: { id: string; valor: string; tutar: Prisma.Decimal; komisyon: Prisma.Decimal | null }[] = [];
   for (const t of [...tahsilatlar].sort((a, b) => b.odemeTarihi.getTime() - a.odemeTarihi.getTime())) {
     if (!kalan.gt(0)) break;
     if (!t.net.gt(0)) continue;
     const pay = Prisma.Decimal.min(t.net, kalan);
-    paylar.push({ id: t.id, valor: valorTarihi(t.odemeTarihi, hesap.valorGun), tutar: pay });
+    // Tahsilatın bir kısmı önceden aktarılmışsa komisyonu da o oranda kalır.
+    const komisyon = t.komisyon ? t.komisyon.mul(pay).div(t.net).toDecimalPlaces(2) : null;
+    paylar.push({ id: t.id, valor: valorTarihi(t.odemeTarihi, hesap.valorGun), tutar: pay, komisyon });
     kalan = kalan.sub(pay);
   }
   const oran = D(hesap.komisyonOrani);
-  const gruplar = new Map<string, { tutar: Prisma.Decimal; idler: string[] }>();
+  // KSB-35: işlem başı ücret tahsilat başına eklenir.
+  const ucret = D(hesap.islemUcreti ?? 0);
+  const gruplar = new Map<string, { tutar: Prisma.Decimal; komisyon: Prisma.Decimal; idler: string[] }>();
   for (const p of paylar) {
-    const g = gruplar.get(p.valor) ?? { tutar: D(0), idler: [] };
+    const g = gruplar.get(p.valor) ?? { tutar: D(0), komisyon: D(0), idler: [] };
     g.tutar = g.tutar.add(p.tutar);
+    g.komisyon = g.komisyon.add(p.komisyon ?? p.tutar.mul(oran).div(100).add(ucret));
     g.idler.push(p.id);
     gruplar.set(p.valor, g);
   }
   return {
     gruplar: [...gruplar.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([valor, g]) => {
-      const komisyon = g.tutar.mul(oran).div(100).toDecimalPlaces(2);
+      const komisyon = Prisma.Decimal.min(g.komisyon.toDecimalPlaces(2), g.tutar);
       return {
         valorTarihi: valor,
         vadesiGeldi: valor <= bugun,

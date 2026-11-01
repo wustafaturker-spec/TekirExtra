@@ -32,16 +32,26 @@ export const bankaHesapGuncelleSemasi = guncellemeSemasi(bankaHesapOlusturSemasi
 });
 
 /** P1-6: "banka" = fiziksel banka POS'u (bağlantısız; slip elle girilir, bankaya valörle geçer). */
+const oranSemasi = z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, "Komisyon oranı 0-99,99 arası olmalıdır");
+/** KSB-35: 2–12 taksit oranları; her taksit en çok bir kez. */
+const taksitOranlariSemasi = z
+  .array(z.object({ taksit: z.number().int().min(2, "Taksit 2–12 arası olmalıdır").max(12, "Taksit 2–12 arası olmalıdır"), oran: oranSemasi }))
+  .max(11)
+  .refine((t) => new Set(t.map((x) => x.taksit)).size === t.length, "Aynı taksit birden çok kez tanımlanamaz")
+  .transform((t) => [...t].sort((a, b) => a.taksit - b.taksit));
 const posAyarlari = {
   valorGun: z.number().int().min(0, "Valör günü eksi olamaz").max(365).optional(),
-  komisyonOrani: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, "Komisyon oranı 0-99,99 arası olmalıdır").optional(),
+  komisyonOrani: oranSemasi.optional(),
+  islemUcreti: z.string().regex(/^\d{1,6}(\.\d{1,2})?$/, "İşlem ücreti eksi olamaz, en çok 2 ondalık").optional(),
+  taksitOranlari: taksitOranlariSemasi.optional(),
 };
 export const posHesapOlusturSemasi = z.object({
   ad: z.string().min(2).max(100), saglayici: z.enum(["iyzico", "paytr", "banka"]),
   baglantiId: z.string().uuid().optional().nullable(), varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   ...posAyarlari,
-}).refine((d) => d.saglayici !== "banka" || Boolean(d.varsayilanBankaHesapId), { message: "Banka POS'u için paranın geçeceği banka hesabını seçin", path: ["varsayilanBankaHesapId"] });
+}).refine((d) => d.saglayici !== "banka" || Boolean(d.varsayilanBankaHesapId), { message: "Banka POS'u için paranın geçeceği banka hesabını seçin", path: ["varsayilanBankaHesapId"] })
+  .refine((d) => d.dovizCinsi === "TRY" || !d.taksitOranlari?.length, { message: "Taksit yalnız TL POS hesabında tanımlanır", path: ["taksitOranlari"] });
 
 export const posHesapGuncelleSemasi = z.object({
   ad: z.string().min(2).max(100).optional(),

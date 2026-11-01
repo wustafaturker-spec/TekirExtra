@@ -16,6 +16,6 @@ describe("IyzicoAdapter", () => {
   });
   it("retrieve yanitini odeme sonucuna normalize eder", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "success", paymentStatus: "SUCCESS", paymentId: "pay-1", paidPrice: 100, currency: "TRY" }) }));
-    await expect(new IyzicoAdapter().odemeSonucu({ apiKey: "api", secretKey: "secret", baseUrl: "https://sandbox-api.iyzipay.com" }, "tok-1")).resolves.toEqual({ basarili: true, odemeId: "pay-1", tutar: 100, dovizCinsi: "TRY" });
+    await expect(new IyzicoAdapter().odemeSonucu({ apiKey: "api", secretKey: "secret", baseUrl: "https://sandbox-api.iyzipay.com" }, "tok-1")).resolves.toEqual({ basarili: true, odemeId: "pay-1", tutar: 100, fiyat: 100, odenen: 100, taksit: 1, dovizCinsi: "TRY" });
   });
 });

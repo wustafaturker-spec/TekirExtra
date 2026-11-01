@@ -34,6 +34,10 @@ export class IyzicoAdapter {
       basarili: veri.paymentStatus === "SUCCESS",
       odemeId: veri.paymentId ? String(veri.paymentId) : undefined,
       tutar: Number(veri.paidPrice ?? veri.price ?? 0),
+      // KSB-36: sepet tutarı (tahsilat) ile müşterinin ödediği (vade farkı dahil) ayrı döner.
+      fiyat: Number(veri.price ?? veri.paidPrice ?? 0),
+      odenen: Number(veri.paidPrice ?? veri.price ?? 0),
+      taksit: Number(veri.installment) >= 1 ? Number(veri.installment) : 1,
       dovizCinsi: String(veri.currency ?? "TRY"),
       // PLT-14: ödeyen ödeme sayfasında kartını kaydettiyse dolu gelir.
       kart: veri.cardUserKey && veri.cardToken

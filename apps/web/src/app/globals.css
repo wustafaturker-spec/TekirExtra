@@ -4168,6 +4168,11 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .pos-settlement__account tr.is-due > td { background: color-mix(in srgb, var(--warning-soft) 45%, var(--surface)); }
 .pos-settlement__account td .badge { margin-left: .35rem; }
 .pos-form__error { grid-column: 1 / -1; }
+/* KSB-35: POS taksit komisyon tablosu */
+.pos-taksit { grid-column: 1 / -1; margin: 0; padding: .8rem; border: 1px solid var(--border); border-radius: 12px; display: grid; gap: .6rem; }
+.pos-taksit legend { padding: 0 .3rem; font-weight: 700; }
+.pos-taksit p { margin: 0; }
+.pos-taksit__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: .6rem; }
 .pos-form__wide { grid-column: span 2; }
 .pos-refund { color: var(--text-muted); display: block; font-size: .72rem; margin-top: .2rem; }
 .pos-account-grid article > div:last-child > .pos-actions { justify-content: flex-end; }

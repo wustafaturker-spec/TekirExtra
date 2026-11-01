@@ -4025,6 +4025,10 @@ model PosHesap {
   valorGun               Int        @default(1) @map("valor_gun")
   /// P1-6: aktarımda önerilen komisyon oranı (%); kullanıcı aktarımda düzeltir.
   komisyonOrani          Decimal    @default(0) @map("komisyon_orani") @db.Decimal(5, 2)
+  /// KSB-35: işlem başı sabit sağlayıcı ücreti (hesabın dövizinde).
+  islemUcreti            Decimal    @default(0) @map("islem_ucreti") @db.Decimal(10, 2)
+  /// KSB-35: 2–12 taksit oranları, [{ taksit, oran }]; tek çekim komisyonOrani'dır.
+  taksitOranlari         Json       @default("[]") @map("taksit_oranlari")
   createdAt              DateTime   @default(now()) @map("created_at")
   updatedAt              DateTime   @updatedAt @map("updated_at")
 
@@ -4067,6 +4071,16 @@ model PosTahsilat {
   iptalNedeni          String?           @map("iptal_nedeni")
   /// P1-6: ödeme, bağlantı süresi dolduktan ya da iptal edildikten sonra geldi.
   gecOdeme             Boolean           @default(false) @map("gec_odeme")
+  /// KSB-36: ödeme anında yazılır; bağlantıda taksiti müşteri seçer.
+  taksitSayisi         Int               @default(1) @map("taksit_sayisi")
+  /// KSB-36: müşterinin kartından çekilen (vade farkı dahil); yalnız bilgi, firmanın geliri değil.
+  odenenTutar          Decimal?          @map("odenen_tutar") @db.Decimal(15, 2)
+  komisyonOrani        Decimal?          @map("komisyon_orani") @db.Decimal(5, 2)
+  komisyonTutari       Decimal?          @map("komisyon_tutari") @db.Decimal(15, 2)
+  /// KSB-36: tutar − komisyon; bankaya geçecek tutar.
+  netTutar             Decimal?          @map("net_tutar") @db.Decimal(15, 2)
+  /// KSB-36: "tahmin" (taksit tablosu) | "saglayici" (KSB-37).
+  komisyonKaynagi      String?           @map("komisyon_kaynagi")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 

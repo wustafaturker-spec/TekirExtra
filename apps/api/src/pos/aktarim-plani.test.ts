@@ -33,6 +33,22 @@ describe("aktarimPlani", () => {
     expect(plan.dagitilamayan).toBe("0.00");
   });
 
+  it("KSB-35: işlem başı ücreti tahsilat başına komisyona ekler", () => {
+    const plan = aktarimPlani(D(1200), tahsilatlar, { ...hesap, islemUcreti: "0.25" }, "2026-10-02");
+    expect(plan.gruplar.map((g) => g.onerilenKomisyon)).toEqual(["23.00", "7.75"]);
+    expect(plan.gruplar[0].net).toBe("877.00");
+  });
+
+  it("KSB-36: tahsilatın kendi komisyonunu kullanır, kısmi payda oranlar; komisyonsuz eski kayıtta hesabın oranına düşer", () => {
+    const t = [
+      { id: "x", odemeTarihi: an("2026-10-01T10:00:00"), net: D(1000), komisyon: D("35.15") },
+      { id: "y", odemeTarihi: an("2026-10-01T11:00:00"), net: D(400), komisyon: null },
+    ];
+    // y'nin tamamı (400, %2,5 = 10) + x'in yarısı (500, 35,15/2 = 17,58)
+    const plan = aktarimPlani(D(900), t, hesap, "2026-10-02");
+    expect(plan.gruplar[0]).toMatchObject({ brut: "900.00", onerilenKomisyon: "27.58", net: "872.42" });
+  });
+
   it("tahsilatlardan büyük bakiyenin artanını dağıtılamayan olarak verir; sıfır ve eksi bakiyede plan boştur", () => {
     expect(aktarimPlani(D(2500), tahsilatlar, hesap, "2026-10-02").dagitilamayan).toBe("200.00");
     expect(aktarimPlani(D(0), tahsilatlar, hesap, "2026-10-02").gruplar).toEqual([]);

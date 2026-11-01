@@ -53,3 +53,4 @@ export * from "./rapor-grafik";
 export * from "./on-denetim";
 export * from "./gelen-denetim";
 export * from "./yetki-modulleri";
+export * from "./pos-taksit";

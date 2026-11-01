@@ -7,11 +7,11 @@
  */
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
-import { bugunTR } from "@tekirextra/shared";
+import { bugunTR, posAcikTaksitler } from "@tekirextra/shared";
 import { CariBakiye } from "@/components/cari-bakiye";
 import { Alert, Button, Card, Field, Input, Select } from "@/components/ui";
 
-interface BankaPos { id: string; ad: string; dovizCinsi: string; valorGun: number }
+interface BankaPos { id: string; ad: string; dovizCinsi: string; valorGun: number; taksitOranlari?: { taksit: number; oran: string }[] }
 interface Cari { id: string; kod: string; unvan: string; dovizCinsi: string }
 interface Fatura { id: string; no: string | null; genelToplam: string; dovizCinsi: string; odemeOzeti?: { durum: string; kalan: string } }
 
@@ -25,9 +25,12 @@ export function SlipFormu({ hesaplar, cariler, onKapat, onKaydedildi }: { hesapl
   const [tutar, setTutar] = useState("");
   const [tarih, setTarih] = useState(bugunTR());
   const [slipNo, setSlipNo] = useState("");
+  const [taksit, setTaksit] = useState("1");
   const [hata, setHata] = useState("");
   const [kaydediliyor, setKaydediliyor] = useState(false);
   const pos = hesaplar.find((h) => h.id === posHesapId);
+  // KSB-36: taksit yalnız TL hesapta ve tabloda tanımlıysa seçilir.
+  const taksitler = pos?.dovizCinsi === "TRY" ? posAcikTaksitler(pos.taksitOranlari ?? []) : [1];
 
   useEffect(() => {
     if (!cariId) { setFaturalar([]); return; }
@@ -43,7 +46,7 @@ export function SlipFormu({ hesaplar, cariler, onKapat, onKaydedildi }: { hesapl
     setKaydediliyor(true);
     setHata("");
     try {
-      await api("/pos/slip", { method: "POST", body: JSON.stringify({ posHesapId, cariId, faturaId: faturaId || null, tutar: Number(tutar).toFixed(2), tarih, slipNo: slipNo || null }) });
+      await api("/pos/slip", { method: "POST", body: JSON.stringify({ posHesapId, cariId, faturaId: faturaId || null, tutar: Number(tutar).toFixed(2), tarih, slipNo: slipNo || null, taksitSayisi: taksitler.includes(Number(taksit)) ? Number(taksit) : 1 }) });
       onKaydedildi(`Slip tahsilatı kaydedildi; ${pos?.valorGun === 0 ? "aynı gün" : `${pos?.valorGun} gün sonra`} bankaya geçecekler listesinde görünür.`);
     } catch (err) {
       setHata(err instanceof Error ? err.message : "Slip kaydedilemedi");
@@ -84,6 +87,13 @@ export function SlipFormu({ hesaplar, cariler, onKapat, onKaydedildi }: { hesapl
         <Field label="İşlem tarihi">
           <Input required type="date" value={tarih} max={bugunTR()} onChange={(e) => setTarih(e.target.value)} />
         </Field>
+        {taksitler.length > 1 && (
+          <Field label="Taksit">
+            <Select value={taksit} onChange={(e) => setTaksit(e.target.value)}>
+              {taksitler.map((t) => <option key={t} value={t}>{t === 1 ? "Tek çekim" : `${t} taksit`}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field label="Slip / provizyon no">
           <Input maxLength={50} value={slipNo} onChange={(e) => setSlipNo(e.target.value)} placeholder="İsteğe bağlı" />
         </Field>

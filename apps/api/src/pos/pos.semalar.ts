@@ -12,5 +12,7 @@ export const posNedenSemasi = z.object({ neden: nedenSemasi });
 export const posSlipSemasi = z.object({
   posHesapId: z.string().uuid(), cariId: z.string().uuid(), faturaId: z.string().uuid().optional().nullable(), tutar: tutarSemasi,
   tarih: z.string().date("Geçersiz tarih (YYYY-AA-GG)"), slipNo: z.string().trim().max(50).optional().nullable(), aciklama: z.string().trim().max(500).optional().nullable(),
+  /** KSB-36 */
+  taksitSayisi: z.number().int().min(1).max(12).optional(),
 });
 export const posIadeSemasi = z.object({ tutar: tutarSemasi, tarih: z.string().date("Geçersiz tarih (YYYY-AA-GG)"), neden: nedenSemasi });

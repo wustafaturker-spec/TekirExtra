@@ -51,6 +51,8 @@ interface PosHesap {
   varsayilanBankaHesap: { id: string; ad: string } | null;
   valorGun: number;
   komisyonOrani: string;
+  islemUcreti: string;
+  taksitOranlari: { taksit: number; oran: string }[];
   baglanti: { durum: string; sonSenkronHatasi: string | null; updatedAt: string } | null;
 }
 interface Tahsilat {
@@ -77,6 +79,11 @@ interface Tahsilat {
   iptalNedeni: string | null;
   iadeEdilen: string;
   iadeler: { id: string; tutar: string; tarih: string; neden: string }[];
+  taksitSayisi: number;
+  odenenTutar: string | null;
+  komisyonTutari: string | null;
+  netTutar: string | null;
+  komisyonKaynagi: "tahmin" | "saglayici" | null;
 }
 interface ListeYaniti {
   kayitlar: Tahsilat[];
@@ -662,6 +669,8 @@ export default function PosHesaplari() {
                 <small>
                   {x.saglayici === "banka" ? "Banka POS'u" : x.saglayici} · {x.dovizCinsi} · valör{" "}
                   {x.valorGun === 0 ? "aynı gün" : `${x.valorGun} gün`} · %{Number(x.komisyonOrani).toLocaleString("tr-TR")}
+                  {Number(x.islemUcreti) > 0 && ` + ${para(x.islemUcreti, x.dovizCinsi)}`}
+                  {x.taksitOranlari?.length ? ` · taksit ${x.taksitOranlari.map((t) => t.taksit).join(", ")}` : " · tek çekim"}
                 </small>
                 {x.saglayici === "banka" ? (
                   <span>
@@ -831,6 +840,18 @@ export default function PosHesaplari() {
                 </td>
                 <td className="num">
                   <strong>{para(t.tutar, t.dovizCinsi)}</strong>
+                  {/* KSB-36: taksit, komisyon ve bankaya geçecek net */}
+                  {t.durum === "odendi" && t.komisyonTutari !== null && (
+                    <small>
+                      {t.taksitSayisi > 1 ? `${t.taksitSayisi} taksit · ` : ""}komisyon {para(t.komisyonTutari, t.dovizCinsi)}
+                      {t.komisyonKaynagi === "tahmin" ? " (tahmini)" : ""} · net {para(t.netTutar ?? t.tutar, t.dovizCinsi)}
+                    </small>
+                  )}
+                  {t.odenenTutar !== null && Number(t.odenenTutar) > Number(t.tutar) && (
+                    <small title="Müşteriye yansıtılan vade farkını sağlayıcı alır; firmanın geliri değildir.">
+                      müşteri {para(t.odenenTutar, t.dovizCinsi)} ödedi
+                    </small>
+                  )}
                 </td>
                 <td>
                   <div className="pos-actions">

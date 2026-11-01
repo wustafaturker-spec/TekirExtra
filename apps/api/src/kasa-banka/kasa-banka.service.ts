@@ -100,6 +100,14 @@ export function hareketSuzgeciKosulu(s: Omit<HareketSuzgeci, "imlec" | "adet">):
 
 export const makbuzNoBicimle = (onek: string, yil: number, sira: number) => `${onek}${yil}-${String(sira).padStart(6, "0")}`;
 
+/** KSB-35: formdan metin gelen oran/ücret alanları ondalığa çevrilir; gelmeyen alan değişmez. */
+function posUcretAlanlari(girdi: { komisyonOrani?: string; islemUcreti?: string }) {
+  return {
+    komisyonOrani: girdi.komisyonOrani !== undefined ? D(girdi.komisyonOrani) : undefined,
+    islemUcreti: girdi.islemUcreti !== undefined ? D(girdi.islemUcreti) : undefined,
+  };
+}
+
 @Injectable()
 export class KasaBankaService {
   constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService, private readonly donemKilidi: DonemKilidiService) {}
@@ -332,7 +340,7 @@ export class KasaBankaService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (girdi.baglantiId) { const b = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pos" } }); if (!b) throw new BadRequestException("POS bağlantısı bulunamadı"); if (b.saglayici !== girdi.saglayici) throw new BadRequestException("POS hesabı ile bağlantı sağlayıcısı uyuşmuyor"); }
       if (girdi.varsayilanBankaHesapId) { const b = await tx.bankaHesap.findUnique({ where: { id: girdi.varsayilanBankaHesapId } }); if (!b || b.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException("Varsayılan banka hesabı aynı döviz cinsinde olmalıdır"); }
-      return tx.posHesap.create({ data: { tenantId, ...girdi, komisyonOrani: girdi.komisyonOrani ? D(girdi.komisyonOrani) : undefined } });
+      return tx.posHesap.create({ data: { tenantId, ...girdi, ...posUcretAlanlari(girdi) } });
     });
   }
 
@@ -344,8 +352,9 @@ export class KasaBankaService {
       if (!pos) throw new NotFoundException("POS hesabı bulunamadı");
       if (girdi.varsayilanBankaHesapId) { const b = await tx.bankaHesap.findUnique({ where: { id: girdi.varsayilanBankaHesapId } }); if (!b || b.dovizCinsi !== pos.dovizCinsi) throw new BadRequestException("Banka hesabı POS hesabıyla aynı döviz cinsinde olmalıdır"); }
       if (pos.saglayici === "banka" && girdi.varsayilanBankaHesapId === null) throw new BadRequestException("Banka POS'unun bağlı banka hesabı kaldırılamaz");
+      if (girdi.taksitOranlari?.length && pos.dovizCinsi !== "TRY") throw new BadRequestException("Taksit yalnız TL POS hesabında tanımlanır");
       try {
-        return await tx.posHesap.update({ where: { id }, data: { ...girdi, komisyonOrani: girdi.komisyonOrani ? D(girdi.komisyonOrani) : undefined } });
+        return await tx.posHesap.update({ where: { id }, data: { ...girdi, ...posUcretAlanlari(girdi) } });
       } catch {
         throw new BadRequestException(`'${girdi.ad}' adında POS hesabı zaten mevcut`);
       }
