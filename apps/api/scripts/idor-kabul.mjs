@@ -77,7 +77,7 @@ try {
   await calistir("docker", ["run", "--pull=never", "--rm", "--name", `tekir-idor-tara-${nonce}`, ...ETIKET, "--memory=1500m", "--network", ag,
     "-v", `${runtime}:/runtime:ro`, "-v", `${kapsam}:/idor:ro`, "-v", `${rapor}:/rapor`, "--user", `${process.getuid()}:${process.getgid()}`, "--entrypoint", "node",
     ...ortakEnv({ NODE_PATH: "/runtime/apps/api/node_modules", SUPER_URL: ic("tekir"), DATABASE_URL: ic("tekir"), API: "http://api:3001", JWT_SECRET: jwt, RAPOR: "/rapor", IDOR_ASAMA: process.env.IDOR_ASAMA ?? "tum", IDOR_MODULLER: "stok_ihtiyac_plani,maliyet_kontrolu" }),
-    IMAJ, "/idor/tara.cjs"], { yansit: true });
+    IMAJ, process.env.IDOR_ASAMA?.startsWith("rol") ? "/idor/rol.cjs" : "/idor/tara.cjs"], { yansit: true });
   writeFileSync(resolve(rapor, "api-gunluk.txt"), (await docker("logs", "--tail", "4000", api).catch(() => "")).replaceAll(parola, "[gizli]"));
   basarili = true;
 } finally {

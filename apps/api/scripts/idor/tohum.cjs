@@ -121,7 +121,7 @@ function olustur(prisma) {
       await prisma.tenant.update({ where: { id: t }, data: { efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true } }).catch(() => undefined);
       satirlar[harf].ModulAyar = await prisma.modulAyar.findFirst({ where: { tenantId: t } });
     }
-    return { satirlar, hatalar, kiracili, modeller };
+    return { satirlar, hatalar, kiracili, modeller, ekle, adla };
   }
   return { tohumla };
 }
