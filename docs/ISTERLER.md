@@ -1462,10 +1462,10 @@ Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLA
 | SEC-08 | ✅ **Yapay zekâ adresi** (2026-11-01; SEC-03 ile: kiracı adresli istek `disFetch` üzerinden): kiracı adresi bağlantı anında çözülür; özel/iç IP'ye çıkan adres reddedilir. | O |
 | SEC-09 | ✅ **Formül enjeksiyonu** (2026-11-01; ortak `csvHucresi`/`tabloMetniGuvenli` (`packages/shared/src/tablo-hucresi.ts`): web'deki 9 CSV dışa aktarımı, platform ödeme raporu, banka toplu ödeme ve maaş transfer dosyası; mali müşavir/muhasebe aktarımları zaten kaçışlıyordu. xlsx metin hücreleri formül olarak çalışmadığı için değişmedi): bütün Excel/CSV dışa aktarımlarında `= + - @` ile başlayan metinler kaçışlanır (sayılar hariç). | O |
 | SEC-10 | ✅ **Web güvenlik başlıkları** (2026-11-01; `next.config.ts`: CSP (dış betik, dışarıya istek, object, base, dış form, çerçeveleme kapalı; Next/tema/e-Belge karekod betikleri için script-src 'unsafe-inline' kaldı), X-Frame-Options, nosniff, Referrer/Permissions-Policy, HSTS, X-Powered-By kapalı. zod tarayıcıda jitless (eval yoklaması CSP ihlali üretiyordu). Üretim derlemesinde 155 sayfa ihlalsiz; e2e `guvenlik-basliklari.spec.ts`): CSP, X-Frame-Options/frame-ancestors, nosniff, Referrer-Policy, Permissions-Policy. | O |
-| SEC-11 | AES-GCM çözmede etiket uzunluğu 16 bayta sabitlenir. | D |
-| SEC-12 | Girişte kayıtlı olmayan e-postada da sabit maliyetli parola karşılaştırması yapılır (zamanlamadan kullanıcı varlığı anlaşılmaz). | D |
-| SEC-13 | Kimliksiz POS/abonelik callback uçlarında `tenantId`/kayıt kimliği UUID olarak doğrulanır (bozuk değer 400). | D |
-| SEC-14 | Access token'ın sessionStorage'dan çıkarılması (HttpOnly/BFF modeli) için tasarım notu; uygulama ayrı karar. | D |
+| SEC-11 | ✅ (2026-11-02; `core/kripto.ts` `authTagLength: 16`, kısaltılmış etiket artık reddedilir) AES-GCM çözmede etiket uzunluğu 16 bayta sabitlenir. | D |
+| SEC-12 | ✅ (2026-11-02; `auth/sabit-maliyet.ts`: firma ve platform girişinde hesap yok/pasif/kurulum bekliyor durumlarında da argon2 doğrulaması) Girişte kayıtlı olmayan e-postada da sabit maliyetli parola karşılaştırması yapılır (zamanlamadan kullanıcı varlığı anlaşılmaz). | D |
+| SEC-13 | ✅ (2026-11-02; POS iyzico/PayTR dönüşü ve makbuz `ParseUUIDPipe`; abonelik uçları ve banka webhook'u zaten doğruluyordu) Kimliksiz POS/abonelik callback uçlarında `tenantId`/kayıt kimliği UUID olarak doğrulanır (bozuk değer 400). | D |
+| SEC-14 | ✅ Tasarım notu yazıldı, uygulama kararı açık (2026-11-02; `docs/GUVENLIK-ERISIM-TOKENI-TASARIM-NOTU.md`) Access token'ın sessionStorage'dan çıkarılması (HttpOnly/BFF modeli) için tasarım notu; uygulama ayrı karar. | D |
 
 ### 4.3 Veri Bütünlüğü ve Yedekleme
 - **NFR-08:** Mali kayıtlar (kesinleşmiş fatura, kasa/banka fişi) hiçbir koşulda fiziksel silinmemeli; iptal/ters kayıt ile yönetilmelidir.
