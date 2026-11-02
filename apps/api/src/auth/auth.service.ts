@@ -13,6 +13,7 @@ import { generateSecret, generateURI } from "otplib";
 import { coz, sifrele } from "../core/kripto";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
+import { sahteParolaDogrula } from "./sabit-maliyet";
 import { totpDogrula } from "./totp-dogrula";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ikiAdimEksikMi, type GuvenlikPolitikasi } from "../core/guvenlik-politikasi";
@@ -75,12 +76,18 @@ export class AuthService {
       if ((await this.denemeler.hataKaydet("parola", eposta)) && kimlik) await this.kilitKaydet(kimlik.tenantId, kimlik.userId, "parola");
       return new UnauthorizedException("E-posta veya parola hatalı");
     };
-    if (!kimlik) throw await hataliGiris();
+    if (!kimlik) {
+      await sahteParolaDogrula(parola);
+      throw await hataliGiris();
+    }
 
     const kullanici = await this.prisma.tenantIslem(kimlik.tenantId, (tx) =>
       tx.user.findUnique({ where: { id: kimlik.userId } }),
     );
-    if (!kullanici || !kullanici.aktif) throw await hataliGiris();
+    if (!kullanici || !kullanici.aktif) {
+      await sahteParolaDogrula(parola);
+      throw await hataliGiris();
+    }
     if (!(await argon2.verify(kullanici.parolaHash, parola))) throw await hataliGiris();
 
     if (!kullanici.epostaDogrulandi) {

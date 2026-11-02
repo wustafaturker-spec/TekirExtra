@@ -5,6 +5,7 @@ import * as argon2 from "argon2";
 import { platformJwtAnahtari, type PlatformJwtYuku } from "../auth/auth.guard";
 import { coz } from "../core/kripto";
 import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
+import { sahteParolaDogrula } from "../auth/sabit-maliyet";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { PlatformOturumDurumService } from "./platform-oturum-durum.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
@@ -41,9 +42,15 @@ export class PlatformAuthService {
       await this.platform.db.mevzuatOlay.create({ data: { kullaniciId: kullanici?.id ?? null, olay: "giris_basarisiz", detay: { eposta: eposta.trim().toLowerCase(), neden } } });
       return new UnauthorizedException("E-posta, parola ya da doğrulama kodu hatalı");
     };
-    if (!kullanici || !kullanici.aktif) throw await hatali(kullanici ? "pasif" : "hesap_yok");
+    if (!kullanici || !kullanici.aktif) {
+      await sahteParolaDogrula(parola);
+      throw await hatali(kullanici ? "pasif" : "hesap_yok");
+    }
     // PLT-07: davet ya da 2FA sıfırlaması bekleyen hesap bağlantıyla kurulmadan giremez.
-    if (kullanici.davetTuru) throw await hatali("kurulum_bekliyor");
+    if (kullanici.davetTuru) {
+      await sahteParolaDogrula(parola);
+      throw await hatali("kurulum_bekliyor");
+    }
     if (!(await argon2.verify(kullanici.parolaHash, parola))) throw await hatali("parola");
     if (!totpDogrula(coz(kullanici.totpSecretSifreli), totpKodu)) throw await hatali("dogrulama_kodu");
     await this.denemeler.temizle(sayacAnahtari, ["platform"]);
