@@ -64,7 +64,7 @@ try {
       NODE_ENV: "production", NODE_PATH: "", PORT: "3001", TEKIR_WORKER: "0", TRUST_PROXY: "",
       DATABASE_URL: `${ic("tekir_app")}?connection_limit=16`, DATABASE_URL_MIGRATE: ic("tekir"), DATABASE_URL_PLATFORM: `${ic("tekir_platform")}?connection_limit=2`,
       REDIS_URL: "redis://redis:6379", JWT_SECRET: jwt, PLATFORM_JWT_SECRET: platformJwt, OTURUM_ISARETI_SECRET: hex(32), BAGLANTI_SIFRELEME_ANAHTARI: baglantiAnahtari,
-      APP_URL: "http://web.invalid", SMTP_HOST: "smtp.invalid", SMTP_PORT: "25", MAIL_FROM: "idor@ornek.invalid", RATE_LIMIT_MAX: "100000000", METRICS_TOKEN: hex(16),
+      APP_URL: "http://web.invalid", SMTP_HOST: "smtp.invalid", SMTP_PORT: "25", MAIL_FROM: "idor@ornek.invalid", RATE_LIMIT_MAX: "100000000", S3_GIZLI_ANAHTAR: hex(24), METRICS_TOKEN: hex(16),
     }),
     IMAJ, "-r", "/idor/zod-kayit.cjs", "apps/api/dist/main.js");
   await docker("run", "--pull=never", "--rm", "--name", `tekir-idor-bekle-${nonce}`, ...ETIKET, "--network", ag, "--entrypoint", "node", IMAJ, "-e",

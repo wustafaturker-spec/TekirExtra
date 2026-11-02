@@ -17,6 +17,9 @@ const BILINEN_ORNEK_SIRLAR = new Set([
   "dev-oturum-isareti-degistir-0123456789abcdef",
 ]);
 
+/** docker-compose ve docker/postgres-init.sql içindeki örnek veritabanı ve dosya deposu parolaları. */
+const ORNEK_ALTYAPI_PAROLALARI = new Set(["tekir", "tekir_app_dev", "tekir_platform_dev", "tekir-minio-dev"]);
+
 const EN_AZ_JWT_UZUNLUGU = 32;
 
 type Ortam = Record<string, string | undefined>;
@@ -41,6 +44,17 @@ export function uretimSirSorunlari(ortam: Ortam = process.env): string[] {
   // Tek karakterin tekrarı (örnekteki 64 sıfır gibi) uzunluk denetimini geçse de anahtar değildir.
   const anahtar = deger("BAGLANTI_SIFRELEME_ANAHTARI");
   if (anahtar && /^(.)\1*$/.test(anahtar)) sorunlar.push("BAGLANTI_SIFRELEME_ANAHTARI tek karakterin tekrarı (örnek değer)");
+
+  for (const ad of ["DATABASE_URL", "DATABASE_URL_MIGRATE", "DATABASE_URL_PLATFORM"]) {
+    if (!deger(ad)) continue;
+    let parola = "";
+    try { parola = decodeURIComponent(new URL(deger(ad)).password); } catch { sorunlar.push(`${ad} geçerli bir adres değil`); continue; }
+    if (ORNEK_ALTYAPI_PAROLALARI.has(parola)) sorunlar.push(`${ad} depodaki örnek parolayı kullanıyor`);
+  }
+  // Tanımsızsa dosya deposu istemcisi koddaki örnek anahtara düşer.
+  const depo = deger("S3_GIZLI_ANAHTAR");
+  if (!depo) sorunlar.push("S3_GIZLI_ANAHTAR tanımlı değil");
+  else if (ORNEK_ALTYAPI_PAROLALARI.has(depo)) sorunlar.push("S3_GIZLI_ANAHTAR depodaki örnek değer");
 
   return sorunlar;
 }

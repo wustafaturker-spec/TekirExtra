@@ -1,10 +1,11 @@
-# Portlar yalnız bu makineye açılır: Docker yayımladığı portlarda güvenlik duvarını atlar ve parolalar örnektir.
+# Portlar yalnız bu makineye açılır: Docker yayımladığı portlarda güvenlik duvarını atlar.
+# Varsayılan parolalar yalnız boş geliştirme ortamı içindir; gerçek değerler .env'de (POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD).
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: tekir
-      POSTGRES_PASSWORD: tekir
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tekir}
       POSTGRES_DB: tekirextra
     ports:
       - "127.0.0.1:5433:5432"
@@ -46,7 +47,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: tekir
-      MINIO_ROOT_PASSWORD: tekir-minio-dev
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tekir-minio-dev}
     ports:
       - "127.0.0.1:9002:9000"
       - "127.0.0.1:9003:9001"
@@ -69,7 +70,7 @@ services:
       MB_DB_PORT: 5432
       MB_DB_DBNAME: metabase
       MB_DB_USER: tekir
-      MB_DB_PASS: tekir
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-tekir}
     depends_on:
       postgres:
         condition: service_healthy
