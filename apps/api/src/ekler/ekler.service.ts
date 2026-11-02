@@ -92,7 +92,7 @@ export class EklerService {
 
   private personelBelgesiYetkisiDogrula(sahipTur: EkSahipTur): void {
     const { rol } = aktifBaglam();
-    if (sahipTur === "personel" && rol !== "muhasebe" && rol !== "yonetici") {
+    if (sahipTur === "personel" && rol !== "muhasebe" && rol !== "ik" && rol !== "yonetici") {
       throw new ForbiddenException("Özlük belgelerine erişim yetkiniz bulunmuyor");
     }
   }

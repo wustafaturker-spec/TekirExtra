@@ -20,12 +20,26 @@ describe("acikYazmaIstegiVar", () => {
     "TEKLİF HAZIRLA",
     "Teklif Oluştur.",
     "teklif olusturur musun",
+    "gelen faturayı işle",
+    "faturayı işleyelim",
+    "bu faturayı işler misin",
+    "faturayı reddet",
+    "belgeyi kabul edelim",
+    "e-faturayı yanıtla",
+    "xml dosyasını yükle",
   ])("istek sayılır: %s", (metin) => {
     expect(acikYazmaIstegiVar(metin)).toBe(true);
   });
 
   it.each([
     "bu e-postayı özetle",
+    "işlem geçmişini göster",
+    "işlenmemiş faturaları listele",
+    "faturayı işleme",
+    "reddedilen faturalar hangileri",
+    "kabul edilen belgeler",
+    "yüklenen dosyalar",
+    "yanıtlanmamış faturalar",
     "gelen mailleri göster",
     "faturayı oluşturma",
     "müşteriye göndermeyin",

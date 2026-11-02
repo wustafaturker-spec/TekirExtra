@@ -11,6 +11,8 @@
  * Olumsuz kip ("oluşturma", "göndermeyin", "kaydetmeden") istek sayılmaz.
  * Mastar ("oluşturmak istiyorum") ve gereklilik ("onaylamalısın") sayılır.
  */
+const EMIR = "$|[^a-zçğıöşü]|yelim|yin|yiniz|r\\s+m[iı]s";
+
 const KOKLER = [
   "oluştur", "olustur",
   "hazırla", "hazirla",
@@ -21,6 +23,13 @@ const KOKLER = [
   "iptal\\s*e[td]",
   "dönüştür", "donustur",
   "güncelle", "guncelle",
+  // Gelen e-Belge işlemleri. Durum bildiren çekimler ("işlenmemiş", "reddedilen", "yüklenen",
+  // "kabul edilen") istek değildir; yalnız emir ve istek çekimleri.
+  `reddet(?=${EMIR})`, "redded(?=elim)",
+  "kabul\\s*e(?:t(?=$|[^a-zçğıöşü])|delim|din|der\\s+m[iı]s)",
+  `yan[ıi]tla(?=${EMIR})`,
+  `y[uü]kle(?=${EMIR})`,
+  `i[sş]le(?=${EMIR})`,
 ];
 
 /** Kökten hemen sonra gelen olumsuzluk eki: -ma/-me ardından sözcük sonu ya da y/d/s/z. */

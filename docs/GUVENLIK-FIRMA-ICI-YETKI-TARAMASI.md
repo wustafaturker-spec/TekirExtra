@@ -35,7 +35,7 @@ Aynı kiracıda 13 rol, hepsi kapalı bir özel rol ve denetim için yönetici. 
 - **Y-6:** kök neden, dar rollerin açık hesap yolu listesinin `@Roller` kısıtını ezmesiydi; rollü uç artık açılmaz.
 - **Politika:** `cari/:id` kişi ve banka hesapları yönetici, muhasebe, satış, salt okunur, mali müşavir dışında boş döner. Üretim maliyet raporu operatör, kalite ve depoya kapalı. Özel rolde `ayarlar.goruntule` denetim izi ve e-posta geçmişini kapatır.
 
-Açık konu: İK, özlük eklerini `/ekler` üzerinden göremiyor, `/personel/:id/belgeler` üzerinden görüyor; değiştirilmedi.
+İK özlük ekleri: ekran indirmeyi `/ekler` üzerinden yapıyordu, İK 403 alıyordu. İK bu kurala eklendi.
 
 ## Temiz çıkanlar
 
