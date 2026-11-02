@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="tr">
+<head><meta charset="utf-8"><title>Belge</title></head>
+<body>
+<!-- SEC-15: belge görünümü üst pencereden gelir. CSP'si next.config.ts'te: sandbox + dışarıya istek yok. -->
+<script>
+(function () {
+  window.addEventListener("message", function (olay) {
+    if (olay.source !== window.parent || !olay.data || olay.data.tur !== "belge-cerceve-icerik" || typeof olay.data.html !== "string") return;
+    var html = olay.data.html;
+    // srcDoc belgeleri doctype olmadan da standart kipte açılır; aynı görünüm korunur.
+    if (!/^\s*(<\?xml[^>]*>\s*)?<!doctype/i.test(html)) html = "<!doctype html>" + html;
+    document.open();
+    document.write(html);
+    document.close();
+  });
+  window.parent.postMessage({ tur: "belge-cerceve-hazir" }, "*");
+})();
+</script>
+</body>
+</html>

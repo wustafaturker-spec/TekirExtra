@@ -3,31 +3,24 @@ import type { NextConfig } from "next";
 const gelistirme = process.env.NODE_ENV === "development";
 
 /**
- * SEC-10: web güvenlik başlıkları. Next'in satır içi önyükleme betikleri, tema
- * betiği ve e-Belge görünümlerinin (srcDoc iframe ebeveynin CSP'sini devralır)
- * karekod betikleri için `'unsafe-inline'` gerekir; yine de dış betik yükleme,
- * dışarıya veri gönderme (connect-src), eklenti, <base> değiştirme, dışarıya
- * form gönderme ve başka sitenin paneli çerçevelemesi kapanır. Gelen e-postadaki
- * uzak görseller için img-src https açıktır.
+ * SEC-15: sayfaların CSP'si istek başına nonce gerektirdiği için `src/middleware.ts`
+ * içindedir. Entegratörden gelen belge görünümü bu yalıtılmış çerçevede çalışır. Görünüm
+ * karekodu satır içi betikle çizdiği için `'unsafe-inline'` yalnız burada kalır;
+ * `sandbox` sayesinde sayfa ayrı kökendedir, oturuma ve API'ye erişemez.
  */
-const CSP = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${gelistirme ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  `connect-src 'self'${gelistirme ? " ws: wss:" : ""}`,
-  "frame-src 'self' blob: data:",
-  "worker-src 'self' blob:",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
+const BELGE_CERCEVESI_CSP = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob: https:",
+  "font-src data:",
+  "base-uri 'none'",
+  "form-action 'none'",
   "frame-ancestors 'self'",
+  "sandbox allow-scripts",
 ].join("; ");
 
 const GUVENLIK_BASLIKLARI = [
-  { key: "Content-Security-Policy", value: CSP },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -39,7 +32,10 @@ const GUVENLIK_BASLIKLARI = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: GUVENLIK_BASLIKLARI }];
+    return [
+      { source: "/:path*", headers: GUVENLIK_BASLIKLARI },
+      { source: "/belge-cerceve.html", headers: [{ key: "Content-Security-Policy", value: BELGE_CERCEVESI_CSP }] },
+    ];
   },
   output: "standalone",
   // SEC-04: uygulama next/image kullanmıyor; /_next/image ucu (sharp/libvips ve

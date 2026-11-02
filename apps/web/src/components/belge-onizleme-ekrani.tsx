@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { BelgeCercevesi } from "./belge-cercevesi";
 
 /**
  * Entegratörün çizdiği belge görünümünü tam ekran gösterir (L). Sihirbaz
@@ -44,7 +45,7 @@ export function BelgeOnizlemeEkrani({ html, baslik, onKapat }: { html: string; b
         <h3>{baslik}</h3>
         <button className="btn btn--ghost" onClick={onKapat} ref={kapatRef} type="button">Kapat (Esc)</button>
       </div>
-      <iframe className="document-preview-screen__frame" sandbox="allow-scripts" srcDoc={html} title={baslik} />
+      <BelgeCercevesi className="document-preview-screen__frame" html={html} title={baslik} />
     </div>
   );
 }

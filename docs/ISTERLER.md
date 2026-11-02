@@ -1466,6 +1466,7 @@ Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLA
 | SEC-12 | ✅ (2026-11-02; `auth/sabit-maliyet.ts`: firma ve platform girişinde hesap yok/pasif/kurulum bekliyor durumlarında da argon2 doğrulaması) Girişte kayıtlı olmayan e-postada da sabit maliyetli parola karşılaştırması yapılır (zamanlamadan kullanıcı varlığı anlaşılmaz). | D |
 | SEC-13 | ✅ (2026-11-02; POS iyzico/PayTR dönüşü ve makbuz `ParseUUIDPipe`; abonelik uçları ve banka webhook'u zaten doğruluyordu) Kimliksiz POS/abonelik callback uçlarında `tenantId`/kayıt kimliği UUID olarak doğrulanır (bozuk değer 400). | D |
 | SEC-14 | ✅ Tasarım notu yazıldı, uygulama kararı açık (2026-11-02; `docs/GUVENLIK-ERISIM-TOKENI-TASARIM-NOTU.md`) Access token'ın sessionStorage'dan çıkarılması (HttpOnly/BFF modeli) için tasarım notu; uygulama ayrı karar. | D |
+| SEC-15 | ✅ **Nonce'lu CSP** (2026-11-02; `middleware.ts` + `lib/sayfa-csp.ts`: `script-src` içinde `'unsafe-inline'` yok, her sayfa isteğine yeni nonce, bütün sayfalar dinamik. Belge görünümleri `BelgeCercevesi` ile kendi CSP'si olan `/belge-cerceve.html` içinde; 166 sayfa turu ihlalsiz): sayfalarda nonce'suz satır içi betik çalışmaz; entegratör görünümünün karekod betiği yalıtılmış çerçevede çalışmayı sürdürür. | O |
 
 ### 4.3 Veri Bütünlüğü ve Yedekleme
 - **NFR-08:** Mali kayıtlar (kesinleşmiş fatura, kasa/banka fişi) hiçbir koşulda fiziksel silinmemeli; iptal/ters kayıt ile yönetilmelidir.

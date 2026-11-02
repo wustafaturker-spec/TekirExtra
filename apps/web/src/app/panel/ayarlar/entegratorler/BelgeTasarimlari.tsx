@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
+import { BelgeCercevesi } from "@/components/belge-cercevesi";
 import { Alert, Badge, Button, Field, Input, Segmented, Select, Table } from "@/components/ui";
 import { FirmaTasarimi } from "./FirmaTasarimi";
 
@@ -129,10 +130,9 @@ export function BelgeTasarimlari({ baglantiId, turler }: { baglantiId: string; t
                 <Button size="sm" onClick={() => setOnizleme(null)}>Kapat</Button>
               </div>
               {/* Görünüm entegratörden gelir ve karekodu betikle çizer; ayrı kökende, betiğe izinli ama sayfaya erişimsiz çalışır. */}
-              <iframe
+              <BelgeCercevesi
                 title="Tasarım önizlemesi"
-                sandbox="allow-scripts"
-                srcDoc={onizleme.html}
+                html={onizleme.html}
                 style={{ width: "100%", height: "48rem", border: "1px solid var(--border)", borderRadius: "0.6rem", background: "#fff" }}
               />
             </div>

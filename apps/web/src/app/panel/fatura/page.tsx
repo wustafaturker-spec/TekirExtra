@@ -3,6 +3,7 @@
 import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { BelgeCercevesi } from "@/components/belge-cercevesi";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
 import { cariKaydet } from "@/lib/cari-kaydet";
@@ -3554,10 +3555,9 @@ export default function FaturaSayfasi() {
                         <Button type="button" size="sm" onClick={() => setEbelgeWizard({ ...ebelgeWizard, tamEkran: true })}>Tam ekran aç</Button>
                       </div>
                       {/* Görünüm entegratörden gelir ve karekodu betikle çizer; ayrı kökende, betiğe izinli ama sayfaya erişimsiz çalışır. */}
-                      <iframe
+                      <BelgeCercevesi
                         title="Belge önizlemesi"
-                        sandbox="allow-scripts"
-                        srcDoc={o.html}
+                        html={o.html}
                         style={{ width: "100%", height: "32rem", border: "1px solid var(--border)", borderRadius: "0.6rem", background: "#fff" }}
                       />
                     </>

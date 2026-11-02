@@ -1,13 +1,13 @@
 # Erişim token'ının sessionStorage'dan çıkarılması — tasarım notu (SEC-14)
 
-Tarih: 2026-11-02. Durum: **karar bekliyor, uygulanmadı.**
+Tarih: 2026-11-02. Durum: **onaylandı; seçenek B uygulanıyor (SEC-16).**
 
 ## Özet
 
 - Öneri: erişim token'ını aynı origin üzerinden HttpOnly çereze taşımak (seçenek B). Next zaten `/api/v1`'i
   API'ye aktardığı için ayrı bir BFF katmanı gerekmez.
-- Sıralama: önce CSP'deki `script-src 'unsafe-inline'` nonce ile kaldırılmalı. XSS'i önleyen adım odur; çerez
-  modeli yalnız token'ın dışarı taşınmasını engeller.
+- Sıralama: önce CSP'deki `script-src 'unsafe-inline'` nonce ile kaldırıldı (SEC-15, 2026-11-02). Çerez modeli
+  yalnız token'ın dışarı taşınmasını engeller.
 - Değişiklik bütün oturum akışına dokunur, bu yüzden tek başına ve ayrı bir yayınla çıkmalı.
 
 ## Bugünkü durum
@@ -27,10 +27,10 @@ kendiliğinden eklemez. `tkx_` MCP anahtarları ve banka webhook'u da başlıkla
 
 Sayfada betik çalışırsa sessionStorage'daki token okunup dışarı taşınabilir. Gelen e-posta HTML'i bu yolla
 kullanılabiliyordu; SEC-01 temizleme ekledi, SEC-10 `connect-src 'self'` ile dışarıya `fetch`'i kısıtladı. Yine de
-`script-src 'unsafe-inline'` duruyor ve CSP her dışarı taşıma yolunu kapatmaz (örneğin görsel adresi: `img-src https:`).
+CSP her dışarı taşıma yolunu kapatmaz (örneğin görsel adresi: `img-src https:`).
 
 **Çerezin sağlamadığı:** XSS engellenmez. Betik, sayfa açıkken kullanıcı adına API çağırmayı sürdürür.
-Kazanç yalnız token'ın sayfa kapandıktan sonra başka yerden kullanılamamasıdır. Bu nedenle öncelik CSP'dedir.
+Kazanç yalnız token'ın sayfa kapandıktan sonra başka yerden kullanılamamasıdır. Bu nedenle CSP (SEC-15) önce yapıldı.
 
 **Asıl boşluk `/auth/yenile`:** uç, erişim token'ını yanıt gövdesinde döner. Betik `credentials: "include"` ile
 çağırıp taze token alabilir. Gövdeden token kaldırılmadan depolama yeri değiştirmek (bellekte tutma dahil) bu
@@ -87,8 +87,3 @@ Geri dönüş birinci aşamada zararsızdır: eski web paketi Bearer ile çalı�
 - Firma + destek sekmesi aynı tarayıcıda birbirini bozmaz; firma + platform aynı.
 - İki sekme aynı anda yenilerken oturum düşmez.
 - Mevcut e2e akışları, SSE asistan ve dosya indirme/yükleme.
-
-## Karar
-
-1. `script-src` nonce çalışması: yapılacak mı, seçenek B'den önce mi?
-2. Seçenek B: uygulanacak mı, hangi yayında?
