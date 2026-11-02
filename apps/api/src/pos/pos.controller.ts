@@ -96,8 +96,8 @@ export class PosController {
   @Post("iyzico/callback/:tenantId/:tahsilatId")
   @Public()
   async callback(
-    @Param("tenantId") tenantId: string,
-    @Param("tahsilatId") tahsilatId: string,
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("tahsilatId", ParseUUIDPipe) tahsilatId: string,
     @Body() govde: unknown,
     @Res() yanit: Response,
   ) {
@@ -118,8 +118,8 @@ export class PosController {
   @Get("makbuz/:tenantId/:tahsilatId/:anahtar")
   @Public()
   async makbuz(
-    @Param("tenantId") tenantId: string,
-    @Param("tahsilatId") tahsilatId: string,
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("tahsilatId", ParseUUIDPipe) tahsilatId: string,
     @Param("anahtar") anahtar: string,
     @Res() yanit: Response,
   ) {
@@ -130,8 +130,8 @@ export class PosController {
     yanit.send(pdf.buffer);
   }
   @Post("paytr/callback/:tenantId/:tahsilatId") @Public() @HttpCode(200) @Header("Content-Type", "text/plain") paytrCallback(
-    @Param("tenantId") tenantId: string,
-    @Param("tahsilatId") tahsilatId: string,
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("tahsilatId", ParseUUIDPipe) tahsilatId: string,
     @Body() govde: any,
   ) {
     return this.service.paytrCallback(tenantId, tahsilatId, govde);
