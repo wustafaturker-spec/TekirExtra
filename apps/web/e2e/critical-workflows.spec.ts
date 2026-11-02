@@ -2087,7 +2087,7 @@ test("platform faturalayan firmayı ve TL tahsilat hesabını seçer, açılamay
   await expect(kart.getByRole("cell", { name: /VKN\/TCKN'si geçersiz/ })).toBeVisible();
   await kart.getByLabel("Faturalayan firma").selectOption("tf");
   const kartHesabi = kart.getByLabel("Kartla alınan ödemelerin hesabı");
-  await expect(kartHesabi.locator("option")).toHaveText(["— Seçilmedi (tahsilat açılmaz) —", "Banka · Abonelik (Ziraat)", "POS · Sanal POS (iyzico)"]);
+  await expect(kartHesabi.locator("option")).toHaveText(["— Seçilmedi (tahsilat açılmaz) —", "POS · Sanal POS (iyzico)"]);
   await kartHesabi.selectOption("pos:p1");
   await kart.getByLabel("Elle (havale) alınan ödemelerin hesabı").selectOption("banka:b1");
   await kart.getByRole("button", { name: "Kaydet" }).click();
