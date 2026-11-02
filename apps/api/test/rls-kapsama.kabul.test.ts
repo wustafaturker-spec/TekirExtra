@@ -55,6 +55,25 @@ describe("kiracı yalıtımı — RLS kapsaması", () => {
     expect(eksikler).toEqual([]);
   });
 
+  it("kiracılı tablolar arasındaki her yabancı anahtar kiracı bağı denetiminden geçer", async () => {
+    // Bileşik anahtarlar tenant_id içerdiği için kendiliğinden güvenlidir; onlar da burada doğrulanır.
+    const anahtarlar = await prisma.$queryRaw<{ tablo: string; sutun: string; bilesik: boolean; tenantli: boolean; tetikleyici: boolean }[]>`
+      SELECT c.relname AS tablo, a.attname AS sutun, array_length(k.conkey, 1) > 1 AS bilesik,
+             EXISTS (SELECT 1 FROM pg_attribute t WHERE t.attrelid = k.conrelid AND t.attname = 'tenant_id' AND t.attnum = ANY (k.conkey)) AS tenantli,
+             EXISTS (SELECT 1 FROM pg_trigger g JOIN pg_proc f ON f.oid = g.tgfoid
+                     WHERE g.tgrelid = k.conrelid AND f.proname = 'kiraci_bag_denetle' AND NOT g.tgisinternal AND g.tgenabled = 'O' AND a.attnum = ANY (g.tgattr::int2[])) AS tetikleyici
+      FROM pg_constraint k
+      JOIN pg_class c ON c.oid = k.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
+      WHERE k.contype = 'f' AND n.nspname = 'public'
+        AND EXISTS (SELECT 1 FROM pg_attribute x WHERE x.attrelid = k.conrelid AND x.attname = 'tenant_id' AND NOT x.attisdropped)
+        AND EXISTS (SELECT 1 FROM pg_attribute x WHERE x.attrelid = k.confrelid AND x.attname = 'tenant_id' AND NOT x.attisdropped)`;
+    expect(anahtarlar.length).toBeGreaterThan(300);
+    const eksikler = anahtarlar.filter((k) => (k.bilesik ? !k.tenantli : !k.tetikleyici)).map((k) => `${k.tablo}.${k.sutun}`);
+    expect(eksikler).toEqual([]);
+  });
+
   it("istisna listesi yalnız gerçekten var olan tabloları içerir", async () => {
     const mevcut = await prisma.$queryRaw<{ tablo: string }[]>`
       SELECT table_name AS tablo FROM information_schema.tables WHERE table_schema = 'public'`;

@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ArgumentsHost, Catch, ExceptionFilter, HttpException, ServiceUnavailableException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { MetricsService } from "./metrics.service";
@@ -36,6 +36,14 @@ export function istemciGovdeHatasi(hata: unknown): { status: number; mesaj: stri
   return { status: h.status, mesaj: GOVDE_HATASI_ILETILERI[String(h.type)] ?? "İstek gövdesi işlenemedi" };
 }
 
+/**
+ * P2003: bağlı kayıt yok (başka kiracınınki dahil, kiraci_bag_denetle) ya da kayıt başka
+ * satırlarca kullanılıyor. İstemci hatasıdır; hangisi olduğu ve kimlik ayrıntısı söylenmez.
+ */
+export function bagHatasiMi(hata: unknown): boolean {
+  return hata instanceof Error && hata.name.startsWith("PrismaClient") && (hata as { code?: unknown }).code === "P2003";
+}
+
 @Catch()
 export class ObservabilityExceptionFilter implements ExceptionFilter {
   constructor(private readonly metrics: MetricsService) {}
@@ -44,7 +52,9 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
     const yogun = yogunlukHatasiMi(hata);
     const exception = yogun
       ? new ServiceUnavailableException("Sistem şu an yoğun, birkaç saniye sonra yeniden deneyin")
-      : hata;
+      : bagHatasiMi(hata)
+        ? new BadRequestException("Seçilen bağlı kayıt bulunamadı ya da kayıt başka işlemlerde kullanılıyor")
+        : hata;
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();

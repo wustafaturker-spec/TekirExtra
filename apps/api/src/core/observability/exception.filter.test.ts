@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
-import { ObservabilityExceptionFilter } from "./exception.filter";
+import { bagHatasiMi, ObservabilityExceptionFilter  } from "./exception.filter";
 
 describe("ObservabilityExceptionFilter Zod doğrulaması", () => {
   it("ZodError hatasını alan mesajlarıyla HTTP 400'e dönüştürür", () => {
@@ -88,5 +88,14 @@ describe("ObservabilityExceptionFilter istek gövdesi hataları (SEC-04)", () =>
     expect(a.status).toHaveBeenCalledWith(500);
     expect(a.json).toHaveBeenCalledWith({ message: "Beklenmeyen sunucu hatası" });
     expect(calistir(govdeHatasi(503, "x")).status).toHaveBeenCalledWith(500);
+  });
+});
+
+describe("yabancı anahtar hatası (P2003)", () => {
+  it("yalnız Prisma P2003 bağ hatası sayılır", () => {
+    const hata = Object.assign(new Error("x"), { name: "PrismaClientKnownRequestError", code: "P2003" });
+    expect(bagHatasiMi(hata)).toBe(true);
+    expect(bagHatasiMi(Object.assign(new Error("x"), { name: "PrismaClientKnownRequestError", code: "P2002" }))).toBe(false);
+    expect(bagHatasiMi(Object.assign(new Error("x"), { code: "P2003" }))).toBe(false);
   });
 });
