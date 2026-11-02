@@ -19,6 +19,7 @@ const nonce = randomBytes(6).toString("hex"), database = `idor_${nonce}`, parola
 const ag = `tekir-idor-${nonce}`, pg = `tekir-idor-pg-${nonce}`, redis = `tekir-idor-redis-${nonce}`, api = `tekir-idor-api-${nonce}`;
 const hex = (n) => randomBytes(n).toString("hex");
 const jwt = hex(32), platformJwt = hex(32);
+const baglantiAnahtari = hex(32);
 const kapsam = fileURLToPath(new URL("./idor", import.meta.url));
 
 function calistir(komut, args, secenek = {}) {
@@ -62,7 +63,7 @@ try {
     ...ortakEnv({
       NODE_ENV: "production", NODE_PATH: "", PORT: "3001", TEKIR_WORKER: "0", TRUST_PROXY: "",
       DATABASE_URL: `${ic("tekir_app")}?connection_limit=16`, DATABASE_URL_MIGRATE: ic("tekir"), DATABASE_URL_PLATFORM: `${ic("tekir_platform")}?connection_limit=2`,
-      REDIS_URL: "redis://redis:6379", JWT_SECRET: jwt, PLATFORM_JWT_SECRET: platformJwt, OTURUM_ISARETI_SECRET: hex(32), BAGLANTI_SIFRELEME_ANAHTARI: hex(32),
+      REDIS_URL: "redis://redis:6379", JWT_SECRET: jwt, PLATFORM_JWT_SECRET: platformJwt, OTURUM_ISARETI_SECRET: hex(32), BAGLANTI_SIFRELEME_ANAHTARI: baglantiAnahtari,
       APP_URL: "http://web.invalid", SMTP_HOST: "smtp.invalid", SMTP_PORT: "25", MAIL_FROM: "idor@ornek.invalid", RATE_LIMIT_MAX: "100000000", METRICS_TOKEN: hex(16),
     }),
     IMAJ, "-r", "/idor/zod-kayit.cjs", "apps/api/dist/main.js");
@@ -73,11 +74,13 @@ try {
   if (rotalar.length < 100) throw new Error(`Rota listesi okunamadı (${rotalar.length}):\n${gunluk.slice(-2000)}`);
   writeFileSync(resolve(rapor, "rotalar.json"), JSON.stringify(rotalar));
   console.log(`API hazır; ${rotalar.length} rota. Tarama başlıyor.`);
+  // Canlı model denemesi: yalnız API dışarı çıkabilir; SMTP ve entegratör sahte olduğundan gönderim gerçekleşmez.
+  if (process.env.IDOR_ASAMA === "pi") await docker("network", "connect", "bridge", api);
 
   await calistir("docker", ["run", "--pull=never", "--rm", "--name", `tekir-idor-tara-${nonce}`, ...ETIKET, "--memory=1500m", "--network", ag,
     "-v", `${runtime}:/runtime:ro`, "-v", `${kapsam}:/idor:ro`, "-v", `${rapor}:/rapor`, "--user", `${process.getuid()}:${process.getgid()}`, "--entrypoint", "node",
-    ...ortakEnv({ NODE_PATH: "/runtime/apps/api/node_modules", SUPER_URL: ic("tekir"), DATABASE_URL: ic("tekir"), API: "http://api:3001", JWT_SECRET: jwt, RAPOR: "/rapor", IDOR_ASAMA: process.env.IDOR_ASAMA ?? "tum", IDOR_MODULLER: "stok_ihtiyac_plani,maliyet_kontrolu" }),
-    IMAJ, process.env.IDOR_ASAMA?.startsWith("rol") ? "/idor/rol.cjs" : "/idor/tara.cjs"], { yansit: true });
+    ...ortakEnv({ NODE_PATH: "/runtime/apps/api/node_modules", SUPER_URL: ic("tekir"), DATABASE_URL: ic("tekir"), API: "http://api:3001", JWT_SECRET: jwt, BAGLANTI_SIFRELEME_ANAHTARI: baglantiAnahtari, IDOR_LLM: process.env.IDOR_LLM ?? "{}", PI_ATLA: process.env.PI_ATLA ?? "", RAPOR: "/rapor", IDOR_ASAMA: process.env.IDOR_ASAMA ?? "tum", IDOR_MODULLER: "stok_ihtiyac_plani,maliyet_kontrolu" }),
+    IMAJ, process.env.IDOR_ASAMA === "pi" ? "/idor/pi.cjs" : process.env.IDOR_ASAMA?.startsWith("rol") ? "/idor/rol.cjs" : "/idor/tara.cjs"], { yansit: true });
   writeFileSync(resolve(rapor, "api-gunluk.txt"), (await docker("logs", "--tail", "4000", api).catch(() => "")).replaceAll(parola, "[gizli]"));
   basarili = true;
 } finally {
