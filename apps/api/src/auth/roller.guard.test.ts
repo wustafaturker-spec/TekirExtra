@@ -16,6 +16,8 @@ describe("çalışan rol kapısı (PRS-21)", () => {
     expect(baglamla("calisan", undefined, "/api/v1/bildirimler/ozet")).toBe(true);
     expect(() => baglamla("calisan", ["muhasebe"], "/api/v1/personel")).toThrow(/yetkiniz yok/);
     expect(baglamla("calisan", ["calisan"], "/api/v1/self-servis/ben")).toBe(true);
+    expect(() => baglamla("calisan", ["muhasebe"], "/api/v1/bildirimler/tara")).toThrow(/yetkiniz yok/);
+    expect(() => baglamla("b2b_bayi", ["muhasebe"], "/api/v1/bildirimler/tara")).toThrow(/yetkiniz yok/);
   });
   it("öbür rollerin davranışı değişmez", () => {
     expect(baglamla("muhasebe", undefined, "/api/v1/firma")).toBe(true);
@@ -26,7 +28,7 @@ describe("çalışan rol kapısı (PRS-21)", () => {
 
 describe("özel rol kutuları (KLN-20)", () => {
   const ozelle = (rol: string, gerekli: string[] | undefined, method: string, path: string, kapali: string[], saltOkuma = false) => {
-    const reflector = { getAllAndOverride: (anahtar: string) => (anahtar === "roller" ? gerekli : saltOkuma) } as never;
+    const reflector = { getAllAndOverride: (anahtar: string) => (anahtar === "roller" ? gerekli : anahtar === "ozelRoldeYazmaKapali" ? false : saltOkuma) } as never;
     const guard = new RollerGuard(reflector);
     const ctx = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ method, path }) }) } as never;
     return istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: rol as never, ozelRol: { id: "o1", kapali } } }, () => guard.canActivate(ctx));
@@ -58,5 +60,23 @@ describe("B2B bayi rol kapısı", () => {
     expect(baglamla("b2b_bayi", ["b2b_bayi", "muhasebe", "satis"], "/api/v1/b2b/profil")).toBe(true);
     expect(baglamla("b2b_bayi", undefined, "/api/v1/auth/ben")).toBe(true);
     expect(baglamla("b2b_bayi", undefined, "/api/v1/bildirimler/ozet")).toBe(true);
+  });
+});
+
+describe("rol ve kullanıcı yönetimi özel rolde (yetki yükseltme)", () => {
+  const dene = (method: string, path: string, ozelRol: { id: string; kapali: string[] } | undefined) => {
+    const guard = new RollerGuard({ getAllAndOverride: (anahtar: string) => (anahtar === "roller" ? ["yonetici"] : anahtar === "ozelRoldeYazmaKapali") } as never);
+    const ctx = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ method, path }) }) } as never;
+    return istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: "yonetici" as never, ...(ozelRol ? { ozelRol } : {}) } }, () => guard.canActivate(ctx));
+  };
+  const ozel = { id: "o", kapali: [] };
+
+  it("hiçbir kutu kapalı olmasa da yazamaz, okuyabilir", () => {
+    expect(() => dene("PATCH", "/api/v1/ozel-roller/1", ozel)).toThrow(/özel rolde kapalı/);
+    expect(() => dene("POST", "/api/v1/kullanicilar", ozel)).toThrow(/özel rolde kapalı/);
+    expect(dene("GET", "/api/v1/ozel-roller", ozel)).toBe(true);
+  });
+  it("tam yönetici etkilenmez", () => {
+    expect(dene("PATCH", "/api/v1/ozel-roller/1", undefined)).toBe(true);
   });
 });

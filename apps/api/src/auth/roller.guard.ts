@@ -7,7 +7,7 @@ import {
 import { Reflector } from "@nestjs/core";
 import { ozelRolIstegiKapali, type Rol } from "@tekirextra/shared";
 import { baglamAl } from "../core/istek-baglami";
-import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, SALT_OKUMA_ANAHTAR } from "./public.decorator";
+import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, OZEL_ROLDE_YAZMA_KAPALI_ANAHTAR, SALT_OKUMA_ANAHTAR } from "./public.decorator";
 import { ROLLER_ANAHTAR } from "./roller.decorator";
 
 /** Çalışan ve B2B bayinin @Roller'da adı geçmeyen uçlardan yalnız erişebildiği hesap uçları. */
@@ -46,12 +46,19 @@ export class RollerGuard implements CanActivate {
     // hesaplarının oturum/bildirim uçlarına erişir; @Roller taşımayan genel uçlar onlara kapalı.
     if (baglam && DAR_ROLLER.includes(baglam.rol)) {
       if (gerekli?.includes(baglam.rol)) return true;
+      // Açık hesap yollarının altında başka rollere ayrılmış uç (ör. bildirim taraması) açılmaz.
+      if (gerekli?.length) throw new ForbiddenException("Bu işlem için yetkiniz yok");
       const yol = String(context.switchToHttp().getRequest<{ path?: string }>()?.path ?? "").replace(/^\/api\/v\d+/, "");
       if (CALISAN_ACIK_YOLLAR.some((onek) => yol === onek || yol.startsWith(`${onek}/`))) return true;
       throw new ForbiddenException("Bu işlem için yetkiniz yok");
     }
     if (!baglam) return true; // @Public uçlar — AuthGuard zaten karar verdi
     if (!rolUcaYetkili(baglam.rol, gerekli)) throw new ForbiddenException("Bu işlem için yetkiniz yok");
+    // Rol ve kullanıcı yönetimi tam yetki ister: özel rol kendini ya da başkasını yükseltip kutuları aşamaz.
+    if (baglam.ozelRol && this.reflector.getAllAndOverride<boolean>(OZEL_ROLDE_YAZMA_KAPALI_ANAHTAR, [context.getHandler(), context.getClass()])) {
+      const { method } = context.switchToHttp().getRequest<{ method: string }>();
+      if (method !== "GET" && method !== "HEAD") throw new ForbiddenException("Rol ve kullanıcı yönetimi özel rolde kapalıdır");
+    }
     // KLN-20: özel rol şablonun yetkisini yalnız daraltır.
     if (baglam.ozelRol?.kapali.length) {
       const istek = context.switchToHttp().getRequest<{ method: string; path?: string }>();

@@ -7,7 +7,8 @@ import { PazaryeriService } from "./pazaryeri.service";
 @Controller("pazaryeri")
 export class PazaryeriController {
   constructor(private readonly service: PazaryeriService) {}
-  @Get("siparisler") listele(@Query("durum") durum?: string) { return this.service.listele(durum); }
+  // Müşterinin adı, telefonu, TCKN/VKN'si ve adresi döner; ekran yalnız muhasebede.
+  @Get("siparisler") @Roller("muhasebe") listele(@Query("durum") durum?: string) { return this.service.listele(durum); }
   @Post("siparisler/ice-aktar") @Roller("yonetici")
   iceAktar(@Body() govde: unknown) {
     const sonuc = pazaryeriSiparisSemasi.safeParse(govde);

@@ -31,6 +31,8 @@ export interface YetkiModulu {
    * döviz kuru, modül ayarları); bu modülde yalnız yazma kutuları kapatılabilir.
    */
   yalnizYazma?: boolean;
+  /** `yalnizYazma` modülünde görüntüleme kutusuna yine de bağlı olan hassas okumalar (API yol önekleri). */
+  korunanOkuma?: readonly string[];
 }
 
 export const YETKI_MODULLERI: readonly YetkiModulu[] = [
@@ -49,11 +51,11 @@ export const YETKI_MODULLERI: readonly YetkiModulu[] = [
   { kod: "butce_nakit", ad: "Bütçe ve Nakit Akışı", api: ["butce", "nakit-akisi"], panel: ["/panel/butce", "/panel/nakit-akisi"] },
   { kod: "raporlar", ad: "Raporlar", api: ["raporlar", "rapor", "rapor-abonelikleri", "ai/rapor"], panel: ["/panel/raporlar"] },
   { kod: "mali_musavir", ad: "Mali Müşavir ve Muhasebe Aktarımı", api: ["mali-musavir"], panel: ["/panel/mali-musavir"] },
-  { kod: "donem_kapatma", ad: "Dönem Kapatma", api: ["donem-kapatma"], panel: ["/panel/donem-kapatma"] },
+  { kod: "donem_kapatma", ad: "Dönem Kapatma", api: ["donem-kapatma", "duzeltmeler"], panel: ["/panel/donem-kapatma"] },
   { kod: "yapay_zeka", ad: "Yapay Zekâ ve Asistan", api: ["ai", "mcp"], panel: ["/panel/ai"] },
   {
-    kod: "ayarlar", ad: "Ayarlar", yalnizYazma: true,
-    api: ["ayarlar", "kullanicilar", "denetim", "kullanim", "eposta", "guvenlik-politikasi", "destek-izni", "abonelik", "calisma-takvimi", "doviz-kurlari", "firma", "baglantilar", "belge-gorunumu"],
+    kod: "ayarlar", ad: "Ayarlar", yalnizYazma: true, korunanOkuma: ["denetim", "eposta/gecmis"],
+    api: ["ayarlar", "kullanicilar", "ozel-roller", "denetim", "kullanim", "eposta", "guvenlik-politikasi", "destek-izni", "abonelik", "calisma-takvimi", "doviz-kurlari", "firma", "baglantilar", "belge-gorunumu"],
     panel: ["/panel/ayarlar/kullanicilar", "/panel/ayarlar/denetim", "/panel/ayarlar/kullanim", "/panel/ayarlar/guvenlik", "/panel/ayarlar/abonelik"],
   },
 ];
@@ -101,13 +103,20 @@ export function yolIslemi(yontem: string, yol: string, saltOkuma = false): Yetki
   return "duzenle";
 }
 
+/** Görüntüleme, bu yolda özel rolün görüntüleme kutusuna bağlı mı? `yalnizYazma` modüllerde yalnız korunan okumalar. */
+export function okumaKutusunaBagli(modul: YetkiModulu, yol: string): boolean {
+  if (!modul.yalnizYazma) return true;
+  const temiz = yol.replace(/^\/+/, "").replace(/^api\/v\d+\//, "").split("?")[0];
+  return (modul.korunanOkuma ?? []).some((onek) => temiz === onek || temiz.startsWith(`${onek}/`));
+}
+
 /** İstek özel rolün kapattığı bir kutuya mı düşüyor? */
 export function ozelRolIstegiKapali(kapaliKutular: readonly string[], yontem: string, yol: string, saltOkuma = false): boolean {
   if (!kapaliKutular.length) return false;
   const modul = yolModulu(yol);
   if (!modul) return false;
   const islem = yolIslemi(yontem, yol, saltOkuma);
-  if (islem === "goruntule" && modul.yalnizYazma) return false;
+  if (islem === "goruntule" && !okumaKutusunaBagli(modul, yol)) return false;
   return kapaliKutular.includes(yetkiAnahtari(modul.kod, islem));
 }
 

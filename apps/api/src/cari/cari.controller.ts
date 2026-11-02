@@ -310,7 +310,9 @@ export class CariController {
     await this.cariService.hareketSil(id, hareketId);
   }
 
+  /** Görüşme notları: CRM'i kullanan ekranların rolleri (cari kartı, CRM). */
   @Get(":id/crm")
+  @Roller("muhasebe", "satis", "salt_okunur")
   async crmGetir(@Param("id") id: string) { return this.cariService.crmGetir(id); }
 
   /** CARI-43: Cari Durum Paneli; bölümler rolün görebildiğine göre döner (CARI-46). */

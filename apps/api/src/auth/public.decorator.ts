@@ -37,3 +37,7 @@ export const DestekOturumundaAcik = () => SetMetadata(DESTEK_OTURUMUNDA_ACIK_ANA
 
 export const IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR = "ikiAdimKurulumundaAcik";
 export const IkiAdimKurulumundaAcik = () => SetMetadata(IKI_ADIM_KURULUMUNDA_ACIK_ANAHTAR, true);
+
+/** Rol ve kullanıcı yönetimi: özel rollü kullanıcı okuyabilir, yazamaz (yetki yükseltme yolu olmasın). */
+export const OZEL_ROLDE_YAZMA_KAPALI_ANAHTAR = "ozelRoldeYazmaKapali";
+export const OzelRoldeYazmaKapali = () => SetMetadata(OZEL_ROLDE_YAZMA_KAPALI_ANAHTAR, true);

@@ -15,6 +15,7 @@ import * as argon2 from "argon2";
 import { ROLLER } from "@tekirextra/shared";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { OzelRoldeYazmaKapali } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -66,6 +67,7 @@ const KULLANICI_SECIMI = {
 /** Firma içi kullanıcı yönetimi (KLN-02) — yalnızca yönetici. */
 @Controller("kullanicilar")
 @Roller("yonetici")
+@OzelRoldeYazmaKapali()
 export class KullanicilarController {
   constructor(
     private readonly prisma: PrismaService,

@@ -30,6 +30,7 @@ const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
   { yol: "/panel/ai/hafiza", roller: ["muhasebe", "satis"] }, // AI-59: API ile aynı roller.
   { yol: "/panel/raporlar/maliyet-eksikleri", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },
   { yol: "/panel/raporlar/tahmin-isabeti", roller: FINANS_ROLLERI },
+  { yol: "/panel/uretim/maliyet", roller: ["muhasebe", "salt_okunur", "uretim_planlama", "maliyet_muhasebesi"] }, // API uretim/maliyet-raporu ile aynı roller.
   { yol: "/panel/stok/maliyet", roller: [] }, // Yeniden hesaplama API'si yalnız yöneticiye açık.
   { yol: "/panel/raporlar/gelir-gider", roller: FINANS_ROLLERI },
   { yol: "/panel/raporlar/kdv-disi-vergiler", roller: ["muhasebe", "mali_musavir"] },

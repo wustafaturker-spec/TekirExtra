@@ -143,13 +143,14 @@ export default function OzelRollerSayfasi() {
                       {YETKI_ISLEMLERI.map((i) => {
                         const anahtar = yetkiAnahtari(m.kod, i);
                         const sablondaVar = (matris[taslak.sablonRol] ?? []).includes(anahtar);
-                        const ortakOkuma = i === "goruntule" && m.yalnizYazma;
+                        const ortakOkuma = i === "goruntule" && m.yalnizYazma && !m.korunanOkuma?.length;
                         return (
                           <td key={i} style={{ textAlign: "center" }}>
                             {ortakOkuma ? <span className="subtle" title="Ortak ayarlar her ekranda okunur">—</span> : (
                               <input
                                 type="checkbox"
                                 aria-label={`${m.ad} — ${YETKI_ISLEM_ADI[i]}`}
+                                title={i === "goruntule" && m.korunanOkuma?.length ? "Denetim izi, e-posta geçmişi ve yönetim ekranları; ortak ayarlar yine okunur" : undefined}
                                 disabled={!sablondaVar}
                                 checked={sablondaVar && !taslak.kapali.has(anahtar)}
                                 onChange={(e) => {

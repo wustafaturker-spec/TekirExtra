@@ -37,6 +37,18 @@ describe("özel rol yetki matrisi (KLN-20)", () => {
     expect(ozelRolIstegiKapali([], "GET", "kasa-banka/hesaplar")).toBe(false);
   });
 
+  it("rol yönetimi ve düzeltme kayıtları modüle bağlıdır; denetim izi okuması kutuya bağlıdır", () => {
+    expect(yolModulu("ozel-roller/1")?.kod).toBe("ayarlar");
+    expect(ozelRolIstegiKapali(["ayarlar.duzenle"], "PATCH", "ozel-roller/1")).toBe(true);
+    expect(ozelRolIstegiKapali(["ayarlar.sil"], "DELETE", "ozel-roller/1")).toBe(true);
+    expect(yolModulu("duzeltmeler")?.kod).toBe("donem_kapatma");
+    expect(ozelRolIstegiKapali(["donem_kapatma.goruntule"], "GET", "duzeltmeler")).toBe(true);
+    expect(ozelRolIstegiKapali(["ayarlar.goruntule"], "GET", "denetim")).toBe(true);
+    expect(ozelRolIstegiKapali(["ayarlar.goruntule"], "GET", "/api/v1/eposta/gecmis")).toBe(true);
+    expect(ozelRolIstegiKapali(["ayarlar.goruntule"], "GET", "eposta/ayarlar")).toBe(false);
+    expect(ozelRolIstegiKapali(["ayarlar.goruntule"], "GET", "kullanicilar")).toBe(false);
+  });
+
   it("menü yolu görüntüleme kapalı modülde gizlenir", () => {
     expect(ozelRolPanelYoluKapali(["kasa_banka.goruntule"], "/panel/kasa-banka/krediler")).toBe(true);
     expect(ozelRolPanelYoluKapali(["kasa_banka.goruntule"], "/panel/kasa-banka/kur-farki")).toBe(false);

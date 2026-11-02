@@ -45,18 +45,20 @@ export class EklerController {
   ) {
     if (!dosya) throw new BadRequestException("'dosya' alanında bir dosya yükleyin");
     const { sahipTur, sahipId } = sahipAyristir(sorgu);
+    this.eklerService.ekErisiminiDenetle(sahipTur, "duzenle");
     return this.eklerService.yukle(sahipTur, sahipId, dosya);
   }
 
   @Get()
   async listele(@Query() sorgu: unknown) {
     const { sahipTur, sahipId } = sahipAyristir(sorgu);
+    this.eklerService.ekErisiminiDenetle(sahipTur, "goruntule");
     return this.eklerService.listele(sahipTur, sahipId);
   }
 
   @Get(":id/indir")
   async indir(@Param("id") id: string, @Res() res: Response) {
-    const { ek, icerik } = await this.eklerService.indir(id);
+    const { ek, icerik } = await this.eklerService.denetimliIndir(id);
     res.setHeader("Content-Type", ek.mimeTip);
     res.setHeader(
       "Content-Disposition",
@@ -69,6 +71,6 @@ export class EklerController {
   @Roller("muhasebe")
   @HttpCode(204)
   async sil(@Param("id") id: string) {
-    await this.eklerService.sil(id);
+    await this.eklerService.denetimliSil(id);
   }
 }

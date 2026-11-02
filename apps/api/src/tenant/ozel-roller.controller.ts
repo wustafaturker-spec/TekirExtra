@@ -9,9 +9,10 @@ import {
   yolIslemi,
   yolModulu,
   type Rol,
+  okumaKutusunaBagli,
 } from "@tekirextra/shared";
 import { z } from "zod";
-import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, PLATFORM_ANAHTAR, PUBLIC_ANAHTAR, SALT_OKUMA_ANAHTAR } from "../auth/public.decorator";
+import { OzelRoldeYazmaKapali, DESTEK_OTURUMUNDA_ACIK_ANAHTAR, PLATFORM_ANAHTAR, PUBLIC_ANAHTAR, SALT_OKUMA_ANAHTAR } from "../auth/public.decorator";
 import { ROLLER_ANAHTAR, Roller } from "../auth/roller.decorator";
 import { rolUcaYetkili } from "../auth/roller.guard";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -73,7 +74,7 @@ export class SablonMatrisiService {
         if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ANAHTAR, [handler as never, sinif]) || this.reflector.getAllAndOverride<boolean>(PLATFORM_ANAHTAR, [handler as never, sinif])) continue;
         const saltOkuma = Boolean(this.reflector.getAllAndOverride<boolean>(SALT_OKUMA_ANAHTAR, [handler as never, sinif]) || this.reflector.getAllAndOverride<boolean>(DESTEK_OTURUMUNDA_ACIK_ANAHTAR, [handler as never, sinif]));
         const islem = yolIslemi(RequestMethod[yontemKodu], yol, saltOkuma);
-        if (islem === "goruntule" && modul.yalnizYazma) continue;
+        if (islem === "goruntule" && !okumaKutusunaBagli(modul, yol)) continue;
         uclar.push({ anahtar: yetkiAnahtari(modul.kod, islem), gerekli: this.reflector.getAllAndOverride<Rol[] | undefined>(ROLLER_ANAHTAR, [handler as never, sinif]) });
       }
     }
@@ -85,6 +86,7 @@ export class SablonMatrisiService {
 /** KLN-20: özel roller — şablondan türetilir, yalnız kutu kapatır. Yalnız yönetici. */
 @Controller("ozel-roller")
 @Roller("yonetici")
+@OzelRoldeYazmaKapali()
 export class OzelRollerController {
   constructor(
     private readonly prisma: PrismaService,

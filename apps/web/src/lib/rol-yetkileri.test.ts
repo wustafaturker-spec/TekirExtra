@@ -12,6 +12,10 @@ describe("panel rol erişim matrisi", () => {
 
   it("satış rolünü satış ve proje alanlarıyla sınırlar", () => {
     expect(rolMenuYoluGorebilir("satis", "/panel/crm")).toBe(true);
+    expect(rolMenuYoluGorebilir("uretim_operatoru", "/panel/uretim/maliyet")).toBe(false);
+    expect(rolMenuYoluGorebilir("uretim_operatoru", "/panel/uretim/emirler")).toBe(true);
+    expect(rolMenuYoluGorebilir("depo", "/panel/uretim/maliyet")).toBe(false);
+    expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/uretim/maliyet")).toBe(true);
     expect(rolMenuYoluGorebilir("satis", "/panel/projeler/123")).toBe(true);
     expect(rolMenuYoluGorebilir("satis", "/panel/masraflar")).toBe(false);
   });

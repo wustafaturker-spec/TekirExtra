@@ -105,6 +105,8 @@ const DURUM_OZET_FINANS_ROLLERI: string[] = ["satis"];
 /** CARI-46: teklif ve sipariş bulguları. */
 const DURUM_SATIS_ROLLERI: string[] = ["yonetici", "muhasebe", "satis", "mali_musavir", "salt_okunur"];
 
+const CARI_ILETISIM_ROLLERI: readonly string[] = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir"];
+
 @Injectable()
 export class CariService {
   constructor(
@@ -330,8 +332,9 @@ export class CariService {
       ebelgeDurumu: { ...cariEbelgeDurumuBul(ebelge, kayit), listeGuncellendi: ebelge.listeGuncellendi },
       postaKutulari,
       adresler: kayit.adresler,
-      kisiler: kayit.kisiler,
-      bankaHesaplari: kayit.bankaHesaplari,
+      // Kişi ve IBAN yalnız bunları kullanan ekranların rollerine döner; seçim formları için kart açık kalır.
+      kisiler: CARI_ILETISIM_ROLLERI.includes(ctx.rol) ? kayit.kisiler : [],
+      bankaHesaplari: CARI_ILETISIM_ROLLERI.includes(ctx.rol) ? kayit.bankaHesaplari : [],
       etiketler: kayit.etiketler.map((a) => a.etiket),
       temsilci: kayit.temsilci,
       fiyatListesi: kayit.fiyatListesi,

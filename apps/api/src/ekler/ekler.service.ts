@@ -1,3 +1,4 @@
+import { yetkiAnahtari, type YetkiIslemi } from "@tekirextra/shared";
 import {
   BadRequestException,
   ForbiddenException,
@@ -22,12 +23,64 @@ export interface YuklenenDosya {
   buffer: Buffer;
 }
 
+const FATURA_EK_ROLLERI = ["muhasebe", "satis", "salt_okunur", "mali_musavir"];
+const MASRAF_EK_ROLLERI = ["muhasebe", "depo", "salt_okunur", "mali_musavir"];
+const KASA_EK_ROLLERI = ["muhasebe", "salt_okunur"];
+
+/** `roller: null` ortak veridir (firma logosu) ya da kendi denetimi vardır (özlük, sohbet); yönetici her zaman geçer. */
+export const EK_ERISIMI: Record<EkSahipTur, { roller: readonly string[] | null; modul: string | null }> = {
+  cari: { roller: FATURA_EK_ROLLERI, modul: "cari" },
+  stok: { roller: ["muhasebe", "salt_okunur", "uretim_planlama", "depo", "maliyet_muhasebesi"], modul: "stok" },
+  fatura: { roller: FATURA_EK_ROLLERI, modul: "fatura" },
+  belge: { roller: ["muhasebe", "satis", "salt_okunur"], modul: "satis" },
+  kasa_banka: { roller: KASA_EK_ROLLERI, modul: "kasa_banka" },
+  cek_senet: { roller: KASA_EK_ROLLERI, modul: "kasa_banka" },
+  masraf: { roller: MASRAF_EK_ROLLERI, modul: "masraf_gelir" },
+  kira_sozlesme: { roller: MASRAF_EK_ROLLERI, modul: "masraf_gelir" },
+  satin_alma_teklif: { roller: ["muhasebe", "satis", "uretim_planlama", "uretim_operatoru", "depo", "kalite", "maliyet_muhasebesi"], modul: "satin_alma" },
+  demirbas: { roller: KASA_EK_ROLLERI, modul: "demirbas_arac" },
+  personel: { roller: null, modul: "personel" },
+  firma: { roller: null, modul: null },
+  firma_kase: { roller: null, modul: null },
+  ai_sohbet: { roller: null, modul: null },
+};
+
 @Injectable()
 export class EklerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly depo: DepoService,
   ) {}
+
+  /**
+   * Ek, sahibinin ekranını kullanan rollere açıktır; özel rolde sahibin modül kutusu da
+   * uygulanır. Yalnız /ekler uçları denetler: iç çağıranlar (çek, özlük, sohbet) kendi
+   * uçlarında yetkilidir.
+   */
+  ekErisiminiDenetle(sahipTur: EkSahipTur, islem: YetkiIslemi): void {
+    const { rol, ozelRol } = aktifBaglam();
+    const kural = EK_ERISIMI[sahipTur];
+    if (kural.roller && rol !== "yonetici" && !kural.roller.includes(rol)) throw new ForbiddenException("Bu eke erişim yetkiniz yok");
+    if (kural.modul && ozelRol?.kapali.includes(yetkiAnahtari(kural.modul, islem))) throw new ForbiddenException("Rolünüzde bu işlem kapalı");
+  }
+
+  /** /ekler/:id/indir: sahibine göre yetki denetimli indirme. */
+  async denetimliIndir(id: string) {
+    const { tenantId } = aktifBaglam();
+    const ek = await this.prisma.tenantIslem(tenantId, (tx) => tx.ek.findUnique({ where: { id }, select: { sahipTur: true } }));
+    if (!ek) throw new NotFoundException("Ek bulunamadı");
+    this.ekErisiminiDenetle(ek.sahipTur, "goruntule");
+    return this.indir(id);
+  }
+
+  /** /ekler/:id silme: sahibine göre özel rol kutusu. */
+  async denetimliSil(id: string): Promise<void> {
+    const { tenantId } = aktifBaglam();
+    const ek = await this.prisma.tenantIslem(tenantId, (tx) => tx.ek.findUnique({ where: { id }, select: { sahipTur: true } }));
+    if (!ek) throw new NotFoundException("Ek bulunamadı");
+    this.ekErisiminiDenetle(ek.sahipTur, "sil");
+    await this.sil(id);
+  }
 
   /** AI-79: sohbet eki başka kullanıcıya (yöneticiye de) açılmaz. */
   private async sohbetEkiYetkisiDogrula(sahipTur: EkSahipTur, sahipId: string): Promise<void> {

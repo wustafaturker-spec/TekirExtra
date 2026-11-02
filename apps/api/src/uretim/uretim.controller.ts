@@ -28,7 +28,7 @@ export class UretimController {
   @Post("is-merkezleri") @Roller("uretim_planlama", "maliyet_muhasebesi") isMerkeziOlustur(@Body() govde: unknown) { return this.service.isMerkeziOlustur(ayristir(isMerkeziKaydetSemasi, govde)); }
   @Put("is-merkezleri/:id") @Roller("uretim_planlama", "maliyet_muhasebesi") isMerkeziGuncelle(@Param("id") id: string, @Body() govde: unknown) { return this.service.isMerkeziGuncelle(id, ayristir(isMerkeziKaydetSemasi, govde)); }
   @Get("kapasite") kapasite(@Query("baslangic") baslangic?: string, @Query("bitis") bitis?: string) { return this.service.kapasite(baslangic, bitis); }
-  @Get("maliyet-raporu") maliyetRaporu(@Query("baslangic") baslangic?: string, @Query("bitis") bitis?: string) { return this.service.maliyetRaporu(baslangic, bitis); }
+  @Get("maliyet-raporu") @Roller("muhasebe", "salt_okunur", "uretim_planlama", "maliyet_muhasebesi") maliyetRaporu(@Query("baslangic") baslangic?: string, @Query("bitis") bitis?: string) { return this.service.maliyetRaporu(baslangic, bitis); }
   @Get("kalite-kontrolleri") kaliteKontrolleri(@Query("durum") durum?: string) { return this.service.kaliteKontrolleri(durum); }
   @Post("kalite-kontrolleri/:id/karar") @Roller("kalite") kaliteKarari(@Param("id") id: string, @Body() govde: unknown) { return this.service.kaliteKarari(id, ayristir(kaliteKararSemasi, govde)); }
   @Post("kalite-kontrolleri/:id/yeniden-isleme-tamamla") @Roller("uretim_operatoru") yenidenIslemeTamamla(@Param("id") id: string, @Body() govde: unknown) { return this.service.yenidenIslemeTamamla(id, ayristir(yenidenIslemeTamamlaSemasi, govde)); }
