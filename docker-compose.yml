@@ -1,3 +1,4 @@
+# Portlar yalnız bu makineye açılır: Docker yayımladığı portlarda güvenlik duvarını atlar ve parolalar örnektir.
 services:
   postgres:
     image: postgres:16-alpine
@@ -6,7 +7,7 @@ services:
       POSTGRES_PASSWORD: tekir
       POSTGRES_DB: tekirextra
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -18,8 +19,12 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Parola .env'de REDIS_PASSWORD; tanımsızsa (CI) parolasız açılır. REDIS_URL aynı parolayı taşımalı.
+    command: redis-server ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -31,8 +36,8 @@ services:
   mailpit:
     image: axllent/mailpit
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
   minio:
     # minio/minio Eylül 2026'da Docker Hub'dan kaldırıldı; aynı sunucunun topluluk sürümü, sabit sürüm.
@@ -43,8 +48,8 @@ services:
       MINIO_ROOT_USER: tekir
       MINIO_ROOT_PASSWORD: tekir-minio-dev
     ports:
-      - "9002:9000"
-      - "9003:9001"
+      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:9003:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -57,7 +62,7 @@ services:
     # RPR-07 ertelendi (karar 2026-10-11); sürüm sabit, beklenmedik güncelleme olmasın.
     image: metabase/metabase:v0.63.13
     ports:
-      - "3030:3000"
+      - "127.0.0.1:3030:3000"
     environment:
       MB_DB_TYPE: postgres
       MB_DB_HOST: postgres
@@ -74,7 +79,7 @@ services:
     image: prom/prometheus:v3.5.0
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
@@ -87,7 +92,7 @@ services:
     image: prom/alertmanager:v0.28.1
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     depends_on:
@@ -113,7 +118,7 @@ services:
       dockerfile: apps/api/Dockerfile
     command: node apps/api/dist/main.js
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     env_file: .env.docker
     depends_on:
       postgres:
@@ -145,7 +150,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     ports:
-      - "3100:3000"
+      - "127.0.0.1:3100:3000"
     environment:
       API_URL: http://api:3001
       # Rota koruması; .env.docker'daki değerle aynı olmalı (yoksa panel kapalı kalır).

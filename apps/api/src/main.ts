@@ -84,7 +84,8 @@ async function bootstrap(): Promise<void> {
   // Redis istemcisi kapanıştan sonra süreci ayakta tutuyordu.
   app.getHttpServer().on("close", () => { void rateLimiter.kapat(); });
   const port = Number(process.env.PORT ?? 3001);
-  await app.listen(port);
+  // HOST verilirse yalnız o arayüzü dinler (pilot: 127.0.0.1, istekler web üzerinden gelir).
+  await (process.env.HOST ? app.listen(port, process.env.HOST) : app.listen(port));
   // eslint-disable-next-line no-console
   structuredLogger.info("api_ready", { port, healthUrl: `http://localhost:${port}/health` });
 }

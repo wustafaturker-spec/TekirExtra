@@ -27,7 +27,7 @@ async function bootstrap(): Promise<void> {
     }
     yanit.writeHead(404); yanit.end();
   });
-  await new Promise<void>((resolve, reject) => { metrikSunucusu.once("error", reject); metrikSunucusu.listen(metrikPortu, "0.0.0.0", resolve); });
+  await new Promise<void>((resolve, reject) => { metrikSunucusu.once("error", reject); metrikSunucusu.listen(metrikPortu, process.env.WORKER_METRICS_HOST || "0.0.0.0", resolve); });
   const kapat = () => metrikSunucusu.close();
   process.once("SIGTERM", kapat); process.once("SIGINT", kapat);
   // eslint-disable-next-line no-console
