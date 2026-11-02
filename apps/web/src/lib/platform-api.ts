@@ -7,20 +7,20 @@
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 const ANAHTAR = "tekir_platform_access";
-const OTURUM_ACIK = "cerez";
+export const PLATFORM_OTURUM_ACIK = "cerez";
 const CSRF_BASLIGI = { "X-Tekir-Istek": "1" };
 
 export function platformTokenAl(): string | null {
   if (typeof window === "undefined") return null;
   const deger = window.sessionStorage.getItem(ANAHTAR);
   // Önceki sürümden kalan token silinir.
-  if (deger && deger !== OTURUM_ACIK) window.sessionStorage.setItem(ANAHTAR, OTURUM_ACIK);
-  return deger ? OTURUM_ACIK : null;
+  if (deger && deger !== PLATFORM_OTURUM_ACIK) window.sessionStorage.setItem(ANAHTAR, PLATFORM_OTURUM_ACIK);
+  return deger ? PLATFORM_OTURUM_ACIK : null;
 }
 
 export function platformTokenYaz(token: string | null): void {
   if (typeof window === "undefined") return;
-  if (token) window.sessionStorage.setItem(ANAHTAR, OTURUM_ACIK);
+  if (token) window.sessionStorage.setItem(ANAHTAR, PLATFORM_OTURUM_ACIK);
   else window.sessionStorage.removeItem(ANAHTAR);
 }
 

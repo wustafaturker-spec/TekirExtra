@@ -25,6 +25,24 @@ test("girişte gövdedeki token saklanmaz, istekler Bearer göndermez, CSRF baş
   expect(istekler.find((i) => i.yol.endsWith("/auth/giris"))?.csrf).toBe("1");
 });
 
+test("platform girişi gövdede token olmadan panele geçer ve kimliği sorar", async ({ page }) => {
+  const yollar: string[] = [];
+  await page.route("**/api/v1/platform/**", (route) => {
+    const yol = new URL(route.request().url()).pathname;
+    yollar.push(yol);
+    if (yol.endsWith("/auth/giris")) return route.fulfill({ status: 201, json: { kullanici: { id: "p1", eposta: "ekip@example.test", rol: "yonetici" } } });
+    return route.fulfill({ json: yol.endsWith("/auth/ben") ? { kullaniciId: "p1", eposta: "ekip@example.test", rol: "yonetici" } : [] });
+  });
+  await page.goto("/platform/giris");
+  await page.locator('input[name="eposta"]').fill("ekip@example.test");
+  await page.locator('input[name="parola"]').fill("Parola12345");
+  await page.locator('input[name="totpKodu"]').fill("123456");
+  await page.getByRole("button", { name: /Giriş yap/ }).click();
+  await expect.poll(() => yollar.some((y) => y.endsWith("/auth/ben"))).toBe(true);
+  await expect(page).toHaveURL(/\/platform\/?$/);
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBe("cerez");
+});
+
 test("önceki sürümden kalan token silinir", async ({ page }) => {
   await page.addInitScript(() => { sessionStorage.setItem("tekir_access", "ESKI-TOKEN"); sessionStorage.setItem("tekir_platform_access", "ESKI-PLATFORM"); });
   await page.route("**/api/v1/**", (route) => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith("/auth/ben") ? ben : [] }));

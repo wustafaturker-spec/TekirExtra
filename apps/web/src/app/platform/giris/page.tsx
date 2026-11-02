@@ -6,7 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { Alert, Button, Field, Input } from "@/components/ui";
 import { PlatformAuth, PlatformParola } from "@/components/platform-auth";
-import { platformApi, platformTokenYaz } from "@/lib/platform-api";
+import { PLATFORM_OTURUM_ACIK, platformApi, platformTokenYaz } from "@/lib/platform-api";
 
 /** Platform hesabı, parola ve doğrulayıcı uygulamadaki kodla açılır. */
 export default function PlatformGirisSayfasi() {
@@ -23,10 +23,11 @@ export default function PlatformGirisSayfasi() {
     const v = new FormData(e.currentTarget);
     setHata(""); setYukleniyor(true);
     try {
-      const s = await platformApi<{ accessToken: string }>("/platform/auth/giris", {
+      await platformApi("/platform/auth/giris", {
         method: "POST", body: JSON.stringify({ eposta: String(v.get("eposta") ?? "").trim(), parola: String(v.get("parola") ?? ""), totpKodu: String(v.get("totpKodu") ?? "") }),
       });
-      platformTokenYaz(s.accessToken);
+      // SEC-16: tarayıcıya gövdede token gelmez, oturum çerezdedir; sekmeye yalnız işaret yazılır.
+      platformTokenYaz(PLATFORM_OTURUM_ACIK);
       yonlendir.replace("/platform");
     } catch (h) { setHata(h instanceof Error ? h.message : "Giriş başarısız."); }
     finally { setYukleniyor(false); }
