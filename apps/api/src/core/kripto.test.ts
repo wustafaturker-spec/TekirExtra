@@ -21,6 +21,14 @@ describe("kripto (AES-256-GCM)", () => {
     expect(() => coz(sifreli.toString("base64"))).toThrow();
   });
 
+  it("kısaltılmış etiketi reddeder (SEC-11)", () => {
+    const tam = Buffer.from(sifrele(""), "base64");
+    expect(tam.length).toBe(28);
+    expect(() => coz(tam.toString("base64"))).not.toThrow();
+    // Boş metinde çıktı iv|etiket'tir; etiketin doğru ilk 12 baytı tek başına yetmemeli.
+    expect(() => coz(tam.subarray(0, 24).toString("base64"))).toThrow();
+  });
+
   it("geçersiz anahtar uzunluğunu reddeder", () => {
     process.env.BAGLANTI_SIFRELEME_ANAHTARI = "kisa";
     expect(() => sifrele("veri")).toThrow(/32 bayt/);

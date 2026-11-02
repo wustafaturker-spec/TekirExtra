@@ -31,7 +31,8 @@ export function coz(sifreliMetin: string): string {
   const iv = veri.subarray(0, IV_BOYU);
   const tag = veri.subarray(IV_BOYU, IV_BOYU + TAG_BOYU);
   const cipher = veri.subarray(IV_BOYU + TAG_BOYU);
-  const decipher = createDecipheriv("aes-256-gcm", anahtarAl(), iv);
+  // SEC-11: etiket uzunluğu sabit; kısaltılmış etiketle (daha az bit) doğrulama yapılmaz.
+  const decipher = createDecipheriv("aes-256-gcm", anahtarAl(), iv, { authTagLength: TAG_BOYU });
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(cipher), decipher.final()]).toString("utf8");
 }
