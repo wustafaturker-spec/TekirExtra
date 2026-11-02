@@ -40,12 +40,12 @@ test('aynı origin multipart önizleme ve aktarım; 401 sonrası dosya ve istek 
       okuma++;
       anahtarlar.push(headers['idempotency-key']);
       if (okuma === 1) return route.fulfill({ status: 401, json: { message: 'Token süresi doldu' } });
-      expect(headers.authorization).toBe('Bearer yenilenen-token');
+      expect(headers.authorization).toBeUndefined();
       expect(body).toContain(banka.id);
       return route.fulfill({ json: onizleme });
     }
     aktarim++;
-    expect(headers.authorization).toBe('Bearer yenilenen-token');
+    expect(headers.authorization).toBeUndefined();
     expect(body).toContain('name="veri"');
     expect(body).toContain('"esleme"');
     await route.fulfill({ json: { okunanSatir: 1, yeniSatir: 1, yinelenenSatir: 0, atlananSatir: 0 } });

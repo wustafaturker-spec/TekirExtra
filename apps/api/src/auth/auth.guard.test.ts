@@ -157,3 +157,47 @@ describe("platform rolleri (PLT-06)", () => {
     await expect(kurRollu(platformToken, undefined, db)).resolves.toMatchObject({ platform: { kullaniciId: "p1", oturumId: "o1" } });
   });
 });
+
+describe("erişim çerezi ve CSRF (SEC-16)", () => {
+  const jwt = new JwtService({});
+  let kiraciToken: string, platformToken: string;
+  beforeEach(async () => {
+    process.env.JWT_SECRET = KIRACI;
+    process.env.PLATFORM_JWT_SECRET = PLATFORM;
+    kiraciToken = await jwt.signAsync({ sub: "u1", tenantId: "t1", rol: "yonetici" }, { secret: KIRACI });
+    platformToken = await jwt.signAsync({ sub: "p1", eposta: "p@x.io", kapsam: "platform", rol: "yonetici" }, { secret: PLATFORM });
+  });
+  afterEach(() => { delete process.env.PLATFORM_JWT_SECRET; });
+
+  const cerezle = (platformUcu: boolean, istek: { method: string; cookies?: Record<string, string>; headers?: Record<string, string> }) => {
+    const reflector = { getAllAndOverride: (anahtar: string) => (anahtar === PLATFORM_ANAHTAR ? platformUcu : anahtar === PLATFORM_ROLLER_ANAHTAR ? ["yonetici"] : false) } as unknown as Reflector;
+    const guard = new AuthGuard(new JwtService({ secret: KIRACI }), reflector);
+    (guard as unknown as { platformKullaniciDurumu: () => Promise<{ rol: string }> }).platformKullaniciDurumu = async () => ({ rol: "yonetici" });
+    const context = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ headers: {}, ...istek }) }) } as never;
+    return istekBaglami.run({}, () => guard.canActivate(context));
+  };
+
+  it("çerezle okuma isteği başlıksız geçer", async () => {
+    await expect(cerezle(false, { method: "GET", cookies: { tekir_access: kiraciToken } })).resolves.toBe(true);
+  });
+
+  it("çerezle yazma isteği özel başlık olmadan 403 alır, başlıkla geçer", async () => {
+    await expect(cerezle(false, { method: "POST", cookies: { tekir_access: kiraciToken } })).rejects.toThrow(ForbiddenException);
+    await expect(cerezle(false, { method: "POST", cookies: { tekir_access: kiraciToken }, headers: { "x-tekir-istek": "1" } })).resolves.toBe(true);
+  });
+
+  it("başka siteden gelen yazma isteği başlık olsa da reddedilir", async () => {
+    await expect(cerezle(false, { method: "POST", cookies: { tekir_access: kiraciToken }, headers: { "x-tekir-istek": "1", "sec-fetch-site": "cross-site" } })).rejects.toThrow(ForbiddenException);
+  });
+
+  it("Bearer yazma isteği CSRF denetimine girmez ve çereze göre önceliklidir", async () => {
+    await expect(cerezle(false, { method: "POST", headers: { authorization: `Bearer ${kiraciToken}` } })).resolves.toBe(true);
+    await expect(cerezle(false, { method: "GET", cookies: { tekir_access: kiraciToken }, headers: { authorization: "Bearer bozuk" } })).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("firma ve platform çerezleri birbirinin yerine geçmez", async () => {
+    await expect(cerezle(true, { method: "GET", cookies: { tekir_platform_access: platformToken } })).resolves.toBe(true);
+    await expect(cerezle(true, { method: "GET", cookies: { tekir_access: kiraciToken } })).rejects.toThrow(UnauthorizedException);
+    await expect(cerezle(false, { method: "GET", cookies: { tekir_platform_access: platformToken } })).rejects.toThrow(UnauthorizedException);
+  });
+});

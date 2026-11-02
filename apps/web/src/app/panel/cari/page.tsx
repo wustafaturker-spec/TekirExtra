@@ -247,7 +247,6 @@ const guncelTry = (b: { bakiyeTry: string; bakiyeGuncelTry?: string }) => Number
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
 /** AdresTip enum'unun ekran karşılıkları (CARI-15: merkez/şube/depo). */
 const ADRES_TIP_ETIKETI: Record<string, string> = {

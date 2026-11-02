@@ -10,7 +10,7 @@ import { Fragment } from "react";
 import { bakiyeYonu, type EkstreTuru } from "@tekirextra/shared";
 import { Badge, Button, TableWrap } from "@/components/ui";
 
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 export interface EkstreKalemi { stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; tutar: string }
 

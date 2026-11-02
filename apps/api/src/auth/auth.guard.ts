@@ -1,3 +1,4 @@
+import { csrfDenetle, istekTokeni } from "./erisim-cerezi";
 import {
   CanActivate,
   ExecutionContext,
@@ -99,15 +100,17 @@ export class AuthGuard implements CanActivate {
     if (publicMi) return true;
 
     const istek = context.switchToHttp().getRequest<Request>();
-    const token = istek.headers.authorization?.replace(/^Bearer /, "");
-    if (!token) {
-      throw new UnauthorizedException("Oturum token'ı gerekli");
-    }
-
     const platformUcu = this.reflector.getAllAndOverride<boolean>(PLATFORM_ANAHTAR, [
       context.getHandler(),
       context.getClass(),
     ]);
+    // SEC-16: tarayıcı oturumu HttpOnly çerezle gelir; destek sekmesi ve dış istemciler Bearer ile.
+    const { token, cerezden } = istekTokeni(istek, Boolean(platformUcu));
+    if (!token) {
+      throw new UnauthorizedException("Oturum token'ı gerekli");
+    }
+    if (cerezden) csrfDenetle(istek);
+
     if (platformUcu) {
       const anahtar = platformJwtAnahtari();
       if (!anahtar) throw new UnauthorizedException("Platform paneli yapılandırılmamış");

@@ -309,7 +309,7 @@ test("proje seçeneklerini yükler ve yeni projeyi kaydeder", async ({ page }) =
   });
 });
 
-test("başarılı giriş access tokenı kaydeder ve panele yönlendirir", async ({ page }) => {
+test("başarılı giriş token saklamaz, oturum işareti koyar ve panele yönlendirir", async ({ page }) => {
   await page.route("**/api/v1/auth/giris", async (route) => {
     expect(route.request().postDataJSON()).toMatchObject({ eposta: "kullanici@example.com", parola: "guvenli-parola" });
     await route.fulfill({ json: { accessToken: "yeni-access-token", kullanici: { rol: "yonetici" } } });
@@ -321,11 +321,11 @@ test("başarılı giriş access tokenı kaydeder ve panele yönlendirir", async 
 
   // Dev sunucusu paneli ilk gezinmede derler; URL o ana dek değişmez.
   await expect(page).toHaveURL(/\/panel$/, { timeout: 30_000 });
-  expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("yeni-access-token");
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("cerez");
   expect(await page.evaluate(() => localStorage.getItem("tekir_access"))).toBeNull();
 });
 
-test("eski kalıcı tokenı sekme oturumuna taşır ve localStorage kopyasını siler", async ({ page }) => {
+test("eski kalıcı token silinir, yerine oturum işareti konur (SEC-16)", async ({ page }) => {
   await page.goto("/giris");
   await page.evaluate(() => {
     sessionStorage.removeItem("tekir_access");
@@ -334,7 +334,7 @@ test("eski kalıcı tokenı sekme oturumuna taşır ve localStorage kopyasını 
   await page.goto("/panel/satis");
 
   await expect(page.getByRole("heading", { level: 1, name: "Satış" })).toBeVisible();
-  expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("eski-access-token");
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("cerez");
   expect(await page.evaluate(() => localStorage.getItem("tekir_access"))).toBeNull();
 });
 

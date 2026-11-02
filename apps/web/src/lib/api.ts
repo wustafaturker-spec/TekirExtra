@@ -4,24 +4,30 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 const ACCESS_TOKEN_ANAHTARI = "tekir_access";
 
+/**
+ * SEC-16: erişim token'ı HttpOnly çerezdedir, betikler okuyamaz. Sekmede yalnız
+ * "oturum açık" işareti durur. Tek istisna destek sekmesi: çerez bütün sekmelerde
+ * ortak olduğundan firma oturumuna karışmaması için kendi token'ını Bearer gönderir.
+ */
+export const OTURUM_ACIK = "cerez";
+
 export function tokenAl(): string | null {
   if (typeof window === "undefined") return null;
-  const sekmeTokeni = window.sessionStorage.getItem(ACCESS_TOKEN_ANAHTARI);
-  if (sekmeTokeni) return sekmeTokeni;
-
-  // Önceki sürümden kalan kalıcı tokenı bir kez sekme oturumuna taşı ve sil.
+  // Önceki sürümlerden kalan token'lar silinir, yerine işaret konur (çerez ilk yenilemede gelir).
   const eskiToken = window.localStorage.getItem(ACCESS_TOKEN_ANAHTARI);
-  if (!eskiToken) return null;
-  window.sessionStorage.setItem(ACCESS_TOKEN_ANAHTARI, eskiToken);
-  window.localStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
-  return eskiToken;
+  if (eskiToken) window.localStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
+  const deger = window.sessionStorage.getItem(ACCESS_TOKEN_ANAHTARI) ?? eskiToken;
+  if (!deger) return null;
+  if (destekSekmesiMi()) return deger;
+  if (deger !== OTURUM_ACIK) window.sessionStorage.setItem(ACCESS_TOKEN_ANAHTARI, OTURUM_ACIK);
+  return OTURUM_ACIK;
 }
 
+/** Oturum işaretini yazar; destek sekmesinde (önce `destekSekmesiYaz`) token'ın kendisini. */
 export function tokenYaz(token: string | null): void {
   if (typeof window === "undefined") return;
-  // Access token kalıcı depoda tutulmaz; refresh token zaten HttpOnly cookie'dedir.
   window.localStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
-  if (token) window.sessionStorage.setItem(ACCESS_TOKEN_ANAHTARI, token);
+  if (token) window.sessionStorage.setItem(ACCESS_TOKEN_ANAHTARI, destekSekmesiMi() ? token : OTURUM_ACIK);
   else window.sessionStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
 }
 
@@ -76,19 +82,21 @@ export async function oturumuTazele(enAzMs: number): Promise<void> {
 async function accessTokenYenile(): Promise<string | null> {
   if (destekSekmesiMi()) return null;
   if (!yenilemeIstegi) {
-    yenilemeIstegi = fetch(`${API_URL}/auth/yenile`, {
+    const yenile = (): Promise<string | null> => fetch(`${API_URL}/auth/yenile`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     })
-      .then(async (yanit) => {
+      .then((yanit) => {
         if (!yanit.ok) return null;
-        const govde = (await yanit.json()) as { accessToken?: string };
-        if (!govde.accessToken) return null;
-        tokenYaz(govde.accessToken);
+        tokenYaz(OTURUM_ACIK);
         sonYenilemeAt = Date.now();
-        return govde.accessToken;
-      })
+        return OTURUM_ACIK;
+      });
+    // SEC-16: sekmeler çerezleri paylaşır ve yenileme token'ı tek kullanımlıktır; sekmeler sırayla yeniler.
+    const kilitler = typeof navigator !== "undefined" ? navigator.locks : undefined;
+    const sirayla = async (): Promise<string | null> => (kilitler ? await kilitler.request("tekir_oturum_yenileme", yenile) : yenile());
+    yenilemeIstegi = sirayla()
       .catch(() => null)
       .finally(() => { yenilemeIstegi = null; });
   }
@@ -126,7 +134,9 @@ async function istekYap(yol: string, secenekler: RequestInit, token: string | nu
   const basliklar = new Headers(secenekler.headers);
   if (!formVerisi && !basliklar.has("Content-Type")) basliklar.set("Content-Type", "application/json");
   if (formVerisi) basliklar.delete("Content-Type");
-  if (token) basliklar.set("Authorization", `Bearer ${token}`);
+  if (token && destekSekmesiMi()) basliklar.set("Authorization", `Bearer ${token}`);
+  // SEC-16: çerezle gelen yazma isteklerinin CSRF denetimi; başka site bu başlığı gönderemez (CORS).
+  basliklar.set("X-Tekir-Istek", "1");
   try {
     return await fetch(`${API_URL}${yol}`, {
       ...secenekler,
@@ -233,7 +243,8 @@ export async function api<T>(
   let yanit = await istekYap(yol, kullanilacakSecenekler, tokenAl());
   // PLT-10: destek sekmesinde her 401 (panelin /auth/ben yoklaması dahil) oturumun bittiği demektir.
   if (yanit.status === 401 && destekSekmesiMi()) return giriseYonlendir();
-  if (yanit.status === 401 && !yol.startsWith("/auth/")) {
+  // SEC-16: /auth/ben gibi oturumlu uçlarda da çerez süresi dolmuş olabilir; giriş hatası ise yenilenmez.
+  if (yanit.status === 401 && !/^\/auth\/(giris|yenile|cikis)\b/.test(yol)) {
     if (hareketsizMi()) return hareketsizlikleCik();
     const yeniToken = await accessTokenYenile();
     if (!yeniToken) return giriseYonlendir();
@@ -280,6 +291,15 @@ export async function tumSayfalariAl<T>(yol: string, adet = 200): Promise<T[]> {
   return kayitlar;
 }
 
+/** Ham yanıt gereken istekler (yükleme, ikili yanıt): oturum başlıkları ve 401'de bir kez yenileme. */
+export async function kimlikliFetch(yol: string, secenekler: RequestInit = {}): Promise<Response> {
+  const yanit = await istekYap(yol, secenekler, tokenAl());
+  if (yanit.status !== 401) return yanit;
+  const yeniToken = await accessTokenYenile();
+  if (!yeniToken) return giriseYonlendir();
+  return istekYap(yol, secenekler, yeniToken);
+}
+
 /** Kimlik doğrulamalı dosya yanıtını indirir; JSON bekleyen api()'den ayrıdır. */
 export async function apiDosyaIndir(yol: string, dosyaAdi: string, secenekler: RequestInit = {}): Promise<void> {
   let yanit = await istekYap(yol, secenekler, tokenAl());
@@ -317,8 +337,8 @@ export async function apiDosyaBlob(yol: string, secenekler: RequestInit = {}): P
 }
 
 /**
- * Kimlik doğrulamalı bir PDF'i yeni sekmede açar (EBLG-27). Adres doğrudan
- * açılamaz: uç Authorization başlığı ister, tarayıcı sekmesi bunu göndermez.
+ * Kimlik doğrulamalı bir PDF'i yeni sekmede açar (EBLG-27). Süresi dolan çerez
+ * yenilenebilsin diye doğrudan adres yerine önce içerik alınır.
  */
 export async function apiPdfAc(yol: string): Promise<void> {
   const adres = URL.createObjectURL(await apiDosyaBlob(yol));

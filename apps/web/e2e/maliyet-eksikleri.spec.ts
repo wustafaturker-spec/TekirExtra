@@ -208,7 +208,7 @@ test("salt okunur kullanıcı filtreli Excel'i aynı origin ve yenilenen oturuml
     aktarim++;
     if (aktarim === 1) await r.fulfill({ status: 401, json: { message: "Oturum süresi doldu" } });
     else {
-      expect(r.request().headers().authorization).toBe("Bearer yenilenen-token");
+      expect(r.request().headers().authorization).toBeUndefined();
       await r.fulfill({ contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body: icerik });
     }
     return true;

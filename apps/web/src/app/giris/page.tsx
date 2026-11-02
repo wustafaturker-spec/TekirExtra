@@ -4,7 +4,7 @@ import { guvenliDonus } from "@/lib/oturum-isareti";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { api, ApiHata, IKI_ADIM_KURULUM_YOLU, sonEtkinlikKaydet, tokenYaz } from "@/lib/api";
+import { api, ApiHata, IKI_ADIM_KURULUM_YOLU, OTURUM_ACIK, sonEtkinlikKaydet, tokenYaz } from "@/lib/api";
 import { Alert, Button, Field, Input } from "@/components/ui";
 
 export default function GirisSayfasi() {
@@ -30,8 +30,8 @@ export default function GirisSayfasi() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("oturum") !== "gerekli") return;
     let iptal = false;
-    void api<{ accessToken: string }>("/auth/yenile", { method: "POST" })
-      .then((s) => { if (!iptal) { tokenYaz(s.accessToken); yonlendir.replace(guvenliDonus(params.get("donus"))); } })
+    void api("/auth/yenile", { method: "POST" })
+      .then(() => { if (!iptal) { tokenYaz(OTURUM_ACIK); yonlendir.replace(guvenliDonus(params.get("donus"))); } })
       .catch(() => undefined);
     return () => { iptal = true; };
   }, [yonlendir]);
@@ -50,7 +50,7 @@ export default function GirisSayfasi() {
     setHata("");
     setYukleniyor(true);
     try {
-      const sonuc = await api<{ accessToken: string; kullanici?: { ikiAdimKurulumuGerekli?: boolean } }>("/auth/giris", {
+      const sonuc = await api<{ kullanici?: { ikiAdimKurulumuGerekli?: boolean } }>("/auth/giris", {
         method: "POST",
         body: JSON.stringify({
           eposta: epostaVal,
@@ -58,7 +58,7 @@ export default function GirisSayfasi() {
           totpKodu: totpVal || undefined,
         }),
       });
-      tokenYaz(sonuc.accessToken);
+      tokenYaz(OTURUM_ACIK);
       sonEtkinlikKaydet();
       // KLN-21: zorunlu 2FA kurulmamışsa doğrudan kurulum ekranına.
       if (sonuc.kullanici?.ikiAdimKurulumuGerekli) {

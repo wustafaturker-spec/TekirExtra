@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
 import { TeklifTakipPaneli, TeklifTakipRozeti } from "@/components/teklif-takip-paneli";
-import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { api, ApiHata, apiPdfAc, kimlikliFetch, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
@@ -227,7 +227,6 @@ interface BelgeDetay extends Belge {
 
 /** Tutar ve para birimi (FTR-28: TRY "TL" yazılır, diğerleri kodla). */
 const tl = (d: string | number, doviz: string | null | undefined = "TRY"): string => paraBicimi(d, doviz);
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 function csvHucre(deger: string | number | null): string {
   return csvHucresi(deger);
 }
@@ -1081,9 +1080,7 @@ export default function BelgelerSayfasi() {
 
   async function pdfAc(id: string) {
     try {
-      const res = await fetch(`${apiBase()}/belgeler/${id}/pdf`, {
-        headers: { Authorization: `Bearer ${tokenAl()}` },
-      });
+      const res = await kimlikliFetch(`/belgeler/${id}/pdf`);
       if (!res.ok) throw new Error("PDF alınamadı");
       const url = URL.createObjectURL(await res.blob());
       window.open(url, "_blank");

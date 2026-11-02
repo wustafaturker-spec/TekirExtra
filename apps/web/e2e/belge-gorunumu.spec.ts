@@ -16,7 +16,8 @@ async function kur(page: Page, yuklemeHatasi = false, silmeHatasi = false) {
       expect(url.searchParams.get("sahipId")).toBe(firmaId);
       expect(url.searchParams.get("sahipTur")).toBe("firma_kase");
       expect(req.headers()["content-type"]).toContain("multipart/form-data; boundary=");
-      expect(req.headers().authorization).toBe(state.yenilendi ? "Bearer yeni-token" : "Bearer test-token");
+      expect(req.headers().authorization).toBeUndefined();
+      expect(req.headers()["x-tekir-istek"]).toBe("1");
       if (yuklemeHatasi) return route.fulfill({ status: 413, json: { message: "Görsel çok büyük" } });
       state.kase = { id: "33333333-3333-4333-8333-333333333333", dosyaAdi: dosya.name };
       return route.fulfill({ status: 201, json: state.kase });

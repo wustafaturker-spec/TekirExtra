@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
-import type { Response } from "express";
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res } from "@nestjs/common";
+import type { Request, Response } from "express";
+import { PLATFORM_ERISIM_COOKIE, PLATFORM_ERISIM_SURESI_MS, erisimCereziSil, erisimCereziYaz, istekTokeni } from "../auth/erisim-cerezi";
 import { z } from "zod";
 import { MEVZUAT_TURLERI, takvimGunuMu } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
@@ -82,6 +83,7 @@ export class PlatformAuthController {
         maxAge: PLATFORM_OTURUM_ISARETI_SURESI_SN * 1000,
       });
     }
+    erisimCereziYaz(res, PLATFORM_ERISIM_COOKIE, sonuc.accessToken, PLATFORM_ERISIM_SURESI_MS);
     return sonuc;
   }
 
@@ -89,9 +91,10 @@ export class PlatformAuthController {
   @Public()
   @Post("cikis")
   @HttpCode(200)
-  async cikis(@Headers("authorization") yetki: string | undefined, @Res({ passthrough: true }) res: Response) {
+  async cikis(@Req() istek: Request, @Res({ passthrough: true }) res: Response) {
     res.clearCookie(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
-    return { sunucudaIptal: await this.auth.cikis(yetki?.replace(/^Bearer /, "")) };
+    erisimCereziSil(res, PLATFORM_ERISIM_COOKIE);
+    return { sunucudaIptal: await this.auth.cikis(istekTokeni(istek, true).token) };
   }
 
   /** PLT-25: kullanıcının tüm platform oturumları kapanır (bu sekme dahil). */
@@ -102,6 +105,7 @@ export class PlatformAuthController {
   async oturumlariKapat(@Res({ passthrough: true }) res: Response) {
     const sonuc = await this.auth.tumOturumlariKapat();
     res.clearCookie(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
+    erisimCereziSil(res, PLATFORM_ERISIM_COOKIE);
     return sonuc;
   }
 

@@ -3,7 +3,7 @@
 import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { api, kimlikliFetch, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { DepoSecici } from "@/components/depo-secici";
 import { BirimSecimi } from "@/components/birim-secimi";
@@ -347,7 +347,6 @@ const inceMiktar = (deger: number): string =>
 
 const bugun = () => bugunTR();
 
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
 /* ─── Sayfa ──────────────────────────────────────────────────────────────── */
 
@@ -1488,9 +1487,8 @@ function BarkodlarSekmesi({
   /** Etiket PDF'i JSON değil blob döner; api() kullanılamaz. */
   async function etiketBas() {
     try {
-      const res = await fetch(`${apiBase()}/stok/etiketler`, {
+      const res = await kimlikliFetch("/stok/etiketler", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenAl()}` },
         body: JSON.stringify({
           kalemler: [
             {

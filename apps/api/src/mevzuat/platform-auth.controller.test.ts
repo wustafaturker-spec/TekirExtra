@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { oturumIsaretiGecerli, PLATFORM_OTURUM_ISARETI_COOKIE } from "../auth/oturum-isareti";
 import { PlatformAuthController } from "./platform.controller";
 import type { PlatformAuthService } from "./platform-auth.service";
@@ -20,6 +20,8 @@ describe("platform girişi rota koruması işareti (PLT-08)", () => {
     expect(oturumIsaretiGecerli(deger, SIR, undefined, "p1")).toBe(true);
     expect(oturumIsaretiGecerli(deger, SIR)).toBe(false);
     expect(secenek).toMatchObject({ maxAge: 30 * 60 * 1000, httpOnly: true, path: "/" });
+    // SEC-16: erişim token'ı betiklerin okuyamadığı ayrı çerezde.
+    expect(res.cookie).toHaveBeenCalledWith("tekir_platform_access", "t", expect.objectContaining({ httpOnly: true, sameSite: "lax", path: "/api/v1", maxAge: 30 * 60 * 1000 }));
   });
 
   it("giriş başarısızsa çerez konmaz; çıkış çerezi siler", async () => {
@@ -31,8 +33,12 @@ describe("platform girişi rota koruması işareti (PLT-08)", () => {
     await expect(denetleyici.giris({ eposta: "ekip@tekirextra.com", parola: "x", totpKodu: "123456" }, res as unknown as Response)).rejects.toThrow("Geçersiz");
     expect(res.cookie).not.toHaveBeenCalled();
     // PLT-25: çıkış token'ı sunucuda iptal ettirir ve sonucu bildirir.
-    expect(await denetleyici.cikis("Bearer abc", res as unknown as Response)).toEqual({ sunucudaIptal: true });
+    expect(await denetleyici.cikis({ headers: { authorization: "Bearer abc" } } as unknown as Request, res as unknown as Response)).toEqual({ sunucudaIptal: true });
     expect(cikis).toHaveBeenCalledWith("abc");
+    // SEC-16: tarayıcıdan çıkışta token çerezden okunur ve çerez silinir.
+    expect(await denetleyici.cikis({ headers: {}, cookies: { tekir_platform_access: "cerezdeki" } } as unknown as Request, res as unknown as Response)).toEqual({ sunucudaIptal: true });
+    expect(cikis).toHaveBeenCalledWith("cerezdeki");
+    expect(res.clearCookie).toHaveBeenCalledWith("tekir_platform_access", { path: "/api/v1" });
     expect(res.clearCookie).toHaveBeenCalledWith(PLATFORM_OTURUM_ISARETI_COOKIE, { path: "/" });
   });
 });

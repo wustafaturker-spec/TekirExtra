@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, tokenAl } from "@/lib/api";
+import { api, kimlikliFetch, tokenAl } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { BirimSecimi } from "@/components/birim-secimi";
 import {
@@ -45,7 +45,6 @@ interface ExcelOnizleme {
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
 export default function StokSayfasi() {
   const router = useRouter();
@@ -152,7 +151,7 @@ export default function StokSayfasi() {
     setHata(""); setBasari(""); setExcelYukleniyor(true);
     try {
       const formData = new FormData(); formData.append("file", file);
-      const res = await fetch(`${apiBase()}/stok/excel-onizle`, { method: "POST", headers: { Authorization: `Bearer ${tokenAl()}` }, body: formData });
+      const res = await kimlikliFetch("/stok/excel-onizle", { method: "POST", body: formData });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Excel yükleme hatası"); }
       setExcelDosyasi(file); setExcelOnizleme(await res.json());
     } catch (h) { setHata(h instanceof Error ? h.message : "Excel yükleme hatası"); }
@@ -163,7 +162,7 @@ export default function StokSayfasi() {
     if (!excelDosyasi) return; setExcelYukleniyor(true); setHata("");
     try {
       const formData = new FormData(); formData.append("file", excelDosyasi);
-      const res = await fetch(`${apiBase()}/stok/excel-aktar`, { method: "POST", headers: { Authorization: `Bearer ${tokenAl()}` }, body: formData });
+      const res = await kimlikliFetch("/stok/excel-aktar", { method: "POST", body: formData });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Excel aktarma hatası"); }
       const sonuc = await res.json(); setBasari(`${sonuc.eklenen} ürün başarıyla eklendi/güncellendi.`); setExcelDosyasi(null); setExcelOnizleme(null); void yukle();
     } catch (h) { setHata(h instanceof Error ? h.message : "Excel aktarma hatası"); } finally { setExcelYukleniyor(false); }
@@ -172,7 +171,7 @@ export default function StokSayfasi() {
   async function excelSablonIndir() {
     setHata("");
     try {
-      const res = await fetch(`${apiBase()}/stok/excel-sablon`, { headers: { Authorization: `Bearer ${tokenAl()}` } });
+      const res = await kimlikliFetch("/stok/excel-sablon");
       if (!res.ok) throw new Error("Örnek şablon indirilemedi");
       const url = URL.createObjectURL(await res.blob()); const baglanti = document.createElement("a"); baglanti.href = url; baglanti.download = "stok-ice-aktarma-sablonu.xlsx"; baglanti.click(); URL.revokeObjectURL(url);
     } catch (h) { setHata(h instanceof Error ? h.message : "Şablon indirme hatası"); }

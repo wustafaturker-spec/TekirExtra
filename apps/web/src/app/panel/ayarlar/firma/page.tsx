@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
+import { api, ApiHata, kimlikliFetch, tokenAl, tokenYaz } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { EBELGE_UYGULAMALARI, ebelgeKullanilmiyor, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, SGK_TANIMSIZ_KOD, type EbelgeUygulamaKodu, type EbelgeUygulamalari } from "@tekirextra/shared";
 
@@ -59,7 +59,6 @@ type IletisimAlani = (typeof ILETISIM_ALANLARI)[number];
 const BOS_ILETISIM = Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, ""])) as Record<IletisimAlani, string>;
 const iletisimOku = (f: Firma) => Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, f[a] ?? ""])) as Record<IletisimAlani, string>;
 
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
 /** Seçimin altındaki açıklama: geçerli durum ve nereden geldiği (EBLG-77). */
 function uygulamaAciklamasi(kod: EbelgeUygulamaKodu, uygulamalar: EbelgeUygulamalari | undefined): string {
@@ -92,10 +91,7 @@ export default function FirmaAyarlariSayfasi() {
 
   const yukleLogo = useCallback(async (logoId: string) => {
     try {
-      const token = tokenAl();
-      const res = await fetch(`${apiBase()}/ekler/${logoId}/indir`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await kimlikliFetch(`/ekler/${logoId}/indir`);
       if (res.ok) {
         const blob = await res.blob();
         setLogoUrl(URL.createObjectURL(blob));
@@ -177,16 +173,13 @@ export default function FirmaAyarlariSayfasi() {
     formData.append("dosya", dosya);
 
     try {
-      const token = tokenAl();
-
       // Önce varsa eski logoyu silelim (leaks önlemek için)
       if (firma.logo) {
         await api(`/ekler/${firma.logo.id}`, { method: "DELETE" }).catch(() => undefined);
       }
 
-      const res = await fetch(`${apiBase()}/ekler?sahipTur=firma&sahipId=${firma.id}`, {
+      const res = await kimlikliFetch(`/ekler?sahipTur=firma&sahipId=${firma.id}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 

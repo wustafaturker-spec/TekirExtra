@@ -18,6 +18,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { DestekOturumService } from "../core/destek-oturum.service";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { AuthService } from "./auth.service";
+import { ERISIM_COOKIE, ERISIM_SURESI_MS, erisimCereziSil, erisimCereziYaz } from "./erisim-cerezi";
 import { DestekOturumundaAcik, IkiAdimKurulumundaAcik, Public } from "./public.decorator";
 import { OTURUM_ISARETI_COOKIE, OTURUM_ISARETI_SURESI_SN, oturumIsaretiSirri, oturumIsaretiUret } from "./oturum-isareti";
 
@@ -29,7 +30,8 @@ const girisSemasi = z.object({
 
 export const REFRESH_COOKIE = "tekir_refresh";
 
-function refreshCookieYaz(res: Response, token: string, gecerlilikSonu: Date): void {
+function oturumCerezleriYaz(res: Response, erisimToken: string, token: string, gecerlilikSonu: Date): void {
+  erisimCereziYaz(res, ERISIM_COOKIE, erisimToken, ERISIM_SURESI_MS);
   // KLN-22: çerez de oturumun politikadaki bitişinde düşer.
   const kalanMs = Math.max(0, gecerlilikSonu.getTime() - Date.now());
   res.cookie(REFRESH_COOKIE, token, {
@@ -78,7 +80,7 @@ export class AuthController {
     }
     const { eposta, parola, totpKodu } = ayristirma.data;
     const sonuc = await this.auth.giris(eposta, parola, totpKodu, istemciBilgisi(req));
-    refreshCookieYaz(res, sonuc.refreshToken, sonuc.gecerlilikSonu);
+    oturumCerezleriYaz(res, sonuc.accessToken, sonuc.refreshToken, sonuc.gecerlilikSonu);
     return { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici };
   }
 
@@ -87,7 +89,7 @@ export class AuthController {
   async yenile(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
     const sonuc = await this.auth.yenile(token ?? "", istemciBilgisi(req));
-    refreshCookieYaz(res, sonuc.refreshToken, sonuc.gecerlilikSonu);
+    oturumCerezleriYaz(res, sonuc.accessToken, sonuc.refreshToken, sonuc.gecerlilikSonu);
     return { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici };
   }
 
@@ -97,6 +99,7 @@ export class AuthController {
     const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
     await this.auth.cikis(token);
     res.clearCookie(REFRESH_COOKIE, { path: "/api/v1/auth" });
+    erisimCereziSil(res, ERISIM_COOKIE);
     res.clearCookie(OTURUM_ISARETI_COOKIE, { path: "/" });
     return { durum: "ok" };
   }

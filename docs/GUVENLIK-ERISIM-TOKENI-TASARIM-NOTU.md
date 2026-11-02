@@ -52,8 +52,9 @@ riski kapatmaz.
    `/auth/giris` ve `/auth/yenile` yazar, `/auth/cikis` siler.
 2. **Guard:** önce `Authorization` başlığına, yoksa çereze bakar. MCP, destek ve dış istemciler etkilenmez.
 3. **Gövde:** `/auth/giris` ve `/auth/yenile` artık `accessToken` dönmez (geçiş sırasında bkz. Geçiş).
-4. **CSRF:** yalnız çerezle kimliği doğrulanan yazma isteklerinde `Origin` (yoksa `Referer`) `APP_URL` ile
-   eşleşmelidir; ek olarak `X-Tekir-Istek: 1` başlığı zorunlu olur. Bearer istekleri bu denetime girmez.
+4. **CSRF:** yalnız çerezle kimliği doğrulanan yazma isteklerinde `X-Tekir-Istek: 1` zorunludur; başka site bu
+   başlığı gönderemez çünkü CORS yalnız `APP_URL`'e açıktır. `Sec-Fetch-Site: cross-site` ayrıca reddedilir. `Origin` ile
+   `APP_URL` karşılaştırılmadı: tünel adresi değişebilir. Bearer istekleri bu denetime girmez.
 5. **Web:** `tokenAl()` 62 dosyada 94 kez çağrılıyor; çoğu "oturum var mı" denetimi, oturum işaretine dönüşür.
    Elle `Bearer` ekleyen 6 sayfa/bileşen (banka bağlantıları, firma, belgeler, stok ×2, MCP anahtarları) ortak istemciye taşınır.
 
@@ -61,10 +62,9 @@ riski kapatmaz.
 
 - **Destek sekmesi:** sekme yalıtımına dayanıyor; çerez bütün sekmelerde ortak olduğundan firma oturumunun üstüne
   yazar. Destek token'ı Bearer ve sessionStorage'da kalmalı. Kısa ömürlü ve salt okunur olduğu için kabul edilebilir.
-- **Platform paneli:** ayrı çerez adı ve `/api/v1/platform` yolu. Firma çereziyle karışmaması test edilmeli.
+- **Platform paneli:** ayrı çerez adı, yol `/api/v1`; guard uca göre seçer, firma çereziyle karışmaz (`auth.guard.test.ts`).
 - **Sekmeler arası yenileme yarışı:** yenileme token'ı tek kullanımlık. Ortak çerezle bütün sekmelerin token'ı aynı
-  anda dolar, iki sekmenin eşzamanlı yenilemesinde kaybeden 401 alıp girişe düşebilir. Kısa bir tolerans penceresi
-  ya da `navigator.locks` ile sekmeler arası kilit gerekir. Bu yarış bugün de mümkün görünüyor; denenmedi.
+  anda dolar. Sekmeler `navigator.locks` ile sırayla yeniler; kilit yoksa (güvenli olmayan bağlam) yarış sürer.
 - **SameSite=Lax ve GET:** dış siteden gelen üst düzey GET gezintisinde çerez gönderilir. Durum değiştiren oturumlu
   GET ucu kalmadığı taranmalı.
 - **`NEXT_PUBLIC_API_URL`:** farklı bir origin'e ayarlı kurulumda çerez çalışmaz. Dağıtımların aynı origin olduğu doğrulanmalı.

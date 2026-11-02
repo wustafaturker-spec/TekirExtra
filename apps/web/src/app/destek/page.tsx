@@ -26,8 +26,8 @@ export default function DestekOturumuSayfasi() {
     void fetch(`${API_URL}/auth/destek/baslat`, { method: "POST", credentials: "include", headers: { Authorization: `Bearer ${token}` } })
       .then(async (y) => {
         if (!y.ok) throw new Error(((await y.json().catch(() => ({}))) as { message?: string }).message ?? "Destek oturumu açılamadı");
-        tokenYaz(token);
         destekSekmesiYaz(true);
+        tokenYaz(token);
         window.location.replace("/panel");
       })
       .catch((h: unknown) => { setDurum("hata"); setHata(h instanceof Error ? h.message : "Destek oturumu açılamadı"); });

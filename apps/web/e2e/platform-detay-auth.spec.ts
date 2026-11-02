@@ -111,7 +111,7 @@ test("platform girişinde parola görünürlüğü ve başarısız girişten son
   await page.getByRole("button", { name: "Giriş yap", exact: true }).click();
   await expect(page).toHaveURL(/\/platform$/);
   expect(govde).toEqual({ eposta: "editor@example.test", parola: "OrnekParola123", totpKodu: "123456" });
-  expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBe("yeni-platform-token");
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBe("cerez");
 });
 
 test("davet yüklemesi yeniden denenir, anahtar adresten silinir ve kurulum sonunda karekod kaldırılır", async ({ page }) => {
@@ -158,17 +158,17 @@ test("2FA yeniden kurulumunda mevcut parola kullanılır ve eksik davet açık h
   await expect(page.getByRole("img", { name: "İki adımlı doğrulama karekodu" })).toBeVisible();
 });
 
-test("PLT-25: çıkış oturumu sunucuda token ile iptal ettirir; doğrulanamazsa giriş sayfası açıkça uyarır", async ({ page }) => {
+test("PLT-25: çıkış oturumu sunucuda iptal ettirir; doğrulanamazsa giriş sayfası açıkça uyarır", async ({ page }) => {
   const basliklar: (string | undefined)[] = [];
   let ag = true;
   await page.route("**/api/v1/platform/auth/cikis", (route) => {
-    basliklar.push(route.request().headers().authorization);
+    basliklar.push(route.request().headers()["x-tekir-istek"]);
     return ag ? route.fulfill({ json: { sunucudaIptal: true } }) : route.abort("failed");
   });
   await page.goto("/platform/ozet");
   await page.getByRole("button", { name: "Çıkış", exact: true }).click();
   await expect(page).toHaveURL(/\/platform\/giris$/);
-  expect(basliklar).toEqual(["Bearer platform-detay-test"]);
+  expect(basliklar).toEqual(["1"]);
   expect(await page.evaluate(() => sessionStorage.getItem("tekir_platform_access"))).toBeNull();
   await expect(page.getByText(/sunucuda kapatıldığı doğrulanamadı/)).toHaveCount(0);
 
