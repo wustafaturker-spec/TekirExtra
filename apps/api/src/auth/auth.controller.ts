@@ -18,7 +18,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { DestekOturumService } from "../core/destek-oturum.service";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { AuthService } from "./auth.service";
-import { ERISIM_COOKIE, ERISIM_SURESI_MS, erisimCereziSil, erisimCereziYaz } from "./erisim-cerezi";
+import { ERISIM_COOKIE, ERISIM_SURESI_MS, erisimCereziSil, erisimCereziYaz, girisYaniti } from "./erisim-cerezi";
 import { DestekOturumundaAcik, IkiAdimKurulumundaAcik, Public } from "./public.decorator";
 import { OTURUM_ISARETI_COOKIE, OTURUM_ISARETI_SURESI_SN, oturumIsaretiSirri, oturumIsaretiUret } from "./oturum-isareti";
 
@@ -81,7 +81,7 @@ export class AuthController {
     const { eposta, parola, totpKodu } = ayristirma.data;
     const sonuc = await this.auth.giris(eposta, parola, totpKodu, istemciBilgisi(req));
     oturumCerezleriYaz(res, sonuc.accessToken, sonuc.refreshToken, sonuc.gecerlilikSonu);
-    return { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici };
+    return girisYaniti(req, { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici });
   }
 
   @Public()
@@ -90,7 +90,7 @@ export class AuthController {
     const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
     const sonuc = await this.auth.yenile(token ?? "", istemciBilgisi(req));
     oturumCerezleriYaz(res, sonuc.accessToken, sonuc.refreshToken, sonuc.gecerlilikSonu);
-    return { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici };
+    return girisYaniti(req, { accessToken: sonuc.accessToken, kullanici: sonuc.kullanici });
   }
 
   @Public()

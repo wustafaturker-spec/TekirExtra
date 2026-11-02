@@ -3,6 +3,7 @@ import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { AuthGuard } from "./auth.guard";
+import { girisYaniti } from "./erisim-cerezi";
 import { PLATFORM_ANAHTAR, PLATFORM_ROLLER_ANAHTAR } from "./public.decorator";
 import { aktifPlatformBaglam, baglamAl, istekBaglami } from "../core/istek-baglami";
 
@@ -199,5 +200,15 @@ describe("erişim çerezi ve CSRF (SEC-16)", () => {
     await expect(cerezle(true, { method: "GET", cookies: { tekir_platform_access: platformToken } })).resolves.toBe(true);
     await expect(cerezle(true, { method: "GET", cookies: { tekir_access: kiraciToken } })).rejects.toThrow(UnauthorizedException);
     await expect(cerezle(false, { method: "GET", cookies: { tekir_platform_access: platformToken } })).rejects.toThrow(UnauthorizedException);
+  });
+});
+
+describe("giriş yanıtında token (SEC-16)", () => {
+  const sonuc = { accessToken: "gizli", kullanici: { id: "u1" } };
+  it("tarayıcıya gövdede token verilmez", () => {
+    expect(girisYaniti({ headers: { "sec-fetch-site": "same-origin" } }, sonuc)).toEqual({ kullanici: { id: "u1" } });
+  });
+  it("tarayıcı dışı istemci token'ı gövdede alır", () => {
+    expect(girisYaniti({ headers: {} }, sonuc)).toEqual(sonuc);
   });
 });

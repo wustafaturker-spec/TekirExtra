@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
-import { PLATFORM_ERISIM_COOKIE, PLATFORM_ERISIM_SURESI_MS, erisimCereziSil, erisimCereziYaz, istekTokeni } from "../auth/erisim-cerezi";
+import { PLATFORM_ERISIM_COOKIE, PLATFORM_ERISIM_SURESI_MS, erisimCereziSil, erisimCereziYaz, girisYaniti, istekTokeni } from "../auth/erisim-cerezi";
 import { z } from "zod";
 import { MEVZUAT_TURLERI, takvimGunuMu } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
@@ -69,7 +69,7 @@ export class PlatformAuthController {
 
   @Public()
   @Post("giris")
-  async giris(@Body() govde: unknown, @Res({ passthrough: true }) res: Response) {
+  async giris(@Body() govde: unknown, @Req() istek: Request, @Res({ passthrough: true }) res: Response) {
     const { eposta, parola, totpKodu } = ayristir(girisSemasi, govde);
     const sonuc = await this.auth.giris(eposta, parola, totpKodu);
     // PLT-08: web middleware'i /platform sayfalarını bu işaret olmadan sunmaz.
@@ -84,7 +84,7 @@ export class PlatformAuthController {
       });
     }
     erisimCereziYaz(res, PLATFORM_ERISIM_COOKIE, sonuc.accessToken, PLATFORM_ERISIM_SURESI_MS);
-    return sonuc;
+    return girisYaniti(istek, sonuc);
   }
 
   /** PLT-25: oturum sunucuda iptal edilir; token bozuk ya da süresi dolmuşsa yalnız rota işareti silinir. */

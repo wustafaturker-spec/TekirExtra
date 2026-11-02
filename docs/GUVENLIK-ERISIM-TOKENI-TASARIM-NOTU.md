@@ -1,6 +1,6 @@
 # Erişim token'ının sessionStorage'dan çıkarılması — tasarım notu (SEC-14)
 
-Tarih: 2026-11-02. Durum: **onaylandı; seçenek B uygulanıyor (SEC-16).**
+Tarih: 2026-11-02. Durum: **uygulandı (SEC-16, 2026-11-02).**
 
 ## Özet
 
@@ -51,7 +51,8 @@ riski kapatmaz.
 1. **Çerez:** `tekir_access`, HttpOnly, SameSite=Lax, üretimde Secure, yol `/api/v1`, ömür 15 dk.
    `/auth/giris` ve `/auth/yenile` yazar, `/auth/cikis` siler.
 2. **Guard:** önce `Authorization` başlığına, yoksa çereze bakar. MCP, destek ve dış istemciler etkilenmez.
-3. **Gövde:** `/auth/giris` ve `/auth/yenile` artık `accessToken` dönmez (geçiş sırasında bkz. Geçiş).
+3. **Gövde:** `/auth/giris`, `/auth/yenile` ve platform girişi tarayıcıya `accessToken` dönmez. Ölçüt `Sec-Fetch-Site`:
+   betik bu başlığı değiştiremez. Başlık yoksa istek tarayıcı dışıdır (betik, kabul testi) ve token gövdede kalır.
 4. **CSRF:** yalnız çerezle kimliği doğrulanan yazma isteklerinde `X-Tekir-Istek: 1` zorunludur; başka site bu
    başlığı gönderemez çünkü CORS yalnız `APP_URL`'e açıktır. `Sec-Fetch-Site: cross-site` ayrıca reddedilir. `Origin` ile
    `APP_URL` karşılaştırılmadı: tünel adresi değişebilir. Bearer istekleri bu denetime girmez.
@@ -72,13 +73,8 @@ riski kapatmaz.
 
 ## Geçiş
 
-Eski sekmelerin bozulmaması için iki yayın:
-
-1. API her iki yolu kabul eder ve çerezi yazar; gövdede token sürer. Web çereze geçer.
-2. En az bir erişim token'ı ömrü ve açık sekmelerin yenilenmesi için makul süre sonra gövdeden token kaldırılır,
-   sessionStorage temizliği eklenir.
-
-Geri dönüş birinci aşamada zararsızdır: eski web paketi Bearer ile çalışmayı sürdürür.
+Yayın 2026-11-02'de iki adımda yapıldı: önce çerez ve yeni web, ardından gövdeden token'ın kaldırılması. Yeni yayından
+önce açılmış sekme ilk yenilemede giriş ekranına düşebilir; yeniden giriş yeterlidir.
 
 ## Test kapsamı
 

@@ -46,3 +46,14 @@ export function csrfDenetle(istek: Request): void {
     throw new ForbiddenException("İstek kaynağı doğrulanamadı; sayfayı yenileyip tekrar deneyin");
   }
 }
+
+/**
+ * Giriş ve yenileme yanıtı: tarayıcıya gövdede token verilmez, yoksa sayfadaki betik
+ * `/auth/yenile` çağırıp token'ı okuyabilirdi. `Sec-Fetch-*` başlıklarını betik
+ * değiştiremez; bunlar yoksa istek tarayıcı dışıdır (betik, kabul testi) ve Bearer ile çalışır.
+ */
+export function girisYaniti<T extends { accessToken: string }>(istek: Pick<Request, "headers">, sonuc: T): T | Omit<T, "accessToken"> {
+  if (!istek.headers["sec-fetch-site"]) return sonuc;
+  const { accessToken: _gizli, ...kalan } = sonuc;
+  return kalan;
+}
