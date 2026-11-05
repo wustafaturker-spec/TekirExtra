@@ -50,3 +50,11 @@ Geçerli eski platform oturumu bulunmadığından giriş yapılmış ekranlar i�
 Önce/sonra sayımları aynı: 723 firma, 716 kullanıcı, 162 belge, 635 abonelik, 3 abonelik ödemesi; toplam ödeme 34.271,20 TL.
 
 Ayrıntılı kayıt, runtime manifesti ve canlı kontrol sonuçları `.release-candidates/platform-pilot-isletim-20261105/yayin-ozeti.json` ve yeni paket dizinindedir. Uzak sunucu yayını yapılmadı.
+
+## Giriş bağlantısı düzeltmesi — aynı gün
+
+Kullanıcının bildirdiği `JSON.parse` hatası gerçek giriş POST isteğinde yeniden incelendi. Redis sunucusu parolasız, API'nin `REDIS_URL` değeri parolalıydı. İlk PING kontrolü kullanılan istemciyle başarılı görünse de giriş sayacının `redis` istemcisi AUTH hatasıyla yeniden bağlanmayı sürdürüyordu; giriş proxy'si zaman aşımı/socket reset sonrasında JSON dışı yanıt üretiyordu. İlk yayın kontrolü giriş ekranını açmış, form POST akışını doğrulamamıştı.
+
+Mevcut `.env` dosyasına `REDIS_URL` ile aynı parolayı taşıyan `REDIS_PASSWORD` eklendi; önceki ortam dosyası korumalı yedek dizinine alındı. Redis aynı kalıcı volume ile yeniden oluşturuldu. Uygulama kodu ve kullanıcı hesapları değiştirilmedi.
+
+Gerçek pilotta var olmayan test adresiyle giriş isteği artık yaklaşık 700 ms'de 401 ve `application/json` yanıtı veriyor. Chromium form kontrolü anlaşılır kimlik bilgisi hatasını doğruladı; JSON parse veya tarayıcı script hatası yok. Gerçek kullanıcı hesabı, parola veya 2FA değiştirilmedi. Redis ve dört pilot servisi sağlıklı. Ek kontrol kaydı: `.release-candidates/platform-pilot-isletim-20261105/giris-kontrol.json`.
