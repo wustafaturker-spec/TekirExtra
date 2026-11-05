@@ -1487,7 +1487,9 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 /* Ortak fieldset `display: contents` kullanır; burada ızgaranın tek hücresi olmalı. */
 .document-editor__fieldset.invoice-layout__main { display: block; min-width: 0; }
 /* Belge formunda sol sütun fieldset değil div'dir; ızgara öğesi içindeki tablo sütunu genişletmesin. */
-.invoice-layout__main { min-width: 0; }
+.invoice-layout__main { container: invoice-main / inline-size; min-width: 0; }
+.invoice-layout__main .document-fields > * { min-width: 0; }
+.invoice-layout__main .document-fields :is(.input, .select) { min-width: 0; }
 .invoice-layout__side { display: grid; gap: .75rem; margin-top: 1rem; position: sticky; top: 1rem; }
 .invoice-head-fields { grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(150px, 1fr)); }
 .invoice-head-fields > .field:first-child { grid-row: span 1; }
@@ -2243,6 +2245,16 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
   .invoice-line__action { align-self: end; justify-self: end; }
   .invoice-lines .document-line-detail { display: block; margin-top: -0.75rem; }
   .invoice-lines .document-line-detail td { display: block; }
+}
+
+/* Sağ özet ve yan menü formu daraltır; sütunları kullanılabilir alana göre seç. */
+@container invoice-main (max-width: 850px) {
+  .document-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .invoice-head-fields > :first-child { grid-column: 1 / -1; }
+}
+@container invoice-main (max-width: 520px) {
+  .document-fields { grid-template-columns: minmax(0, 1fr); }
+  .document-fields__genis { grid-column: 1 / -1; }
 }
 
 .feedback-trigger { align-items: center; background: transparent; border: 0; border-top: 1px solid #27272a; color: #a1a1aa; cursor: pointer; display: flex; gap: .65rem; padding: .8rem 1rem; text-align: left; width: 100%; }
