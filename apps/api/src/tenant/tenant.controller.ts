@@ -88,6 +88,13 @@ export class TenantController {
     private readonly tasarimlar: BelgeTasarimlariService,
   ) {}
 
+  /** Kayıt ekranındaki seçenekler yalnız güncel açık satış sürümünden üretilir. */
+  @Public()
+  @Get("tenant/kayit/paketler")
+  async kayitPaketleri() {
+    return this.kayit.acikSatisPaketleri();
+  }
+
   /** Self-servis firma kaydı (KLN-07) — kimliksiz erişilir. */
   @Public()
   @Post("tenant/kayit")

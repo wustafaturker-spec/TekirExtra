@@ -1,3 +1,4 @@
+import { firmaSayfasi } from "./platform-firma-fixture";
 import { expect, test } from "@playwright/test";
 
 /** PLT-32…37: platform ödeme raporu ekranı (API sahte yanıtlarla). */
@@ -93,7 +94,7 @@ test("sorunlu tahsilatlar ve yaklaşan yenilemeler sekmeleri", async ({ page }) 
 });
 
 test("firma kartı ödeme raporundaki bağlantıyla açılır", async ({ page }) => {
-  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [{ tenantId: "t1", unvan: "DENEME FİRMASI 2", vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "profesyonel", durum: "aktif", donemSonu: "2026-12-05T00:00:00Z", iptalTarihi: null, aktifKullanici: 1, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null, sonOdemeAt: null, askiyaAlinacak: false }] }));
+  await page.route("**/api/v1/platform/firmalar/sayfali?*", (route) => firmaSayfasi(route, [{ tenantId: "t1", unvan: "DENEME FİRMASI 2", vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "profesyonel", durum: "aktif", donemSonu: "2026-12-05T00:00:00Z", iptalTarihi: null, aktifKullanici: 1, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null, sonOdemeAt: null, askiyaAlinacak: false }]));
   await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], odemeler: [], basarisizDenemeler: [] } }));
   await page.goto("/platform/firmalar?firma=t1");
   await expect(page.getByRole("dialog")).toContainText("DENEME FİRMASI 2");
@@ -130,7 +131,7 @@ test("PLT-42/46: rapordan iade — kısmi iade satırı ve özeti, form gövdesi
 });
 
 test("PLT-46: firma kartında ödemenin iadeleri görünür, kalan için satır altında iade formu açılır", async ({ page }) => {
-  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [{ tenantId: "t1", unvan: "DENEME FİRMASI 2", vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "profesyonel", durum: "aktif", donemSonu: "2026-12-05T00:00:00Z", iptalTarihi: null, aktifKullanici: 1, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null, sonOdemeAt: null, askiyaAlinacak: false }] }));
+  await page.route("**/api/v1/platform/firmalar/sayfali?*", (route) => firmaSayfasi(route, [{ tenantId: "t1", unvan: "DENEME FİRMASI 2", vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "profesyonel", durum: "aktif", donemSonu: "2026-12-05T00:00:00Z", iptalTarihi: null, aktifKullanici: 1, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null, sonOdemeAt: null, askiyaAlinacak: false }]));
   await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], basarisizDenemeler: [], odemeler: [
     { id: "o1", zaman: "2026-11-01T13:34:57Z", aySayisi: 1, tutar: 1198.8, kdv: 199.8, kaynak: "saglayici", saglayici: "iyzico", not: null, yeniDonemSonu: "2026-12-05T00:00:00Z", fatura: null,
       iadeler: [{ id: "i1", zaman: "2026-11-01T15:00:00Z", tutar: 100, neden: "Kısmi indirim", saglayiciyaGonderildi: true, ref: "R1", kaydeden: "Admin", faturalayanDurumu: "yazildi", faturalayanHata: null }] },
@@ -144,4 +145,25 @@ test("PLT-46: firma kartında ödemenin iadeleri görünür, kalan için satır 
   await expect(pencere.getByRole("form", { name: "Abonelik ödemesini iade et" })).toContainText("iade edilebilir 1.098,80 TL");
   await pencere.getByRole("button", { name: "Vazgeç" }).click();
   await expect(pencere.getByRole("form", { name: "Abonelik ödemesini iade et" })).toHaveCount(0);
+});
+
+
+test("sorunlu ödeme kapsamı ve sayfalama URL ile korunur", async ({ page }) => {
+  const firma = "00000000-0000-4000-8000-000000000301";
+  const sorgular: URLSearchParams[] = [];
+  await page.route("**/api/v1/platform/odeme-raporu/sorunlu?*", (r) => {
+    const p = new URL(r.request().url()).searchParams; sorgular.push(p);
+    return r.fulfill({ json: { ...sorunlu, denemeler: Number(p.get("sayfa")) > 1 ? [] : sorunlu.denemeler,
+      kartlar: [], kartKapsami: "gizli", sayilar: { basarisiz: 507, sonuclanmadi: 1 }, toplam: 507, sayfa: Number(p.get("sayfa")), sayfaBoyutu: 50 } });
+  });
+  await page.goto(`/platform/odeme-raporu?sekme=sorunlu&baslangic=2026-10-01&bitis=2026-10-02&plan=profesyonel&firma=${firma}&durum=basarisiz`);
+  await expect(page.getByLabel("Deneme durumu")).toHaveValue("basarisiz");
+  await expect(page.getByText("507 deneme · Sayfa 1")).toBeVisible();
+  await page.getByRole("button", { name: "Sonraki", exact: true }).click();
+  await expect(page).toHaveURL(/sayfa=2/);
+  await expect(page.getByRole("button", { name: "İlk sayfaya dön" })).toBeVisible();
+  expect(sorgular.at(-1)?.get("plan")).toBe("profesyonel"); expect(sorgular.at(-1)?.get("firma")).toBe(firma);
+  await page.getByLabel("Deneme durumu").selectOption("sonuclanmadi");
+  await expect(page).not.toHaveURL(/sayfa=2/);
+  await expect(page.getByText("507 deneme · Sayfa 1")).toBeVisible();
 });

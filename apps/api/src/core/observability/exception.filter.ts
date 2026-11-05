@@ -1,4 +1,4 @@
-import { BadRequestException, ArgumentsHost, Catch, ExceptionFilter, HttpException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ArgumentsHost, Catch, ExceptionFilter, ForbiddenException, HttpException, ServiceUnavailableException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { MetricsService } from "./metrics.service";
@@ -9,7 +9,7 @@ import { structuredLogger } from "./structured-logger";
  * (havuzdan bağlantı alınamadı), P2028 (işlem süresinde başlatılamadı).
  * Kalıcı bir arıza değil; istemci kısa süre sonra yeniden denemeli.
  */
-const YOGUNLUK_KODLARI = new Set(["P2024", "P2028"]);
+const YOGUNLUK_KODLARI = new Set(["P2024", "P2028", "P2034"]);
 const RETRY_AFTER_SN = 3;
 
 export function yogunlukHatasiMi(hata: unknown): boolean {
@@ -43,6 +43,13 @@ export function istemciGovdeHatasi(hata: unknown): { status: number; mesaj: stri
 export function bagHatasiMi(hata: unknown): boolean {
   return hata instanceof Error && hata.name.startsWith("PrismaClient") && (hata as { code?: unknown }).code === "P2003";
 }
+export function paketKotaHatasi(hata: unknown): HttpException | null {
+  if (!(hata instanceof Error) || !hata.name.startsWith("PrismaClient")) return null;
+  const m = `${hata.message} ${JSON.stringify((hata as { meta?: unknown }).meta ?? {})}`;
+  if (m.includes("paket_modul_kapali:")) return new ForbiddenException("Bu modül abonelik paketinizde kapalı.");
+  if (m.includes("paket_kota_dolu:")) return new BadRequestException("Paket kullanım kotası doldu. Kullanımı azaltın veya paket değişikliği isteyin.");
+  return null;
+}
 
 @Catch()
 export class ObservabilityExceptionFilter implements ExceptionFilter {
@@ -54,7 +61,7 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
       ? new ServiceUnavailableException("Sistem şu an yoğun, birkaç saniye sonra yeniden deneyin")
       : bagHatasiMi(hata)
         ? new BadRequestException("Seçilen bağlı kayıt bulunamadı ya da kayıt başka işlemlerde kullanılıyor")
-        : hata;
+        : paketKotaHatasi(hata) ?? hata;
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();

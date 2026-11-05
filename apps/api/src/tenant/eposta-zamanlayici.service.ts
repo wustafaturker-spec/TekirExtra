@@ -48,7 +48,7 @@ export class EpostaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
       const kiracilar = await this.imapAktifKiracilar();
       for (const k of kiracilar) {
         // PLT-05: askıdaki firmanın gelen kutusu eşitlenmez.
-        if (await this.erisim?.otomasyonDurdu(k.tenant_id)) continue;
+        if (await this.erisim?.otomasyonDurdu(k.tenant_id, "satis")) continue;
         try {
           const res = await this.imapService.senkronizeEt(k.tenant_id);
           if (res.senkronizeEdildi > 0) {

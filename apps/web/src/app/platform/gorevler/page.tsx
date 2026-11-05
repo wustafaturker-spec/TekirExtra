@@ -38,11 +38,15 @@ function GorevMerkezi() {
   const bag = parametreler.get("degisiklik");
   const ilkDegisiklik = bag && UUID.test(bag) ? bag : "";
   const gorevParam = parametreler.get("gorev");
+  const firmaParam = parametreler.get("firma");
+  const ilkFirma = firmaParam && UUID.test(firmaParam) ? firmaParam : "";
+  const yeniFirmaGorevi = !!ilkFirma && parametreler.get("yeni") === "1";
   const filtre = filtreOku(parametreler);
   const setFiltre = filtreYaz;
   const [arama, setArama] = useState(filtre.arama);
   useEffect(() => { setArama(filtre.arama); }, [filtre.arama]);
   const sorgu = new URLSearchParams({ arama: filtre.arama, durum: filtre.durum, benim: filtre.benim ? "1" : "0", geciken: filtre.geciken ? "1" : "0", sorumluPasif: filtre.sorumluPasif ? "1" : "0", sayfa: String(filtre.sayfa) });
+  if (ilkFirma) sorgu.set("firma", ilkFirma);
   const { veri, yukleniyor, hata: listeHatasi, yenile } = usePlatformVerisi<GorevListesi>(`/platform/gorevler?${sorgu}`);
   const [formAcik, setFormAcik] = useState(false);
   const [secili, setSecili] = useState<Gorev | null>(null);
@@ -50,6 +54,11 @@ function GorevMerkezi() {
   const [islem, setIslem] = useState<string | null>(null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
+  function formuKapat() {
+    setFormAcik(false);
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("yeni")) { url.searchParams.delete("yeni"); window.history.replaceState(null, "", `${url.pathname}${url.search}`); }
+  }
   const goster = (ek: Partial<Filtre>) => setFiltre((f) => ({ ...f, ...ek, sayfa: 1 }));
   useEffect(() => {
     if (arama.trim() === filtre.arama) return;
@@ -60,11 +69,12 @@ function GorevMerkezi() {
   async function baglantiyiKopyala() {
     try {
       const url = new URL(window.location.href);
-      url.searchParams.delete("gorev"); url.searchParams.delete("degisiklik");
+      url.searchParams.delete("gorev"); url.searchParams.delete("degisiklik"); url.searchParams.delete("yeni");
       await navigator.clipboard.writeText(url.toString());
       setBasari("Liste bağlantısı kopyalandı.");
     } catch { setHata("Bağlantı kopyalanamadı. Tarayıcının adres çubuğundaki bağlantıyı kopyalayabilirsiniz."); }
   }
+  useEffect(() => { if (yeniFirmaGorevi) { setSecili(null); setFormAcik(true); } }, [yeniFirmaGorevi]);
   useEffect(() => { if (ilkDegisiklik) { setSecili(null); setFormAcik(true); } }, [ilkDegisiklik]);
   useEffect(() => {
     if (!gorevParam || !UUID.test(gorevParam)) return;
@@ -91,6 +101,7 @@ function GorevMerkezi() {
   return <>
     <PageHeader title="Görev merkezi" subtitle="Ekip işlerini sorumlu, öncelik ve son tarihle takip edin. Tamamlanan görevler geçmişte korunur." actions={<div className="platform-row-actions"><Button disabled={yukleniyor || Boolean(islem)} onClick={yenile}><RefreshCw size={16} aria-hidden="true" />Yenile</Button><Button variant="primary" onClick={() => { setSecili(null); setModalSurumu((v) => v + 1); setFormAcik(true); }}><Plus size={16} aria-hidden="true" />Yeni görev</Button></div>} />
     <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
+    {ilkFirma && <p>Bu firmaya bağlı görevler · <Link href={`/platform/firmalar/${ilkFirma}`}>Firma detayına dön</Link> · <Link href="/platform/gorevler">Tüm görevler</Link></p>}
     <section aria-label="Görev durumları"><p className="platform-section-caption">Yetkinizdeki tüm görevler · Arama ve liste filtrelerinden bağımsız</p><div className="platform-overview platform-task-overview">
       {([ ["acik", "Açık", "acik"], ["devam_ediyor", "Devam ediyor", "devam_ediyor"], ["geciken", "Geciken", "acik_isler"], ["tamamlandi", "Tamamlandı", "tamamlandi"] ] as const).map(([kod, ad, durum]) => <button key={kod} className={`platform-metric${kod === "geciken" ? filtre.geciken ? " is-active" : "" : !filtre.geciken && filtre.durum === durum ? " is-active" : ""}`} onClick={() => goster({ durum, geciken: kod === "geciken" })}><span>{ad}</span><strong>{yukleniyor || veriHatasi ? "—" : gecerliVeri?.sayilar[kod] ?? "—"}</strong></button>)}
     </div></section>
@@ -110,15 +121,15 @@ function GorevMerkezi() {
       </tbody></TableWrap>
       <div className="platform-pagination"><span>Sayfa {filtre.sayfa}{gecerliVeri ? ` / ${Math.max(1, Math.ceil(gecerliVeri.toplam / gecerliVeri.sayfaBoyutu))}` : ""}</span><div className="platform-row-actions"><Button size="sm" disabled={yukleniyor || filtre.sayfa === 1} onClick={() => setFiltre((f) => ({ ...f, sayfa: f.sayfa - 1 }))}><ArrowLeft size={14} aria-hidden="true" />Önceki</Button><Button size="sm" disabled={yukleniyor || !gecerliVeri || filtre.sayfa * gecerliVeri.sayfaBoyutu >= gecerliVeri.toplam} onClick={() => setFiltre((f) => ({ ...f, sayfa: f.sayfa + 1 }))}>Sonraki<ArrowRight size={14} aria-hidden="true" /></Button></div></div>
     </Card>
-    {formAcik && <GorevFormu key={`${secili?.id ?? "yeni"}:${modalSurumu}`} gorev={secili} ilkDegisiklikId={secili ? "" : ilkDegisiklik} onKapat={() => setFormAcik(false)} onTamam={(g) => { setFormAcik(false); setBasari(`${g.baslik}: görev kaydedildi.`); setHata(""); yenile(); }} onGuncel={(g) => { setSecili(g); setModalSurumu((v) => v + 1); }} />}
+    {formAcik && <GorevFormu key={`${secili?.id ?? "yeni"}:${modalSurumu}`} gorev={secili} ilkFirmaId={secili ? "" : ilkFirma} ilkDegisiklikId={secili ? "" : ilkDegisiklik} onKapat={formuKapat} onTamam={(g) => { formuKapat(); setBasari(`${g.baslik}: görev kaydedildi.`); setHata(""); yenile(); }} onGuncel={(g) => { setSecili(g); setModalSurumu((v) => v + 1); }} />}
   </>;
 }
 
 interface Katilimci { id: string; adSoyad: string; rol: "yonetici" | "mevzuat_editoru" }
 interface Degisiklik { id: string; no: number; baslik: string }
-function GorevFormu({ gorev, ilkDegisiklikId, onKapat, onTamam, onGuncel }: { gorev: Gorev | null; ilkDegisiklikId: string; onKapat: () => void; onTamam: (g: Gorev) => void; onGuncel: (g: Gorev) => void }) {
+function GorevFormu({ gorev, ilkFirmaId, ilkDegisiklikId, onKapat, onTamam, onGuncel }: { gorev: Gorev | null; ilkFirmaId: string; ilkDegisiklikId: string; onKapat: () => void; onTamam: (g: Gorev) => void; onGuncel: (g: Gorev) => void }) {
   const ben = usePlatformOturumu();
-  const ilk = { baslik: gorev?.baslik ?? "", aciklama: gorev?.aciklama ?? "", kapsam: gorev?.kapsam ?? "mevzuat" as GorevKapsami, durum: gorev?.durum ?? "acik" as GorevDurumu, oncelik: gorev?.oncelik ?? "normal" as GorevOnceligi, sonTarih: gorev?.sonTarih ?? "", sorumluId: gorev?.sorumluId ?? "", degisiklikId: gorev?.degisiklikId ?? ilkDegisiklikId };
+  const ilk = { baslik: gorev?.baslik ?? "", aciklama: gorev?.aciklama ?? "", kapsam: gorev?.kapsam ?? (ilkFirmaId ? "platform" : "mevzuat") as GorevKapsami, durum: gorev?.durum ?? "acik" as GorevDurumu, oncelik: gorev?.oncelik ?? "normal" as GorevOnceligi, sonTarih: gorev?.sonTarih ?? "", sorumluId: gorev?.sorumluId ?? "", degisiklikId: gorev?.degisiklikId ?? ilkDegisiklikId };
   const [form, setForm] = useState(ilk);
   const [hata, setHata] = useState("");
   const [cakisma, setCakisma] = useState(false);
@@ -144,7 +155,7 @@ function GorevFormu({ gorev, ilkDegisiklikId, onKapat, onTamam, onGuncel }: { go
     setIslem(true); setHata(""); setCakisma(false);
     try {
       const { durum, kapsam, ...alanlar } = form;
-      const veri = { ...alanlar, aciklama: form.aciklama.trim() || null, sonTarih: form.sonTarih || null, sorumluId: form.sorumluId || null, degisiklikId: form.degisiklikId || null, ...(gorev ? { surum: gorev.surum, durum } : { kapsam }) };
+      const veri = { ...alanlar, aciklama: form.aciklama.trim() || null, sonTarih: form.sonTarih || null, sorumluId: form.sorumluId || null, degisiklikId: form.degisiklikId || null, ...(gorev ? { surum: gorev.surum, durum } : { kapsam, ...(ilkFirmaId ? { tenantId: ilkFirmaId } : {}) }) };
       onTamam(await platformApi<Gorev>(gorev ? `/platform/gorevler/${gorev.id}` : "/platform/gorevler", { method: gorev ? "PATCH" : "POST", body: JSON.stringify(veri) }));
     } catch (e) { setHata(e instanceof Error ? e.message : "Görev kaydedilemedi."); setCakisma(e instanceof PlatformApiHata && e.durum === 409); }
     finally { setIslem(false); }
@@ -163,10 +174,11 @@ function GorevFormu({ gorev, ilkDegisiklikId, onKapat, onTamam, onGuncel }: { go
     {kisiHatasi && <Alert tone="error">Sorumlu listesi alınamadı. <Button onClick={kisiler.yenile}>Yeniden dene</Button></Alert>}
     {degisiklikHatasi && <Alert tone="error">Değişiklik listesi alınamadı. <Button onClick={degisiklikler.yenile}>Yeniden dene</Button></Alert>}
     {bagli.hata && <Alert tone="error">Bağlı değişiklik alınamadı. <Button onClick={bagli.yenile}>Yeniden dene</Button><Button onClick={() => setForm((f) => ({ ...f, degisiklikId: "" }))}>Bağı kaldır</Button></Alert>}
+    {(gorev?.tenantId || ilkFirmaId) && <p>Firma bağlantısı: <Link href={`/platform/firmalar/${gorev?.tenantId || ilkFirmaId}`}>Firma detayını aç</Link></p>}
     <form onSubmit={(e) => void kaydet(e)}><fieldset className="platform-editor-fieldset" disabled={islem}>
       <div className="platform-task-form">
         <Field label="Görev başlığı"><Input autoFocus required minLength={3} maxLength={200} value={form.baslik} onChange={(e) => setForm((f) => ({ ...f, baslik: e.target.value }))} /></Field>
-        <Field label="Görev kapsamı"><Select value={form.kapsam} disabled={Boolean(gorev) || ben?.rol !== "yonetici"} onChange={(e) => setForm((f) => ({ ...f, kapsam: e.target.value as GorevKapsami, sorumluId: "", degisiklikId: "" }))}><option value="mevzuat">Mevzuat ekibi</option>{(ben?.rol === "yonetici" || form.kapsam === "platform") && <option value="platform">Platform yönetimi</option>}</Select></Field>
+        <Field label="Görev kapsamı"><Select value={form.kapsam} disabled={Boolean(gorev) || !!ilkFirmaId || ben?.rol !== "yonetici"} onChange={(e) => setForm((f) => ({ ...f, kapsam: e.target.value as GorevKapsami, sorumluId: "", degisiklikId: "" }))}><option value="mevzuat">Mevzuat ekibi</option>{(ben?.rol === "yonetici" || form.kapsam === "platform") && <option value="platform">Platform yönetimi</option>}</Select></Field>
         <Field label="Öncelik"><Select value={form.oncelik} onChange={(e) => setForm((f) => ({ ...f, oncelik: e.target.value as GorevOnceligi }))}>{Object.entries(GOREV_ONCELIGI).map(([kod, ad]) => <option key={kod} value={kod}>{ad}</option>)}</Select></Field>
         <Field label="Sorumlu"><Select value={form.sorumluId} disabled={bekle || Boolean(kisiler.hata)} onChange={(e) => setForm((f) => ({ ...f, sorumluId: e.target.value }))}><option value="">Atanmadı</option>{gorev?.sorumlu && !uygunKisiler.some((k) => k.id === gorev.sorumlu!.id) && <option value={gorev.sorumlu.id} disabled>{gorev.sorumlu.adSoyad} · yeniden atayın</option>}{uygunKisiler.map((k) => <option key={k.id} value={k.id}>{k.adSoyad}</option>)}</Select></Field>
         <Field label="Son tarih"><Input type="date" value={form.sonTarih} onChange={(e) => setForm((f) => ({ ...f, sonTarih: e.target.value }))} /></Field>

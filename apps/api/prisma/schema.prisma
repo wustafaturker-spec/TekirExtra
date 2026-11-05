@@ -269,6 +269,9 @@ model Tenant {
   belgeOcrKayitlari       BelgeOcrKaydi[]
   aiAyari                 TenantAiAyari?
   aiTavani                PlatformAiTavani?
+  platformTakip          PlatformFirmaTakip?
+  platformNotlari        PlatformFirmaNotu[]
+  platformGorevleri      PlatformGorev[]
   epostaTeklifIslemleri   EpostaTeklifIslemi[]
   aiHafiza                AiHafiza[]
   isKutusuKapanislari     IsKutusuKapanisi[]
@@ -290,6 +293,9 @@ model TenantAbonelik {
   id                   String         @id @default(uuid()) @db.Uuid
   tenantId             String         @unique @map("tenant_id") @db.Uuid
   planKodu             String         @default("v1") @map("plan_kodu")
+  paketSurumId         String?        @map("paket_surum_id") @db.Uuid
+  paketKosullari       Json?          @map("paket_kosullari")
+  kotaSurumu           String         @default(dbgenerated("gen_random_uuid()")) @map("kota_surumu") @db.Uuid
   durum                AbonelikDurumu @default(aktif)
   faturaEpostasi       String?        @map("fatura_epostasi")
   faturalandirmaUnvani String?        @map("faturalandirma_unvani")
@@ -305,8 +311,10 @@ model TenantAbonelik {
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  paketSurumu PlatformPaketSurumu? @relation(fields: [paketSurumId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([durum, donemSonu])
+  @@index([paketSurumId], map: "tenant_abonelikleri_paket_surum_idx")
   @@map("tenant_abonelikleri")
 }
 
@@ -426,6 +434,7 @@ model AbonelikOdemesi {
   /// PLT-12: KDV hariç tutar ve KDV; elle kayıtta boş (yalnız toplam girilir).
   matrah              Decimal?  @db.Decimal(14, 2)
   kdv                 Decimal?  @db.Decimal(14, 2)
+  fiyatFotografi      Json?     @map("fiyat_fotografi")
   /// PLT-27: elle ödemenin istemci işlem anahtarı; aynı anahtar ikinci ödeme yaratmaz, kalıcı referanstır.
   islemAnahtari       String?   @unique @map("islem_anahtari") @db.VarChar(100)
   /// PLT-27: firma, süre, tutar, not ve aktörün özeti; aynı anahtar farklı içerikle 409 alır.
@@ -484,6 +493,7 @@ model AbonelikOdemeDenemesi {
   matrah            Decimal   @db.Decimal(14, 2)
   kdv               Decimal   @db.Decimal(14, 2)
   toplam            Decimal   @db.Decimal(14, 2)
+  fiyatFotografi    Json?     @map("fiyat_fotografi")
   /// baslatildi | odendi | basarisiz
   durum             String    @default("baslatildi") @db.VarChar(20)
   saglayiciToken    String?   @map("saglayici_token") @db.VarChar(255)
@@ -6387,6 +6397,12 @@ model PlatformKullanici {
   oturumlar           PlatformOturum[]
   olusturulanGorevler PlatformGorev[] @relation("GoreviOlusturan")
   sorumluGorevler PlatformGorev[] @relation("GorevSorumlusu")
+  firmaTakipleri PlatformFirmaTakip[] @relation("FirmaSorumlusu")
+  firmaTakipGuncellemeleri PlatformFirmaTakip[] @relation("FirmaTakibiniGuncelleyen")
+  firmaNotlari PlatformFirmaNotu[]
+  paketAtamalari PlatformPaketAtamasi[] @relation("AtamaYonetici")
+  paketSatisGecmisi PlatformPaketSatisGecmisi[]
+  iptalEdilenPaketAtamalari PlatformPaketAtamasi[] @relation("AtamaIptalEden")
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari                PlatformAiTavani[]
   abonelikSaglayiciAyarlari  AbonelikSaglayiciAyari[]
@@ -7499,6 +7515,8 @@ model PlatformGorev {
   sorumluId String? @map("sorumlu_id") @db.Uuid
   olusturanId String @map("olusturan_id") @db.Uuid
   degisiklikId String? @map("degisiklik_id") @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid
+  firma Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   surum Int @default(1)
   kapanisAt DateTime? @map("kapanis_at")
   createdAt DateTime @default(now()) @map("created_at")
@@ -7510,5 +7528,215 @@ model PlatformGorev {
 
   @@index([kapsam, durum, sonTarih])
   @@index([sorumluId, durum])
+  @@index([tenantId, durum], map: "platform_gorevleri_tenant_durum_idx")
   @@map("platform_gorevleri")
+}
+
+/// Platforma özel firma takip kaydı; kiracı uygulaması erişemez.
+model PlatformFirmaTakip {
+  tenantId String @id @map("tenant_id") @db.Uuid
+  sorumluId String? @map("sorumlu_id") @db.Uuid
+  durum String @default("acik") @db.VarChar(20)
+  sonrakiGorusme DateTime? @map("sonraki_gorusme") @db.Date
+  surum Int @default(1)
+  guncelleyenId String @map("guncelleyen_id") @db.Uuid
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamp(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sorumlu PlatformKullanici? @relation("FirmaSorumlusu", fields: [sorumluId], references: [id], onDelete: SetNull)
+  guncelleyen PlatformKullanici @relation("FirmaTakibiniGuncelleyen", fields: [guncelleyenId], references: [id], onDelete: Restrict)
+  @@index([sorumluId, durum], map: "platform_firma_takipleri_sorumlu_durum_idx")
+  @@map("platform_firma_takipleri")
+}
+
+/// Eklemeli iç notlar; düzeltme yeni notla yapılır.
+model PlatformFirmaNotu {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  yazarId String @map("yazar_id") @db.Uuid
+  metin String @db.VarChar(4000)
+  islemAnahtari String @map("islem_anahtari") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  yazar PlatformKullanici @relation(fields: [yazarId], references: [id], onDelete: Restrict)
+  @@unique([tenantId, yazarId, islemAnahtari])
+  @@index([tenantId, createdAt, id], map: "platform_firma_notlari_tenant_zaman_idx")
+  @@map("platform_firma_notlari")
+}
+
+/// Yönetim kataloğu; eski abonelikler ilk sürüme korunmuş koşullarıyla bağlanır.
+model PlatformPaket {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kod String @unique @db.VarChar(40)
+  eskiPlanKodu String? @unique @map("eski_plan_kodu")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  surumler PlatformPaketSurumu[] @relation("PaketSurumleri")
+  satisAcik Boolean @default(false) @map("satis_acik")
+  satisSurumId String? @map("satis_surum_id") @db.Uuid
+  satisKilitSurumu Int @default(1) @map("satis_kilit_surumu")
+  satisSurumu PlatformPaketSurumu? @relation("PaketSatisSurumu", fields: [satisSurumId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  satisGecmisi PlatformPaketSatisGecmisi[]
+  @@map("platform_paketler")
+}
+model PlatformPaketSatisGecmisi {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paketId String @map("paket_id") @db.Uuid
+  kullaniciId String @map("kullanici_id") @db.Uuid
+  kilitSurumu Int @map("kilit_surumu")
+  neden String
+  onceki Json
+  yeni Json
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  paket PlatformPaket @relation(fields: [paketId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  kullanici PlatformKullanici @relation(fields: [kullaniciId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([paketId,kilitSurumu])
+  @@map("platform_paket_satis_gecmisi")
+}
+model PlatformPaketSurumu {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paketId String @map("paket_id") @db.Uuid
+  surumNo Int @map("surum_no")
+  kilitSurumu Int @default(1) @map("kilit_surumu")
+  durum String @default("taslak")
+  ad String @db.VarChar(100)
+  aciklama String @default("") @db.VarChar(2000)
+  ozellikler Json @default("[]")
+  siralama Int @default(0)
+  fiyatlandirma Json?
+  kapsamSozlesmesi Json? @map("kapsam_sozlesmesi")
+  denemeGunSayisi Int @default(0) @map("deneme_gun_sayisi")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  yayinlandiAt DateTime? @map("yayinlandi_at") @db.Timestamp(3)
+  arsivlendiAt DateTime? @map("arsivlendi_at") @db.Timestamp(3)
+  paket PlatformPaket @relation("PaketSurumleri", fields: [paketId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  satisPaketleri PlatformPaket[] @relation("PaketSatisSurumu")
+  abonelikler TenantAbonelik[]
+  atamalar PlatformPaketAtamasi[]
+  @@unique([paketId, surumNo])
+  @@map("platform_paket_surumleri")
+}
+/// Onaylanan firma/koşul fotoğrafı ve tek seferlik uygulama kaydı; yalnız dar SQL işlevleri yazar.
+model PlatformPaketAtamasi {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kullaniciId String @map("kullanici_id") @db.Uuid
+  hedefSurumId String @map("hedef_surum_id") @db.Uuid
+  hedefKilitSurumu Int @map("hedef_kilit_surumu")
+  uygulamaTarihi DateTime @map("uygulama_tarihi") @db.Date
+  neden String
+  veri Json
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(3)
+  sonOnayAt DateTime @default(dbgenerated("(clock_timestamp() + interval '15 minutes')")) @map("son_onay_at") @db.Timestamptz(3)
+  uygulandiAt DateTime? @map("uygulandi_at") @db.Timestamptz(3)
+  uygulamaTuru String @default("bugun") @map("uygulama_turu")
+  atamaKapsami String @default("fiyat") @map("atama_kapsami")
+  uygulanacakAt DateTime? @map("uygulanacak_at") @db.Timestamptz(3)
+  planlandiAt DateTime? @map("planlandi_at") @db.Timestamptz(3)
+  iptalAt DateTime? @map("iptal_at") @db.Timestamptz(3)
+  iptalEdenId String? @map("iptal_eden_id") @db.Uuid
+  iptalNedeni String? @map("iptal_nedeni")
+  engellendiAt DateTime? @map("engellendi_at") @db.Timestamptz(3)
+  engelNedeni String? @map("engel_nedeni")
+  kullanici PlatformKullanici @relation("AtamaYonetici", fields: [kullaniciId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  iptalEden PlatformKullanici? @relation("AtamaIptalEden", fields: [iptalEdenId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  hedefSurum PlatformPaketSurumu @relation(fields: [hedefSurumId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ayrilanFirmalar PlatformPaketAtamaFirmasi[]
+  @@index([kullaniciId, createdAt(sort: Desc)], map: "platform_paket_atamalari_kullanici_zaman_idx")
+  @@map("platform_paket_atamalari")
+}
+model PlatformPaketAtamaFirmasi {
+  tenantId String @id @map("tenant_id") @db.Uuid
+  atamaId String @map("atama_id") @db.Uuid
+  atama PlatformPaketAtamasi @relation(fields: [atamaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([atamaId], map: "platform_paket_atama_firmalari_atama_idx")
+  @@map("platform_paket_atama_firmalari")
+}
+/// Özetlemeye başlanan gün; geçmişi varsayımsal veriyle doldurmaz.
+model PlatformIstatistikAyari {
+  id Int @id @default(1)
+  baslangic DateTime @db.Date @default(dbgenerated("((now() AT TIME ZONE 'Europe/Istanbul'::text))::date"))
+  @@map("platform_istatistik_ayari")
+}
+model PlatformIstatistikGunu {
+  gun DateTime @id @db.Date
+  uretildiAt DateTime @map("uretildi_at") @db.Timestamp(3)
+  surum Int @default(1)
+  @@map("platform_istatistik_gunleri")
+}
+/// Gün içindeki son başarılı operasyon gözlemi; geçmiş günler yeniden yazılmaz.
+model PlatformOperasyonGunu {
+  gun DateTime @id @db.Date
+  gozlemAt DateTime @map("gozlem_at") @db.Timestamp(3)
+  firmaAdet Int @map("firma_adet")
+  surum Int @default(1)
+  @@map("platform_operasyon_gunleri")
+}
+model PlatformOperasyonOzeti {
+  gun DateTime @db.Date
+  tenantId String @map("tenant_id") @db.Uuid
+  planKodu String @map("plan_kodu")
+  durum String
+  geciken Boolean
+  yaklasan Boolean
+  baglantiHatali Boolean @map("baglanti_hatali")
+  gorev Int
+  fatura Int
+  iade Int
+  hatali Int
+  @@id([gun, tenantId])
+  @@index([gun, planKodu], map: "platform_operasyon_ozetleri_plan_idx")
+  @@map("platform_operasyon_ozetleri")
+}
+/// Firma silinse de tarihsel sayıları korur. Tenant içeriklerine ilişki kurulmaz.
+model PlatformFirmaGunlukOzeti {
+  tenantId String @map("tenant_id") @db.Uuid
+  gun DateTime @db.Date
+  planKodu String? @map("plan_kodu") @db.VarChar(40)
+  durum String? @db.VarChar(20)
+  etkinKullanici Int @default(0) @map("etkin_kullanici")
+  giris Int @default(0)
+  islem Int @default(0)
+  moduller Json @default("{}")
+  @@id([tenantId, gun])
+  @@index([gun, planKodu], map: "platform_firma_gunluk_ozetleri_gun_plan_idx")
+  @@map("platform_firma_gunluk_ozetleri")
+}
+/// İç tekil sayım izleri; platform DB rolü doğrudan okuyamaz.
+model PlatformFirmaGunlukKullanici {
+  tenantId String @map("tenant_id") @db.Uuid
+  gun DateTime @db.Date
+  kullaniciIzi String @map("kullanici_izi") @db.VarChar(32)
+  @@id([tenantId, gun, kullaniciIzi])
+  @@index([gun], map: "platform_firma_gunluk_kullanicilar_gun_idx")
+  @@map("platform_firma_gunluk_kullanicilar")
+}
+
+/// Büyüme geçmişinin kesin başlangıç anı; önceki yaşam döngüsü uydurulmaz.
+model PlatformBuyumeAyari {
+  id Int @id @default(1)
+  baslangic DateTime @default(dbgenerated("(clock_timestamp() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(3)
+  @@map("platform_buyume_ayari")
+}
+/// Yalnız tetikleyiciler yazar; platform rolü ham geçmişi okuyamaz.
+model PlatformFirmaYasamOlayi {
+  id BigInt @id @default(autoincrement())
+  tenantId String @map("tenant_id") @db.Uuid
+  olayAt DateTime @default(dbgenerated("(clock_timestamp() AT TIME ZONE 'UTC'::text)")) @map("olay_at") @db.Timestamp(3)
+  tip String @db.VarChar(20)
+  mevcut Boolean
+  planKodu String @map("plan_kodu")
+  durum String
+  denemeBasladi Boolean @default(false) @map("deneme_basladi")
+  iptalBasladi Boolean @default(false) @map("iptal_basladi")
+  @@index([tenantId, olayAt(sort: Desc), id(sort: Desc)], map: "platform_firma_yasam_tenant_zaman_idx")
+  @@index([olayAt], map: "platform_firma_yasam_zaman_idx")
+  @@map("platform_firma_yasam_olaylari")
+}
+model PlatformBuyumeOdemesi {
+  odemeId String @id @map("odeme_id") @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  sira BigInt @default(dbgenerated("nextval('platform_firma_yasam_olaylari_id_seq'::regclass)"))
+  olayAt DateTime @default(dbgenerated("(clock_timestamp() AT TIME ZONE 'UTC'::text)")) @map("olay_at") @db.Timestamp(3)
+  @@index([tenantId, olayAt], map: "platform_buyume_odeme_tenant_zaman_idx")
+  @@map("platform_buyume_odemeleri")
 }

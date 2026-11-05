@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import type { Prisma } from "@prisma/client";
 import { createTransport } from "nodemailer";
 import { abonelikTutari } from "../abonelik-odeme/abonelik-tutari";
+import { bagliAbonelikTutari } from "../tenant/abonelik-kosullari";
 import { baglantiAnahtariUret } from "../abonelik-odeme/baglanti-anahtari";
 import { SaglayiciAyarlariService } from "../abonelik-odeme/saglayici-ayarlari.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
@@ -22,6 +23,8 @@ export interface TahsilatAdayi {
   donem_sonu: Date;
   fatura_epostasi: string | null;
   yonetici_epostalari: string[];
+  paket_surumu_id?: string | null;
+  paket_kosullari?: unknown;
 }
 
 export const yaklasanAnahtari = (a: Pick<TahsilatAdayi, "tenant_id" | "donem_sonu">) => `yaklasiyor/${a.tenant_id}/${a.donem_sonu.toISOString()}`;
@@ -52,8 +55,12 @@ const tarih = (d: Date) => d.toLocaleDateString("tr-TR", { timeZone: "Europe/Ist
  * PLT-13: etkin sağlayıcı varsa ve plan fiyatlıysa e-postaya oturumsuz ödeme
  * bağlantısı eklenir; yoksa PLT-09 metni (yanıtlayarak ödeme bilgisi isteme) kalır.
  */
-export function odemeBaglantisi(a: Pick<TahsilatAdayi, "tenant_id" | "plan_kodu">, saglayiciEtkin: boolean, simdi = new Date()): string | null {
-  if (!saglayiciEtkin || !abonelikTutari(a.plan_kodu, 1)) return null;
+export function odemeBaglantisi(a: Pick<TahsilatAdayi, "tenant_id" | "plan_kodu"> & Partial<Pick<TahsilatAdayi, "paket_surumu_id" | "paket_kosullari">>, saglayiciEtkin: boolean, simdi = new Date()): string | null {
+  if (!saglayiciEtkin) return null;
+  const fiyat = a.paket_surumu_id
+    ? bagliAbonelikTutari({ planKodu: a.plan_kodu, paketSurumId: a.paket_surumu_id, paketKosullari: a.paket_kosullari }, 1)
+    : abonelikTutari(a.plan_kodu, 1);
+  if (!fiyat) return null;
   const kok = (process.env.PUBLIC_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
   return `${kok}/api/v1/abonelik-odeme/baglanti/${baglantiAnahtariUret(a.tenant_id, simdi)}`;
 }

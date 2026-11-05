@@ -7,10 +7,12 @@ import { PlatformPrismaService } from "./platform-prisma.service";
 export interface GorevGirdisi {
   baslik: string; aciklama: string | null; kapsam: PlatformGorevKapsami; oncelik: PlatformGorevOnceligi;
   sonTarih: string | null; sorumluId: string | null; degisiklikId: string | null;
+  tenantId?: string | null;
 }
-export type GorevGuncellemesi = Partial<Omit<GorevGirdisi, "kapsam">> & { surum: number; durum?: PlatformGorevDurumu };
+export type GorevGuncellemesi = Partial<Omit<GorevGirdisi, "kapsam" | "tenantId">> & { surum: number; durum?: PlatformGorevDurumu };
 export interface GorevFiltresi {
   durum: "hepsi" | "acik_isler" | PlatformGorevDurumu; arama: string; benim: boolean; geciken: boolean; sorumluPasif: boolean; sayfa: number;
+  firma?: string;
 }
 const ACIK: PlatformGorevDurumu[] = ["acik", "devam_ediyor"];
 const ILISKILER = {
@@ -36,6 +38,7 @@ export class PlatformGorevService {
     const sorumluPasif = { durum: { in: ACIK }, sorumlu: { aktif: false } } satisfies Prisma.PlatformGorevWhereInput;
     const where: Prisma.PlatformGorevWhereInput = {
       ...temel,
+      ...(f.firma ? { tenantId: f.firma } : {}),
       ...(f.durum === "hepsi" ? {} : { durum: f.durum === "acik_isler" ? { in: ACIK } : f.durum }),
       ...(f.benim ? { sorumluId: kullaniciId } : {}),
       ...(f.arama ? { OR: [{ baslik: { contains: f.arama, mode: "insensitive" } }, { aciklama: { contains: f.arama, mode: "insensitive" } }] } : {}),
@@ -86,8 +89,13 @@ export class PlatformGorevService {
     if (rol === "mevzuat_editoru" && g.kapsam !== "mevzuat") throw new ForbiddenException("Editörler yalnız mevzuat görevi oluşturabilir.");
     return this.platform.db.$transaction(async (tx) => {
       await this.baglariDogrula(tx, g.kapsam, g.sorumluId, g.degisiklikId);
+      if (g.tenantId) {
+        if (g.kapsam !== "platform") throw new BadRequestException("Firma yalnız platform görevine bağlanabilir.");
+        const firma = await tx.$queryRaw<{ tenant_id: string }[]>`SELECT tenant_id FROM platform_firma_adlari(ARRAY[${g.tenantId}::uuid])`;
+        if (!firma.length) throw new BadRequestException("Bağlanacak firma bulunamadı.");
+      }
       const yeni = await tx.platformGorev.create({ data: { ...g, sonTarih: tarih(g.sonTarih), olusturanId: kullaniciId }, include: ILISKILER });
-      await tx.mevzuatOlay.create({ data: { kullaniciId, degisiklikId: g.kapsam === "mevzuat" ? g.degisiklikId : null, olay: `${g.kapsam}_gorevi_olusturuldu`, detay: { gorevId: yeni.id, baslik: g.baslik, sorumluId: g.sorumluId, sonTarih: g.sonTarih, oncelik: g.oncelik } } });
+      await tx.mevzuatOlay.create({ data: { kullaniciId, degisiklikId: g.kapsam === "mevzuat" ? g.degisiklikId : null, olay: `${g.kapsam}_gorevi_olusturuldu`, detay: { gorevId: yeni.id, baslik: g.baslik, sorumluId: g.sorumluId, sonTarih: g.sonTarih, oncelik: g.oncelik, ...(g.tenantId ? { tenantId: g.tenantId } : {}) } } });
       return gorunum(yeni);
     });
   }
@@ -105,7 +113,7 @@ export class PlatformGorevService {
       const kapanisAt = g.durum && g.durum !== eski.durum ? (g.durum === "tamamlandi" || g.durum === "iptal" ? new Date() : null) : eski.kapanisAt;
       const sonuc = await tx.platformGorev.updateMany({ where: { id, surum }, data: { ...alanlar, ...(sonTarih !== undefined ? { sonTarih: tarih(sonTarih) } : {}), kapanisAt, surum: { increment: 1 } } });
       if (sonuc.count !== 1) throw new ConflictException("Görev başka biri tarafından değiştirildi. Güncel kaydı açıp tekrar deneyin.");
-      await tx.mevzuatOlay.create({ data: { kullaniciId, degisiklikId: eski.kapsam === "mevzuat" ? (g.degisiklikId !== undefined ? g.degisiklikId : eski.degisiklikId) : null, olay: `${eski.kapsam}_gorevi_guncellendi`, detay: { gorevId: id, baslik: g.baslik ?? eski.baslik, oncekiDurum: eski.durum, yeniDurum: g.durum ?? eski.durum, surum: surum + 1 } } });
+      await tx.mevzuatOlay.create({ data: { kullaniciId, degisiklikId: eski.kapsam === "mevzuat" ? (g.degisiklikId !== undefined ? g.degisiklikId : eski.degisiklikId) : null, olay: `${eski.kapsam}_gorevi_guncellendi`, detay: { gorevId: id, baslik: g.baslik ?? eski.baslik, oncekiDurum: eski.durum, yeniDurum: g.durum ?? eski.durum, surum: surum + 1, ...(eski.tenantId ? { tenantId: eski.tenantId } : {}) } } });
       const yeni = await tx.platformGorev.findUniqueOrThrow({ where: { id }, include: ILISKILER });
       return gorunum(yeni);
     });

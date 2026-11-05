@@ -19,6 +19,7 @@ import { saglayiciKesintiAlanlari, tahminiKomisyonAlanlari } from "../pos/taksit
 import { PosService } from "../pos/pos.service";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { bugunTR } from "@tekirextra/shared";
+import { fiyatFotografiniDogrula, fiyatFotografiniOku } from "./odeme-fiyat-fotografi";
 
 /** PLT-21: faturalayan firmadaki hizmet kartı; yoksa bir kez açılır. */
 export const ABONELIK_STOK_KODU = "TEKIREXTRA-ABONELIK";
@@ -32,6 +33,7 @@ export interface FaturasizOdeme {
   odeme_id: string; tenant_id: string; odeme_at: Date; ay_sayisi: number; tutar: Prisma.Decimal; matrah: Prisma.Decimal | null; kdv: Prisma.Decimal | null;
   kaynak: string; saglayici: string | null; onceki_donem_sonu: Date | null; yeni_donem_sonu: Date; plan_kodu: string;
   unvan: string; faturalandirma_unvani: string | null; vkn: string; vergi_dairesi: string | null; adres: string | null; il: string | null; ilce: string | null; posta_kodu: string | null; eposta: string | null;
+  fiyat_fotografi?: unknown;
 }
 
 /**
@@ -39,14 +41,19 @@ export interface FaturasizOdeme {
  * girilir) toplamdan geri hesaplanır. KDV'yi fatura kendisi hesaplar, toplam
  * en fazla 1 kuruş sapabilir.
  */
-export function abonelikMatrahi(o: Pick<FaturasizOdeme, "tutar" | "matrah">): Prisma.Decimal {
+export function abonelikMatrahi(o: Pick<FaturasizOdeme, "tutar" | "matrah" | "fiyat_fotografi">): Prisma.Decimal {
+  if (o.fiyat_fotografi != null) return new Prisma.Decimal(fiyatFotografiniOku(o.fiyat_fotografi).matrah);
   if (o.matrah) return new Prisma.Decimal(o.matrah);
   return new Prisma.Decimal(o.tutar).mul(100).div(100 + ABONELIK_KDV_ORANI).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 }
 
+export function abonelikKdvOrani(o: Pick<FaturasizOdeme, "fiyat_fotografi">): string {
+  return o.fiyat_fotografi == null ? String(ABONELIK_KDV_ORANI) : fiyatFotografiniOku(o.fiyat_fotografi).kdvOrani;
+}
+
 /** Dönem aralığı: eski dönem sonundan (yoksa ödeme gününden) yeni dönem sonuna. */
-export function abonelikAciklamasi(o: Pick<FaturasizOdeme, "plan_kodu" | "ay_sayisi" | "onceki_donem_sonu" | "yeni_donem_sonu" | "odeme_at" | "kaynak" | "saglayici">): string {
-  const plan = fiyatPlani(o.plan_kodu)?.ad ?? o.plan_kodu;
+export function abonelikAciklamasi(o: Pick<FaturasizOdeme, "plan_kodu" | "ay_sayisi" | "onceki_donem_sonu" | "yeni_donem_sonu" | "odeme_at" | "kaynak" | "saglayici" | "fiyat_fotografi">): string {
+  const plan = o.fiyat_fotografi == null ? fiyatPlani(o.plan_kodu)?.ad ?? o.plan_kodu : fiyatFotografiniOku(o.fiyat_fotografi).planAdi;
   const bas = o.onceki_donem_sonu ?? o.odeme_at;
   const odeme = o.kaynak === "saglayici" ? `kartla (${SAGLAYICI_ADI[o.saglayici as keyof typeof SAGLAYICI_ADI] ?? o.saglayici})` : "havale/elle";
   return `TekirExtra ${plan} abonelik, ${o.ay_sayisi} ay (${tarihTR(bas)}–${tarihTR(o.yeni_donem_sonu)}); ödeme ${tarihTR(o.odeme_at)}, ${odeme}`;
@@ -311,6 +318,10 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
       update: { faturalayanTenantId: faturalayan, deneme: { increment: 1 }, updatedAt: new Date() },
     });
     try {
+      // Liste güncel aboneliğin planını taşıyabilir; mali içerik ödeme satırından gelir.
+      const odeme = await this.prisma.tenantIslem(o.tenant_id, (tx) => tx.abonelikOdemesi.findUniqueOrThrow({ where: { id: o.odeme_id }, select: { aySayisi: true, matrah: true, kdv: true, tutar: true, fiyatFotografi: true } }));
+      if (odeme.fiyatFotografi != null) fiyatFotografiniDogrula(odeme.fiyatFotografi, { ...odeme, toplam: odeme.tutar });
+      o = { ...o, ay_sayisi: odeme.aySayisi, matrah: odeme.matrah, kdv: odeme.kdv, tutar: odeme.tutar, fiyat_fotografi: odeme.fiyatFotografi };
       const userId = await this.aktor(faturalayan);
       const faturaId = await baglamlaCalistir({ tenantId: faturalayan, userId, rol: "yonetici" }, async () => {
         const cariId = await this.cariBul(faturalayan, o);
@@ -318,7 +329,7 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
         const girdi = faturaOlusturSemasi.parse({
           tip: "satis", cariId, tarih: gunTR(o.odeme_at), dovizCinsi: "TRY",
           aciklama: abonelikAciklamasi(o),
-          satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: abonelikMatrahi(o).toFixed(2), kdvOrani: String(ABONELIK_KDV_ORANI) }],
+          satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: abonelikMatrahi(o).toFixed(2), kdvOrani: abonelikKdvOrani(o) }],
         });
         return (await this.fatura.olustur(girdi)).id as string;
       });

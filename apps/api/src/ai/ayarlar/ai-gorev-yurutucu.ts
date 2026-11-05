@@ -212,7 +212,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         const simdi = trSimdi();
         for (const g of gorevler.filter((x) => gorevZamaniGeldiMi(x, simdi))) {
           // PLT-05: askıdaki firmada yapay zekâ görevleri ve günlük brifing çalışmaz; sahiplenilmediği için açılınca ilk turda çalışır.
-          if (await this.erisim?.otomasyonDurdu(g.tenantId)) continue;
+          if (await this.erisim?.otomasyonDurdu(g.tenantId, "yapay_zeka")) continue;
           const calisma = await this.sahiplen(yonetim, g, simdi);
           if (!calisma) continue;
           try {

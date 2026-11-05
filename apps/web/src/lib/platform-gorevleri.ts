@@ -4,6 +4,7 @@ export type GorevOnceligi = "dusuk" | "normal" | "yuksek";
 export const GOREV_DURUMU: Record<GorevDurumu, string> = { acik: "Açık", devam_ediyor: "Devam ediyor", tamamlandi: "Tamamlandı", iptal: "İptal" };
 export const GOREV_ONCELIGI: Record<GorevOnceligi, string> = { dusuk: "Düşük", normal: "Normal", yuksek: "Yüksek" };
 export interface Gorev {
+  tenantId?: string | null;
   id: string; baslik: string; aciklama: string | null; kapsam: GorevKapsami; durum: GorevDurumu; oncelik: GorevOnceligi;
   sonTarih: string | null; sorumluId: string | null; degisiklikId: string | null; surum: number;
   sorumlu: { id: string; adSoyad: string; rol: "yonetici" | "mevzuat_editoru"; aktif: boolean } | null;

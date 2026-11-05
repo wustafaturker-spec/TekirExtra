@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, IKI_ADIM_KURULDU_OLAYI, IKI_ADIM_KURULUM_YOLU, tokenAl, tokenYaz } from "@/lib/api";
-import { ozelRolKapaliAyarla, rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
+import { ozelRolKapaliAyarla, paketModulleriAyarla, rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { ebelgeYoluGorunur } from "@/lib/ebelge-yollari";
 import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
@@ -155,11 +155,12 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (tokenAl()) {
-      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null; ikiAdimKurulumuGerekli?: boolean; hareketsizlikDk?: number | null; destekBagli?: boolean; destek?: { ad: string } | null; ozelRol?: { kapali: string[] } | null }>("/auth/ben")
+      const bildirimleriYenile = () => api<{ rol: string; abonelik?: { kisitli: boolean; neden: string | null } | null; ikiAdimKurulumuGerekli?: boolean; hareketsizlikDk?: number | null; destekBagli?: boolean; destek?: { ad: string } | null; ozelRol?: { kapali: string[] } | null; paketModulleri?: string[] | null }>("/auth/ben")
         .then(async (b) => {
           // KLN-20: rol durumundan önce; menü ilk çizimde özel rolle süzülür.
           ozelRolKapaliAyarla(b.ozelRol?.kapali ?? []);
-          setOzelRolImzasi((b.ozelRol?.kapali ?? []).join(","));
+          paketModulleriAyarla(b.paketModulleri ?? null);
+          setOzelRolImzasi(`${(b.ozelRol?.kapali ?? []).join(",")}:${(b.paketModulleri ?? []).join(",")}`);
           setRol(b.rol);
           setAbonelikKisiti(b.abonelik?.kisitli ? b.abonelik.neden ?? "Aboneliğiniz salt okunur." : null);
           setHareketsizlikDk(b.hareketsizlikDk ?? null);

@@ -3,7 +3,8 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import * as ExcelJS from "exceljs";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
-import { ABONELIK_SURELERI, abonelikTutari, fiyatPlani, type AbonelikSuresi } from "./abonelik-tutari";
+import { ABONELIK_SURELERI, fiyatPlani, type AbonelikSuresi } from "./abonelik-tutari";
+import { bagliAbonelikTutari } from "../tenant/abonelik-kosullari";
 import {
   FATURA_DURUMU_ADI,
   KANAL_ADI,
@@ -41,6 +42,7 @@ interface HamKart {
 interface HamYenileme {
   tenant_id: string; unvan: string; plan_kodu: string; durum: string; donem_sonu: Date;
   kart_var: boolean; saglayici: string | null; son4: string | null; kart_markasi: string | null; otomatik_yenileme: boolean | null; kart_ay_sayisi: number | null;
+  paket_surum_id?: string | null; paket_kosullari?: unknown;
 }
 
 /** "DD.MM.YYYY HH:mm" (TR). */
@@ -103,14 +105,19 @@ export class PlatformOdemeRaporuService {
   }
 
   /** PLT-35: başarısız/yarım denemeler ve son yenilemesi başarısız kartlar. */
-  async sorunlu(baslangic: string, bitis: string) {
-    const { bas, bit } = this.aralik(baslangic, bitis);
-    const [denemeler, kartlar] = await Promise.all([
-      this.platform.db.$queryRaw<HamDeneme[]>`SELECT * FROM platform_sorunlu_odeme_denemeleri(${utc(bas)}, ${utc(bit)})`,
-      this.platform.db.$queryRaw<HamKart[]>`SELECT * FROM platform_kart_sorunlari()`,
+  async sorunlu(baslangic: string, bitis: string, filtre: { plan?: string; firma?: string; durum?: string; sayfa?: number } = {}) {
+    this.aralik(baslangic, bitis);
+    const [kapsam, tumKartlar] = await Promise.all([
+      this.platform.db.$queryRaw<{ veri: { denemeler: HamDeneme[]; sayilar: { basarisiz: number; sonuclanmadi: number }; toplam: number; sayfa: number; sayfaBoyutu: number } }[]>`SELECT platform_sorunlu_odeme_kapsami(${baslangic}::date, ${bitis}::date, ${filtre.plan || null}::text, ${filtre.firma ?? null}::uuid, ${filtre.durum ?? "hepsi"}::text, ${filtre.sayfa ?? 1}::integer) AS veri`,
+      filtre.plan || filtre.firma ? Promise.resolve([] as HamKart[]) : this.platform.db.$queryRaw<HamKart[]>`SELECT * FROM platform_kart_sorunlari()`,
     ]);
+    const veri = kapsam[0].veri;
+    // Kartlar ayrı, canlı kapsamdır; tarihsel deneme toplamına eklenmez.
+    const kartlar = filtre.plan || filtre.firma ? [] : tumKartlar;
     return {
-      denemeler: denemeler.map((x) => ({
+      sayilar: veri.sayilar, toplam: veri.toplam, sayfa: veri.sayfa, sayfaBoyutu: veri.sayfaBoyutu,
+      kartKapsami: filtre.plan || filtre.firma ? "gizli" : "canli",
+      denemeler: veri.denemeler.map((x) => ({
         id: x.deneme_id,
         tenantId: x.tenant_id,
         unvan: x.unvan.trim(),
@@ -145,13 +152,14 @@ export class PlatformOdemeRaporuService {
       gun,
       kayitlar: satirlar.map((x) => {
         const ay = (ABONELIK_SURELERI as readonly number[]).includes(x.kart_ay_sayisi ?? 0) ? (x.kart_ay_sayisi as AbonelikSuresi) : 1;
-        const tutar = abonelikTutari(x.plan_kodu, ay);
+        const tutar = bagliAbonelikTutari({ planKodu: x.plan_kodu, paketSurumId: x.paket_surum_id, paketKosullari: x.paket_kosullari }, ay);
         const kalanGun = Math.ceil((x.donem_sonu.getTime() - simdi.getTime()) / GUN_MS);
         return {
           tenantId: x.tenant_id,
           unvan: x.unvan.trim(),
           planKodu: x.plan_kodu,
-          planAdi: fiyatPlani(x.plan_kodu)?.ad ?? x.plan_kodu,
+          planAdi: tutar?.planAdi ?? fiyatPlani(x.plan_kodu)?.ad ?? x.plan_kodu,
+          paketSurumId: x.paket_surum_id ?? null,
           durum: x.durum,
           donemSonu: x.donem_sonu,
           kalanGun,

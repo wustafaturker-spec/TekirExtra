@@ -20,5 +20,6 @@ export const tenantKayitSemasi = z.object({
   vergiDairesi: z.string().min(2).max(120).optional(),
   yoneticiEposta: z.email(),
   yoneticiAdSoyad: z.string().min(2).max(120),
+  paketSurumId: z.uuid().optional(),
 });
 export type TenantKayitGirdisi = z.infer<typeof tenantKayitSemasi>;

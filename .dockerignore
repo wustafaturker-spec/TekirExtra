@@ -11,3 +11,7 @@ dist
 **/.env
 test-results
 playwright-report
+backups
+.release-candidates
+tekirextra-tum-duzeltmeler.patch
+*.dump

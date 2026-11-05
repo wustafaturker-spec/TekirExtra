@@ -45,7 +45,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
       let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0; const tenantIdleri = await this.tenantIdleriAl();
       for (const tenantId of tenantIdleri) {
         // PLT-05: askıdaki firmada düzeltme kaydı üretilmez.
-        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
+        if (await this.erisim?.otomasyonDurdu(tenantId, "donem_kapatma")) continue;
         try {
           const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
           bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;

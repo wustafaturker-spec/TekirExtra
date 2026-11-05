@@ -5,7 +5,7 @@ import { AbonelikGuard } from "./abonelik.guard";
 import { SALT_OKUMA_ANAHTAR } from "./public.decorator";
 
 function kur(kisitli: boolean) {
-  const erisim = { getir: vi.fn(async () => ({ kisitli, neden: kisitli ? "Aboneliğiniz askıya alındı." : null })) };
+  const erisim = { modulleriGetir: vi.fn<() => Promise<string[] | null>>(async () => null), getir: vi.fn(async () => ({ kisitli, neden: kisitli ? "Aboneliğiniz askıya alındı." : null })) };
   const dene = (method: string, path: string, opts: { saltOkuma?: boolean; baglamsiz?: boolean } = {}) => {
     const reflector = { getAllAndOverride: (k: string) => (k === SALT_OKUMA_ANAHTAR ? Boolean(opts.saltOkuma) : undefined) };
     const guard = new AbonelikGuard(reflector as never, erisim as never);
@@ -17,6 +17,14 @@ function kur(kisitli: boolean) {
 }
 
 describe("salt okunur firma (platform P0-1)", () => {
+  it("kapalı modülü GET, yazma ve salt okuma POST'unda da reddeder; ayarlar korunur", async () => {
+    const k = kur(false); k.erisim.modulleriGetir.mockResolvedValue(["cari"]);
+    await expect(k.dene("GET", "/api/v1/fatura")).rejects.toThrow("paketinizde kapalı");
+    await expect(k.dene("POST", "/api/v1/fatura", { saltOkuma: true })).rejects.toThrow("paketinizde kapalı");
+    await expect(k.dene("POST", "/api/v1/fatura")).rejects.toThrow("paketinizde kapalı");
+    await expect(k.dene("GET", "/api/v1/cari")).resolves.toBe(true);
+    await expect(k.dene("GET", "/api/v1/abonelik")).resolves.toBe(true);
+  });
   it("kısıtlı firmada yazma isteği nedeniyle reddedilir", async () => {
     const { dene } = kur(true);
     for (const m of ["POST", "PUT", "PATCH", "DELETE"]) await expect(dene(m, "/api/v1/fatura")).rejects.toThrow(ForbiddenException);

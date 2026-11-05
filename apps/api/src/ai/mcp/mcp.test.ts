@@ -64,6 +64,13 @@ describe("MCP erişim anahtarı (AI-09)", () => {
 });
 
 describe("MCP ucu (AI-09)", () => {
+  it("geçerli anahtarda bile yapay zekâ kapalıysa araç listesine erişilemez", async () => {
+    const yurutucu = { izinliAraclar: vi.fn() };
+    const c = new McpController({ dogrula: async () => ({ tenantId: TENANT, userId: KULLANICI, rol: "yonetici" }) } as never, yurutucu as never, {} as never,
+      { modulleriGetir: async () => ["cari"] } as never);
+    await expect(istekBaglami.run({}, () => c.istek("Bearer tkx_x", undefined, { jsonrpc: "2.0", id: 1, method: "tools/list" }, { setHeader: vi.fn() } as never))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(yurutucu.izinliAraclar).not.toHaveBeenCalled();
+  });
   function kur(kimlik: unknown = { tenantId: TENANT, userId: KULLANICI, rol: "muhasebe", anahtarId: "k1" }) {
     const anahtarlar = { dogrula: vi.fn().mockResolvedValue(kimlik) };
     const yurutucu = {
@@ -88,7 +95,7 @@ describe("MCP ucu (AI-09)", () => {
 
   it("kimliği anahtardan istek bağlamına kurar ve initialize yanıtlar", async () => {
     const { sonuc, baglam } = await kur().istek({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } });
-    expect(baglam).toEqual({ tenantId: TENANT, userId: KULLANICI, rol: "muhasebe" });
+    expect(baglam).toEqual({ tenantId: TENANT, userId: KULLANICI, rol: "muhasebe", paketModulleri: null });
     expect(sonuc).toMatchObject({ id: 1, result: { protocolVersion: "2025-03-26", serverInfo: { name: "TekirExtra" } } });
   });
 

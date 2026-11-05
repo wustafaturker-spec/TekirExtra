@@ -8,9 +8,10 @@ vi.mock("../core/istek-baglami", () => ({
 }));
 
 /** Kiracıda abonelik kaydı `mevcut` ise onu döndüren, yoksa açan sahte tablo. */
-function servisKur(mevcut: { planKodu: string; durum: string } | null, kullanim = { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }) {
+function servisKur(mevcut: { planKodu: string; durum: string; paketSurumId?: string; paketKosullari?: unknown; donemSonu?: Date } | null, kullanim = { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }) {
   const upsert = vi.fn().mockImplementation(({ create }) => Promise.resolve(mevcut ?? { tenantId: "t1", ...create }));
   const tx = {
+    $queryRaw: vi.fn().mockImplementation(async () => [{ kosullar: mevcut?.paketKosullari ?? null }]),
     tenantAbonelik: { upsert },
     user: { count: vi.fn().mockResolvedValue(kullanim.kullanici) },
     cariHesap: { count: vi.fn().mockResolvedValue(kullanim.cari) },
@@ -31,6 +32,28 @@ function servisKur(mevcut: { planKodu: string; durum: string } | null, kullanim 
 }
 
 describe("AbonelikService", () => {
+  it("özet kayıtlı kota eşiğini kullanır ve eski plan talebiyle kapsam sıfırlanamaz", async () => {
+    const limitler = { kullanici: 10, cari: 10, stok: null, aylikFatura: 0 };
+    const paketKosullari = { semaSurumu: 2, kaynak: "katalog_atamasi", planKodu: "baslangic", planAdi: "Kapsam", fiyatlandirma: null, limitler,
+      kapsamSozlesmesi: { semaSurumu: 1, moduller: ["cari"], kotalar: Object.fromEntries(Object.entries(limitler).map(([kod, sinir]) => [kod, { sinir, uyariYuzdesi: 50 }])) } };
+    const { servis } = servisKur({ planKodu: "baslangic", durum: "aktif", paketSurumId: "00000000-0000-4000-8000-000000000001", paketKosullari }, { kullanici: 1, cari: 5, stok: 1, aylikFatura: 0 });
+    expect((await servis.ozet()).kotaDurumlari).toMatchObject({ cari: { durum: "uyari", kalan: 5 }, stok: { durum: "sinirsiz" }, aylikFatura: { durum: "dolu", yuzde: 100 } });
+    await expect(servis.planTalebi("kurumsal")).rejects.toThrow(/kapsam/i);
+  });
+  it("aylık fatura sayımını sunucunun yerel saatinden bağımsız Türkiye ayıyla sınırlar", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-31T21:00:00Z"));
+    try {
+      const { servis, tx } = servisKur(null);
+      await servis.ozet();
+      expect(tx.fatura.count).toHaveBeenCalledWith({ where: { createdAt: {
+        gte: new Date("2026-10-31T21:00:00Z"), lt: new Date("2026-11-30T21:00:00Z"),
+      } } });
+    } finally { vi.useRealTimers(); }
+  });
+  it("bağlı koşulun limitini uygular", async () => {
+    const a = { planKodu: "baslangic", durum: "aktif", paketSurumId: "00000000-0000-4000-8000-000000000001", paketKosullari: { semaSurumu: 1, kaynak: "eski_plan_gecisi", planKodu: "baslangic", planAdi: "Korunan paket", fiyatlandirma: null, limitler: { kullanici: 3, cari: 1, stok: 500, aylikFatura: 100 } } };
+    await expect(servisKur(a).servis.limitDogrula("cari")).rejects.toThrow("Korunan paket planının cari limiti doldu (1)");
+  });
   it("abonelik kaydı yoksa varsayılan planla açar ve işlemi engellemez", async () => {
     const { servis, upsert } = servisKur(null);
 
@@ -41,6 +64,13 @@ describe("AbonelikService", () => {
       create: { tenantId: "t1", planKodu: "v1", durum: "aktif" },
       update: {},
     }));
+  });
+
+  it("deneme iptal veya etkinleştirme ile ödeme kuralını aşamaz", async () => {
+    for (const durum of ["aktif", "iptal"] as const) await expect(servisKur({ planKodu: "v1", durum: "deneme" }).servis.durumDegistir(durum)).rejects.toThrow(ForbiddenException);
+  });
+  it("süresi dolmuş denemede iç kayıt çağrısını da durdurur", async () => {
+    await expect(servisKur({ planKodu: "v1", durum: "deneme", donemSonu: new Date("2020-01-01") }).servis.limitDogrula("cari")).rejects.toThrow(/Deneme süreniz/);
   });
 
   it("askıya alınmış abonelikte işlemi durdurur", async () => {

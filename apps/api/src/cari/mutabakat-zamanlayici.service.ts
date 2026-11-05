@@ -39,7 +39,7 @@ export class MutabakatZamanlayiciService implements OnModuleInit, OnModuleDestro
       let gonderilen = 0;
       for (const { id: tenantId } of tenantlar) {
         // PLT-05: askıdaki firma cariye mutabakat hatırlatması göndermez.
-        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
+        if (await this.erisim?.otomasyonDurdu(tenantId, "cari")) continue;
         try {
           gonderilen += await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.mutabakat.hatirlatmalariGonder());
         } catch (hata) {

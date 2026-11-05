@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
-import { bagHatasiMi, ObservabilityExceptionFilter  } from "./exception.filter";
+import { bagHatasiMi, ObservabilityExceptionFilter, paketKotaHatasi } from "./exception.filter";
 
 describe("ObservabilityExceptionFilter Zod doğrulaması", () => {
   it("ZodError hatasını alan mesajlarıyla HTTP 400'e dönüştürür", () => {
@@ -50,7 +50,7 @@ describe("ObservabilityExceptionFilter havuz yoğunluğu (STK-35)", () => {
   const prismaHatasi = (code: string) => Object.assign(new Error("Unable to start a transaction in the given time."), { name: "PrismaClientKnownRequestError", code });
 
   it("P2028 ve P2024 hatalarını 503 + Retry-After'a çevirir", () => {
-    for (const kod of ["P2028", "P2024"]) {
+    for (const kod of ["P2028", "P2024", "P2034"]) {
       const { status, json, setHeader } = calistir(prismaHatasi(kod));
       expect(status).toHaveBeenCalledWith(503);
       expect(setHeader).toHaveBeenCalledWith("Retry-After", "3");
@@ -62,6 +62,16 @@ describe("ObservabilityExceptionFilter havuz yoğunluğu (STK-35)", () => {
     const { status, setHeader } = calistir(prismaHatasi("P2002"));
     expect(status).toHaveBeenCalledWith(500);
     expect(setHeader).not.toHaveBeenCalled();
+  });
+});
+
+describe("paket DB hatasının güvenli sunumu", () => {
+  it("kota ve modül hatalarını SQL ayrıntısı sızdırmadan çevirir", () => {
+    const hata = (m: string) => Object.assign(new Error("SQL ve firma ayrıntısı"), { name: "PrismaClientKnownRequestError", meta: { message: m } });
+    expect(paketKotaHatasi(hata("paket_kota_dolu:cari"))?.getStatus()).toBe(400);
+    expect(paketKotaHatasi(hata("paket_modul_kapali:stok"))?.getStatus()).toBe(403);
+    expect(JSON.stringify(paketKotaHatasi(hata("paket_kota_dolu:cari"))?.getResponse())).not.toContain("SQL");
+    expect(paketKotaHatasi(new Error("paket_kota_dolu:cari"))).toBeNull();
   });
 });
 

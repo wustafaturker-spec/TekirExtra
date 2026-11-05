@@ -271,7 +271,7 @@ describe("EbelgeKuyrukService", () => {
   });
 
   describe("askıdaki firma (PLT-05)", () => {
-    const erisim = { otomasyonDurdu: vi.fn(async (tenantId: string) => tenantId === "askida") };
+    const erisim = { otomasyonDurdu: vi.fn(async (tenantId: string) => tenantId === "askida"), modulKapali: vi.fn().mockResolvedValue(false) };
     const isle = (svc: EbelgeKuyrukService, is: unknown, token?: string) => (svc as unknown as { isle(is: unknown, token?: string): Promise<unknown> }).isle(is, token);
     const veri = (tenantId: string) => ({ tenantId, userId: "user-1", rol: "muhasebe", faturaId: "fatura-1", correlationId: "c", kuyrugaAlinmaZamani: new Date().toISOString() });
     beforeEach(() => { service = new EbelgeKuyrukService(ebelge as never, metrics as never, undefined, erisim as never); });

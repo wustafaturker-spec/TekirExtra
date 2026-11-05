@@ -6,13 +6,16 @@ import { coz, sifrele } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { firmaAlicilari, odemeBaglantisi } from "../mevzuat/tahsilat-hatirlatma.service";
-import { ABONELIK_SURELERI, abonelikTutari, fiyatPlani, tlYaz, type AbonelikSuresi } from "./abonelik-tutari";
+import { ABONELIK_SURELERI, fiyatPlani, tlYaz, type AbonelikSuresi } from "./abonelik-tutari";
 import {
   PaytrAbonelikSaglayicisi, SAGLAYICI_ADI, saglayiciKur,
   type AbonelikOdemeSaglayicisi, type EtkinSaglayici, type KayitliKart, type OdemeAlicisi, type OdemeGirdisi,
 } from "./abonelik-saglayici";
 import { merchantOidCoz, paytrBildirimDogrula, type PaytrBildirim } from "./paytr-direkt";
 import { SaglayiciAyarlariService } from "./saglayici-ayarlari.service";
+import { fiyatFotografiniDogrula, odemeFiyatFotografi } from "./odeme-fiyat-fotografi";
+import { bagliAbonelikTutari, etkinAbonelikPlani } from "../tenant/abonelik-kosullari";
+import { etkinFiyatKosullariniBagla } from "../tenant/etkin-fiyat-kosullari";
 
 export type OdemeKaynagi = "panel" | "eposta" | "otomatik";
 
@@ -54,13 +57,16 @@ export class AbonelikOdemeService {
     private readonly erisim: AbonelikErisimService,
   ) {}
 
+  private async fiyatliAbonelik(tx: Tx, tenantId: string) {
+    return etkinFiyatKosullariniBagla(tx, tenantId, await tx.tenantAbonelik.findUnique({ where: { tenantId } }));
+  }
   /** Panel: süre seçenekleri, kayıtlı kart ve ödeme geçmişi. Etkin sağlayıcı yoksa ya da plan fiyatsızsa ödeme düğmesi çıkmaz. */
   async durum(tenantId: string) {
     const ayar = await this.ayarlar.etkin();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const abonelik = await tx.tenantAbonelik.findUnique({ where: { tenantId } });
+      const abonelik = await this.fiyatliAbonelik(tx, tenantId);
       const planKodu = abonelik?.planKodu ?? "v1";
-      const secenekler = ABONELIK_SURELERI.map((a) => abonelikTutari(planKodu, a)).filter((t) => t !== null);
+      const secenekler = ABONELIK_SURELERI.map((a) => bagliAbonelikTutari(abonelik ?? { planKodu }, a)).filter((t) => t !== null);
       const [odemeler, basarisiz, kart] = await Promise.all([
         tx.abonelikOdemesi.findMany({ orderBy: { createdAt: "desc" }, take: 20, select: { id: true, createdAt: true, aySayisi: true, tutar: true, matrah: true, kdv: true, kaynak: true, saglayici: true, yeniDonemSonu: true, fatura: { select: { durum: true, faturaNo: true } } } }),
         tx.abonelikOdemeDenemesi.findMany({ where: { durum: "basarisiz" }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, createdAt: true, aySayisi: true, toplam: true, hataMesaji: true, kaynak: true } }),
@@ -95,8 +101,9 @@ export class AbonelikOdemeService {
 
   /** Sağlayıcıya giden alıcı ve tutar bilgisi; elle, e-posta ve otomatik ödemede aynı kural. */
   private async girdiKur(tx: Tx, tenantId: string, deneme: Deneme, ayar: EtkinSaglayici, ip?: string | null): Promise<OdemeGirdisi> {
+    const fiyat = deneme.fiyatFotografi == null ? null : fiyatFotografiniDogrula(deneme.fiyatFotografi, deneme);
     const [abonelik, firma, kart] = await Promise.all([
-      tx.tenantAbonelik.findUnique({ where: { tenantId } }),
+      this.fiyatliAbonelik(tx, tenantId),
       tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true, vkn: true, adres: true, il: true, telefon: true } }),
       tx.abonelikKarti.findUnique({ where: { tenantId } }),
     ]);
@@ -115,7 +122,7 @@ export class AbonelikOdemeService {
     const ayniSaglayici = kart && kart.saglayici === ayar.saglayici && kart.ortam === ayar.ortam;
     return {
       tenantId, denemeId: deneme.id, toplam: deneme.toplam.toFixed(2),
-      aciklama: `TekirExtra ${fiyatPlani(deneme.planKodu)?.ad ?? deneme.planKodu} abonelik (${deneme.aySayisi} ay)`,
+      aciklama: `TekirExtra ${fiyat?.planAdi ?? fiyatPlani(deneme.planKodu)?.ad ?? deneme.planKodu} abonelik (${deneme.aySayisi} ay)`,
       firmaUnvani: (abonelik?.faturalandirmaUnvani || firma.unvan).trim(), alici, apiKok: apiKoku(),
       kartKaydet: deneme.kartKaydet,
       mevcutKart: ayniSaglayici ? (JSON.parse(coz(kart.sifreliAnahtarlar)) as Record<string, string>) : undefined,
@@ -123,13 +130,16 @@ export class AbonelikOdemeService {
   }
 
   private async denemeAc(tx: Tx, tenantId: string, ayar: EtkinSaglayici, aySayisi: AbonelikSuresi, kaynak: OdemeKaynagi, kullaniciId: string | null, kartKaydet: boolean) {
-    const abonelik = await tx.tenantAbonelik.findUnique({ where: { tenantId } });
-    const tutar = abonelikTutari(abonelik?.planKodu ?? "v1", aySayisi);
+    const [plan] = await tx.$queryRaw<{ bekle: boolean }[]>`SELECT abonelik_planli_atama_bekle(${kaynak === "otomatik"}) AS bekle`;
+    if (plan.bekle) throw new BadRequestException("Planlı fiyat geçişi bekleniyor. Geçiş tamamlandıktan veya yönetici planı inceledikten sonra yeniden deneyin.");
+    const abonelik = await this.fiyatliAbonelik(tx, tenantId);
+    const tutar = bagliAbonelikTutari(abonelik ?? { planKodu: "v1" }, aySayisi);
     if (!tutar) throw new BadRequestException("Bu plan için çevrim içi ödeme yok; TekirExtra ekibiyle iletişime geçin");
     return tx.abonelikOdemeDenemesi.create({
       data: {
         tenantId, saglayici: ayar.saglayici, ortam: ayar.ortam, kaynak, planKodu: tutar.planKodu, aySayisi,
         matrah: tutar.matrah, kdv: tutar.kdv, toplam: tutar.toplam, baslatanUserId: kullaniciId, kartKaydet,
+        fiyatFotografi: odemeFiyatFotografi(tutar),
       },
     });
   }
@@ -258,15 +268,17 @@ export class AbonelikOdemeService {
       await tx.$queryRaw`SELECT id FROM abonelik_odeme_denemeleri WHERE id = ${denemeId}::uuid FOR UPDATE`;
       const deneme = await tx.abonelikOdemeDenemesi.findUniqueOrThrow({ where: { id: denemeId } });
       if (deneme.durum === "odendi") return { tekrar: true as const };
+      if (deneme.fiyatFotografi != null) fiyatFotografiniDogrula(deneme.fiyatFotografi, deneme);
       await tx.tenantAbonelik.upsert({ where: { tenantId }, create: { tenantId }, update: {} });
       const [eski] = await tx.$queryRaw<{ plan_kodu: string; durum: string; aski_nedeni: string | null; donem_sonu: Date | null }[]>`
         SELECT plan_kodu, durum::text AS durum, aski_nedeni, donem_sonu FROM tenant_abonelikleri WHERE tenant_id = ${tenantId}::uuid FOR UPDATE`;
       const askiKalkar = eski.durum === "askida" && eski.aski_nedeni === "odeme";
+      const denemeBiter = eski.durum === "deneme";
       const [yeni] = await tx.$queryRaw<{ donem_sonu: Date }[]>`
         UPDATE tenant_abonelikleri SET
-          donem_baslangici = COALESCE(donem_baslangici, now()),
-          donem_sonu = COALESCE(donem_sonu, now()) + make_interval(months => ${deneme.aySayisi}::int),
-          durum = CASE WHEN ${askiKalkar} THEN 'aktif'::"AbonelikDurumu" ELSE durum END,
+          donem_baslangici = CASE WHEN ${denemeBiter} THEN GREATEST(COALESCE(donem_sonu,now()),now()) ELSE COALESCE(donem_baslangici, now()) END,
+          donem_sonu = (CASE WHEN ${denemeBiter} THEN GREATEST(COALESCE(donem_sonu,now()),now()) ELSE COALESCE(donem_sonu, now()) END) + make_interval(months => ${deneme.aySayisi}::int),
+          durum = CASE WHEN ${askiKalkar || denemeBiter} THEN 'aktif'::"AbonelikDurumu" ELSE durum END,
           aski_nedeni = CASE WHEN ${askiKalkar} THEN NULL ELSE aski_nedeni END,
           updated_at = now()
         WHERE tenant_id = ${tenantId}::uuid
@@ -276,6 +288,7 @@ export class AbonelikOdemeService {
         data: {
           tenantId, aySayisi: deneme.aySayisi, tutar: deneme.toplam, matrah: deneme.matrah, kdv: deneme.kdv,
           kaynak: "saglayici", saglayici: deneme.saglayici,
+          fiyatFotografi: deneme.fiyatFotografi === null ? Prisma.DbNull : deneme.fiyatFotografi as Prisma.InputJsonValue,
           not: `${saglayiciAdi} ödeme no ${odemeId}${deneme.kaynak === "otomatik" ? " (otomatik yenileme)" : ""}`,
           oncekiDonemSonu: eski.donem_sonu, yeniDonemSonu: yeni.donem_sonu,
         },
@@ -283,7 +296,7 @@ export class AbonelikOdemeService {
       await tx.abonelikOdemeDenemesi.update({ where: { id: denemeId }, data: { durum: "odendi", saglayiciOdemeId: odemeId, abonelikOdemesiId: odeme.id, sonuclandiAt: new Date(), hataMesaji: null } });
       await tx.abonelikDegisikligi.create({
         data: {
-          tenantId, oncekiPlan: eski.plan_kodu, yeniPlan: eski.plan_kodu, oncekiDurum: eski.durum as AbonelikDurumu, yeniDurum: (askiKalkar ? "aktif" : eski.durum) as AbonelikDurumu,
+          tenantId, oncekiPlan: eski.plan_kodu, yeniPlan: eski.plan_kodu, oncekiDurum: eski.durum as AbonelikDurumu, yeniDurum: (askiKalkar || denemeBiter ? "aktif" : eski.durum) as AbonelikDurumu,
           neden: `Ödeme alındı (${saglayiciAdi}${deneme.kaynak === "otomatik" ? ", otomatik yenileme" : ""}): ${deneme.aySayisi} ay, ${tlYaz(deneme.toplam)} TL (KDV dahil); dönem sonu ${tarih(yeni.donem_sonu)}${askiKalkar ? "; ödeme nedeniyle askı kalktı" : ""}`,
         },
       });
@@ -317,7 +330,9 @@ export class AbonelikOdemeService {
     const ayar = await this.ayarlar.etkin();
     if (!ayar) return "atlandi";
     const hazir = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [abonelik, kart] = await Promise.all([tx.tenantAbonelik.findUnique({ where: { tenantId } }), tx.abonelikKarti.findUnique({ where: { tenantId } })]);
+      const [plan] = await tx.$queryRaw<{ bekle: boolean }[]>`SELECT abonelik_planli_atama_bekle(true) AS bekle`;
+      if (plan.bekle) return null;
+      const [abonelik, kart] = await Promise.all([this.fiyatliAbonelik(tx, tenantId), tx.abonelikKarti.findUnique({ where: { tenantId } })]);
       if (!abonelik?.donemSonu || !kart?.otomatikYenileme || (abonelik.durum !== "aktif" && abonelik.durum !== "deneme")) return null;
       if (kart.saglayici !== ayar.saglayici || kart.ortam !== ayar.ortam) {
         await tx.abonelikKarti.update({ where: { tenantId }, data: { sonHata: "Kayıtlı kart artık kullanılmayan bir sağlayıcıya ait; panelden yeni kartla ödeyin" } });
@@ -412,17 +427,17 @@ export class AbonelikOdemeService {
     const ayar = await this.ayarlar.etkin();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const [abonelik, firma] = await Promise.all([
-        tx.tenantAbonelik.findUnique({ where: { tenantId } }),
+        this.fiyatliAbonelik(tx, tenantId),
         tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
       ]);
       if (!firma) throw new NotFoundException("Firma bulunamadı");
       const planKodu = abonelik?.planKodu ?? "v1";
       return {
         unvan: firma.unvan.trim(),
-        planAdi: fiyatPlani(planKodu)?.ad ?? planKodu,
+        planAdi: abonelik?.paketSurumId ? etkinAbonelikPlani(abonelik).ad : fiyatPlani(planKodu)?.ad ?? planKodu,
         donemSonu: abonelik?.donemSonu ?? null,
         acik: Boolean(ayar),
-        secenekler: ayar ? ABONELIK_SURELERI.map((a) => abonelikTutari(planKodu, a)).filter((t) => t !== null) : [],
+        secenekler: ayar ? ABONELIK_SURELERI.map((a) => bagliAbonelikTutari(abonelik ?? { planKodu }, a)).filter((t) => t !== null) : [],
       };
     });
   }

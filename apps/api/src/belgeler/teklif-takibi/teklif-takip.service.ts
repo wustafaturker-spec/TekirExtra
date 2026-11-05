@@ -213,7 +213,7 @@ export class TeklifTakipService implements OnModuleInit, OnModuleDestroy {
       finally { await yonetim.$disconnect().catch(() => undefined); }
       for (const tenantId of kiracilar) {
         // PLT-05: askıdaki firmada teklif takibi görev açmaz.
-        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
+        if (await this.erisim?.otomasyonDurdu(tenantId, "satis")) continue;
         try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.kiraciTara()); }
         catch (hata) { this.logger.error(`Teklif takibi taranamadı (${tenantId}): ${String(hata)}`); }
       }

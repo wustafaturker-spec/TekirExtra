@@ -32,6 +32,7 @@ interface Rapor {
 }
 interface Aylik { aylar: { ay: string; adet: number; toplam: string; matrah: string }[] }
 interface Sorunlu {
+  sayilar?: { basarisiz: number; sonuclanmadi: number }; toplam?: number; sayfa?: number; sayfaBoyutu?: number; kartKapsami?: string;
   denemeler: { id: string; tenantId: string; unvan: string; zaman: string; saglayici: string; ortam: string; kanal: string; aySayisi: number; toplam: string; durum: "basarisiz" | "sonuclanmadi"; hata: string | null }[];
   kartlar: { tenantId: string; unvan: string; saglayici: string; son4: string | null; kartMarkasi: string | null; otomatikYenileme: boolean; aySayisi: number; denemeSayisi: number; sonDeneme: string | null; sonHata: string | null }[];
 }
@@ -59,8 +60,8 @@ const AY_ADI = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl",
 const ADET = 50;
 
 /* ─── Süzgeç (adres çubuğunda) ───────────────────────────────────────────── */
-interface Filtre { sekme: Sekme; baslangic: string; bitis: string; arama: string; kanal: Kanal | ""; saglayici: string; faturaDurumu: FaturaDurumu | ""; sayfa: number; gun: number }
-const varsayilan = (): Filtre => ({ sekme: "odemeler", baslangic: ayBasiTR(), bitis: bugunTR(), arama: "", kanal: "", saglayici: "", faturaDurumu: "", sayfa: 1, gun: 30 });
+interface Filtre { sekme: Sekme; baslangic: string; bitis: string; arama: string; kanal: Kanal | ""; saglayici: string; faturaDurumu: FaturaDurumu | ""; sayfa: number; gun: number; plan: string; firma: string; durum: string }
+const varsayilan = (): Filtre => ({ sekme: "odemeler", baslangic: ayBasiTR(), bitis: bugunTR(), arama: "", kanal: "", saglayici: "", faturaDurumu: "", sayfa: 1, gun: 30, plan: "", firma: "", durum: "hepsi" });
 
 function filtreOku(p: Pick<URLSearchParams, "get">): Filtre {
   const v = varsayilan();
@@ -71,6 +72,8 @@ function filtreOku(p: Pick<URLSearchParams, "get">): Filtre {
   const sayfa = Number(p.get("sayfa") ?? "1");
   const yenilemeGunu = Number(p.get("gun") ?? "30");
   return {
+    plan: (p.get("plan") ?? "").slice(0, 40), firma: p.get("firma") ?? "",
+    durum: ["basarisiz", "sonuclanmadi"].includes(p.get("durum") ?? "") ? p.get("durum")! : "hepsi",
     sekme: sekme === "sorunlu" || sekme === "yaklasan" ? sekme : "odemeler",
     baslangic: gun(p.get("baslangic"), v.baslangic),
     bitis: gun(p.get("bitis"), v.bitis),
@@ -83,7 +86,7 @@ function filtreOku(p: Pick<URLSearchParams, "get">): Filtre {
   };
 }
 
-const URL_ADI: Record<keyof Filtre, string> = { sekme: "sekme", baslangic: "baslangic", bitis: "bitis", arama: "arama", kanal: "kanal", saglayici: "saglayici", faturaDurumu: "fatura", sayfa: "sayfa", gun: "gun" };
+const URL_ADI: Record<keyof Filtre, string> = { sekme: "sekme", baslangic: "baslangic", bitis: "bitis", arama: "arama", kanal: "kanal", saglayici: "saglayici", faturaDurumu: "fatura", sayfa: "sayfa", gun: "gun", plan: "plan", firma: "firma", durum: "durum" };
 function filtreYaz(ek: Partial<Filtre>) {
   const url = new URL(window.location.href);
   const yeni = { ...filtreOku(url.searchParams), ...ek };
@@ -145,9 +148,9 @@ function OdemeRaporu() {
 
   const rapor = usePlatformVerisi<Rapor>(filtre.sekme === "odemeler" && !aralikHatasi ? `/platform/odeme-raporu?${listeSorgusu}` : null);
   const aylik = usePlatformVerisi<Aylik>(filtre.sekme === "odemeler" ? "/platform/odeme-raporu/aylik" : null);
-  const sorunlu = usePlatformVerisi<Sorunlu>(filtre.sekme === "sorunlu" && !aralikHatasi ? `/platform/odeme-raporu/sorunlu?baslangic=${filtre.baslangic}&bitis=${filtre.bitis}` : null);
+  const sorunlu = usePlatformVerisi<Sorunlu>(filtre.sekme === "sorunlu" && !aralikHatasi ? `/platform/odeme-raporu/sorunlu?${new URLSearchParams({ baslangic: filtre.baslangic, bitis: filtre.bitis, plan: filtre.plan, ...(filtre.firma ? { firma: filtre.firma } : {}), durum: filtre.durum, sayfa: String(filtre.sayfa) })}` : null);
   const yaklasan = usePlatformVerisi<Yaklasan>(filtre.sekme === "yaklasan" ? `/platform/odeme-raporu/yaklasan?gun=${filtre.gun}` : null);
-  const sorunSayisi = sorunlu.veri ? sorunlu.veri.denemeler.length + sorunlu.veri.kartlar.length : null;
+  const sorunSayisi = sorunlu.veri ? (sorunlu.veri.toplam ?? sorunlu.veri.denemeler.length) + sorunlu.veri.kartlar.length : null;
 
   async function indir(bicim: "xlsx" | "csv") {
     setHata("");
@@ -380,10 +383,15 @@ function AylikGrafik({ veri }: { veri: Veri<Aylik> }) {
 
 /* ─── PLT-35: sorunlu tahsilatlar ────────────────────────────────────────── */
 function SorunluSekmesi({ veri }: { veri: Veri<Sorunlu> }) {
+  const p = useSearchParams();
+  const filtre = filtreOku(p);
   const v = veri.veri;
   return (
     <div id="odeme-raporu-panel-sorunlu" role="tabpanel" aria-labelledby="odeme-raporu-tab-sorunlu" className="stack">
       <Card pad={false} title={<span className="payment-report-card-title">Başarısız ve yarım kalan ödeme denemeleri</span>}>
+        {(filtre.plan || filtre.firma) && <p className="payment-report-note">Kapsam: {filtre.plan || "tüm paketler"}{filtre.firma ? " · seçili firma" : ""}. Güncel paket kullanılır. <Button size="sm" onClick={() => filtreYaz({ plan: "", firma: "", sayfa: 1 })}>Paket ve firma filtresini kaldır</Button></p>}
+        <Field label="Deneme durumu"><Select value={filtre.durum} onChange={(e) => filtreYaz({ durum: e.target.value, sayfa: 1 })}><option value="hepsi">Tüm sorunlu denemeler</option><option value="basarisiz">Başarısız</option><option value="sonuclanmadi">Sonuçlanmadı</option></Select></Field>
+        {v?.sayilar && <p>Başarısız: {v.sayilar.basarisiz} · Sonuçlanmayan: {v.sayilar.sonuclanmadi}. Test ve canlı ortam dahildir; tarih Türkiye günüdür.</p>}
         <p className="muted payment-report-note">Seçili dönemde başlatılan; başarısız olan ya da 1 saatten uzun süredir sonuçlanmayan (ödeme sayfası açılıp tamamlanmamış) denemeler.</p>
         <TableWrap>
           <thead><tr><th>Tarih</th><th>Firma</th><th>Kanal</th><th>Sağlayıcı</th><th className="num">Tutar</th><th>Durum</th><th>Hata</th></tr></thead>
@@ -403,7 +411,9 @@ function SorunluSekmesi({ veri }: { veri: Veri<Sorunlu> }) {
           </tbody>
         </TableWrap>
       </Card>
-      <Card pad={false} title={<span className="payment-report-card-title">Otomatik yenilemesi başarısız kartlar</span>}>
+      {v?.toplam !== undefined && <div className="platform-pagination"><span>{v.toplam} deneme · Sayfa {filtre.sayfa}</span><Button disabled={filtre.sayfa <= 1} onClick={() => filtreYaz({ sayfa: filtre.sayfa - 1 })}>Önceki</Button><Button disabled={filtre.sayfa * 50 >= v.toplam} onClick={() => filtreYaz({ sayfa: filtre.sayfa + 1 })}>Sonraki</Button>{filtre.sayfa > 1 && !v.denemeler.length && <Button onClick={() => filtreYaz({ sayfa: 1 })}>İlk sayfaya dön</Button>}</div>}
+      {v?.kartKapsami === "gizli" && <p>Güncel kart sorunları, paket ve firma filtresi kaldırıldığında ayrı bölümde gösterilir.</p>}
+      {v?.kartKapsami !== "gizli" && <Card pad={false} title={<span className="payment-report-card-title">Otomatik yenilemesi başarısız kartlar</span>}>
         <p className="muted payment-report-note">Son otomatik çekimi başarısız olan kayıtlı kartlar. Dönem başına en çok 3 deneme yapılır.</p>
         <TableWrap>
           <thead><tr><th>Firma</th><th>Kart</th><th>Otomatik yenileme</th><th>Deneme</th><th>Son deneme</th><th>Son hata</th></tr></thead>
@@ -421,7 +431,7 @@ function SorunluSekmesi({ veri }: { veri: Veri<Sorunlu> }) {
             ))}
           </tbody>
         </TableWrap>
-      </Card>
+      </Card>}
     </div>
   );
 }

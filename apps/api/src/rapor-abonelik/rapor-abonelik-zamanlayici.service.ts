@@ -55,7 +55,7 @@ export class RaporAbonelikZamanlayiciService implements OnModuleInit, OnModuleDe
       const sayac: Record<string, number> = {};
       for (const k of kayitlar) {
         // PLT-05: askıdaki firmanın rapor aboneliği gönderilmez; firma açılınca sıradaki vakitte gider.
-        if (await this.erisim?.otomasyonDurdu(k.tenant_id)) continue;
+        if (await this.erisim?.otomasyonDurdu(k.tenant_id, "raporlar")) continue;
         try {
           const sonuc = await this.servis.gonder(k.tenant_id, k.id);
           sayac[sonuc.durum] = (sayac[sonuc.durum] ?? 0) + 1;

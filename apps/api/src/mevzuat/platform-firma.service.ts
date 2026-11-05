@@ -7,6 +7,7 @@ import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifPlatformBaglam, DESTEK_KULLANICI_ID } from "../core/istek-baglami";
 import { ABONELIK_PLANLARI } from "../tenant/abonelik.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
+import type { FirmaFiltresi } from "./platform-firma-filtre";
 
 interface FirmaSatiri {
   tenant_id: string;
@@ -24,6 +25,11 @@ interface FirmaSatiri {
   bekleyen_plan: string | null;
   son_odeme_at: Date | null;
   askiya_alinacak: boolean;
+  baglanti_hatali?: boolean;
+  takip_sorumlu_adi?: string | null;
+  takip_sorumlu_uygun?: boolean | null;
+  sonraki_gorusme?: string | null;
+  takip_durumu?: string | null;
 }
 
 interface DestekSatiri {
@@ -57,6 +63,74 @@ export class PlatformFirmaService {
       this.platform.db.$queryRaw<DestekSatiri[]>`SELECT * FROM platform_destek_durumu()`,
     ]);
     const destek = new Map(destekler.map((d) => [d.tenant_id, d]));
+    return this.gorunum(satirlar, destek);
+  }
+
+  /** Eski dizi sözleşmesini kullanan özet/ödeme ekranlarını bozmadan sayfalı liste. */
+  async sayfali(f: FirmaFiltresi) {
+    const arama = f.arama.replace(/[\\%_]/g, "\\$&");
+    const kosullar: Prisma.Sql[] = [];
+    if (arama) kosullar.push(Prisma.sql`(lower(translate(unvan, 'Iİ', 'ıi')) LIKE lower(translate(${`%${arama}%`}, 'Iİ', 'ıi')) OR vkn ILIKE ${`%${arama}%`})`);
+    if (f.plan) kosullar.push(Prisma.sql`plan_kodu = ${f.plan}`);
+    if (f.firma) kosullar.push(Prisma.sql`tenant_id = ${f.firma}::uuid`);
+    if (f.baglanti === "hata" || f.goster === "baglantiHatali") kosullar.push(Prisma.sql`baglanti_hatali`);
+    if (f.baglanti === "ebelgeAktif") kosullar.push(Prisma.sql`ebelge_saglayici IS NOT NULL`);
+    else if (f.baglanti === "ebelgeYok") kosullar.push(Prisma.sql`ebelge_saglayici IS NULL`);
+    // Prisma timestamp alanları UTC saklanır; takvim filtreleri Türkiye gününe göre uygulanır.
+    for (const [baslangic, bitis, sutun] of [
+      [f.kayitBaslangic, f.kayitBitis, Prisma.sql`kayit_tarihi`],
+      [f.yenilemeBaslangic, f.yenilemeBitis, Prisma.sql`donem_sonu`],
+    ] as const) {
+      if (baslangic) kosullar.push(Prisma.sql`(${sutun} AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date >= ${baslangic}::date`);
+      if (bitis) kosullar.push(Prisma.sql`(${sutun} AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date <= ${bitis}::date`);
+    }
+    if (f.goster === "talep") kosullar.push(Prisma.sql`bekleyen_talep_id IS NOT NULL`);
+    else if (f.goster === "takibiGeciken") kosullar.push(Prisma.sql`takip_durumu <> 'tamamlandi' AND sonraki_gorusme::date < (now() AT TIME ZONE 'Europe/Istanbul')::date`);
+    else if (f.goster === "sorumluUygunDegil") kosullar.push(Prisma.sql`takip_durumu <> 'tamamlandi' AND takip_sorumlu_uygun = false`);
+    else if (f.goster === "askiyaAlinacak") kosullar.push(Prisma.sql`askiya_alinacak`);
+    else if (["askida", "iptal", "aktif", "deneme"].includes(f.goster)) kosullar.push(Prisma.sql`durum = ${f.goster}`);
+    else if (f.goster === "hicGirmeyen") kosullar.push(Prisma.sql`son_giris IS NULL`);
+    else if (f.goster === "uzunSuredirGirmeyen") kosullar.push(Prisma.sql`son_giris < (now() AT TIME ZONE 'UTC') - interval '30 days'`);
+    else if (f.goster === "yenilenecek" || f.goster === "denemesiBitecek") {
+      kosullar.push(f.goster === "denemesiBitecek" ? Prisma.sql`durum = 'deneme'` : Prisma.sql`durum IN ('aktif', 'deneme')`);
+      kosullar.push(Prisma.sql`(donem_sonu AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Istanbul')::date BETWEEN (now() AT TIME ZONE 'Europe/Istanbul')::date AND (now() AT TIME ZONE 'Europe/Istanbul')::date + 7`);
+    }
+    const siralar = {
+      unvan: Prisma.sql`unvan ASC, tenant_id ASC`,
+      kayitYeni: Prisma.sql`kayit_tarihi DESC, tenant_id ASC`,
+      sonGiris: Prisma.sql`son_giris DESC NULLS LAST, tenant_id ASC`,
+      yenileme: Prisma.sql`donem_sonu ASC NULLS LAST, tenant_id ASC`,
+    };
+    const [sonuc] = await this.platform.db.$queryRaw<{
+      kayitlar: FirmaSatiri[]; toplam: bigint;
+      sayilar: { toplam: number; talep: number; askiyaAlinacak: number; askida: number; iptal: number };
+    }[]>`
+      WITH hatali AS MATERIALIZED (SELECT DISTINCT tenant_id FROM platform_baglanti_sagligi()),
+      kaynak AS MATERIALIZED (SELECT o.*, (h.tenant_id IS NOT NULL) AS baglanti_hatali,
+        t.durum AS takip_durumu, t.sonraki_gorusme::text AS sonraki_gorusme, k.ad_soyad AS takip_sorumlu_adi,
+        (k.aktif AND k.rol = 'yonetici' AND k.davet_turu IS NULL) AS takip_sorumlu_uygun
+        FROM platform_firma_ozeti() o LEFT JOIN hatali h ON h.tenant_id = o.tenant_id
+        LEFT JOIN platform_firma_takipleri t ON t.tenant_id = o.tenant_id LEFT JOIN platform_kullanicilari k ON k.id = t.sorumlu_id),
+      suzulen AS (SELECT * FROM kaynak WHERE ${kosullar.length ? Prisma.join(kosullar, " AND ") : Prisma.sql`TRUE`}),
+      sayfa AS (SELECT * FROM suzulen ORDER BY ${siralar[f.siralama]} LIMIT ${f.sayfaBoyutu} OFFSET ${(f.sayfa - 1) * f.sayfaBoyutu})
+      SELECT COALESCE((SELECT jsonb_agg(to_jsonb(s) || jsonb_build_object(
+          'kayit_tarihi', kayit_tarihi AT TIME ZONE 'UTC', 'son_giris', son_giris AT TIME ZONE 'UTC',
+          'donem_sonu', donem_sonu AT TIME ZONE 'UTC', 'iptal_tarihi', iptal_tarihi AT TIME ZONE 'UTC',
+          'son_odeme_at', son_odeme_at AT TIME ZONE 'UTC'
+        ) ORDER BY ${siralar[f.siralama]}) FROM sayfa s), '[]'::jsonb) AS kayitlar,
+        (SELECT count(*) FROM suzulen) AS toplam,
+        (SELECT jsonb_build_object('toplam', count(*), 'talep', count(*) FILTER (WHERE bekleyen_talep_id IS NOT NULL),
+          'askiyaAlinacak', count(*) FILTER (WHERE askiya_alinacak), 'askida', count(*) FILTER (WHERE durum = 'askida'),
+          'iptal', count(*) FILTER (WHERE durum = 'iptal')) FROM kaynak) AS sayilar`;
+    const destekler = sonuc.kayitlar.length ? await this.platform.db.$queryRaw<DestekSatiri[]>`
+      SELECT * FROM platform_destek_durumu() WHERE tenant_id IN (${Prisma.join(sonuc.kayitlar.map((r) => Prisma.sql`${r.tenant_id}::uuid`))})` : [];
+    return {
+      kayitlar: this.gorunum(sonuc.kayitlar, new Map(destekler.map((d) => [d.tenant_id, d]))),
+      toplam: Number(sonuc.toplam), sayfa: f.sayfa, sayfaBoyutu: f.sayfaBoyutu, sayilar: sonuc.sayilar,
+    };
+  }
+
+  private gorunum(satirlar: FirmaSatiri[], destek: Map<string, DestekSatiri>) {
     return satirlar.map((r) => ({
       tenantId: r.tenant_id,
       unvan: r.unvan.trim(),
@@ -70,6 +144,8 @@ export class PlatformFirmaService {
       aktifKullanici: Number(r.aktif_kullanici),
       sonGiris: r.son_giris,
       ebelgeSaglayici: r.ebelge_saglayici,
+      baglantiHatali: r.baglanti_hatali ?? false,
+      takip: r.takip_durumu ? { durum: r.takip_durumu, sonrakiGorusme: r.sonraki_gorusme ?? null, sorumluAdi: r.takip_sorumlu_adi ?? null, sorumluUygun: r.takip_sorumlu_uygun ?? null } : null,
       bekleyenTalep: r.bekleyen_talep_id ? { id: r.bekleyen_talep_id, istenenPlan: r.bekleyen_plan, istenenPlanAdi: planAdi(r.bekleyen_plan ?? "") } : null,
       sonOdemeAt: r.son_odeme_at,
       // PLT-09: dönem sonundan 15 gün geçti, ödeme işaretlenmedi. Otomatik askı yok; karar platformun.

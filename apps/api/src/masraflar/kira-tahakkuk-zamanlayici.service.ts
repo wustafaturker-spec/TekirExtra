@@ -106,7 +106,7 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
       let toplam = 0;
       for (const tenantId of await this.tenantIdleriAl()) {
         // PLT-05: askıdaki firmada kira masrafı tahakkuk etmez; açılınca eksik dönemler tamamlanır.
-        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
+        if (await this.erisim?.otomasyonDurdu(tenantId, "masraf_gelir")) continue;
         await this.kurlariHazirla(tenantId, mevcutDonem);
         const kursuzlar: { id: string; baslik: string; dovizCinsi: string; donemler: string[] }[] = [];
         toplam += await this.prisma.tenantIslem(tenantId, async (tx) => {

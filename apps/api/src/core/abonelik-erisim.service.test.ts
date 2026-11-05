@@ -1,12 +1,41 @@
-import { describe, expect, it } from "vitest";
-import { abonelikErisimiHesapla } from "./abonelik-erisim.service";
+import { describe, expect, it, vi } from "vitest";
+import { AbonelikErisimService, abonelikErisimiHesapla } from "./abonelik-erisim.service";
 
 const simdi = new Date("2026-10-24T12:00:00Z");
 
 describe("abonelik erişim kuralı (platform P0-1)", () => {
+  it("otomasyon tüm gerekli modülleri denetler; kapsam okuma hatasında durur", async () => {
+    const servis = new AbonelikErisimService({} as never);
+    const moduller = vi.spyOn(servis, "modulleriGetir").mockResolvedValue(["cari"]);
+    vi.spyOn(servis, "getir").mockResolvedValue({ kisitli: false, neden: null });
+    expect(await servis.otomasyonDurdu("firma", "cari")).toBe(false);
+    expect(await servis.otomasyonDurdu("firma", ["cari", "satis"])).toBe(true);
+    moduller.mockResolvedValue(null);
+    expect(await servis.otomasyonDurdu("firma", "satis")).toBe(false);
+    moduller.mockRejectedValue(new Error("bağlantı"));
+    expect(await servis.otomasyonDurdu("firma", "cari")).toBe(true);
+  });
   it("kayıt yoksa, aktif ya da deneme aboneliği kısıtlamaz", () => {
     expect(abonelikErisimiHesapla(null, simdi).kisitli).toBe(false);
-    for (const durum of ["aktif", "deneme"]) expect(abonelikErisimiHesapla({ durum, donemSonu: new Date("2020-01-01"), iptalTarihi: null }, simdi).kisitli).toBe(false);
+    for (const durum of ["aktif"]) expect(abonelikErisimiHesapla({ durum, donemSonu: new Date("2020-01-01"), iptalTarihi: null }, simdi).kisitli).toBe(false);
+  });
+
+  it("deneme tam bitiş anında kısıtlanır; tarihi bilinmeyen kayıt korunur", () => {
+    for (const donemSonu of [null, new Date(simdi.getTime() + 1)]) expect(abonelikErisimiHesapla({ durum: "deneme", donemSonu, iptalTarihi: null }, simdi).kisitli).toBe(false);
+    for (const donemSonu of [simdi, new Date("2020-01-01")]) expect(abonelikErisimiHesapla({ durum: "deneme", donemSonu, iptalTarihi: null }, simdi)).toEqual({ kisitli: true, neden: expect.stringContaining("Deneme süreniz sona erdi") });
+  });
+
+  it("önbellek denemenin bitişinden sonra açık erişim taşımaz", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(simdi);
+      const findUnique = vi.fn().mockResolvedValue({ durum: "deneme", donemSonu: new Date(simdi.getTime() + 1000), iptalTarihi: null });
+      const servis = new AbonelikErisimService({ tenantIslem: async (_: string, fn: Function) => fn({ tenantAbonelik: { findUnique } }) } as never);
+      expect((await servis.getir("firma")).kisitli).toBe(false);
+      vi.advanceTimersByTime(1000);
+      expect((await servis.getir("firma")).kisitli).toBe(true);
+      expect(findUnique).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
   });
 
   it("askıdaki abonelik salt okunurdur ve nedenini söyler", () => {

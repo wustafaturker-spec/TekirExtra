@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, HttpException, Post, Res, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Headers, HttpCode, HttpException, Optional, Post, Res, UnauthorizedException } from "@nestjs/common";
+import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import type { Response } from "express";
 import { Public } from "../../auth/public.decorator";
 import { baglamKur } from "../../core/istek-baglami";
@@ -37,6 +38,7 @@ export class McpController {
     private readonly anahtarlar: McpAnahtarService,
     private readonly yurutucu: AracYurutucu,
     private readonly prisma: PrismaService,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   @Post()
@@ -48,6 +50,9 @@ export class McpController {
       throw new UnauthorizedException("Geçerli bir MCP erişim anahtarı gerekli (Asistan ve Onaylar → MCP erişim anahtarları).");
     }
     baglamKur({ tenantId: kimlik.tenantId, userId: kimlik.userId, rol: kimlik.rol, ...(kimlik.ozelRol ? { ozelRol: kimlik.ozelRol } : {}) });
+    const moduller = this.erisim ? await this.erisim.modulleriGetir(kimlik.tenantId) : null;
+    if (moduller && !moduller.includes("yapay_zeka")) throw new ForbiddenException("Yapay zekâ ve MCP abonelik paketinizde kapalı.");
+    aktifBaglam().paketModulleri = moduller;
 
     const istekler = Array.isArray(govde) ? (govde as JsonRpcIstek[]) : [govde as JsonRpcIstek];
     const yanitlar = [];

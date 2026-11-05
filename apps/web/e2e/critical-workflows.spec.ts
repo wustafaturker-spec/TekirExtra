@@ -1,3 +1,4 @@
+import { firmaSayfasi } from "./platform-firma-fixture";
 import { expect, test } from "@playwright/test";
 import { ortakYanit } from "./ortak-yanit";
 
@@ -2147,10 +2148,10 @@ test("platform ekibi bekleyen plan talebini firmalar ekranından onaylar (platfo
   let karar: { yol: string; govde: unknown } | null = null;
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
   await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com" } }));
-  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [
+  await page.route("**/api/v1/platform/firmalar/sayfali?*", (route) => firmaSayfasi(route, [
     { tenantId: "t1", unvan: "ÖRNEK MAKİNA A.Ş.", vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "baslangic", planAdi: "Başlangıç", durum: "aktif", donemSonu: null, iptalTarihi: null, aktifKullanici: 3, sonGiris: null, ebelgeSaglayici: "nes", bekleyenTalep: { id: "r1", istenenPlan: "kurumsal", istenenPlanAdi: "Kurumsal" } },
     { tenantId: "t2", unvan: "BAŞKA LTD.", vkn: "9999999999", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "profesyonel", planAdi: "Profesyonel", durum: "askida", donemSonu: null, iptalTarihi: null, aktifKullanici: 1, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null },
-  ] }));
+  ]));
   await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [{ id: "r1", zaman: "2026-10-24T10:00:00Z", mevcutPlan: "baslangic", istenenPlan: "kurumsal", durum: "bekliyor", aciklama: "Kullanıcı sayımız arttı", kararNotu: null }] } }));
   await page.route("**/api/v1/platform/firmalar/talepler/r1/karar", async (route) => { karar = { yol: new URL(route.request().url()).pathname, govde: route.request().postDataJSON() }; await route.fulfill({ json: { mesaj: "Talep onaylandı; yeni plan geçerli." } }); });
   await page.goto("/platform/firmalar");
@@ -2239,7 +2240,7 @@ test("platform ödemesi geciken firmayı süzer ve elle ödemeyle dönemi uzatı
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-e2e-token"));
   await page.route("**/api/v1/platform/auth/ben", (route) => route.fulfill({ json: { eposta: "ekip@tekirextra.com", rol: "yonetici" } }));
   const firma = (id: string, unvan: string, askiyaAlinacak: boolean) => ({ tenantId: id, unvan, vkn: "1234567890", kayitTarihi: "2026-01-01T00:00:00Z", planKodu: "baslangic", planAdi: "Başlangıç", durum: "aktif", donemSonu: askiyaAlinacak ? "2026-10-01T00:00:00Z" : "2026-12-01T00:00:00Z", iptalTarihi: null, aktifKullanici: 2, sonGiris: null, ebelgeSaglayici: null, bekleyenTalep: null, askiyaAlinacak, sonOdemeAt: null });
-  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [firma("t1", "Geciken A.Ş.", true), firma("t2", "Düzenli Ltd.", false)] }));
+  await page.route("**/api/v1/platform/firmalar/sayfali?*", (route) => firmaSayfasi(route, [firma("t1", "Geciken A.Ş.", true), firma("t2", "Düzenli Ltd.", false)]));
   await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], odemeler: [] } }));
   await page.route("**/api/v1/platform/firmalar/t1/odeme", async (route) => { odeme = route.request().postDataJSON(); await route.fulfill({ json: { mesaj: "Ödeme kaydedildi; dönem sonu 01.01.2027." } }); });
   await page.goto("/platform/firmalar");

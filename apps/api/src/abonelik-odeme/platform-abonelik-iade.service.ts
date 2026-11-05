@@ -56,7 +56,7 @@ export class PlatformAbonelikIadeService {
     if (o.tekrar) return { mesaj: "Bu iade daha önce kaydedildi.", tekrar: true };
 
     const tutar = new Prisma.Decimal(g.tutar);
-    const kilidiAc = () => db.$queryRaw`SELECT platform_abonelik_iade_kilidi_ac(${odemeId}::uuid)`.catch((h) => this.logger.warn(JSON.stringify({ event: "subscription_refund_unlock_failed", odemeId, error: kisalt(h) })));
+    const kilidiAc = () => db.$queryRaw`SELECT platform_abonelik_iade_kilidi_ac(${odemeId}::uuid)::text`.catch((h) => this.logger.warn(JSON.stringify({ event: "subscription_refund_unlock_failed", odemeId, error: kisalt(h) })));
     const gonder = o.kaynak === "saglayici" && g.saglayiciyaGonder;
     let ref: string | null = null;
     try {

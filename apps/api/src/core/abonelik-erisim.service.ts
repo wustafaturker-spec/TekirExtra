@@ -1,5 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "./prisma.service";
+import { abonelikModulleriniOku } from "../tenant/abonelik-kosullari";
+import { etkinFiyatKosullariniBagla } from "../tenant/etkin-fiyat-kosullari";
+import { paketApiYoluKapali, type PaketModulKodu } from "@tekirextra/shared";
 
 export interface AbonelikErisimi {
   /** Platform P0-1: true ise firma salt okunurdur (yazma istekleri reddedilir). */
@@ -18,6 +21,9 @@ export function abonelikErisimiHesapla(
   simdi = new Date(),
 ): AbonelikErisimi {
   if (!a) return { kisitli: false, neden: null };
+  if (a.durum === "deneme" && a.donemSonu && a.donemSonu <= simdi) {
+    return { kisitli: true, neden: "Deneme süreniz sona erdi. Kayıtlarınızı görüntüleyip dışa aktarabilirsiniz; yazmaya devam etmek için Abonelik sayfasından ödeme yapın." };
+  }
   if (a.durum === "askida") {
     return { kisitli: true, neden: "Aboneliğiniz askıya alındı. Kayıtlarınızı görüntüleyip dışa aktarabilirsiniz; yeni kayıt ve değişiklik için bizimle iletişime geçin." };
   }
@@ -41,6 +47,17 @@ export class AbonelikErisimService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Kapsam önbelleğe alınmaz: atama sonraki API isteğinde ve araç çağrısında geçerlidir. */
+  async modulleriGetir(tenantId: string) {
+    const a = await this.prisma.tenantIslem(tenantId, async (tx) => etkinFiyatKosullariniBagla(tx, tenantId, await tx.tenantAbonelik.findUnique({ where: { tenantId }, select: { planKodu: true, paketSurumId: true, paketKosullari: true } })));
+    return a ? abonelikModulleriniOku(a) : null;
+  }
+  async modulKapali(tenantId: string, modul: PaketModulKodu) {
+    const moduller = await this.modulleriGetir(tenantId);
+    return moduller !== null && !moduller.includes(modul);
+  }
+  async apiYoluKapali(tenantId: string, yol: string) { return paketApiYoluKapali(await this.modulleriGetir(tenantId), yol); }
+
   async getir(tenantId: string): Promise<AbonelikErisimi> {
     const simdi = Date.now();
     const k = this.onbellek.get(tenantId);
@@ -50,21 +67,26 @@ export class AbonelikErisimService {
     );
     const erisim = abonelikErisimiHesapla(a);
     if (this.onbellek.size > 10_000) this.onbellek.clear();
-    this.onbellek.set(tenantId, { erisim, bitis: simdi + ERISIM_ONBELLEK_MS });
+    const donemSiniri = (a?.durum === "deneme" || a?.durum === "iptal") && a.donemSonu && a.donemSonu.getTime() > simdi ? a.donemSonu.getTime() : Infinity;
+    this.onbellek.set(tenantId, { erisim, bitis: Math.min(simdi + ERISIM_ONBELLEK_MS, donemSiniri) });
     return erisim;
   }
 
   /**
    * PLT-05: kısıtlı (askıdaki / iptal dönemi bitmiş) firmada veri yazan ya da
    * maliyet doğuran zamanlanmış işler durur; bildirim ve mevzuat hatırlatması
-   * sürer. Erişim okunamazsa iş durdurulmaz (geçici DB hatası otomasyonu
-   * kesmesin). Firma açılınca işler bir sonraki turda kaldıkları yerden sürer.
+   * sürer. Modül kontrolü istenmişse kapsam okunamadığında iş durur; eski
+   * yalnız durum kontrolünde geriye uyumluluk korunur. Firma açılınca sonraki turda sürer.
    */
-  async otomasyonDurdu(tenantId: string): Promise<boolean> {
+  async otomasyonDurdu(tenantId: string, modul?: PaketModulKodu | readonly PaketModulKodu[]): Promise<boolean> {
     try {
+      if (modul) {
+        const moduller = await this.modulleriGetir(tenantId);
+        if (moduller && (typeof modul === "string" ? [modul] : modul).some((m) => !moduller.includes(m))) return true;
+      }
       return (await this.getir(tenantId)).kisitli;
     } catch {
-      return false;
+      return !!modul;
     }
   }
 

@@ -86,7 +86,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   async taraTenant(tenantId: string) {
     z.uuid().parse(tenantId);
     // PLT-05: askıdaki firma müşterisine ödeme sözü e-postası göndermez.
-    if (await this.erisim?.otomasyonDurdu(tenantId)) return { gonderilen: 0, atlanan: 0, hatali: 0 };
+    if (await this.erisim?.otomasyonDurdu(tenantId, "cari")) return { gonderilen: 0, atlanan: 0, hatali: 0 };
     return baglamlaCalistir({ tenantId, userId: SISTEM, rol: "yonetici" }, async () => {
       const baslangic = await this.prisma.tenantIslem(tenantId, async tx => {
         const zaman = await this.zaman(tx);

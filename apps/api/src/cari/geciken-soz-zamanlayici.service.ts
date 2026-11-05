@@ -72,7 +72,7 @@ export class GecikenSozZamanlayiciService implements OnModuleInit, OnModuleDestr
         for (const { id } of tenantlar) {
           if (this.kapandi) break;
           // PLT-05: askıdaki firmada otomatik tahsilat takibi açılmaz.
-          if (await this.erisim?.otomasyonDurdu(id)) continue;
+          if (await this.erisim?.otomasyonDurdu(id, "cari")) continue;
           try { const sonuc = await this.taraTenant(id); this.logger.debug(JSON.stringify({ event: "overdue_promise_scan", tenantId: id, ...sonuc })); }
           catch (hata) { this.logger.error(JSON.stringify({ event: "overdue_promise_tenant_failed", tenantId: id, error: hata instanceof Error ? hata.message : String(hata) })); }
         }

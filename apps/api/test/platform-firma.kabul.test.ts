@@ -58,11 +58,12 @@ describe("platform firma yönetimi (platform P0-1 / P1-1) — gerçek PostgreSQL
     await expect(uygulama.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, 'kurumsal', NULL, 'saldırı')`).rejects.toThrow(/permission denied/);
   });
 
-  it("talep onayı planı değiştirir; aynı talebe ikinci karar verilemez", async () => {
-    await platform.$queryRaw`SELECT platform_abonelik_talebi_karar(${talepId}::uuid, true, 'onay notu', ${randomUUID()}::uuid)`;
+  it("eski talep onayı paket korumasını aşamaz; ret kararı tek kez kaydedilir", async () => {
+    await expect(platform.$queryRaw`SELECT platform_abonelik_talebi_karar(${talepId}::uuid, true, 'onay notu', ${randomUUID()}::uuid)`).rejects.toThrow();
+    await platform.$queryRaw`SELECT platform_abonelik_talebi_karar(${talepId}::uuid, false, 'Kontrollü atama gerekir', ${randomUUID()}::uuid)`;
     const [a] = await yonetici.$queryRaw<{ plan_kodu: string; durum: string; donem_sonu: Date | null }[]>`SELECT plan_kodu, durum::text, donem_sonu FROM tenant_abonelikleri WHERE tenant_id = ${tenantId}::uuid`;
-    expect(a).toMatchObject({ plan_kodu: "kurumsal", durum: "aktif" });
-    expect(a.donem_sonu).toBeInstanceOf(Date);
+    expect(a).toMatchObject({ plan_kodu: "baslangic", durum: "aktif" });
+    expect(a.donem_sonu).toBeNull();
     await expect(platform.$queryRaw`SELECT platform_abonelik_talebi_karar(${talepId}::uuid, false, NULL, ${randomUUID()}::uuid)`).rejects.toThrow(/talep_bekliyor_degil/);
   });
 
@@ -70,8 +71,8 @@ describe("platform firma yönetimi (platform P0-1 / P1-1) — gerçek PostgreSQL
     await platform.$executeRaw`SELECT platform_abonelik_guncelle(${tenantId}::uuid, NULL, 'askida', 'Kabul: ödeme yok')`;
     const [g] = await platform.$queryRaw<{ gecmis: { degisiklikler: { yeniDurum: string; neden: string }[]; talepler: { durum: string }[] } }[]>`SELECT platform_firma_abonelik_gecmisi(${tenantId}::uuid) AS gecmis`;
     expect(g.gecmis.degisiklikler[0]).toMatchObject({ yeniDurum: "askida", neden: "Kabul: ödeme yok" });
-    expect(g.gecmis.degisiklikler).toHaveLength(2);
-    expect(g.gecmis.talepler[0]).toMatchObject({ durum: "onaylandi" });
+    expect(g.gecmis.degisiklikler).toHaveLength(1);
+    expect(g.gecmis.talepler[0]).toMatchObject({ durum: "reddedildi" });
     await expect(platform.$executeRaw`SELECT platform_abonelik_guncelle(${randomUUID()}::uuid, NULL, 'askida', 'yok')`).rejects.toThrow(/firma_yok/);
   });
 });

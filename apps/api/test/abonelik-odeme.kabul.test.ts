@@ -8,6 +8,10 @@ import { PaytrAbonelikSaglayicisi, type AbonelikOdemeSaglayicisi, type KayitliOd
 import { merchantOid } from "../src/abonelik-odeme/paytr-direkt";
 import { coz } from "../src/core/kripto";
 import { PrismaService } from "../src/core/prisma.service";
+import { AbonelikFaturaService, type FaturasizOdeme } from "../src/abonelik-odeme/abonelik-fatura.service";
+import { bugunTR, PAKET_MODUL_KODLARI } from "@tekirextra/shared";
+import { platformBaglamiylaCalistir } from "../src/core/istek-baglami";
+import { PlatformPaketService } from "../src/mevzuat/platform-paket.service";
 
 /**
  * PLT-12/13/14: abonelik ödemesi gerçek PostgreSQL'de, RLS'e tabi uygulama
@@ -17,11 +21,14 @@ import { PrismaService } from "../src/core/prisma.service";
  */
 const env = resolve(__dirname, "../.env");
 if (existsSync(env)) process.loadEnvFile(env);
-delete process.env.DATABASE_URL_PLATFORM; // olay kaydı ve sağlayıcı okuması sahtede
 process.env.SMTP_PORT = "1"; // makbuz e-postası gitmez; hata kaydı ödemeyi bozmamalı
 
 const yonetici = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL });
 const db = new PrismaService({ datasourceUrl: process.env.DATABASE_URL });
+const platform = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_PLATFORM });
+const platformKullaniciId = randomUUID();
+const paketServisi = new PlatformPaketService({ db: platform } as never);
+const platformYoneticisi = <T>(is: () => Promise<T>) => platformBaglamiylaCalistir({ kullaniciId: platformKullaniciId, eposta: "fotograf@kabul.invalid", rol: "yonetici" }, is);
 
 const tenantId = randomUUID();
 const digerTenantId = randomUUID();
@@ -38,26 +45,34 @@ const sahte: AbonelikOdemeSaglayicisi = {
   kartSil: vi.fn(async () => undefined),
 };
 let etkinAyar: any = { saglayici: "iyzico", ortam: "test", config: {} };
-const servis = new AbonelikOdemeService(db, { etkin: async () => etkinAyar } as any, { db: {} } as any, { unut: vi.fn() } as any);
+const servis = new AbonelikOdemeService(db, { etkin: async () => etkinAyar } as any, { db: { mevzuatOlay: { create: vi.fn() } } } as any, { unut: vi.fn() } as any);
+vi.spyOn(servis as never, "posta").mockResolvedValue(undefined as never);
 servis.saglayiciUret = (ayar) => (ayar.saglayici === "paytr" ? new PaytrAbonelikSaglayicisi(ayar) : sahte);
 const yeniKiraci = randomUUID();
 const paytrKiraci = randomUUID();
+const fotografKiraci = randomUUID();
 
 beforeAll(async () => {
-  for (const [id, ad] of [[tenantId, "ABONELİK ÖDEME KABUL"], [digerTenantId, "ABONELİK ÖDEME DİĞER"], [yeniKiraci, "ABONELİK YENİLEME KABUL"], [paytrKiraci, "ABONELİK PAYTR KABUL"]] as const)
+  await yonetici.platformKullanici.create({ data: { id: platformKullaniciId, eposta: `${platformKullaniciId}@kabul.invalid`, adSoyad: "Fotoğraf kabul yöneticisi", parolaHash: "x", totpSecretSifreli: "x", rol: "yonetici" } });
+  for (const [id, ad] of [[tenantId, "ABONELİK ÖDEME KABUL"], [digerTenantId, "ABONELİK ÖDEME DİĞER"], [yeniKiraci, "ABONELİK YENİLEME KABUL"], [paytrKiraci, "ABONELİK PAYTR KABUL"], [fotografKiraci, "ABONELİK FİYAT FOTOĞRAFI"]] as const)
     await yonetici.$executeRaw`INSERT INTO tenants (id, unvan, vkn, vergi_dairesi, il, created_at, updated_at) VALUES (${id}::uuid, ${ad}, ${String(parseInt(id.slice(0, 8), 16)).padStart(10, '0').slice(-10)}, 'Test', 'Ankara', now(), now())`;
   await yonetici.$executeRaw`INSERT INTO tenant_abonelikleri (id, tenant_id, plan_kodu, durum, aski_nedeni, donem_sonu, created_at, updated_at) VALUES (gen_random_uuid(), ${tenantId}::uuid, 'baslangic', 'askida', 'odeme', ${donemSonu}, now(), now())`;
-  for (const t of [tenantId, yeniKiraci, paytrKiraci])
+  for (const t of [tenantId, yeniKiraci, paytrKiraci, fotografKiraci])
     await yonetici.$executeRaw`INSERT INTO users (id, tenant_id, eposta, parola_hash, ad_soyad, rol, aktif, created_at, updated_at) VALUES (${t === tenantId ? userId : randomUUID()}::uuid, ${t}::uuid, ${`odeme-kabul-${t}@ornek.invalid`}, 'x', 'Kabul Kişi', 'yonetici', true, now(), now())`;
   // Dönemi 2 gün sonra biten firmalar (otomatik yenileme penceresinde).
-  for (const t of [yeniKiraci, paytrKiraci])
+  for (const t of [yeniKiraci, paytrKiraci, fotografKiraci])
     await yonetici.$executeRaw`INSERT INTO tenant_abonelikleri (id, tenant_id, plan_kodu, durum, donem_sonu, created_at, updated_at) VALUES (gen_random_uuid(), ${t}::uuid, 'baslangic', 'aktif', now() + interval '2 days', now(), now())`;
 });
 
 afterAll(async () => {
-  await yonetici.$executeRaw`DELETE FROM users WHERE tenant_id IN (${tenantId}::uuid, ${yeniKiraci}::uuid, ${paytrKiraci}::uuid)`;
-  await yonetici.$executeRaw`DELETE FROM tenants WHERE id IN (${tenantId}::uuid, ${digerTenantId}::uuid, ${yeniKiraci}::uuid, ${paytrKiraci}::uuid)`;
-  await Promise.all([yonetici.$disconnect(), db.$disconnect()]);
+  await yonetici.abonelikFaturasi.deleteMany({ where: { odeyenTenantId: fotografKiraci } });
+  await yonetici.mevzuatOlay.deleteMany({ where: { kullaniciId: platformKullaniciId } });
+  await yonetici.platformPaketAtamasi.deleteMany({ where: { kullaniciId: platformKullaniciId } });
+  await yonetici.$executeRaw`DELETE FROM users WHERE tenant_id IN (${tenantId}::uuid, ${yeniKiraci}::uuid, ${paytrKiraci}::uuid, ${fotografKiraci}::uuid)`;
+  await yonetici.$executeRaw`DELETE FROM tenants WHERE id IN (${tenantId}::uuid, ${digerTenantId}::uuid, ${yeniKiraci}::uuid, ${paytrKiraci}::uuid, ${fotografKiraci}::uuid)`;
+  await yonetici.platformFirmaYasamOlayi.deleteMany({ where: { tenantId: fotografKiraci } });
+  await yonetici.platformKullanici.delete({ where: { id: platformKullaniciId } });
+  await Promise.all([yonetici.$disconnect(), db.$disconnect(), platform.$disconnect()]);
 });
 
 describe("abonelik ödemesi (PLT-12/13) — gerçek PostgreSQL", () => {
@@ -70,6 +85,7 @@ describe("abonelik ödemesi (PLT-12/13) — gerçek PostgreSQL", () => {
     const [d] = await yonetici.$queryRaw<{ matrah: string; kdv: string; toplam: string; durum: string; saglayici_token: string }[]>`
       SELECT matrah::text, kdv::text, toplam::text, durum, saglayici_token FROM abonelik_odeme_denemeleri WHERE id = ${denemeId}::uuid`;
     expect(d).toEqual({ matrah: "399.00", kdv: "79.80", toplam: "478.80", durum: "baslatildi", saglayici_token: `tok-${denemeId}` });
+    expect((await yonetici.abonelikOdemeDenemesi.findUniqueOrThrow({ where: { id: denemeId } })).fiyatFotografi).toMatchObject({ planKodu: "baslangic", planAdi: "Başlangıç", kdvOrani: "20", toplam: "478.80" });
     const girdi = vi.mocked(sahte.odemeBaslat).mock.calls[0][0];
     expect(girdi).toMatchObject({ tenantId, denemeId, toplam: "478.80", kartKaydet: false });
     expect(girdi.alici).toMatchObject({ ad: "Kabul", soyad: "Kişi", il: "Ankara", ip: "203.0.113.9" });
@@ -163,6 +179,9 @@ describe("otomatik yenileme (PLT-14) — gerçek PostgreSQL", () => {
     const sonra = await donem(yeniKiraci);
     expect(sonra.getTime()).toBeGreaterThan(once[0].donem_sonu.getTime() + 27 * 86_400_000);
     expect((await kart(yeniKiraci)).son_hata).toBeNull();
+    const otomatik = await yonetici.abonelikOdemeDenemesi.findFirstOrThrow({ where: { tenantId: yeniKiraci, kaynak: "otomatik", durum: "odendi" } });
+    expect(otomatik.fiyatFotografi).toMatchObject({ planKodu: "baslangic", toplam: "478.80" });
+    expect((await yonetici.abonelikOdemesi.findUniqueOrThrow({ where: { id: otomatik.abonelikOdemesiId! } })).fiyatFotografi).toEqual(otomatik.fiyatFotografi);
     const [o] = await yonetici.$queryRaw<{ not: string }[]>`SELECT "not" FROM abonelik_odemeleri WHERE tenant_id = ${yeniKiraci}::uuid ORDER BY created_at DESC LIMIT 1`;
     expect(o.not).toContain("otomatik yenileme");
   });
@@ -222,5 +241,70 @@ describe("PayTR bildirimi (PLT-13/14) — gerçek imza, gerçek PostgreSQL", () 
     const [d] = await yonetici.$queryRaw<{ durum: string }[]>`SELECT durum FROM abonelik_odeme_denemeleri WHERE id = ${b.denemeId}::uuid`;
     expect(d.durum).toBe("basarisiz");
     expect((await yonetici.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM abonelik_odemeleri WHERE tenant_id = ${paytrKiraci}::uuid`)[0].n).toBe(1n);
+  });
+});
+
+describe("ödeme fiyat fotoğrafı — gerçek PostgreSQL ve RLS", () => {
+  let deneme: string, odeme: string;
+  it("paket ödeme sürerken değişse de fotoğraf, sağlayıcı tutarı ve tek ödeme korunur", async () => {
+    etkinAyar = { saglayici: "iyzico", ortam: "test", config: {} };
+    const s = await servis.baslat(fotografKiraci, 1, "panel", null); deneme = s.denemeId;
+    const once = await yonetici.abonelikOdemeDenemesi.findUniqueOrThrow({ where: { id: deneme } });
+    const hedefPaketKodu = `fotograf_${randomUUID().slice(0, 8)}`;
+    const paket = await platformYoneticisi(() => paketServisi.olustur({
+      kod: hedefPaketKodu, ad: "Kurumsal", aciklama: "Fotoğraf kabul hedefi", ozellikler: ["Tüm modüller"], siralama: 30,
+      fiyatlandirma: { paraBirimi: "TRY", vergiDahil: false, kdvOrani: "20", gecerlilikTarihi: "2026-01-01", donemler: ([1, 3, 6, 12] as const).map((aySayisi) => ({ aySayisi, matrah: String(1999 * aySayisi) })) },
+      kapsamSozlesmesi: { semaSurumu: 1, moduller: [...PAKET_MODUL_KODLARI], kotalar: { kullanici: { sinir: null, uyariYuzdesi: 80 }, cari: { sinir: null, uyariYuzdesi: 80 }, stok: { sinir: null, uyariYuzdesi: 80 }, aylikFatura: { sinir: null, uyariYuzdesi: 80 } } },
+    }));
+    const hedef = await platformYoneticisi(() => paketServisi.yayinla(paket.id, paket.surum.id, paket.surum.kilitSurumu));
+    const atama = await platformYoneticisi(() => paketServisi.atamaOnizle({ surumId: hedef.id, tenantIds: [fotografKiraci], uygulamaTarihi: bugunTR(), neden: "Ödeme sırasında kontrollü paket geçişi", atamaKapsami: "kapsam" }));
+    await platformYoneticisi(() => paketServisi.atamaUygula(atama.id));
+    saglayiciSonucu = { basarili: true, odemeId: "FOTOGRAF-1", tutar: 478.8, dovizCinsi: "TRY" };
+    await servis.callback(fotografKiraci, deneme, `tok-${deneme}`);
+    expect((await servis.callback(fotografKiraci, deneme, `tok-${deneme}`)).tekrar).toBe(true);
+    const d = await yonetici.abonelikOdemeDenemesi.findUniqueOrThrow({ where: { id: deneme } }); odeme = d.abonelikOdemesiId!;
+    const o = await yonetici.abonelikOdemesi.findUniqueOrThrow({ where: { id: odeme } });
+    expect(o.fiyatFotografi).toEqual(once.fiyatFotografi);
+    expect(o.fiyatFotografi).toMatchObject({ planAdi: "Başlangıç", toplam: "478.80" });
+    expect(await yonetici.abonelikOdemesi.count({ where: { tenantId: fotografKiraci } })).toBe(1);
+    expect(await yonetici.tenantAbonelik.findUniqueOrThrow({ where: { tenantId: fotografKiraci } })).toMatchObject({ planKodu: hedefPaketKodu, paketSurumId: hedef.id });
+  });
+  it("DB'de fotoğraf ve bağlı tutarlar değişmez; iade kilidi ve durum gibi alanlar çalışır", async () => {
+    await expect(yonetici.$executeRaw`UPDATE abonelik_odeme_denemeleri SET fiyat_fotografi = NULL WHERE id = ${deneme}::uuid`).rejects.toThrow("degistirilemez");
+    await expect(yonetici.$executeRaw`UPDATE abonelik_odeme_denemeleri SET toplam = 1 WHERE id = ${deneme}::uuid`).rejects.toThrow("degistirilemez");
+    await expect(yonetici.$executeRaw`UPDATE abonelik_odeme_denemeleri SET plan_kodu = 'kurumsal' WHERE id = ${deneme}::uuid`).rejects.toThrow("degistirilemez");
+    await expect(yonetici.$executeRaw`UPDATE abonelik_odemeleri SET fiyat_fotografi = '{}'::jsonb WHERE id = ${odeme}::uuid`).rejects.toThrow("degistirilemez");
+    await expect(yonetici.$executeRaw`UPDATE abonelik_odemeleri SET tutar = 1 WHERE id = ${odeme}::uuid`).rejects.toThrow("degistirilemez");
+    await db.tenantIslem(fotografKiraci, (tx) => tx.abonelikOdemesi.update({ where: { id: odeme }, data: { iadeKilidi: new Date() } }));
+    await db.tenantIslem(fotografKiraci, (tx) => tx.abonelikOdemesi.update({ where: { id: odeme }, data: { iadeKilidi: null } }));
+    expect(await db.tenantIslem(digerTenantId, (tx) => tx.abonelikOdemesi.findUnique({ where: { id: odeme } }))).toBeNull();
+  });
+  it("fatura işçisi güncel Kurumsal paketi yerine ödemedeki Başlangıç koşullarını okur", async () => {
+    const o = await yonetici.abonelikOdemesi.findUniqueOrThrow({ where: { id: odeme } });
+    const giris = { odeme_id: odeme, tenant_id: fotografKiraci, odeme_at: o.createdAt, ay_sayisi: o.aySayisi, tutar: o.tutar, matrah: o.matrah, kdv: o.kdv, kaynak: o.kaynak, saglayici: o.saglayici, onceki_donem_sonu: o.oncekiDonemSonu, yeni_donem_sonu: o.yeniDonemSonu, plan_kodu: "kurumsal", unvan: "Fotoğraf kabulü", vkn: "1234567890" } as FaturasizOdeme;
+    const fatura = { olustur: vi.fn(async () => ({ id: randomUUID() })) };
+    const f = new AbonelikFaturaService(db, {} as never, fatura as never, { olustur: async () => ({ id: randomUUID() }) } as never, {} as never, {} as never, {} as never, {} as never);
+    expect(await f.faturala(giris, tenantId)).toBe(true);
+    expect(fatura.olustur).toHaveBeenCalledWith(expect.objectContaining({ aciklama: expect.stringContaining("Başlangıç abonelik"), satirlar: [expect.objectContaining({ birimFiyat: "399.00", kdvOrani: "20" })] }));
+    expect(await f.faturala(giris, tenantId)).toBe(false);
+    expect(fatura.olustur).toHaveBeenCalledTimes(1);
+  });
+  it("fotoğrafsız eski girişim tamamlanabilir; geriye dönük fotoğraf yazılamaz", async () => {
+    const eski = await yonetici.abonelikOdemeDenemesi.create({ data: { tenantId: fotografKiraci, saglayici: "iyzico", ortam: "test", kaynak: "panel", planKodu: "baslangic", aySayisi: 1, matrah: "399", kdv: "79.80", toplam: "478.80" } });
+    expect(eski.fiyatFotografi).toBeNull();
+    expect(await servis.odemeyiKaydet(fotografKiraci, eski.id, "FOTOGRAF-ESKI")).toMatchObject({ tekrar: false });
+    const d = await yonetici.abonelikOdemeDenemesi.findUniqueOrThrow({ where: { id: eski.id } });
+    expect((await yonetici.abonelikOdemesi.findUniqueOrThrow({ where: { id: d.abonelikOdemesiId! } })).fiyatFotografi).toBeNull();
+    await expect(yonetici.$executeRaw`UPDATE abonelik_odeme_denemeleri SET fiyat_fotografi = (SELECT fiyat_fotografi FROM abonelik_odeme_denemeleri WHERE id = ${deneme}::uuid) WHERE id = ${eski.id}::uuid`).rejects.toThrow("degistirilemez");
+  });
+  it("doğrudan DB yazımında bozuk fotoğraf ve tutar uyuşmazlığı reddedilir", async () => {
+    const d = await yonetici.abonelikOdemeDenemesi.findUniqueOrThrow({ where: { id: deneme } });
+    const f = d.fiyatFotografi as Record<string, unknown>;
+    for (const fiyatFotografi of [{}, [], { ...f, semaSurumu: 99 }, { ...f, paraBirimi: "USD" },
+      { ...f, kdvOrani: "101" }, { ...f, toplam: "1.00" }, { ...f, matrah: "399.001" },
+      { ...f, planKodu: "kurumsal" }, { ...f, aySayisi: 3 }, { ...f, planAdi: null },
+      { ...f, matrah: 399 }, { ...f, kdv: "79.81" }, { ...f, ek: true }]) {
+      await expect(yonetici.abonelikOdemeDenemesi.create({ data: { tenantId: fotografKiraci, saglayici: "iyzico", ortam: "test", kaynak: "panel", planKodu: "baslangic", aySayisi: 1, matrah: "399", kdv: "79.80", toplam: "478.80", fiyatFotografi } })).rejects.toThrow();
+    }
   });
 });

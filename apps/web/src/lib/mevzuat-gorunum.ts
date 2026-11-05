@@ -4,6 +4,11 @@ export const DURUM_ADI: Record<MevzuatDurum, string> = { taslak: "Taslak", onay_
 export const DURUM_ROZETI: Record<MevzuatDurum, "neutral" | "warning" | "success"> = { taslak: "neutral", onay_bekliyor: "warning", yayinlandi: "success" };
 export const ISLEM_ADI: Record<"ekle" | "degistir" | "kaldir", string> = { ekle: "Ekle", degistir: "Değiştir", kaldir: "Kaldır" };
 export const OLAY_ADI: Record<string, string> = {
+  firma_istatistikleri_hesaplandi: "Firma istatistiklerini yeniden hesapladı",
+  firma_takibi_guncellendi: "Firma takibini güncelledi", firma_notu_eklendi: "Firma iç notu ekledi",
+  firma_plani_degisti: "Firma planını değiştirdi", firma_paket_fiyati_atandi: "Firmaya katalog fiyat sürümü atadı", firma_paket_atamasi_planlandi: "Firmanın fiyat geçişini planladı", firma_paket_atamasi_iptal: "Firmanın fiyat geçişini iptal etti", firma_paket_atamasi_inceleme: "Firmanın fiyat geçişi inceleme bekliyor", firma_askiya_alindi: "Firmayı askıya aldı", firma_askidan_cikarildi: "Firmayı yeniden etkinleştirdi",
+  abonelik_odemesi_alindi: "Abonelik ödemesi kaydetti", abonelik_talebi_onaylandi: "Paket talebini onayladı", abonelik_talebi_reddedildi: "Paket talebini reddetti",
+  plan_talebi_onaylandi: "Paket talebini onayladı", plan_talebi_reddedildi: "Paket talebini reddetti", abonelik_odemesi_iade_edildi: "Abonelik ödemesini iade etti",
   mevzuat_gorevi_olusturuldu: "Mevzuat görevi oluşturdu", mevzuat_gorevi_guncellendi: "Mevzuat görevini güncelledi",
   platform_gorevi_olusturuldu: "Platform görevi oluşturdu", platform_gorevi_guncellendi: "Platform görevini güncelledi",
   giris: "Giriş yaptı", olusturuldu: "Oluşturdu", guncellendi: "Bilgileri güncelledi", satirlar_guncellendi: "Kalemleri güncelledi",

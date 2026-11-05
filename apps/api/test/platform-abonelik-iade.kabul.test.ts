@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { Logger } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { platformBaglamiylaCalistir } from "../src/core/istek-baglami";
 import type { PlatformPrismaService } from "../src/mevzuat/platform-prisma.service";
@@ -38,18 +39,19 @@ const olarak = <T>(is: () => Promise<T>) => platformBaglamiylaCalistir({ kullani
 const donemSonu = async () => (await yonetici.$queryRaw<{ d: Date }[]>`SELECT donem_sonu AS d FROM tenant_abonelikleri WHERE tenant_id = ${tenantId}::uuid`)[0].d;
 
 beforeAll(async () => {
+  await yonetici.platformKullanici.create({ data: { id: ekipId, eposta: `${ekipId}@kabul.invalid`, adSoyad: "İade kabul yetkilisi", parolaHash: "x", totpSecretSifreli: "x", rol: "yonetici" } });
   await yonetici.$executeRaw`INSERT INTO tenants (id, unvan, vkn, vergi_dairesi, created_at, updated_at) VALUES (${tenantId}::uuid, 'PLT-42 KABUL FİRMASI', ${String(Date.now()).slice(-10)}, 'Test', now(), now())`;
   await yonetici.$executeRaw`INSERT INTO tenant_abonelikleri (id, tenant_id, plan_kodu, durum, donem_sonu, created_at, updated_at) VALUES (gen_random_uuid(), ${tenantId}::uuid, 'profesyonel', 'aktif', '2026-07-15 09:00', now(), now())`;
   await yonetici.$executeRaw`INSERT INTO abonelik_odemeleri (id, tenant_id, ay_sayisi, tutar, matrah, kdv, yeni_donem_sonu, kaynak, saglayici, created_at) VALUES (${kartOdemesi}::uuid, ${tenantId}::uuid, 3, 3596.40, 2997.00, 599.40, '2026-07-15 09:00', 'saglayici', 'iyzico', '2026-01-20 09:00')`;
   await yonetici.$executeRaw`INSERT INTO abonelik_odeme_denemeleri (id, tenant_id, saglayici, ortam, kaynak, plan_kodu, ay_sayisi, matrah, kdv, toplam, durum, saglayici_odeme_id, abonelik_odemesi_id, created_at)
     VALUES (gen_random_uuid(), ${tenantId}::uuid, 'iyzico', 'test', 'panel', 'profesyonel', 3, 2997.00, 599.40, 3596.40, 'odendi', 'PAY-KABUL-1', ${kartOdemesi}::uuid, '2026-01-20 08:59')`;
-  const [pk] = await yonetici.$queryRaw<{ id: string }[]>`SELECT id FROM platform_kullanicilari ORDER BY created_at LIMIT 1`;
-  await yonetici.$executeRaw`INSERT INTO abonelik_odemeleri (id, tenant_id, ay_sayisi, tutar, yeni_donem_sonu, kaynak, platform_kullanici_id, created_at) VALUES (${elleOdeme}::uuid, ${tenantId}::uuid, 1, 1200.00, '2026-04-15 09:00', 'elle', ${pk.id}::uuid, '2026-01-10 09:00')`;
+  await yonetici.$executeRaw`INSERT INTO abonelik_odemeleri (id, tenant_id, ay_sayisi, tutar, yeni_donem_sonu, kaynak, platform_kullanici_id, created_at) VALUES (${elleOdeme}::uuid, ${tenantId}::uuid, 1, 1200.00, '2026-04-15 09:00', 'elle', ${ekipId}::uuid, '2026-01-10 09:00')`;
 });
 
 afterAll(async () => {
   await yonetici.$executeRaw`DELETE FROM mevzuat_olaylari WHERE kullanici_id = ${ekipId}::uuid`;
   await yonetici.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}::uuid`;
+  await yonetici.platformKullanici.deleteMany({ where: { id: ekipId } });
   await Promise.all([yonetici.$disconnect(), platform.$disconnect()]);
 });
 
@@ -79,7 +81,11 @@ describe("PLT-42…46 — abonelik iadesi (gerçek PostgreSQL, platform rolü)",
 
   it("kalanı aşan iade reddedilir ve sağlayıcıya gitmez; kilit bırakılır", async () => {
     iyzicoIade.mockClear();
-    await expect(olarak(() => servis.iadeEt(kartOdemesi, { tutar: "3500.00", neden: "Fazla", saglayiciyaGonder: true, islemAnahtari: anahtar() }))).rejects.toThrow(/iade edilebilir kalanı \(3.496,40 TL\)/);
+    const uyari = vi.spyOn(Logger.prototype, "warn");
+    try {
+      await expect(olarak(() => servis.iadeEt(kartOdemesi, { tutar: "3500.00", neden: "Fazla", saglayiciyaGonder: true, islemAnahtari: anahtar() }))).rejects.toThrow(/iade edilebilir kalanı \(3.496,40 TL\)/);
+      expect(uyari.mock.calls.some((c) => String(c[0]).includes("subscription_refund_unlock_failed"))).toBe(false);
+    } finally { uyari.mockRestore(); }
     expect(iyzicoIade).not.toHaveBeenCalled();
     const [k] = await yonetici.$queryRaw<{ k: Date | null }[]>`SELECT iade_kilidi AS k FROM abonelik_odemeleri WHERE id = ${kartOdemesi}::uuid`;
     expect(k.k).toBeNull();

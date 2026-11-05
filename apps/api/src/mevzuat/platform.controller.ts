@@ -12,6 +12,7 @@ import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
 import { ODEME_SURELERI, PlatformFirmaService } from "./platform-firma.service";
 import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
+import { firmaFiltreSemasi } from "./platform-firma-filtre";
 
 const tarih = z.string().refine(takvimGunuMu, "Tarih YYYY-MM-DD biçiminde geçerli bir takvim günü olmalıdır");
 const degisiklikSemasi = z.object({
@@ -276,6 +277,11 @@ export class PlatformFirmaController {
   @Get()
   listele() {
     return this.firmalar.listele();
+  }
+
+  @Get("sayfali")
+  sayfali(@Query() sorgu: unknown) {
+    return this.firmalar.sayfali(ayristir(firmaFiltreSemasi, sorgu));
   }
 
   @Get(":tenantId/gecmis")

@@ -116,16 +116,17 @@ export class AuthController {
   @Get("ben")
   async ben() {
     const { userId, tenantId, rol, destek, ozelRol } = aktifBaglam();
-    const [abonelik, durum, politika, destekBagli] = await Promise.all([
+    const [abonelik, durum, politika, destekBagli, paketModulleri] = await Promise.all([
       // Platform P0-1: panel salt okunur firmada üstte nedenini gösterir.
       this.abonelikErisim ? this.abonelikErisim.getir(tenantId) : null,
       destek ? undefined : this.durum?.getir(tenantId, userId),
       this.auth.politikaGetir(tenantId),
       // KLN-24: firma kullanıcıları açık destek oturumunu panelde görür.
       this.destek ? this.destek.bagliMi(tenantId) : false,
+      this.abonelikErisim ? this.abonelikErisim.modulleriGetir(tenantId) : null,
     ]);
     return {
-      userId, tenantId, rol, abonelik,
+      userId, tenantId, rol, abonelik, paketModulleri,
       // KLN-21: panel kurulum bitene kadar Hesap Güvenliği'ne yönlendirir.
       ikiAdimKurulumuGerekli: Boolean(durum?.ikiAdimEksik),
       // KLN-22: ekran süre dolmadan uyarır, hareketsizken oturumu tazelemez. Destek oturumu kendi süresiyle biter.

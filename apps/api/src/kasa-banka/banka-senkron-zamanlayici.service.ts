@@ -56,7 +56,7 @@ export class BankaSenkronZamanlayiciService implements OnModuleInit, OnModuleDes
     try {
       for (const tenantId of await this.adayKiracilar()) {
         // PLT-05: askıdaki firmada banka hareketi çekilmez.
-        if (await this.erisim?.otomasyonDurdu(tenantId)) continue;
+        if (await this.erisim?.otomasyonDurdu(tenantId, "kasa_banka")) continue;
         try {
           const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.entegrasyon.vadesiGelenleriCek());
           if (sonuc.denenen) this.logger.log(JSON.stringify({ event: "bank_sync_auto", tenantId, ...sonuc }));

@@ -1,7 +1,8 @@
-import { ForbiddenException, Injectable, Logger, type CanActivate, type Type } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, Optional, type CanActivate, type Type } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { ModuleRef, Reflector } from "@nestjs/core";
-import { ozelRolIstegiKapali, type EbelgeUygulamaKodu, type Rol } from "@tekirextra/shared";
+import { ozelRolIstegiKapali, paketApiYoluKapali, type EbelgeUygulamaKodu, type Rol } from "@tekirextra/shared";
+import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import { SALT_OKUMA_ANAHTAR } from "../../auth/public.decorator";
 import { ROLLER_ANAHTAR } from "../../auth/roller.decorator";
 import { rolUcaYetkili } from "../../auth/roller.guard";
@@ -49,6 +50,7 @@ export class UcCagirici {
     private readonly moduleRef: ModuleRef,
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
+    @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
   private handler(uc: UcTanimi): (...argumanlar: unknown[]) => Promise<unknown> {
@@ -61,10 +63,11 @@ export class UcCagirici {
   yetkiliMi(uc: UcTanimi, rol: Rol): boolean {
     const gerekli = this.reflector.getAllAndOverride<Rol[] | undefined>(ROLLER_ANAHTAR, [this.handler(uc), uc.denetleyici]);
     if (!rolUcaYetkili(rol, gerekli)) return false;
+    const [yontem, yol] = uc.yol.split(" ");
+    if (paketApiYoluKapali(baglamAl()?.paketModulleri, yol ?? "")) return false;
     // KLN-20: özel rolün kapattığı kutuya düşen araç modele sunulmaz, çağrılamaz (ekranla aynı matris).
     const kapali = baglamAl()?.ozelRol?.kapali ?? [];
     if (!kapali.length) return true;
-    const [yontem, yol] = uc.yol.split(" ");
     const saltOkuma = Boolean(this.reflector.getAllAndOverride<boolean>(SALT_OKUMA_ANAHTAR, [this.handler(uc), uc.denetleyici]));
     return !ozelRolIstegiKapali(kapali, yontem, yol ?? "", saltOkuma);
   }
@@ -85,6 +88,7 @@ export class UcCagirici {
     const baglam = aktifBaglam();
     const handler = this.handler(uc);
     if (!this.yetkiliMi(uc, baglam.rol)) throw new ForbiddenException("Bu işlem için yetkiniz yok");
+    if (this.erisim && await this.erisim.apiYoluKapali(baglam.tenantId, uc.yol.split(" ")[1] ?? "")) throw new ForbiddenException("Bu modül abonelik paketinizde kapalı.");
 
     const ebelge = this.reflector.getAllAndOverride<EbelgeUygulamaKodu[] | undefined>(EBELGE_UYGULAMASI_ANAHTAR, [handler, uc.denetleyici]);
     if (ebelge?.length) {

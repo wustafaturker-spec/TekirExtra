@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { finansalOzetGorebilir, rolMenuYoluGorebilir } from "./rol-yetkileri";
+import { afterEach, describe, expect, it } from "vitest";
+import { finansalOzetGorebilir, rolMenuYoluGorebilir, paketModulleriAyarla } from "./rol-yetkileri";
+afterEach(() => paketModulleriAyarla(null));
 
 describe("panel rol erişim matrisi", () => {
+  it("paket yöneticiyi de sınırlar; açık paket kullanıcının rolünü genişletmez", () => {
+    paketModulleriAyarla(["cari"]);
+    expect(rolMenuYoluGorebilir("yonetici", "/panel/stok")).toBe(false);
+    expect(rolMenuYoluGorebilir("yonetici", "/panel/cari")).toBe(true);
+    expect(rolMenuYoluGorebilir("yonetici", "/panel/ayarlar/abonelik")).toBe(true);
+    expect(rolMenuYoluGorebilir("depo", "/panel/cari")).toBe(false);
+  });
   it("rol yüklenmeden panel içeriğini açmaz", () => {
     expect(rolMenuYoluGorebilir(null, "/panel/ayarlar/kullanicilar")).toBe(false);
   });

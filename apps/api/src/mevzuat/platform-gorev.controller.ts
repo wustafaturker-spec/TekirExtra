@@ -11,7 +11,7 @@ const alanlar = z.object({
   oncelik: z.enum(["dusuk", "normal", "yuksek"]),
   sonTarih, sorumluId: z.uuid().nullable(), degisiklikId: z.uuid().nullable(),
 });
-export const gorevOlusturmaSemasi = alanlar.extend({ kapsam: z.enum(["mevzuat", "platform"]) }).strict();
+export const gorevOlusturmaSemasi = alanlar.extend({ kapsam: z.enum(["mevzuat", "platform"]), tenantId: z.uuid().nullable().optional() }).strict();
 export const gorevGuncellemeSemasi = alanlar.partial().extend({ surum: z.number().int().positive(), durum: z.enum(["acik", "devam_ediyor", "tamamlandi", "iptal"]).optional() }).strict().refine((v) => Object.keys(v).some((k) => k !== "surum"), "Değiştirilecek en az bir alan gönderin.");
 const filtre = z.object({
   durum: z.enum(["hepsi", "acik_isler", "acik", "devam_ediyor", "tamamlandi", "iptal"]).default("acik_isler"),
@@ -20,6 +20,7 @@ const filtre = z.object({
   geciken: z.enum(["0", "1"]).default("0").transform((v) => v === "1"),
   sorumluPasif: z.enum(["0", "1"]).default("0").transform((v) => v === "1"),
   sayfa: z.coerce.number().int().min(1).max(100000).default(1),
+  firma: z.uuid().optional(),
 });
 function ayristir<T>(sema: z.ZodType<T>, veri: unknown): T {
   const s = sema.safeParse(veri);

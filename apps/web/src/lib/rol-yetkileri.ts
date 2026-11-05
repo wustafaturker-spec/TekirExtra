@@ -1,4 +1,4 @@
-import { ozelRolPanelYoluKapali } from "@tekirextra/shared";
+import { ozelRolPanelYoluKapali, paketPanelYoluKapali } from "@tekirextra/shared";
 
 // AI-04/05: asistan ve onay talepleri (/panel/ai) her iç role açık; araçlar rolün yetkisine göre süzülür.
 const ROL_YOLLARI: Record<string, string[]> = {
@@ -49,6 +49,8 @@ export function finansalOzetGorebilir(rol: string | null): boolean {
  * Panel yerleşimi yazar; menü, komut paleti ve sayfa erişimi aynı kuralı okur.
  */
 let ozelRolKapali: string[] = [];
+let paketModulleri: string[] | null = null;
+export function paketModulleriAyarla(moduller: string[] | null): void { paketModulleri = moduller; }
 export function ozelRolKapaliAyarla(kapali: string[]): void {
   ozelRolKapali = kapali;
 }
@@ -56,6 +58,7 @@ export function ozelRolKapaliAyarla(kapali: string[]): void {
 export function rolMenuYoluGorebilir(rol: string | null, href: string): boolean {
   if (!rol) return false;
   const yol = href.split("?")[0];
+  if (paketPanelYoluKapali(paketModulleri, yol)) return false;
   if (ozelRolPanelYoluKapali(ozelRolKapali, yol)) return false;
   // PRS-21: self-servis yalnız çalışan rolünün menüsünde (yöneticinin kartı yoktur).
   if (yol === "/panel/self-servis" || yol.startsWith("/panel/self-servis/")) return rol === "calisan";

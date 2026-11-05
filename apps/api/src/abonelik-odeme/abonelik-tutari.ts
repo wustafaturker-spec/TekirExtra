@@ -1,14 +1,17 @@
 import { Prisma } from "@prisma/client";
-import { ABONELIK_PLANLARI, VARSAYILAN_PLAN_KODU } from "../tenant/abonelik.service";
+import { ABONELIK_PLANLARI, VARSAYILAN_PLAN_KODU } from "../tenant/abonelik-planlari";
+import { ABONELIK_SURELERI, AbonelikSuresi, paketFiyatiHesapla } from "./paket-fiyat-sozlesmesi";
 
 /** PLT-12: ödeme süreleri (PLT-09 elle tahsilatla aynı). */
-export const ABONELIK_SURELERI = [1, 3, 6, 12] as const;
-export type AbonelikSuresi = (typeof ABONELIK_SURELERI)[number];
+export { ABONELIK_SURELERI, type AbonelikSuresi } from "./paket-fiyat-sozlesmesi";
 
 /** PLT-12: katalog fiyatları KDV hariçtir; tahsilata %20 KDV eklenir. */
 export const ABONELIK_KDV_ORANI = 20;
 
 export interface AbonelikTutari {
+  paketSurumId?: string;
+  fiyatKaynagi?: "eski_plan_gecisi" | "katalog_atamasi";
+  kdvOrani?: string;
   planKodu: string;
   planAdi: string;
   aySayisi: AbonelikSuresi;
@@ -24,9 +27,12 @@ export const fiyatPlani = (planKodu: string) => ABONELIK_PLANLARI.find((p) => p.
 export function abonelikTutari(planKodu: string, aySayisi: AbonelikSuresi): AbonelikTutari | null {
   const plan = fiyatPlani(planKodu);
   if (!plan || plan.aylikFiyat === null) return null;
-  const matrah = new Prisma.Decimal(plan.aylikFiyat).mul(aySayisi).toDecimalPlaces(2);
-  const kdv = matrah.mul(ABONELIK_KDV_ORANI).div(100).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-  return { planKodu: plan.kod, planAdi: plan.ad, aySayisi, matrah, kdv, toplam: matrah.add(kdv) };
+  const aylikFiyat = plan.aylikFiyat;
+  const tutar = paketFiyatiHesapla({
+    paraBirimi: "TRY", vergiDahil: false, kdvOrani: String(ABONELIK_KDV_ORANI),
+    donemler: ABONELIK_SURELERI.map((ay) => ({ aySayisi: ay, matrah: new Prisma.Decimal(aylikFiyat).mul(ay).toFixed(2) })),
+  }, aySayisi);
+  return { planKodu: plan.kod, planAdi: plan.ad, aySayisi, ...tutar };
 }
 
 export const tlYaz = (d: Prisma.Decimal | number) =>

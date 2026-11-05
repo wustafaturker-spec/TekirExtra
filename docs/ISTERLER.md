@@ -1431,7 +1431,167 @@ Aşağıdaki PLT-25–31 numaraları, kod incelemesinde doğrulanan eksiklikleri
 | PLT-45 | ✅ **Fatura tarafı** (2026-11-01; `abonelik_faturalari.iade_tutari`, bildirim `abonelik-iade:<id>`): belge kesilmez. Abonelik faturasının iade tutarı tutulur ("iade edildi"/"kısmi iade"); faturalayan firmaya yönetici/muhasebe bildirimi düşer: faturası kesilmişse "… faturası için iptal ya da iade belgesi düzenleyin", POS dışı tahsilatta "para iadesinin kasa/banka kaydını girin". | Y |
 | PLT-46 | ✅ **Görünürlük ve güvenlik** (2026-11-01; gerçek PostgreSQL kabul testi `test/platform-abonelik-iade.kabul.test.ts`): yalnız platform yöneticisi; neden zorunlu; iade, dönem değişikliği ve olay kaydı tek transaction'da (PLT-27). Ödeme raporunda satırda iade tutarı ve durumu, özette iade toplamı ve net tahsilat; firma kartında ödeme başına iadeler görünür. | Y |
 
-Küçültülmüş P1 ve diğer kurumsal özellikler [ayrı yol haritasında](PLATFORM-KURUMSAL-YONETIM-YOL-HARITASI-2026-10-31.md) **değerlendirme adayıdır**; burada açık geliştirme isteri veya PLT numarası ayrılmamıştır.
+#### Firma takip listesi — PLT-47…49 (2026-11-02)
+
+**S-01 başlangıç onayı: 2026-11-02** (kullanıcı: "başlayalım"; [imalat programı](PLATFORM-GELISTIRME-IMALAT-PROGRAMI-2026-11-02.md)). İlk uygulama, FR-01 ve FR-02'nin mevcut verilerle sağlanabilen bölümüdür. Paket kataloğu, duyurular ve tarihsel kullanım istatistikleri bu ilk teslimde tamamlanmış sayılmaz.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-47 | **Sunucuda firma listesi:** unvan/VKN, plan, abonelik görünümü, bağlantı durumu, kayıt ve yenileme tarihleri birlikte süzülür. En çok 100, varsayılan 25 kayıtlık sayfalama; unvan, kayıt tarihi, son giriş ve yenileme sıralaması; eşitlikte tenant kimliği. Üst sayaçlar tüm firma kapsamını, sonuç toplamı filtreli kapsamı gösterir. Mevcut dizi API'si özet ve ödeme tüketicileri için korunur. | Y |
+| PLT-48 | **Hazır takip görünümleri:** hiç giriş yapmayan, son girişi 30 günden eski, bugün–7 gün sonra yenilenecek, aynı sürede denemesi bitecek ve bağlantı hatalı firmalar. Yenileme görünümü aktif/deneme aboneliklerini kapsar. Son giriş, gerçek modül kullanımından ayrı adlandırılır. Takip tarihi geçmiş görünümü FR-04 verisiyle sonraki teslimde eklenir. | Y |
+| PLT-49 | **Paylaşılabilir filtre ve firma bağlantısı:** filtreler/sıralama/sayfa URL'de korunur; filtre değişince ilk sayfaya dönülür, eski yanıt görünümü değiştiremez. Ödeme raporundan `?firma=<id>` ile gelen firma listede bulunmasa da kendi sorgusuyla açılır; pencere kapanınca firma parametresi temizlenir. Yalnız platform yöneticisi erişir; doğrudan tenant tablo yetkisi genişletilmez. | Y |
+
+#### Kalıcı firma detayı ve takip — PLT-50…53
+
+**S-01 devam onayı: 2026-11-02** (kullanıcı: "devam edelim"; aynı imalat programının FR-03/04 teslimi). Yeni kayıtlar yalnız platform yöneticilerine açıktır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-50 | **Kalıcı firma çalışma alanı:** `/platform/firmalar/[id]` üzerinden genel bilgiler, takip, iç not, bağlı görev, mevcut abonelik/ödeme işlemleri ve firma işlem geçmişi açılır. Liste filtreleri dönüş bağlantısında korunur; dış adrese yönlendirme kabul edilmez. Eski yönetim pencereleri çalışır ve kalıcı detaya bağlantı sunar. Kullanım/duyuru bölümleri ilgili veri altyapısıyla sonraki teslimlerde gelir. | Y |
+| PLT-51 | **Sürüm kontrollü takip:** sorumlu, açık/bekliyor/tamamlandı durumu ve sonraki görüşme günü kaydedilir. Yalnız kurulumu bitmiş aktif yönetici atanır; sorumlu sonradan pasif/yetkisiz kalırsa görünür uyarı ve liste filtresi oluşur. Eski sürüm 409 üretir; taslak ve güncel kayıt karşılaştırılmadan üzerine yazılmaz. Takip ve denetim tek transaction'dadır. | Y |
+| PLT-52 | **Eklemeli iç notlar:** en çok 4000 karakter, yazan ve zaman; firma/kullanıcı/işlem anahtarı bazında tekrar koruması. Aynı anahtar/farklı içerik 409 üretir. Platform DB rolü notu güncelleyemez/silemez; kiracı DB rolü okuyamaz. Kayıt ile denetim birlikte yazılır; denetim olayına notun metni kopyalanmaz. | Y |
+| PLT-53 | **Firma–görev bağlantısı ve takip görünümü:** mevcut platform görevine sabit firma bağı eklenir, mevzuat görevine firma bağlanamaz. Firmaya göre görev listelenir ve görevden firma detayına dönülür. Takip tarihi geçen açık/bekleyen kayıtlar listede süzülür. Firma kimliği taşıyan platform olayları sayfalı sunulur; tam birleşik operasyon zaman çizelgesi FR-05 kapsamında sürer. | Y |
+
+#### Firma istatistikleri ilk sürüm — PLT-54…58
+
+**S-01 devam onayı: 2026-11-02** (kullanıcı: "devam edelim"; imalat programının T2 teslimi). İlk sürüm günlük gözlenen kullanım, güncel abonelik/operasyon ve rapor davranışını kapsar. Bu ilk teslim kaydında büyüme, deneme kohortu ve ücretliye dönüşüm kapsam dışındaydı; devam teslimi PLT-59–62 ile aşağıda izlenir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-54 | **Günlük özet:** Türkiye takvim gününde başarılı giriş ve izin listesindeki başarılı HTTP modül işlem kayıtları sayılır. Destek, sistem kimlikleri, salt okumalar ve isimli otomasyon kayıtları dahil edilmez. Firma/gün özeti ve özel tekil sayım izleri aynı transaction'da gün işaretçisiyle yazılır; tekrar üretim toplamları artırmaz. | Y |
+| PLT-55 | **Dönemsel tekil sayım ve kapsam:** en çok 93 günlük tarih aralığı, eşit uzunlukta önceki dönem, paket/firma filtresi. Aynı hesap farklı günlerde tekrar sayılmaz. Eksik gün/sürüm veya bilinmeyen tarihsel paket, dönem toplamında sıfır yerine eksiklik üretir. Geçmiş gün bugünkü paketle doldurulmaz; paket günü son kaydedilen ölçüme bağlıdır. | Y |
+| PLT-56 | **Güncel abonelik ve operasyon:** mevcut plan dağılımı, aktif/deneme/askı/iptal durumları, gecikme, yedi günlük yenilemeler, paket talepleri, bağlantı hataları ve son yedi takvim günündeki başarısız ödeme denemesi. Tarihsel kullanım aralığından ayrı gösterilir; eski ödeme raporunun parasal toplamları yeniden hesaplanmaz. | Y |
+| PLT-57 | **Worker ve yeniden hesaplama:** yalnız worker ve platform bağlantısı varken açılışta ve 10 dakikada bir çalışır. Son yedi gündeki boşlukları, bugün ve dünü işler. Yönetici en çok 31 günü yeniden hesaplar; başlangıç öncesi ve gelecek günler reddedilir. Gün kilidi doluysa tamamlandı denmez; başka hesaplamanın sürdüğü açıklanır. | Y |
+| PLT-58 | **İstatistik ekranı:** `/platform/istatistikler`, URL'de filtreler, erişilebilir günlük grafik ve tablo alternatifi, aynı veri kümesinden modül/firma ayrıntıları ve kararlı sayfalama. Bugün veya eksik ölçüm için yanıltıcı yüzde üretilmez. Yalnız yönetici erişir; ham tenant içeriği ve tekil kullanıcı izleri API'ye çıkmaz. | Y |
+
+#### Büyüme ve deneme dönüşümü — PLT-59…62
+
+**S-01 devam onayı: 2026-11-02** (kullanıcı: "devam edelim"; T2 / IS-02). [Ölçüm sözlüğü ve teslim kaydı](PLATFORM-BUYUME-VE-DENEME-DONUSUMU-2026-11-02.md).
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-59 | **Yaşam geçmişi:** firma kayıt/silme, abonelik paket/durum geçişi ve pozitif abonelik ödemesi kaynak transaction'ıyla birlikte saklanır. Başlangıç fotoğrafı yeni firma/deneme sayılmaz; bilinmeyen geçmiş uydurulmaz. Salt yenileme ve tekrar ödeme sayaçları çoğaltmaz. | Y |
+| PLT-60 | **Büyüme kapsamı:** dönem başı/sonu firma, yeni/silinen firma, net değişim ve iptale geçen farklı firma; eşit önceki dönem. İptal firma silinmesi değildir. Paket filtresi her dönemin sonundaki paketten sabit firma kümesi seçer; silinen firmada son bilinen paket kullanılır. | Y |
+| PLT-61 | **14 günlük kohort:** ölçüm sonrası kaydedilmiş yeni firmanın ilk denemesi; deneme öncesi pozitif ödemesi olanlar hariç. İlk 14 günde pozitif abonelik ödemesi dönüşümdür; iade ilk ödeme olayını geri almaz. Payda 14 günü dolan, pay bunlardan dönüşen firmadır; bekleyenler ve sıfır payda açıkça gösterilir. Mevcut/bilinmeyen deneme geçmişi oranı şişirmez. | Y |
+| PLT-62 | **Rapor güvenilirliği:** kesin ölçüm başlangıcı ve gözlem anı görünür; başlangıç öncesine uzanan dönemde değerler null, bugün için yüzde yoktur. Türkiye gün sınırları ve aynı milisaniyedeki olay sırası korunur. Ham yaşam/ödeme geçmişi DB rollerine ve API'ye açılmaz; yalnız yönetici toplamlara erişir. | Y |
+
+#### Kullanıma başlama ve bekleyen işler — PLT-63…66
+
+**S-01 devam onayı: 2026-11-02** (kullanıcı: "devam edelim"; T2 / IS-03–05). [Teslim ve sınıflandırma sözlüğü](PLATFORM-KULLANIMA-BASLAMA-VE-BEKLEYEN-ISLER-2026-11-02.md).
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-63 | **Gözlenen kullanıma başlama:** etkinliği gözlenen, tam gözlemli yeni firmada etkinlik kaydı olmayan ve geçmişi yetersiz sınıfları. Kayıt gününden kesime kadar her geçerli günlük işaretçi ve firma özeti yoksa negatif sonuca varılmaz. Başlangıç fotoğrafındaki/eski firma hiç başlamayan sayılmaz; pozitif etkinlik gözlenmişse eksik diğer günler bunu silmez. | Y |
+| PLT-64 | **Başlama kapsamı:** bitiş tarihinde kapanmış son Türkiye gününe kadar, başlangıç tarihinden bağımsız gözlem; o gün mevcut firma ve o gün sonundaki paket. Ölçüm öncesi kesimde toplam null; sınıf kartı aynı kaynaktan kararlı sayfalı firma listesini açar. | Y |
+| PLT-65 | **Bekleyen operasyon:** firma bağlı açık/devam eden platform görevleri, bekliyor/hata/kesinleşmiş abonelik faturaları ve bekliyor/hata iade muhasebeleştirmesi canlı sayılır. Fatura ödeyen firmaya aittir; hata toplamın alt kümesidir. E-belge kuyruğu ayrı ekrana bağlıdır, kapsamına dahil olduğu iddia edilmez. | Y |
+| PLT-66 | **Tutarlı ayrıntı ve erişim:** canlı paket/firma filtresi, iş türünden aynı kaynaktaki firma tablosuna geçiş; mevcut firma/görev çalışma alanları bağlantıları. Sınıf ve operasyon sayfaları bağımsız, genel kapsam değişiminde ikisi de sıfırlanır. Ham iş içeriği ve ödeme/kullanıcı kimlikleri rapora taşınmaz; yalnız yönetici erişir. | Y |
+| PLT-67 | **Ödeme kapsam uzlaştırması:** istatistik ve sorunlu ödeme raporu aynı kaynaktan, kapsayıcı Türkiye günleri, güncel paket ve firma kapsamıyla başarısız/sonuçlanmamış deneme sayar. Bağlantı filtreleri taşır; tam toplam ve kararlı 50 kayıtlık sayfalama vardır. Test/canlı ortam ve canlı kart kapsamı açıklanır; istatistik ham ödeme ayrıntısı içermez. | Y |
+
+#### Tarihsel operasyon gözlemleri — PLT-68…70
+
+**Devam onayı: 2026-11-03** (kullanıcı: “devam edelim”; T2 / IS-04–05). [Ölçüm sözleşmesi ve teslim kaydı](PLATFORM-TARIHSEL-OPERASYON-EGILIMLERI-2026-11-03.md).
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-68 | **Sayısal operasyon gözlemi:** worker güncel abonelik, gecikme, yaklaşan yenileme, bağlantı hatası ve bekleyen görev/fatura/iade sayılarını firma/gün başına son başarılı gözlem olarak saklar. Yalnız bugünü yazar; geçmişi bugünkü durumla doldurmaz. Gözlem anı ve gün sonu kesinliği taşımadığı görünür. | Y |
+| PLT-69 | **Tarihsel kapsam ve karşılaştırma:** tarih/paket/firma aynı gözlemden seçilir; iş kapanışı, paket değişimi ve firma silinmesi geçmişi değiştirmez. Günlük tablo ve firma ayrıntısı aynı kaynaktan gelir; günler toplanmaz. Eşit dönemlerin son gözlemleri karşılaştırılır; eksik gün null, gerçek boş kapsam sıfır, bugün için yüzde yoktur. | Y |
+| PLT-70 | **Atomiklik ve erişim:** eşzamanlı gözlem transaction kilidiyle korunur; firma satırları ve gün işaretçisi birlikte yazılır. Eksik firma satırı veya eski sürüm geçersiz gözlem üretir. Tarihsel gün ve sayfa URL'de bağımsız korunur; ham iş/kullanıcı/ödeme içeriği saklanmaz, tabloya doğrudan erişim kapalıdır ve rapor yalnız yöneticiye açıktır. | Y |
+
+#### Paket tanımı ve sürüm kataloğu — PLT-71…74
+
+**Devam onayı: 2026-11-03** (kullanıcı: “devam edelim”; T3 / PK-01 tanım-sürüm bölümü). [Teslim ve ticari geçiş kapsamı](PLATFORM-PAKET-KATALOGU-ILK-TESLIM-2026-11-03.md).
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-71 | **Paket tanımı:** benzersiz ve değişmez kod, ad/açıklama, düz metin özellik listesi ve katalog sırası; mevcut üç tanım ilk yayın sürümüne aktarılır. v1 eski Profesyonel eşlemesidir; ayrı paket yapılamaz. | Y |
+| PLT-72 | **Sürüm yaşam döngüsü:** paket başına tek taslak, revizyon kontrollü kayıt, önizlemeli yayın ve arşiv. Yayınlanan içerik DB'de de değiştirilemez; yayın/arşivden ardışık yeni taslak açılır. Fiziksel silme yoktur. | Y |
+| PLT-73 | **Yetki ve denetim:** yalnız yönetici; yazma anında aktif rol tekrar doğrulanır. Paket kilidiyle yarışlar korunur, değişiklik ve denetim atomiktir; kiracı DB rolü katalog verisini alamaz. Liste ve sürümler sayfalı, URL dönüşü korunur; çakışmada form kaybolmaz. | Y |
+| PLT-74 | **Ticari sınır:** bu teslim katalog tanımıdır; fiyat, satışa açıklık, kota ve abonelik ataması kataloğa bağlı değildir. Yayın/arşiv eski abonelik, ödeme veya limitleri değiştirmez. Satışa açma ancak ticari tüketiciler aynı sürüme bağlanıp eski koşullar uzlaştırıldığında uygulanır. | Y |
+
+#### Paket sürüm fiyatları — PLT-75…78
+
+**Devam onayı: 2026-11-03** (kullanıcı: “devam edelim”; PK-02 hesaplama ve sürüm fiyatı bölümü). [Sözleşme ve teslim sınırı](PLATFORM-PAKET-FIYAT-SOZLESMESI-2026-11-03.md). Abonelik/ödeme sürüm bağlantısı ve PK-09 geçişi bu teslimin dışındadır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-75 | **Dönem fiyatı sözleşmesi:** TRY ve KDV hariç 1/3/6/12 aylık toplam bedeller; ondalık metin, Decimal ve yarım kuruş yukarı vergi yuvarlama. Tanımlanmayan dönemden fiyat türetilmez; mevcut sabit plan tutarları korunur. | Y |
+| PLT-76 | **Sürüm fiyat kaydı:** taslakta isteğe bağlı fiyat sözleşmesi ve geçerli Türkiye takvim günü; yeni taslağa aynen kopyalama. Yayın önizlemesinde dönem bedeli, KDV ve tarih görünür. Alanı göndermeyen eski istemci mevcut fiyatı silmez; kaldırma açık null gerektirir. | Y |
+| PLT-77 | **Fiyat bütünlüğü:** yayınlanan fiyat DB'de de değiştirilemez; arşivleme bu korumayı aşamaz. Bozuk tarih, dönem, tutar, para birimi ve yinelenen dönem reddedilir. Revizyon, yönetici yetkisi ve atomik önceki/sonraki denetim kaydı korunur. | Y |
+| PLT-78 | **Ticari geçiş sınırı:** eski yayınlara varsayımsal fiyat yazılmaz. Geçerlilik tarihi otomatik abonelik geçişi yapmaz. Abonelik, ödeme, yenileme ve fatura aynı koşullara kontrollü bağlanana kadar katalog fiyatı tahsilat kaynağı olmaz. | Y |
+
+#### Ödeme fiyat fotoğrafı — PLT-79…82
+
+**Devam onayı: 2026-11-03** (kullanıcı: “devam edelim”; PK-02 ödeme/fatura geçiş hazırlığı). [Teslim ve kalan ticari bağlantılar](PLATFORM-ODEME-FIYAT-FOTOGRAFI-2026-11-03.md).
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-79 | **Ödeme koşullarını saklama:** yeni panel/e-posta/otomatik girişim mevcut sabit planın kod/adını, para birimini, oranını, dönemini ve kesin tutarlarını şema sürümlü fotoğrafa yazar. Başarılı ödeme aynı fotoğrafı atomik olarak devralır; tekrar bildirim mali etkiyi çoğaltmaz. | Y |
+| PLT-80 | **Fatura kaynağı:** işçi ödeme satırını ödeyen kiracının RLS bağlamında okur, fotoğrafı kayıtla karşılaştırır ve fatura ad/matrah/oranını buradan alır. Güncel plan değişikliği başlamış ödemenin faturasını değiştirmez; bozuk fotoğrafta güncel koşullara düşülmez. | Y |
+| PLT-81 | **Değiştirilemez mali veri:** fotoğraf, kimlik, dönem ve bağlı tutarlar DB'de korunur; girişimin plan kodu değişmez. İade kilidi ve sonuçlanma gibi operasyon alanları çalışır. Kiracı başka firmanın fotoğrafını göremez. | Y |
+| PLT-82 | **Geçiş sınırı:** eski kayıtlar ve elle ödemeler için null davranışı korunur; geçmiş fotoğrafı tahmin edilmez. Kaynak `eski_sabit`tir; katalog sürümü ataması yapılmış sayılmaz. Abonelik sürüm bağlantısı ve PK-09 uzlaştırması ayrı tamamlanır. | Y |
+
+#### Abonelik-katalog bağı ve eski koşullar — PLT-83…86
+
+**Devam onayı: 2026-11-03** (kullanıcı: “devam edelim”; PK-09 ve PK-02 tüketici bağlantısı). [Teslim, geçiş provası ve kalan ticari kapsam](PLATFORM-ABONELIK-KATALOG-BAGI-2026-11-03.md).
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-83 | **Korunan sürüm bağı:** bilinen üç plan ve v1 ilk katalog sürümüne, bilinen eski fiyat/limit sözleşmesiyle bağlanır. Eski kod, durum, dönem, meta, iptal ve güncellenme alanları değişmez; yaşam olayı üretilmez. Bilinmeyen plan varsayılmaz. | Y |
+| PLT-84 | **Ortak tüketici kaynağı:** abonelik özeti/limitleri, panel/e-posta seçenekleri, ödeme girişimi ve otomatik yenileme bağlı koşulları okur. Yaklaşan yenileme önizlemesi aynı sözleşmeyi kullanır; fotoğraf şema 2'de kaynak sürüm kimliğini ve gerçek oranı taşır. Şema 1/geçmiş uyumluluğu korunur. | Y |
+| PLT-85 | **Bağ bütünlüğü:** yeni bilinen abonelik transaction içinde bağlanır; farklı plana geçiş bağı yeni eski-plan koşuluna geçirir. Doğrudan bağ/koşul değişimi reddedilir; aynı planda fiyat ataması yalnız PLT-89…92 onay akışından yapılır. v1/Profesyonel kod dönüşümü aynı bağı korur. Katalog fiyat yayını otomatik geçiş oluşturmaz. RLS ve katalog okuma yetkisi sınırları korunur. | Y |
+| PLT-86 | **Geçiş karşılaştırması:** yönetici ekranı/API toplam, bağlı ve bilinmeyen sayılarıyla 25'lik kararlı sayfalama sunar. Bilinmeyenler önde; dört dönem matrah/KDV/toplam ve dört limit karşılaştırılır. Fiyatsızlık ile bilinmeyen veri ayrılır; dönem seçimi/sayfa URL'de korunur. | Y |
+
+#### Katalog fiyat etkisi ilk önizleme — PLT-87…88
+
+Kapsam ve doğrulama: [4 Kasım fiyat etkisi teslimi](PLATFORM-PAKET-FIYAT-ETKISI-2026-11-04.md). Bu ilk adım kontrollü atamayı tamamlamaz.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-87 | **Kayıtlı fiyat karşılaştırması:** yalnız yönetici, yayınlanmış ve fiyatlı hedef sürümü aynı plandaki kayıtlı abonelik koşullarıyla dört dönemde karşılaştırır. Her sözleşmenin KDV oranı kullanılır; Decimal matrah/KDV/toplam farkları negatif olabilir. Eksik dönem fiyatı türetilmez. Eşlenmeyen plan veya bağı olmayan kayıt için fark üretilmez; bozuk koşul reddedilir. | Y |
+| PLT-88 | **Önizleme kapsamı:** hedef sürüm ve abonelikler tutarlı transaction içinde okunur. Tüm aboneliklerin kararlı 25'lik sayfalaması, boş sayfada toplam, dönem/sayfa URL'si ve firma bağlantısı sunulur. Dönem bedeli farkı tahsilat veya uygunluk kararı sayılmaz; geçerlilik tarihi otomatik geçiş başlatmaz. Mevcut koşullar değişmez. | Y |
+
+#### Aynı planda kontrollü fiyat ataması — PLT-89…92
+
+Kapsam ve doğrulama: [4 Kasım kontrollü atama teslimi](PLATFORM-PAKET-KONTROLLU-ATAMA-2026-11-04.md). İleri tarihli uygulama ve paketler arası geçiş kapsamı açıktır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-89 | **Kalıcı etki ve seçim:** yönetici aynı plandaki en çok 25 aktif/deneme aboneliğini neden ve bugünün Türkiye tarihiyle seçer. Hedef yayınlanmış/geçerli/fiyatlı olmalı ve mevcut fiyat dönemlerini korumalıdır. Tam kaynak, hedef koşullar ve 15 dakikalık onay süresi saklanır. Önizleme aboneliği değiştirmez. | Y |
+| PLT-90 | **Ayrı onay ve atomiklik:** onay yalnız kayıt kimliği alır. Güncel yönetici yetkisi, kayıt sahipliği, süre/gün, hedef revizyonu ve kilitlenen tüm kaynak satırlar yeniden doğrulanır. Tek kaynak değişimi tüm atamayı durdurur. Plan/dönem/durum/meta ve limitler korunur; firma başına denetim kaydı uygulamayla aynı transaction içindedir. | Y |
+| PLT-91 | **Tekrar ve DB koruması:** aynı onayın eşzamanlı/tekrar gönderimi ikinci atama veya denetim olayı oluşturmaz. Ayrı eski önizleme değişmiş kaynağa uygulanmaz. Platform rolü atama kaydını doğrudan yazamaz; kiracı rolü okuyamaz/işlev çağıramaz. Bağ değişimi yalnız transaction içinde doğrulanmış atamayla mümkündür. | Y |
+| PLT-92 | **Ticari tüketiciler:** atama koşulları `katalog_atamasi` kaynağıyla okunur; yeni ödeme fotoğrafı hedef sürümü taşır. Yeni girişim/panel/yenileme fiyatı eşittir; başlamış ödeme fotoğrafı korunur. Atama kendisi tahsilat veya ara dönem farkı üretmez. Ağ hatasında aynı onay yeniden denenir; çakışmada seçim/neden korunarak yeni önizleme gerekir. | Y |
+
+#### İleri tarihli ve dönem sonu atama — PLT-93…97
+
+Kapsam ve kanıt: [planlı atama teslimi](PLATFORM-PLANLI-PAKET-ATAMASI-2026-11-04.md). Aynı planda fiyat güncellemesidir; özellik/kota ve paketler arası mali geçişi tamamlamaz.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-93 | **Kesin uygulama zamanı:** ileri tarih yarın ile 366 gün sonrası arasında Türkiye 00.00'dır; dönem sonu tek firmanın mevcut kesin zamanından sunucuda alınır. Hedef fiyat o gün geçerli olmalıdır. Ayrı onay planı kalıcı kaydeder, aboneliği hemen değiştirmez. Firma başına tek bekleyen plan ayrılır. | Y |
+| PLT-94 | **Worker ve yeniden doğrulama:** yalnız worker dakikalık sınırlı tarama yapar. Uygulama öncesi onaylayanın yetkisi, hedef yayın/revizyon/geçerliliği ve tüm kaynak satırlar yeniden doğrulanır. Değişiklikte bütün grup incelemeye alınır; kısmi uygulama yoktur. İki worker tek atama/denetim oluşturur; altyapı hatası rollback ve sonraki deneme gerektirir. | Y |
+| PLT-95 | **İptal ve sonuç listesi:** yönetici planları sayfalı listede durum/neden/firma/zamanıyla görür. Bekleyen veya incelemedeki plan gerekçeyle iptal edilebilir; başka aktif yönetici de iptal edebilir. Tekrar iptal ikinci olay üretmez; uygulanmış plan iptal edilmez. İptal/worker yarışı tek sonuç verir. | Y |
+| PLT-96 | **Ödeme sıralaması:** plan anını aşacak erken otomatik çekim sayaç tüketmeden bekler. Vadesi gelmiş veya incelemedeki plan çözülene kadar yeni ödeme girişimi açılmaz. Abonelik fiyatı okuması ile plan onayı/uygulaması satır kilidiyle sıralanır; DB trigger'ı kuralı korur. Başlamış girişim eski fotoğrafıyla sonuçlanabilir ve kaynağı değiştirmişse plan yeni inceleme ister. | Y |
+| PLT-97 | **Yetki ve takip:** kiracı yalnız kendi bağlamında bekleme bilgisi alır; plan/rezervasyon tablolarına ve iç uygulama işlevlerine erişemez. Platform rolü doğrudan plan tarihi/durumu yazamaz. Plan listesi, inceleme gerekçesi ve URL sayfası masaüstü/mobilde görünür; kaynak fiyat/kota geçmişi saklanır. | Y |
+
+#### Paket modül/kota sözleşmesi ilk teslimi — PLT-98…101
+
+Kapsam ve kanıt: [modül/kota sözleşmesi](PLATFORM-PAKET-KAPSAM-SOZLESMESI-2026-11-04.md). Bu tanım teslimi abonelere erişim/kota uygulamasını tamamlamaz.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-98 | **Açık modül sözleşmesi:** açıklama metninden ayrı, ortak envanterdeki 17 modül kodu ve açık bağımlılıklar saklanır. Boş/tekrarlanan/bilinmeyen modül ve eksik bağımlılık API/DB'de reddedilir. Hesap/abonelik ayarları bu seçimle kapatılamaz; kullanıcı rolü genişlemez. | Y |
+| PLT-99 | **Ölçümü tanımlı ilk kotalar:** kullanıcı/cari/stok/aylık fatura için sabit birim/dönem ve ölçüm kaynağı, tam sayı sınır veya sınırsız ve 1–99 uyarı eşiği kullanılır. 0 ile sınırsız ayrılır. Ölçümü olmayan kota, keyfî birim veya ek ücret kabul edilmez. Aylık sayım oluşturulma zamanıyla Türkiye `[ay başı,sonraki ay başı)` aralığıdır. | Y |
+| PLT-100 | **Sürüm ve eski istemci:** kapsam taslak revizyonuyla kaydedilir, önizleme/geçmişte görünür ve yeni taslağa kopyalanır. Yayından sonra değiştirilemez. Gönderilmeyen alan korunur, açık null taslağı temizler; eski yayın/aboneliklere varsayımsal kapsam yazılmaz. | Y |
+| PLT-101 | **Atama sınırı:** kapsamlı sürüm bugünkü/planlı yalnız fiyat atamasında reddedilir; açık kapsam onayı gerekir. Yayın aboneliğin fiyat/limit/erişimini değiştirmez. | Y |
+| PLT-102 | **Kapsam onayı:** aynı planda modül açılma/kapanma, mevcut kullanım, hedef limit ve fiyat önizlemesi; ayrı onayla şema 2 koşulları bağlanır. Kullanım altı limit reddedilir; kullanım değişen önizleme/plan yeniden onay gerektirir. | Y |
+| PLT-103 | **Ortak erişim:** API, panel, asistan/MCP, ek dosya ve ilgili otomasyonlar bağlı modülleri uygular. Paket rolü genişletmez; yönetici paket sınırını aşmaz; hesap/abonelik kontrolü korunur. | Y |
+| PLT-104 | **Atomik dört kota:** kullanıcı/cari/stok/fatura DB yazımları, toplu ekleme, kopya, etkinleştirme ve rol değişimi ortak abonelik kilidiyle denetlenir. Eşzamanlı ve eski transaction görünümü sınırı aşamaz; sıfır/sınırsız ve Türkiye ayı sözleşmesi korunur. | Y |
+| PLT-105 | **Kota sunumu:** abonelik özeti kayıtlı uyarı eşiğini uygular; dolu kota ve kapalı modül hataları güvenli iş mesajı, serialization çatışması yeniden denenebilir yanıt üretir. Şube/depolama/AI harcaması ve firma istisnaları ayrı açık iştir. | Y |
+| PLT-106 | **Ayrı katalog satışı:** paket varsayılan kapalıdır; satışa açık seçili sürüm yayın geçmişinden ayrıdır. Yeni yayın seçimi değiştirmez. Aynı pakete ait yayınlanmış, fiyat/kapsamı hazır ve fiyat tarihi gelmiş sürüm gerekçe ve ayrı onayla seçilir. Yeni müşteri satış bağlantısının hazır olmadığı ekranda açıklanır. | Y |
+| PLT-107 | **Satış/arşiv güvencesi:** satış ve hedef sürüm revizyonu tekrar doğrulanır; iki yönetici aynı revizyonu tüketemez. Satışa seçili açık sürüm doğrudan SQL ile de arşivlenemez; durdurma/hedef değiştirme gerekir. Eski transaction görünümü kuralı aşamaz. | Y |
+| PLT-108 | **Satış geçmişi:** değişiklik aynı transaction'da yönetici, gerekçe ve önceki/yeni durumla kaydedilir; platform yalnız okuyabilir, kiracı erişemez. Sayfalama ve boş sayfada toplam korunur; mevcut abonelik ve tahsilatlar değiştirilmez. | Y |
+
+Diğer ihtiyaç adayları [ayrı yol haritasında](PLATFORM-KURUMSAL-YONETIM-YOL-HARITASI-2026-10-31.md) korunur; 2 Kasım programında açıkça kapsanan işler yeni programın teslim sırasıyla izlenir.
 
 ## 4. Fonksiyonel Olmayan İsterler
 

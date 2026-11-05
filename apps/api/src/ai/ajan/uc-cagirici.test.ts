@@ -34,6 +34,19 @@ const UC = {
 };
 
 describe("uç çağırıcı (AI-02)", () => {
+  it("yönetici kapalı paket modülünü araç listesinden veya doğrudan çağrıdan açamaz", async () => {
+    const denetleyici = new OrnekDenetleyici();
+    const erisim = { apiYoluKapali: vi.fn().mockResolvedValue(true) };
+    const uc = new UcCagirici({ get: () => denetleyici } as never, new Reflector(), {} as never, erisim as never);
+    const stok = { ...UC.oku, yol: "GET /stok/:id" };
+    await istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: "yonetici", paketModulleri: ["cari"] } }, async () => {
+      expect(uc.yetkiliMi(stok, "yonetici")).toBe(false);
+    });
+    await istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: "yonetici", paketModulleri: ["stok"] } }, async () => {
+      await expect(uc.cagir(stok, ["1"])).rejects.toBeInstanceOf(ForbiddenException);
+      expect(erisim.apiYoluKapali).toHaveBeenCalledWith("t", "/stok/:id");
+    });
+  });
   it("ucun @Roller kuralını ekranla aynı uygular", () => {
     const { uc } = kur();
     expect(uc.yetkiliMi(UC.oku, "depo")).toBe(true);

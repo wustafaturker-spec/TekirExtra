@@ -3,6 +3,7 @@ import { Reflector } from "@nestjs/core";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { baglamAl } from "../core/istek-baglami";
 import { SALT_OKUMA_ANAHTAR } from "./public.decorator";
+import { paketApiYoluKapali } from "@tekirextra/shared";
 
 const YAZMA = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** Salt okunur firmada da yazılabilen yollar: oturum, abonelik (yeniden etkinleştirme/talep), kişisel bildirim, ölçüm. */
@@ -23,9 +24,11 @@ export class AbonelikGuard implements CanActivate {
     const baglam = baglamAl();
     if (!baglam) return true; // @Public ve platform uçları
     const istek = context.switchToHttp().getRequest<{ method: string; path?: string }>();
+    const yol = String(istek.path ?? "").replace(/^\/api\/v\d+/, "");
+    baglam.paketModulleri = await this.erisim.modulleriGetir(baglam.tenantId);
+    if (paketApiYoluKapali(baglam.paketModulleri, yol)) throw new ForbiddenException("Bu modül abonelik paketinizde kapalı.");
     if (!YAZMA.has(istek.method)) return true;
     if (this.reflector.getAllAndOverride<boolean>(SALT_OKUMA_ANAHTAR, [context.getHandler(), context.getClass()])) return true;
-    const yol = String(istek.path ?? "").replace(/^\/api\/v\d+/, "");
     if (ACIK_ONEKLER.some((o) => yol.startsWith(o) || `${yol}/` === o)) return true;
     const e = await this.erisim.getir(baglam.tenantId);
     if (e.kisitli) throw new ForbiddenException(e.neden ?? "Abonelik salt okunur");

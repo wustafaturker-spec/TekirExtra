@@ -8,6 +8,12 @@ const dene = (rol: string, sahipTur: string, kapali?: string[]) =>
   istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: rol as never, ...(kapali ? { ozelRol: { id: "o", kapali } } : {}) } }, () => servis.ekErisiminiDenetle(sahipTur as never, "goruntule"));
 
 describe("ek erişimi sahibin ekranına bağlıdır", () => {
+  it("yönetici kapalı paket modülünün ekine ortak ek yolundan erişemez", () => {
+    istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: "yonetici", paketModulleri: ["cari"] } }, () => {
+      expect(() => servis.ekErisiminiDenetle("fatura", "goruntule")).toThrow(ForbiddenException);
+      expect(() => servis.ekErisiminiDenetle("cari", "goruntule")).not.toThrow();
+    });
+  });
   it.each([["kalite", "fatura"], ["uretim_operatoru", "masraf"], ["ik", "cari"], ["depo", "kasa_banka"], ["satis", "cek_senet"]])("%s, %s ekini göremez", (rol, tur) => {
     expect(() => dene(rol, tur)).toThrow(ForbiddenException);
   });

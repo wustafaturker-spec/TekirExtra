@@ -1,3 +1,4 @@
+import { firmaSayfasi } from "./platform-firma-fixture";
 import { expect, test, type Route } from "@playwright/test";
 
 const firma = (tenantId: string, unvan: string, gecikti: boolean) => ({
@@ -18,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 
 test("firma kartları ve arama birlikte filtreler, mobil yönetim penceresi taşmaz", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [firma("t1", "Örnek Makina A.Ş.", true), firma("t2", "Düzenli Ltd.", false)] }));
+  await page.route("**/api/v1/platform/firmalar/sayfali?*", (route) => firmaSayfasi(route, [firma("t1", "Örnek Makina A.Ş.", true), firma("t2", "Düzenli Ltd.", false)]));
   await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], odemeler: [] } }));
   await page.goto("/platform/firmalar");
   await page.getByRole("button", { name: /Ödemesi geciken/ }).click();
@@ -110,7 +111,7 @@ test("değer geçmişi hatadan sonra yeniden yüklenir, tarih silinince eski kay
 
 test("PLT-27: elle ödeme tutarı kuruşlu metin gider; yanıt kaybında yeniden deneme aynı işlem anahtarını kullanır", async ({ page }) => {
   const govdeler: { tutar: unknown; islemAnahtari: string; aySayisi: number }[] = [];
-  await page.route("**/api/v1/platform/firmalar", (route) => route.fulfill({ json: [firma("t1", "Örnek Makina A.Ş.", false)] }));
+  await page.route("**/api/v1/platform/firmalar/sayfali?*", (route) => firmaSayfasi(route, [firma("t1", "Örnek Makina A.Ş.", false)]));
   await page.route("**/api/v1/platform/firmalar/t1/gecmis", (route) => route.fulfill({ json: { degisiklikler: [], talepler: [], odemeler: [] } }));
   await page.route("**/api/v1/platform/firmalar/t1/odeme", (route) => {
     govdeler.push(route.request().postDataJSON());

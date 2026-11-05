@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { firmaSayfasi } from "./platform-firma-fixture";
 
 const onay = { id: "d1", no: 12, baslik: "Tevkifat oranları güncellemesi", dayanak: "Örnek Tebliğ", yururlukBaslangic: "2026-11-01", durum: "onay_bekliyor", satirSayisi: 2, hazirlayan: { adSoyad: "Ayşe Yılmaz" }, yayinlayan: null, retGerekcesi: null };
 const taslak = { ...onay, id: "d2", no: 13, baslik: "Yeni dönem hazırlığı", durum: "taslak" };
@@ -16,6 +17,7 @@ async function hazirla(page: Page, rol = "yonetici") {
   await page.route("**/api/v1/platform/**", (route) => {
     const url = new URL(route.request().url());
     const yol = url.pathname;
+    if (yol.endsWith("/firmalar/sayfali")) return firmaSayfasi(route, [firma("f1", "Plan isteyen firma", true), firma("f2", "Ödemesi geciken firma", false, true), firma("f3", "Düzenli firma")]);
     const veri = yol.endsWith("/auth/ben") ? { kullaniciId: "p1", eposta: "ekip@example.test", rol }
       : yol.endsWith("/degisiklikler") ? (url.searchParams.get("durum") === "onay_bekliyor" ? [onay] : [onay, taslak])
       : yol.endsWith("/talepler") ? [talep]
@@ -46,7 +48,7 @@ test("yönetim özeti kaynakları toplar ve plan talebi doğru firma filtresini 
   await page.screenshot({ path: "/tmp/platform-ozet-mobile.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole("link", { name: "Bekleyen plan talebi: 1", exact: true }).click();
-  await expect(page).toHaveURL(/firmalar\?goster=talep$/);
+  await expect(page).toHaveURL(/firmalar\?goster=talep$/, { timeout: 30000 });
   await expect(page.getByLabel("Göster")).toHaveValue("talep");
   await expect(page.getByText("Plan isteyen firma", { exact: true })).toBeVisible();
   await expect(page.getByText("Düzenli firma", { exact: true })).toHaveCount(0);

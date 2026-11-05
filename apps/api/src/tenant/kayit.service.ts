@@ -24,6 +24,13 @@ export class KayitService {
     private readonly eposta: EpostaService,
   ) {}
 
+  async acikSatisPaketleri() {
+    return this.prisma.$queryRaw<{ surumId: string; planKodu: string; kosullar: unknown; paketAdi: string; denemeGunSayisi: number }[]>`
+      SELECT p.surum_id AS "surumId",p.plan_kodu AS "planKodu",p.kosullar,p.paket_adi AS "paketAdi",d.gun_sayisi AS "denemeGunSayisi"
+      FROM abonelik_acik_satis_bagi() p JOIN abonelik_acik_satis_deneme_gunleri() d USING (surum_id)
+      ORDER BY p.paket_adi,p.surum_id`;
+  }
+
   async kaydet(girdi: KayitGirdisi): Promise<{ tenantId: string }> {
     const mevcut = await this.prisma.authKimlik.findUnique({
       where: { eposta: girdi.yoneticiEposta },
@@ -34,6 +41,13 @@ export class KayitService {
     const tenantId = randomUUID();
     const userId = randomUUID();
     const parolaHash = await argon2.hash(girdi.parola);
+    const secilebilirler = await this.acikSatisPaketleri();
+    const secilenPaket = girdi.paketSurumId
+      ? secilebilirler.find((p) => p.surumId === girdi.paketSurumId)
+      : undefined;
+    if (girdi.paketSurumId && !secilenPaket) {
+      throw new ConflictException("Seçtiğiniz paket satıştan kalkmış. Sayfayı yenileyip tekrar deneyin.");
+    }
 
     // Firma + ilk yönetici: RLS bağlamı yeni tenant kimliğiyle kurulur;
     // WITH CHECK politikası yalnızca bu kiracıya yazmaya izin verir.
@@ -60,11 +74,19 @@ export class KayitService {
             epostaDogrulandi: true,
           },
         });
+        const simdi = new Date();
+        const denemeBitisi = secilenPaket && secilenPaket.denemeGunSayisi > 0
+          ? new Date(simdi.getTime() + secilenPaket.denemeGunSayisi * 86_400_000) : null;
         await tx.tenantAbonelik.create({
           data: {
             tenantId,
-            planKodu: "v1",
-            durum: "aktif",
+            planKodu: secilenPaket?.planKodu ?? "v1",
+            ...(secilenPaket ? {
+              paketSurumId: secilenPaket.surumId,
+              paketKosullari: secilenPaket.kosullar as Prisma.InputJsonValue,
+            } : {}),
+            durum: denemeBitisi ? "deneme" : "aktif",
+            ...(denemeBitisi ? { donemBaslangici: simdi, donemSonu: denemeBitisi } : {}),
             faturaEpostasi: girdi.yoneticiEposta,
             faturalandirmaUnvani: girdi.unvan,
           },

@@ -16,6 +16,7 @@ describe("KayitService abonelik altyapisi", () => {
       auditLog: { create: vi.fn().mockResolvedValue({}) },
     };
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
       authKimlik: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
       tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)),
       epostaDogrulama: { create: vi.fn().mockResolvedValue({}) },
@@ -37,6 +38,7 @@ describe("KayitService abonelik altyapisi", () => {
     const ihlal = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "6.19.3" });
     const authKimlikCreate = vi.fn();
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
       authKimlik: { findUnique: vi.fn().mockResolvedValue(null), create: authKimlikCreate },
       tenantIslem: vi.fn().mockRejectedValue(ihlal),
       epostaDogrulama: { create: vi.fn() },

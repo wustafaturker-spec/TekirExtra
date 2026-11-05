@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import ExcelJS from "exceljs";
 import { describe, expect, it, vi } from "vitest";
 import type { HamOdemeSatiri } from "./odeme-raporu";
+import { PlatformOdemeRaporuController } from "./platform-odeme-raporu.controller";
 import { PlatformOdemeRaporuService } from "./platform-odeme-raporu.service";
 
 const odeme = (x: Partial<HamOdemeSatiri>): HamOdemeSatiri => ({
@@ -53,10 +54,10 @@ describe("PlatformOdemeRaporuService", () => {
 
   it("PLT-35: yarım deneme 'sonuclanmadi' olur; kart yalnız marka/son 4 ile döner", async () => {
     const { s } = servis({
-      platform_sorunlu_odeme_denemeleri: [
+      platform_sorunlu_odeme_kapsami: [{ veri: { sayilar: { basarisiz: 1, sonuclanmadi: 1 }, toplam: 2, sayfa: 1, sayfaBoyutu: 50, denemeler: [
         { deneme_id: "d1", tenant_id: "t1", unvan: "A ", zaman: new Date(), saglayici: "iyzico", ortam: "test", kaynak: "otomatik", ay_sayisi: 1, toplam: "1198.8", durum: "basarisiz", hata: "Yetersiz bakiye" },
         { deneme_id: "d2", tenant_id: "t2", unvan: "B", zaman: new Date(), saglayici: "paytr", ortam: "canli", kaynak: "eposta", ay_sayisi: 3, toplam: "3596.4", durum: "baslatildi", hata: null },
-      ],
+      ] } }],
       platform_kart_sorunlari: [
         { tenant_id: "t1", unvan: "A", saglayici: "iyzico", son4: "0006", kart_markasi: "MASTER_CARD", otomatik_yenileme: true, ay_sayisi: 1, deneme_sayisi: 2, son_deneme_at: new Date(), son_hata: "Yetersiz bakiye" },
       ],
@@ -108,5 +109,19 @@ describe("SEC-09 CSV formül enjeksiyonu", () => {
     const metin = (await s.disariAktar("2026-11-01", "2026-11-30", {}, "csv")).icerik.toString("utf8");
     expect(metin).toContain(`;"'=HYPERLINK(""http://k.example"",""Tıkla"")";`);
     expect(metin).not.toMatch(/;=HYPERLINK/);
+  });
+});
+
+
+describe("sorunlu ödeme filtre sözleşmesi", () => {
+  it.each([{ firma: "yanlis" }, { plan: "x".repeat(41) }, { durum: "odendi" }, { sayfa: 0 }, { sayfa: 100001 }])("hatalı filtre servise ulaşmaz: %j", (filtre) => {
+    const sorunlu = vi.fn(); const c = new PlatformOdemeRaporuController({ sorunlu } as never);
+    expect(() => c.sorunlu({ baslangic: "2026-10-01", bitis: "2026-10-02", ...filtre })).toThrow();
+    expect(sorunlu).not.toHaveBeenCalled();
+  });
+  it("filtreyi doğrulayarak servise taşır", () => {
+    const sorunlu = vi.fn(); const c = new PlatformOdemeRaporuController({ sorunlu } as never);
+    c.sorunlu({ baslangic: "2026-10-01", bitis: "2026-10-02", plan: " profesyonel ", durum: "basarisiz", sayfa: "2" });
+    expect(sorunlu).toHaveBeenCalledWith("2026-10-01", "2026-10-02", { plan: "profesyonel", durum: "basarisiz", sayfa: 2 });
   });
 });

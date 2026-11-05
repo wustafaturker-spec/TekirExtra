@@ -29,17 +29,17 @@ const servis = new PlatformOdemeRaporuService({ db: platform } as unknown as Pla
 const tenantId = randomUUID();
 const elleId = randomUUID();
 const kartliId = randomUUID();
+const ekipId = randomUUID();
 const unvan = `PLT-32 KABUL ${tenantId.slice(0, 8)}`;
 let kaydeden = "";
 
 beforeAll(async () => {
   await yonetici.$executeRaw`INSERT INTO tenants (id, unvan, vkn, vergi_dairesi, created_at, updated_at) VALUES (${tenantId}::uuid, ${unvan}, ${String(Date.now()).slice(-10)}, 'Test', now(), now())`;
   await yonetici.$executeRaw`INSERT INTO tenant_abonelikleri (id, tenant_id, plan_kodu, durum, donem_sonu, created_at, updated_at) VALUES (gen_random_uuid(), ${tenantId}::uuid, 'profesyonel', 'aktif', now() + interval '5 days', now(), now())`;
-  // Elle ödeme bir platform kullanıcısı ister; var olan ilk kullanıcı kaydeden olur.
-  const [pk] = await yonetici.$queryRaw<{ id: string; ad_soyad: string }[]>`SELECT id, ad_soyad FROM platform_kullanicilari ORDER BY created_at LIMIT 1`;
-  if (!pk) throw new Error("Kabul testi için en az bir platform kullanıcısı gerekli");
-  kaydeden = pk.ad_soyad;
-  await yonetici.$executeRaw`INSERT INTO abonelik_odemeleri (id, tenant_id, ay_sayisi, tutar, yeni_donem_sonu, kaynak, platform_kullanici_id, created_at) VALUES (${elleId}::uuid, ${tenantId}::uuid, 1, 1200.00, '2026-02-15', 'elle', ${pk.id}::uuid, '2026-01-15 09:00')`;
+  // Kendi aktörünü kurar; boş kabul veritabanında da çalışır.
+  kaydeden = "Ödeme raporu kabul yetkilisi";
+  await yonetici.platformKullanici.create({ data: { id: ekipId, eposta: `${ekipId}@kabul.invalid`, adSoyad: kaydeden, parolaHash: "x", totpSecretSifreli: "x", rol: "yonetici" } });
+  await yonetici.$executeRaw`INSERT INTO abonelik_odemeleri (id, tenant_id, ay_sayisi, tutar, yeni_donem_sonu, kaynak, platform_kullanici_id, created_at) VALUES (${elleId}::uuid, ${tenantId}::uuid, 1, 1200.00, '2026-02-15', 'elle', ${ekipId}::uuid, '2026-01-15 09:00')`;
   await yonetici.$executeRaw`INSERT INTO abonelik_odemeleri (id, tenant_id, ay_sayisi, tutar, matrah, kdv, yeni_donem_sonu, kaynak, saglayici, created_at) VALUES (${kartliId}::uuid, ${tenantId}::uuid, 3, 3596.40, 2997.00, 599.40, '2026-05-15', 'saglayici', 'iyzico', '2026-01-20 09:00')`;
   await yonetici.$executeRaw`INSERT INTO abonelik_odeme_denemeleri (id, tenant_id, saglayici, ortam, kaynak, plan_kodu, ay_sayisi, matrah, kdv, toplam, durum, saglayici_token, odeyen_ip, abonelik_odemesi_id, created_at)
     VALUES (gen_random_uuid(), ${tenantId}::uuid, 'iyzico', 'test', 'eposta', 'profesyonel', 3, 2997.00, 599.40, 3596.40, 'odendi', 'GIZLI-TOKEN', '203.0.113.9', ${kartliId}::uuid, '2026-01-20 08:59'),
@@ -51,6 +51,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await yonetici.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}::uuid`;
+  await yonetici.platformKullanici.deleteMany({ where: { id: ekipId } });
   await Promise.all([yonetici.$disconnect(), platform.$disconnect()]);
 });
 

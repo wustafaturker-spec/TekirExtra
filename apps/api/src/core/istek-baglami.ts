@@ -18,6 +18,8 @@ export interface IstekBaglami {
   destek?: { oturumId: string; ad: string; eposta: string };
   /** KLN-20: kullanıcının özel rolü; `rol` şablondur, `kapali` kutular ayrıca kapanır. */
   ozelRol?: { id: string; kapali: string[] };
+  /** İstek başında yüklenen kapsam; araç listesi için. Uç çağrısı güncel DB ile yeniden denetlenir. */
+  paketModulleri?: string[] | null;
 }
 
 /** PLT-10: destek oturumunun kullanıcı kimliği; hiçbir kullanıcıyla eşleşmez. */

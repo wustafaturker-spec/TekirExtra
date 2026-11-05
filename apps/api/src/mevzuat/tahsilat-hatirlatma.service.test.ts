@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PAKET_MODUL_KODLARI } from "@tekirextra/shared";
 
 const posta = vi.hoisted(() => ({ gonderilen: [] as { to: string; subject: string; text: string }[] }));
 vi.mock("nodemailer", () => ({ createTransport: () => ({ sendMail: async (m: { to: string; subject: string; text: string }) => { posta.gonderilen.push(m); } }) }));
@@ -70,5 +71,18 @@ describe("hatırlatmadaki ödeme bağlantısı (PLT-13)", () => {
     expect(baglantiAnahtariDogrula(baglanti.split("/").pop()!, simdi)).toBe(tenantId);
     expect(odemeBaglantisi({ tenant_id: tenantId, plan_kodu: "kurumsal" }, true, simdi)).toBeNull();
     expect(odemeBaglantisi({ tenant_id: tenantId, plan_kodu: "baslangic" }, false, simdi)).toBeNull();
+  });
+
+  it("eski plana eşlenmeyen fiyatlı katalog aboneliğine de ödeme bağlantısı verir", () => {
+    process.env.JWT_SECRET ??= "test-sirri";
+    const tenantId = "3f1c2a4e-1b2c-4d5e-8f90-1234567890ab";
+    const kosullar = {
+      semaSurumu: 2, kaynak: "katalog_atamasi", planKodu: "ozel_paket", planAdi: "Özel Paket",
+      limitler: { kullanici: 5, cari: 100, stok: 200, aylikFatura: 50 },
+      fiyatlandirma: { paraBirimi: "TRY", vergiDahil: false, kdvOrani: "20", donemler: [{ aySayisi: 1, matrah: "100.00" }] },
+      kapsamSozlesmesi: { semaSurumu: 1, moduller: [...PAKET_MODUL_KODLARI], kotalar: { kullanici: { sinir: 5, uyariYuzdesi: 80 }, cari: { sinir: 100, uyariYuzdesi: 80 }, stok: { sinir: 200, uyariYuzdesi: 80 }, aylikFatura: { sinir: 50, uyariYuzdesi: 80 } } },
+    };
+    const baglanti = odemeBaglantisi({ tenant_id: tenantId, plan_kodu: "ozel_paket", paket_surumu_id: "3f1c2a4e-1b2c-4d5e-8f90-1234567890ac", paket_kosullari: kosullar }, true, simdi);
+    expect(baglanti).toMatch(/\/api\/v1\/abonelik-odeme\/baglanti\/[^/]+$/);
   });
 });

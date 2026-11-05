@@ -361,7 +361,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     // PLT-05: askıdaki firmada periyodik tarama atlanır (askı kalkınca sonraki
     // turda yeniden açılır); belge işi kaybolmasın diye ertelenir. Mükellef
     // listesi kiracıdan bağımsızdır, durmaz.
-    if (is.name !== MUKELLEF_SENKRON_ISI && (await this.erisim?.otomasyonDurdu(is.data.tenantId))) {
+    if ((is.name !== MUKELLEF_SENKRON_ISI && (await this.erisim?.otomasyonDurdu(is.data.tenantId, "ebelge"))) || (is.name === MUKELLEF_SENKRON_ISI && await this.erisim?.modulKapali(is.data.tenantId, "ebelge"))) {
       if (PERIYODIK_ISLER.has(is.name)) {
         this.logger.warn(JSON.stringify({ event: "ebelge_kiraci_isi_atlandi", jobId: is.id, tenantId: is.data.tenantId, type: is.name, neden: "firma askıda" }));
         return { atlandi: true, neden: "firma askıda" };
@@ -510,7 +510,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
 
       for (const tenant of tenantlar) {
         // PLT-05: askıdaki firmada gelen tarama ve durum sorguları açılmaz.
-        if (await this.erisim?.otomasyonDurdu(tenant.id)) continue;
+        if (await this.erisim?.otomasyonDurdu(tenant.id, "ebelge")) continue;
         const tenantUygulamalari = uygulamalar.get(tenant.id);
         await baglamlaCalistir({ tenantId: tenant.id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, async () => {
           // Gelen belge taraması kursörle ilerler; aralık dolmadan yeni iş

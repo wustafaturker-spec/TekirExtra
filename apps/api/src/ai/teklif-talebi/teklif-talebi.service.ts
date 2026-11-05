@@ -559,7 +559,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
       }
       // Onay bekleyen cariler özellik kapalıyken de izlenir (elle başlatılan talepler).
       // PLT-05: askıdaki firmada e-postadan teklif hattı (yapay zekâ dahil) durur.
-      const durdu = async (tenantId: string) => Boolean(await this.erisim?.otomasyonDurdu(tenantId));
+      const durdu = async (tenantId: string) => Boolean(await this.erisim?.otomasyonDurdu(tenantId, ["yapay_zeka", "satis"]));
       for (const tenantId of bekleyenKiracilar) {
         if (await durdu(tenantId)) continue;
         try { await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.bekleyenCarileriIzle()); }

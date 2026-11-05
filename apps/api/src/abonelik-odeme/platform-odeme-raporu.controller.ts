@@ -7,6 +7,11 @@ import { PlatformOdemeRaporuService } from "./platform-odeme-raporu.service";
 
 const gun = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG biçiminde olmalı");
 const aralikSemasi = z.object({ baslangic: gun, bitis: gun });
+const sorunluSemasi = aralikSemasi.extend({
+  plan: z.string().trim().max(40).default(""), firma: z.uuid().optional(),
+  durum: z.enum(["hepsi", "basarisiz", "sonuclanmadi"]).default("hepsi"),
+  sayfa: z.coerce.number().int().min(1).max(100000).default(1),
+});
 const suzgecSemasi = aralikSemasi.extend({
   arama: z.string().trim().max(100).optional().transform((v) => v || undefined),
   kanal: z.enum(ODEME_KANALLARI).optional(),
@@ -45,8 +50,8 @@ export class PlatformOdemeRaporuController {
 
   @Get("sorunlu")
   sorunlu(@Query() sorgu: unknown) {
-    const { baslangic, bitis } = coz(aralikSemasi, sorgu);
-    return this.rapor.sorunlu(baslangic, bitis);
+    const { baslangic, bitis, ...filtre } = coz(sorunluSemasi, sorgu);
+    return this.rapor.sorunlu(baslangic, bitis, filtre);
   }
 
   @Get("yaklasan")

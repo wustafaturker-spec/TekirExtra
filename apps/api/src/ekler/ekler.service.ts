@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import type { EkSahipTur, Prisma } from "@prisma/client";
@@ -47,6 +48,13 @@ export const EK_ERISIMI: Record<EkSahipTur, { roller: readonly string[] | null; 
 
 @Injectable()
 export class EklerService {
+  private readonly logger = new Logger(EklerService.name);
+  private yuklemeHatasi(hata: unknown): never {
+    const m = (hata as { meta?: { message?: string }; message?: string }).meta?.message ?? (hata as Error).message ?? "";
+    if (m.includes("ek_depolama_kota_dolu")) throw new BadRequestException("Depolama kotası dolu. Dosya silin veya depolama sınırını artırın.");
+    if (m.includes("ek_rezervasyon_suresi_doldu")) throw new BadRequestException("Yükleme süresi doldu. Dosyayı yeniden yükleyin.");
+    throw hata;
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly depo: DepoService,
@@ -58,8 +66,10 @@ export class EklerService {
    * uçlarında yetkilidir.
    */
   ekErisiminiDenetle(sahipTur: EkSahipTur, islem: YetkiIslemi): void {
-    const { rol, ozelRol } = aktifBaglam();
+    const { rol, ozelRol, paketModulleri } = aktifBaglam();
     const kural = EK_ERISIMI[sahipTur];
+    const paketModulu = kural.modul ?? (sahipTur === "ai_sohbet" ? "yapay_zeka" : null);
+    if (paketModulu && paketModulleri && !paketModulleri.includes(paketModulu)) throw new ForbiddenException("Bu ekin modülü abonelik paketinizde kapalı.");
     if (kural.roller && rol !== "yonetici" && !kural.roller.includes(rol)) throw new ForbiddenException("Bu eke erişim yetkiniz yok");
     if (kural.modul && ozelRol?.kapali.includes(yetkiAnahtari(kural.modul, islem))) throw new ForbiddenException("Rolünüzde bu işlem kapalı");
   }
@@ -127,6 +137,9 @@ export class EklerService {
   }
 
   async yukle(sahipTur: EkSahipTur, sahipId: string, dosya: YuklenenDosya) {
+    if (!Number.isSafeInteger(dosya.size) || dosya.size < 1 || dosya.size !== dosya.buffer.length) {
+      throw new BadRequestException("Dosya boyutu içerikle eşleşmiyor");
+    }
     if (dosya.size > MAKS_BOYUT) {
       throw new BadRequestException("Dosya 10 MB sınırını aşıyor");
     }
@@ -136,12 +149,17 @@ export class EklerService {
     const guvenliAd = dosya.originalname.replace(/[^\w.\-çğıöşüÇĞİÖŞÜ ]/g, "_");
     const depoAnahtari = `${tenantId}/${sahipTur}/${sahipId}/${randomUUID()}-${guvenliAd}`;
 
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const rezervasyonId = randomUUID();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.sahipDogrula(tx, sahipTur, sahipId);
-      // Önce depoya yaz: DB kaydı başarısızsa artık nesne sahipsiz kalır ama
-      // veri kaybolmaz; ters sırada meta veri gövdesiz kalırdı.
+      await tx.$queryRaw`SELECT ek_yukleme_ayir(${rezervasyonId}::uuid,${dosya.size}::bigint,${depoAnahtari})`;
+    }).catch((hata: unknown) => this.yuklemeHatasi(hata));
+    try {
+      // Network I/O does not keep a database transaction open.
       await this.depo.yukle(depoAnahtari, dosya.buffer, mime);
-      return tx.ek.create({
+      return await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await this.sahipDogrula(tx, sahipTur, sahipId);
+        const ek = await tx.ek.create({
         data: {
           tenantId,
           sahipTur,
@@ -152,8 +170,32 @@ export class EklerService {
           depoAnahtari,
           yukleyenUserId: userId,
         },
+        });
+        await tx.$queryRaw`SELECT ek_yukleme_kapat(${rezervasyonId}::uuid,true)`;
+        return ek;
       });
-    });
+    } catch (hata) {
+      // A lost commit response must never delete an object whose metadata did commit.
+      let kayit;
+      try {
+        kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
+          await tx.$queryRaw`SELECT id FROM tenant_abonelikleri WHERE tenant_id=${tenantId}::uuid FOR UPDATE`;
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ek-hacmi:${tenantId}`},0))::text`;
+          return tx.ek.findUnique({ where: { depoAnahtari } });
+        });
+      }
+      catch {
+        this.logger.warn(`Ek yükleme sonucu doğrulanamadı; nesne korundu, rezervasyon ${rezervasyonId}`);
+        throw hata;
+      }
+      if (kayit) return kayit;
+      const temizlik = await Promise.allSettled([
+        this.prisma.tenantIslem(tenantId, (tx) => tx.$queryRaw`SELECT ek_yukleme_kapat(${rezervasyonId}::uuid,false)`),
+        this.depo.sil(depoAnahtari),
+      ]);
+      if (temizlik.some((r) => r.status === "rejected")) this.logger.warn(`Ek yükleme temizliği tamamlanamadı; rezervasyon ${rezervasyonId}`);
+      this.yuklemeHatasi(hata);
+    }
   }
 
   async listele(sahipTur: EkSahipTur, sahipId: string) {
