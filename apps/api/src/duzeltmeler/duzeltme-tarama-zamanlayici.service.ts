@@ -1,20 +1,24 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
-import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { DuzeltmelerService } from "./duzeltmeler.service";
 import { nabizla } from "../core/nabiz/nabiz";
+import { firmaListesiAl, taranacakFirmalar } from "../core/aktif-firmalar";
 
 const ON_BES_DAKIKA_MS = 15 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
-/** Worker içinde tüm tenantların düzeltme dedektörlerini en geç 15 dakikada bir çalıştırır. */
+/**
+ * Worker içinde düzeltme dedektörlerini çalıştırır: aktif firmalarda en geç 15
+ * dakikada bir, pasif firmalarda saatte bir (BLD-11 kuralı, `core/aktif-firmalar`).
+ */
 @Injectable()
 export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DuzeltmeTaramaZamanlayiciService.name);
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
+  private aralikMs = ON_BES_DAKIKA_MS;
 
   constructor(private readonly duzeltmeler: DuzeltmelerService, private readonly metrics: MetricsService, @Optional() private readonly erisim?: AbonelikErisimService) {}
 
@@ -23,18 +27,15 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     setImmediate(() => void nabizla("duzeltme-tarama-zamanlayici", () => this.calistir()));
     const ayar = Number(process.env.DUZELTME_TARAMA_INTERVAL_MS || ON_BES_DAKIKA_MS);
     const aralik = Math.min(Number.isFinite(ayar) && ayar > 0 ? ayar : ON_BES_DAKIKA_MS, ON_BES_DAKIKA_MS);
+    this.aralikMs = aralik;
     this.zamanlayici = setInterval(() => void nabizla("duzeltme-tarama-zamanlayici", () => this.calistir()), aralik);
     this.logger.log(JSON.stringify({ event: "correction_scan_scheduled", intervalMs: aralik }));
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }
 
-  private async tenantIdleriAl(): Promise<string[]> {
-    const yonetimUrl = process.env.DATABASE_URL_MIGRATE;
-    if (!yonetimUrl) throw new Error("Otomatik düzeltme taraması için DATABASE_URL_MIGRATE tanımlı olmalıdır");
-    const yonetim = new PrismaClient({ datasourceUrl: yonetimUrl });
-    try { return (await yonetim.tenant.findMany({ select: { id: true } })).map((tenant) => tenant.id); }
-    finally { await yonetim.$disconnect(); }
+  private tenantIdleriAl(): Promise<{ tumu: string[]; aktifler: Set<string> }> {
+    return firmaListesiAl("Otomatik düzeltme taraması");
   }
 
   async calistir(): Promise<void> {
@@ -42,7 +43,10 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     this.calisiyor = true;
     const baslangic = Date.now();
     try {
-      let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0; const tenantIdleri = await this.tenantIdleriAl();
+      let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0;
+      const firmalar = await this.tenantIdleriAl();
+      const secim = taranacakFirmalar(firmalar.tumu, firmalar.aktifler, this.aralikMs);
+      const tenantIdleri = secim.taranacak;
       for (const tenantId of tenantIdleri) {
         // PLT-05: askıdaki firmada düzeltme kaydı üretilmez.
         if (await this.erisim?.otomasyonDurdu(tenantId, "donem_kapatma")) continue;
@@ -64,7 +68,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
       this.metrics.set("correction_scan_tenants", tenantIdleri.length);
       this.metrics.set("correction_scan_failed_tenants", basarisizTenant);
       if (!basarisizTenant) this.metrics.set("correction_scan_last_success_timestamp_seconds", Math.floor(Date.now() / 1000));
-      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
+      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
     } catch (hata) {
       this.metrics.increment("correction_scan_runs_total", { result: "failed" });
       this.logger.error(JSON.stringify({ event: "correction_scan_failed", durationMs: Date.now() - baslangic, error: hata instanceof Error ? hata.message : String(hata) }), hata instanceof Error ? hata.stack : undefined);

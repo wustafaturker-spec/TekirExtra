@@ -35,7 +35,7 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
   it("başarılı taramanın bulgu, çözüm ve son başarı metriklerini yayınlar", async () => {
     const duzeltmeler = { tara: vi.fn().mockResolvedValue({ bulunan: 3, otomatikCozulen: 1 }) };
     const service = new DuzeltmeTaramaZamanlayiciService(duzeltmeler as never, metrics as never);
-    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue(["tenant-1"]);
+    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue({ tumu: ["tenant-1"], aktifler: new Set(["tenant-1"]) });
 
     await service.calistir();
 
@@ -48,7 +48,7 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
   it("bir tenant başarısız olduğunda sonraki tenantı taramaya devam eder", async () => {
     const duzeltmeler = { tara: vi.fn().mockRejectedValueOnce(new Error("tenant bozuk")).mockResolvedValueOnce({ bulunan: 2, otomatikCozulen: 0 }) };
     const service = new DuzeltmeTaramaZamanlayiciService(duzeltmeler as never, metrics as never);
-    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue(["tenant-1", "tenant-2"]);
+    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue({ tumu: ["tenant-1", "tenant-2"], aktifler: new Set(["tenant-1", "tenant-2"]) });
 
     await service.calistir();
 
@@ -56,5 +56,24 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
     expect(metrics.increment).toHaveBeenCalledWith("correction_scan_runs_total", { result: "partial" });
     expect(metrics.set).toHaveBeenCalledWith("correction_scan_failed_tenants", 1);
     expect(metrics.set).not.toHaveBeenCalledWith("correction_scan_last_success_timestamp_seconds", expect.any(Number));
+  });
+  it("BLD-11: pasif firmayı yalnız kendi dilimindeki çalışmada tarar (saatte bir), aktifi her çalışmada", async () => {
+    const duzeltmeler = { tara: vi.fn().mockResolvedValue({ bulunan: 0, otomatikCozulen: 0 }) };
+    const service = new DuzeltmeTaramaZamanlayiciService(duzeltmeler as never, metrics as never);
+    const tumu = Array.from({ length: 40 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue({ tumu, aktifler: new Set([tumu[0]]) });
+    vi.useFakeTimers();
+    const sayac = new Map<string, number>();
+    duzeltmeler.tara.mockImplementation(async () => ({ bulunan: 0, otomatikCozulen: 0 }));
+    const t0 = Date.UTC(2026, 10, 6, 10, 0);
+    for (let i = 0; i < 4; i++) {
+      vi.setSystemTime(t0 + i * 15 * 60 * 1000);
+      const once = duzeltmeler.tara.mock.calls.length;
+      await service.calistir();
+      sayac.set(String(i), duzeltmeler.tara.mock.calls.length - once);
+    }
+    const toplam = [...sayac.values()].reduce((a, b) => a + b, 0);
+    // Aktif firma 4 kez, 39 pasif firma birer kez: toplam 43 tarama.
+    expect(toplam).toBe(4 + 39);
   });
 });

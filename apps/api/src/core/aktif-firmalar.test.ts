@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firmaDilimi, taranacakFirmalar } from "./bildirim-zamanlayici.service";
+import { firmaDilimi, taranacakFirmalar } from "./aktif-firmalar";
 
 const BES_DK = 5 * 60 * 1000;
 const idler = Array.from({ length: 1200 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
