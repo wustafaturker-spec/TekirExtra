@@ -93,6 +93,12 @@ Aşağıdaki kodlar bu belgenin iş takip anahtarlarıdır; mevcut PLT ister num
 
 ### T4 — Duyuru sistemi
 
+5 Kasım 2026: DY-01'in taslak yönetimi ilk teslimi uygulandı: `/platform/duyurular`, kalıcı düzenleme adresi, düz metin içerik, güvenli buton bağlantısı, sunucuda doğrulanan önizleme, sürüm çakışması koruması, arşiv ve değiştirilemeyen geçmiş kayıtları. [Teslim kapsamı](PLATFORM-DUYURU-TASLAKLARI-2026-11-05.md). Biçimlendirilmiş içerik/görsel, hedefleme, yayın ve tenant gösterimi henüz uygulanmadı; DY-01 ve T4 tamamlandı sayılmaz.
+
+5 Kasım devam teslimi: [hedefleme ve yayın ilk sürümü](PLATFORM-DUYURU-HEDEF-VE-YAYIN-2026-11-05.md) eklendi. Firma dahil/hariç, paket, abonelik ve rol hedefi; sabit alıcı politikası; sayılı ve süreli önizleme/onay; anlık/ileri tarihli yayın, durdurma; tenant duyuru merkezi/geçmişi; benzersiz gösterim/okudum/tıklama ve firma raporu çalışır. Önceki paragraftaki hedef/yayın/tenant gösteriminin yapılmadığı bilgisi taslak tesliminin tarihsel durumudur. Biçimlendirilmiş içerik/görsel, diğer gösterim biçimleri, tekrar/erteleme, popup sırası, firma detayı entegrasyonu ve pilot kalan kapsamdır. T4 bütünü kapanmadı.
+
+5 Kasım devamı: yayın önizlemesi duyuru merkezi, panel üst bandı, popup ve modül içi kart yerleşimlerini seçer. Popup önceliği, normal/kritik etiketi, sunucuda saklanan kapatma/erteleme ve tekli sıralı modal çalışır. Otomatik yerleşimlerde her görüntüleme/bir kez/günde bir/haftada bir tekrar politikası vardır. Editör biçimlendirme ve imzalı süreli URL kullanan görsel yüklemeyi destekler. [Teknik kapsam ve migration durumu](PLATFORM-DUYURU-HEDEF-VE-YAYIN-2026-11-05.md). 8 migration yerel pilota uygulandı, API/web ve dört pilot servisi healthy. Gerçek kullanıcı oturumlu kabul ve uzak üretim yayını açık.
+
 - [ ] **DY-01 — Duyuru editörü.** Başlık, güvenli biçimlendirilmiş içerik, görsel, buton metni/bağlantısı; taslak, önizleme, planlı yayın, yayın, arşiv ve durdurma. Kabul: zararlı HTML/URL reddedilir; yüklenen dosyalar doğrulanır; yayın geçmişi saklanır.
 - [ ] **DY-02 — Gösterim biçimleri.** Duyuru merkezi, üst bant, modal/popup ve sayfa içi kart; masaüstü/mobil önizleme. Kabul: klavye erişimi, odak yönetimi ve ekran okuyucu etiketleri çalışır; modal kapandığında odak geri döner.
 - [ ] **DY-03 — Hedefleme.** Tüm firmalar, seçili firmalar, paket, abonelik durumu ve kullanıcı rolü; dahil/hariç kuralları. Kabul: yayın öncesinde hedef firma/kullanıcı sayısı görünür; hedef dışı kullanıcı doğrudan API'den içeriği alamaz. Yeni uygun firmaların yayına katılım politikası açıkça seçilir.

@@ -69,6 +69,23 @@ export async function platformApi<T>(yol: string, secenek: RequestInit = {}): Pr
   return govde as T;
 }
 
+export async function platformDosyaYukle<T>(yol: string, dosya: File): Promise<T> {
+  const form = new FormData();
+  form.set("dosya", dosya);
+  const yanit = await fetch(`${API_URL}${yol}`, { method: "POST", credentials: "include", headers: CSRF_BASLIGI, body: form });
+  if (yanit.status === 401) {
+    platformTokenYaz(null);
+    if (typeof window !== "undefined") window.location.href = "/platform/giris";
+    throw new PlatformApiHata("Oturum süresi doldu", 401);
+  }
+  const govde = await yanit.json().catch(() => null) as { message?: string | string[] } | T | null;
+  if (!yanit.ok) {
+    const mesaj = (govde as { message?: string | string[] } | null)?.message;
+    throw new PlatformApiHata(Array.isArray(mesaj) ? mesaj.join("; ") : mesaj ?? "Görsel yüklenemedi", yanit.status);
+  }
+  return govde as T;
+}
+
 /** Dosya indirir (PLT-37): yanıtı blob olarak alır ve tarayıcıda kaydettirir. */
 export async function platformIndir(yol: string, varsayilanAd: string): Promise<void> {
   const yanit = await fetch(`${API_URL}${yol}`, { credentials: "include", headers: CSRF_BASLIGI });

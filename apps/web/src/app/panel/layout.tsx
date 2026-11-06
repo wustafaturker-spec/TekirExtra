@@ -10,6 +10,9 @@ import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
 import { AsistanPenceresi } from "@/components/asistan-penceresi";
+import { TenantDuyuruUstBandi } from "@/components/tenant-duyuru-ust-bandi";
+import { TenantDuyuruPopupYoneticisi } from "@/components/tenant-duyuru-popup-yoneticisi";
+import { TenantDuyuruModulKartlari } from "@/components/tenant-duyuru-modul-kartlari";
 import { HareketsizlikIzleyici } from "@/components/hareketsizlik-izleyici";
 import { ASISTAN_AC_OLAYI, ekranKaydi, type AsistanBaglami } from "@/lib/asistan-baglami";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
@@ -467,6 +470,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
             )}
           </div>
         )}
+        <Link className="feedback-trigger" href="/panel/duyurular" onClick={() => setMenuAcik(false)}><Bell aria-hidden="true" size={16} /><span>Duyurular</span></Link>
         <button className="feedback-trigger" onClick={() => { setMenuAcik(false); setGeriBildirimAcik(true); setGeriBildirimDurum(""); }} ref={geriBildirimTetikleyiciRef} type="button"><CircleHelp aria-hidden="true" size={16} strokeWidth={1.9} /><span>Geri bildirim ver</span></button>
         <div className="sidebar__user">
           <div className="grow sidebar__user-info">
@@ -504,6 +508,9 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">
+          <TenantDuyuruUstBandi />
+          <TenantDuyuruPopupYoneticisi />
+          <TenantDuyuruModulKartlari pathname={pathname} />
           {destekKisi ? (
             <div className="destek-isareti" role="status">
               <strong>TekirExtra destek oturumu ({destekKisi}):</strong> panel salt okunurdur; değişiklik yapılamaz ve her istek firmanın denetim izine yazılır.

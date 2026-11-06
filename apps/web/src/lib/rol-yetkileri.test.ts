@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { ROLLER } from "@tekirextra/shared";
 import { finansalOzetGorebilir, rolMenuYoluGorebilir, paketModulleriAyarla } from "./rol-yetkileri";
 afterEach(() => paketModulleriAyarla(null));
 
 describe("panel rol erişim matrisi", () => {
+  it.each(ROLLER)("duyuru merkezi %s rolüne açık, firma modülleri kısıtlı kalır", (rol) => {
+    paketModulleriAyarla([]);
+    expect(rolMenuYoluGorebilir(rol, "/panel/duyurular")).toBe(true);
+    expect(rolMenuYoluGorebilir(rol, "/panel/cari")).toBe(false);
+  });
   it("paket yöneticiyi de sınırlar; açık paket kullanıcının rolünü genişletmez", () => {
     paketModulleriAyarla(["cari"]);
     expect(rolMenuYoluGorebilir("yonetici", "/panel/stok")).toBe(false);

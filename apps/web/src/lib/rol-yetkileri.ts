@@ -62,6 +62,7 @@ export function rolMenuYoluGorebilir(rol: string | null, href: string): boolean 
   if (ozelRolPanelYoluKapali(ozelRolKapali, yol)) return false;
   // PRS-21: self-servis yalnız çalışan rolünün menüsünde (yöneticinin kartı yoktur).
   if (yol === "/panel/self-servis" || yol.startsWith("/panel/self-servis/")) return rol === "calisan";
+  if (yol === "/panel/duyurular" || yol.startsWith("/panel/duyurular/")) return rol === "yonetici" || Object.hasOwn(ROL_YOLLARI, rol);
   if (rol === "yonetici") return true;
   const kisit = KISITLI_YOLLAR.find((k) => yol === k.yol || yol.startsWith(`${k.yol}/`));
   if (kisit && !kisit.roller.includes(rol)) return false;

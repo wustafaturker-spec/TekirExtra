@@ -23,3 +23,9 @@ Kullanıcı pilot/yayın hazırlığına devam edilmesini istedi. Önceki hedef 
 6. Doğal iş örneğini ve alan kabulünü kullanıcıyla kaydet; sahte şirket işlemi oluşturma. Kalıcı servis/reboot ve uygun önceki sürüme dönüş açıklarını hedef üzerinde kapat.
 
 Bu ön kontrolde servis başlatılmadı; gerçek şirket verisi, migration veya pilot ayarı değiştirilmedi. Yayın yapılmadı; REL kabul kapıları kapatılmadı.
+
+## 5 Kasım 2026 güncellemesi
+
+Yerel pilot hedefi daha sonra `localhost:3100` olarak açıldı ve `.release-candidates/platform-duyuru-pilot-20261105` paketiyle güncellendi. Duyuru sisteminin sekiz migration'ı uygulandı; toplam 344 migration güncel. Duyuru öncesi tam veritabanı yedeği alındı ve gzip bütünlüğü doğrulandı. API, web, worker ve söz hatırlatma servisi healthy; API readiness 200. Ayrıntı: [duyuru pilot yayın kaydı](PLATFORM-PILOT-YAYIN-2026-11-05.md).
+
+Bu güncelleme yalnız yerel pilot hedefini doğrular. Uzak üretim host'u veya erişim yapılandırması bu ortamda bulunmuyor; önceki hedef seçimi açık kalıyor. Platform yönetici oturumuyla doğal duyuru akışı kabulü yapılmadı. Uzak yayın ve gerçek kullanıcı kabulü için hedef ve yetkili operatör oturumu gerekir; bunlar olmadan başka hedefe bağlanılmadı.

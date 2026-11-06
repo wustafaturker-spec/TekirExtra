@@ -11,6 +11,7 @@ import { PlatformOturumuBaglami, type PlatformRolu } from "@/lib/platform-oturum
 
 /** PLT-06: `yalnizYonetici` sayfaları mevzuat editörüne gösterilmez (API de 403 döner). */
 const MENU = [
+  { href: "/platform/duyurular", ikon: Inbox, baslik: "Duyurular", yalnizYonetici: true },
   { href: "/platform/ozet", baslik: "Yönetim özeti", ikon: LayoutDashboard },
   { href: "/platform/gorevler", baslik: "Görev merkezi", ikon: ListTodo },
   { href: "/platform/istatistikler", ikon: BarChart3, baslik: "Firma istatistikleri", yalnizYonetici: true },
@@ -84,7 +85,7 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   const bolumler = [
     { ad: "Genel bakış", yollar: ["/platform/ozet", "/platform/gorevler"] },
     { ad: "Mevzuat yönetimi", yollar: ["/platform", "/platform/tablolar", "/platform/talepler", "/platform/denetim"] },
-    { ad: "Platform yönetimi", yollar: ["/platform/paketler", "/platform/firmalar", "/platform/istatistikler", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
+    { ad: "Platform yönetimi", yollar: ["/platform/duyurular", "/platform/paketler", "/platform/firmalar", "/platform/istatistikler", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
   ];
   return (
     <div className="platform-shell">

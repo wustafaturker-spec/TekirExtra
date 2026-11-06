@@ -1,5 +1,7 @@
 # Platform yerel pilot yayını — 5 Kasım 2026
 
+6 Kasım güncellemesi: Duyuru tasarımı yalnız web servisi değiştirilerek yerel pilota alındı. Güncel paket `.release-candidates/platform-duyuru-design-20261106`, build ID `qQjORoka183cUCx3enore`. Üretim paketinde masaüstü/mobil 12 tarayıcı kabulü ve canlı sağlık/giriş kontrolleri geçti. [Ayrıntı ve geri dönüş](PLATFORM-DUYURU-TASARIM-PILOT-2026-11-06.md). Gerçek kullanıcı oturumuyla kapsamlı DY kabulü açık kalır.
+
 Durum: `c8ee18c` kaynaklarından üretilen yeni paket yerel pilotta açıldı.
 
 - Pilot: http://localhost:3100
@@ -58,3 +60,15 @@ Kullanıcının bildirdiği `JSON.parse` hatası gerçek giriş POST isteğinde 
 Mevcut `.env` dosyasına `REDIS_URL` ile aynı parolayı taşıyan `REDIS_PASSWORD` eklendi; önceki ortam dosyası korumalı yedek dizinine alındı. Redis aynı kalıcı volume ile yeniden oluşturuldu. Uygulama kodu ve kullanıcı hesapları değiştirilmedi.
 
 Gerçek pilotta var olmayan test adresiyle giriş isteği artık yaklaşık 700 ms'de 401 ve `application/json` yanıtı veriyor. Chromium form kontrolü anlaşılır kimlik bilgisi hatasını doğruladı; JSON parse veya tarayıcı script hatası yok. Gerçek kullanıcı hesabı, parola veya 2FA değiştirilmedi. Redis ve dört pilot servisi sağlıklı. Ek kontrol kaydı: `.release-candidates/platform-pilot-isletim-20261105/giris-kontrol.json`.
+
+## Duyuru sistemi yerel pilot güncellemesi — 5 Kasım 2026
+
+Tenant duyuruları için yeni yerel pilot paketi `.release-candidates/platform-duyuru-pilot-20261105` altında hazırlandı ve API, web, worker ve söz hatırlatma servisleri bu pakete geçirildi. Önceki uygulama bileşimi `ops/geri-donus-compose.json` içinde korundu. API ve web üretim derlemeleri ayrı çalıştırıldığında geçti; Web build ID `_seCd7WYAjYQL36zrV3uE90a6551`.
+
+Mevcut pilot veritabanında 344 migration'ın tamamı güncel. Sekiz duyuru migration'ı uygulanmadan önce `backups/platform-duyuru-oncesi-20261105/tekirextra-20261105T134435Z.sql.gz` tam dökümü alındı ve `gzip -t` ile doğrulandı; dosya izinleri 0600, yedek klasörü 0700. İlk yedek denemesi eksik kaldığı için `.incomplete` olarak işaretlendi ve geçerli yedekten ayrı tutuldu.
+
+Dağıtım sonrasında API readiness 200 (PostgreSQL, Redis ve nesne deposu hazır); dört uygulama servisi `healthy`. Oturumsuz `/platform/duyurular` isteği beklenen 307 platform giriş yönlendirmesini verdi. Bu oturumda test paketleri ve gerçek kullanıcı oturumuyla duyuru akışı çalıştırılmadı; uzak üretim yayını yapılmadı. Kullanıcı kabulü ve uzak üretim yayını açık kalır. Ayrıntılı makinece okunur kayıt: `.release-candidates/platform-duyuru-pilot-20261105/yayin-ozeti.json`.
+
+## Duyuru oluşturma düğmesi — 5 Kasım 2026
+
+`/platform/duyurular` sayfasındaki oluşturma bağlantısı birincil düğme olarak belirginleştirildi. Firma panelindeki `/panel/duyurular` alanına bu sayfanın yalnız platformca yayımlanan duyuruları gösterdiğini açıklayan metin eklendi. Yeni web build ID `OxoeqXWsoo093JuvOob_p`; güncelleme `.release-candidates/platform-duyuru-pilot-20261105b` paketinde yerel pilota geçirildi. API readiness 200 ve dört servis `healthy`. Oturumsuz istek hâlâ platform girişine yönlendiriliyor; gerçek kullanıcı oturumuyla düğmenin görsel kabulü bu turda yapılmadı. Ayrıntı: `.release-candidates/platform-duyuru-pilot-20261105b/yayin-ozeti.json`.

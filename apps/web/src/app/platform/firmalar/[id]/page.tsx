@@ -7,12 +7,12 @@ import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap
 import { FirmaYonet } from "@/components/platform-firma-yonet";
 import { FirmaIstisnalari } from "@/components/platform-firma-istisnalari";
 import { FirmaEkHacmi } from "@/components/platform-firma-ek-hacmi";
-import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 import { useKaydedilmemisUyarisi } from "@/lib/use-kaydedilmemis-uyarisi";
 import { platformApi, PlatformApiHata } from "@/lib/platform-api";
 import { type Firma, type FirmaListesi, DURUM, tarih } from "@/lib/platform-firmalar";
 import { GOREV_DURUMU, type GorevListesi } from "@/lib/platform-gorevleri";
 import { OLAY_ADI } from "@/lib/mevzuat-gorunum";
+import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 
 interface Takip {
   sorumluId: string | null; sorumluAdi: string | null; sorumluUygun: boolean | null;
@@ -22,6 +22,7 @@ interface Takip {
 interface Sayfali<T> { kayitlar: T[]; toplam: number; sayfa: number; sayfaBoyutu: number }
 interface Not { id: string; metin: string; yazar: string; zaman: string }
 interface Olay { id: string; olay: string; zaman: string; kullanici: string; detay: { gorevId?: string; notId?: string; onceki?: { durum?: string; sorumluId?: string; sonrakiGorusme?: string }; yeni?: { durum?: string; sorumluId?: string; sonrakiGorusme?: string } } | null }
+interface DuyuruGecmisi { kayitlar: { id:string;baslik:string;durum:string;surum:number;baslangic:string;bitis:string;hedefKullanici:number;gosterim:number;okudum:number;tiklama:number }[]; toplam:number;sayfa:number;sayfaBoyutu:number;zaman:string }
 const TAKIP_DURUMU = { acik: "Açık", bekliyor: "Yanıt bekleniyor", tamamlandi: "Tamamlandı" };
 const zaman = (v: string) => new Date(v).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
 
@@ -62,7 +63,7 @@ function FirmaCalismaAlani({ firma: f, donus, yenile }: { firma: Firma; donus: s
   return <>
     <PageHeader title={f.unvan} subtitle={`VKN ${f.vkn} · Kayıt ${tarih(f.kayitTarihi)}`} actions={<div className="platform-row-actions"><Link className="btn btn--ghost" href={donus}>Firma listesine dön</Link><Button onClick={yenile}>Firma bilgilerini yenile</Button></div>} />
     <Alert tone="success">{basari}</Alert>
-    <nav className="platform-section-nav" aria-label="Firma bölümleri"><a href="#firma-ozeti">Genel bilgiler</a><Link href={`/platform/istatistikler?firma=${f.tenantId}`}>Kullanım istatistikleri</Link><a href="#firma-takibi">Takip</a><a href="#firma-notlari">İç notlar</a><a href="#firma-gorevleri">Görevler</a><a href="#firma-abonelik">Abonelik ve ödemeler</a><a href="#firma-olaylari">İşlem geçmişi</a></nav>
+    <nav className="platform-section-nav" aria-label="Firma bölümleri"><a href="#firma-ozeti">Genel bilgiler</a><Link href={`/platform/istatistikler?firma=${f.tenantId}`}>Kullanım istatistikleri</Link><a href="#firma-takibi">Takip</a><a href="#firma-notlari">İç notlar</a><a href="#firma-gorevleri">Görevler</a><a href="#firma-abonelik">Abonelik ve ödemeler</a><a href="#firma-duyurular">Duyurular</a><a href="#firma-olaylari">İşlem geçmişi</a></nav>
     <Card id="firma-ozeti" title="Genel bilgiler"><dl className="platform-firma-summary">
       <div><dt>Abonelik</dt><dd><Badge variant={DURUM[f.durum]?.ton ?? "neutral"}>{DURUM[f.durum]?.ad ?? f.durum}</Badge> · {f.planAdi}</dd></div>
       <div><dt>Dönem sonu</dt><dd>{tarih(f.donemSonu)}</dd></div>
@@ -78,9 +79,24 @@ function FirmaCalismaAlani({ firma: f, donus, yenile }: { firma: Firma; donus: s
     <FirmaGorevleri firmaId={f.tenantId} />
     <section id="firma-abonelik" aria-label="Abonelik ve ödemeler"><h2>Abonelik ve ödemeler</h2><FirmaYonet firma={f} sayfada onKapat={() => undefined} onTamam={tamamlandi} /></section>
     <FirmaIstisnalari tenantId={f.tenantId} />
+    <FirmaDuyurulari firmaId={f.tenantId} />
     <FirmaEkHacmi tenantId={f.tenantId} />
     <FirmaOlaylari key={takipYenileme} firmaId={f.tenantId} />
   </>;
+}
+
+function FirmaDuyurulari({ firmaId }: { firmaId: string }) {
+  const [sayfa,setSayfa] = useState(1);
+  const kaynak = usePlatformVerisi<DuyuruGecmisi>(`/platform/duyurular/firma/${firmaId}?sayfa=${sayfa}`);
+  return <Card id="firma-duyurular" title="Duyuru geçmişi"><p className="subtle">Bu firmaya hedeflenen yayınlar ve firma kullanıcılarının benzersiz etkileşimleri. Zamanlar Türkiye saatidir.</p>
+    {kaynak.yukleniyor && <p role="status">Duyuru geçmişi yükleniyor…</p>}
+    {kaynak.hata && <Alert tone="error">{kaynak.hata} <Button onClick={kaynak.yenile}>Tekrar dene</Button></Alert>}
+    {kaynak.veri && !kaynak.veri.kayitlar.length && <p>Bu firmaya hedeflenmiş duyuru yok.</p>}
+    <TableWrap><thead><tr><th>Duyuru</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Hedef kullanıcı</th><th>Gösterim</th><th>Okudum</th><th>Tıklama</th></tr></thead><tbody>
+      {kaynak.veri?.kayitlar.map((d) => <tr key={d.id}><td><Link href={`/platform/duyurular/${d.id}`}>{d.baslik} · Sürüm {d.surum}</Link></td><td>{d.durum === "yayinlandi" ? (new Date(d.baslangic) > new Date() ? "Planlı" : new Date(d.bitis) <= new Date() ? "Sona erdi" : "Yayında") : d.durum === "durduruldu" ? "Durduruldu" : "Arşiv"}</td><td>{zaman(d.baslangic)}</td><td>{zaman(d.bitis)}</td><td>{d.hedefKullanici}</td><td>{d.gosterim}</td><td>{d.okudum}</td><td>{d.tiklama}</td></tr>)}
+    </tbody></TableWrap>
+    <div className="platform-pagination"><span>{kaynak.veri?.toplam ?? 0} duyuru · Rapor zamanı {kaynak.veri ? zaman(kaynak.veri.zaman) : "—"}</span><div className="platform-row-actions"><Button disabled={sayfa===1} onClick={() => setSayfa(sayfa-1)}>Önceki</Button><Button disabled={!kaynak.veri || sayfa*25>=kaynak.veri.toplam} onClick={() => setSayfa(sayfa+1)}>Sonraki</Button></div></div>
+  </Card>;
 }
 
 function TakipBolumu({ firmaId, onTamam }: { firmaId: string; onTamam: (mesaj: string) => void }) {

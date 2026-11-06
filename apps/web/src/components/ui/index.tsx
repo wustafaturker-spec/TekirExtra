@@ -25,6 +25,7 @@ import {
   type SelectHTMLAttributes,
   useEffect,
   useId,
+  useRef,
 } from "react";
 
 /* ─── Sınıf birleştirici ─────────────────────────────────────────────────── */
@@ -553,14 +554,28 @@ export function Modal({
   children: ReactNode;
 }) {
   const baslikId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onKapatRef = useRef(onKapat);
+  useEffect(() => { onKapatRef.current = onKapat; }, [onKapat]);
   useEffect(() => {
-    const tus = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onKapat(); };
+    const onceki = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const odaklilar = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])") ?? []);
+    const animasyon = requestAnimationFrame(() => (odaklilar()[0] ?? dialogRef.current)?.focus());
+    const tus = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); onKapatRef.current(); return; }
+      if (e.key !== "Tab") return;
+      const liste = odaklilar();
+      if (!liste.length) { e.preventDefault(); dialogRef.current?.focus(); return; }
+      const ilk = liste[0], son = liste[liste.length - 1];
+      if (e.shiftKey && (document.activeElement === ilk || !dialogRef.current?.contains(document.activeElement))) { e.preventDefault(); son.focus(); }
+      else if (!e.shiftKey && (document.activeElement === son || !dialogRef.current?.contains(document.activeElement))) { e.preventDefault(); ilk.focus(); }
+    };
     window.addEventListener("keydown", tus);
-    return () => window.removeEventListener("keydown", tus);
-  }, [onKapat]);
+    return () => { cancelAnimationFrame(animasyon); window.removeEventListener("keydown", tus); if (onceki?.isConnected) onceki.focus(); };
+  }, []);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onKapat(); }}>
-      <div aria-labelledby={baslikId} aria-modal="true" className={cx("modal", genis && "modal--wide")} role="dialog">
+      <div ref={dialogRef} aria-labelledby={baslikId} aria-modal="true" className={cx("modal", genis && "modal--wide")} role="dialog" tabIndex={-1}>
         <div className="modal__head">
           <div>
             <h2 id={baslikId}>{baslik}</h2>
