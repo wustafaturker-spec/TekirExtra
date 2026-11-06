@@ -101,10 +101,12 @@ export class TekrarlayanFaturaZamanlayiciService implements OnModuleInit, OnModu
       try {
         const kota = await this.abonelik.kalanLimit("aylikFatura");
         const sonuc = kota.kalan === 0
-          ? { uretilenAdet: 0, kotaDoldu: true }
+          ? { uretilenAdet: 0, kotaDoldu: true, kursuzlar: [], fiyatUyarilari: [] }
           : await this.faturalar.vadesiGelenleriUret({ kalanKota: kota.kalan });
         if (sonuc.uretilenAdet) await this.uretimiBildir(gun);
         if (sonuc.kotaDoldu) await this.kotayiBildir(gun, kota.planAdi, kota.limit);
+        for (const k of sonuc.kursuzlar ?? []) await this.kursuzuBildir(k);
+        for (const u of sonuc.fiyatUyarilari ?? []) await this.fiyatUyarisiBildir(u);
         return { uretilenAdet: sonuc.uretilenAdet, kotaDoldu: sonuc.kotaDoldu };
       } catch (hata) {
         const mesaj = hata instanceof Error ? hata.message : String(hata);
@@ -155,6 +157,36 @@ export class TekrarlayanFaturaZamanlayiciService implements OnModuleInit, OnModu
       birlesimAnahtari: `tekrarlayan-fatura-kota:${gun.anahtar}`,
       kaynakTur: "tekrarlayan_fatura",
       hedefYol: "/panel/fatura/tekrarlayan",
+      roller: ["yonetici", "muhasebe"],
+    }));
+  }
+
+  /** FTR-45: kuru olmayan dövizli dönem üretilmez; bildirim plan başına tektir, kur gelince üretilir. */
+  private async kursuzuBildir(k: { planId: string; ad: string; dovizCinsi: string; tarih: string }) {
+    await this.guvenliBildir(() => this.bildirimler.uret({
+      tur: "donem",
+      onem: "uyari",
+      baslik: "Kur bulunamadığı için tekrarlayan fatura bekliyor",
+      aciklama: `${k.ad}: ${k.tarih} dönemi için ${k.dovizCinsi} kuru bulunamadı (en fazla 10 gün geriye bakıldı). Ayarlar > Döviz Kurları ekranından kuru çekin ya da elle girin; taslak sonraki taramada oluşur.`,
+      birlesimAnahtari: `tekrarlayan-fatura-kur:${k.planId}:${k.tarih}`,
+      kaynakTur: "tekrarlayan_fatura",
+      kaynakRef: k.planId,
+      hedefYol: "/panel/ayarlar/doviz-kurlari",
+      roller: ["yonetici", "muhasebe"],
+    }));
+  }
+
+  /** FTR-45: güncel fiyatı bulunamayan satır şablon fiyatıyla kalır; kullanıcı kesinleştirmeden bakmalı. */
+  private async fiyatUyarisiBildir(u: { planId: string; ad: string; faturaId: string; sorunlar: string[] }) {
+    await this.guvenliBildir(() => this.bildirimler.uret({
+      tur: "donem",
+      onem: "uyari",
+      baslik: "Tekrarlayan faturada bazı fiyatlar güncellenemedi",
+      aciklama: `${u.ad}: şu satırlar şablon fiyatıyla bırakıldı, kesinleştirmeden önce kontrol edin. ${u.sorunlar.slice(0, 10).join("; ")}${u.sorunlar.length > 10 ? ` (+${u.sorunlar.length - 10} satır)` : ""}`.slice(0, 1500),
+      birlesimAnahtari: `tekrarlayan-fatura-fiyat:${u.faturaId}`,
+      kaynakTur: "fatura",
+      kaynakRef: u.faturaId,
+      hedefYol: `/panel/fatura?ac=${u.faturaId}`,
       roller: ["yonetici", "muhasebe"],
     }));
   }

@@ -1,7 +1,8 @@
 import { agirlikliMaliyet, alisBirimMaliyeti } from "../stok/maliyet";
 import { kesinlesmeTahminiYaz } from "../cari/tahmin-isabeti-kaynak";
 import { faturaDagitimKosulu } from "../stok/maliyet-dagitimi.service";
-import { belgeDiliNormalize, ciftDilGecerli, ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, sonrakiTekrarTarihi, tekrarDegiskenDegerleri, tekrarMetniDoldur, type DovizKodu } from "@tekirextra/shared";
+import { belgeDiliNormalize, ciftDilGecerli, ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, sonrakiTekrarTarihi, tekrarDegiskenDegerleri, tekrarMetniDoldur, faturaKurTipi, type DovizKodu } from "@tekirextra/shared";
+import { kurCoz } from "../doviz/kur-coz";
 import {
   BadRequestException,
   ConflictException,
@@ -179,7 +180,7 @@ export class FaturaService {
         sonrakiTarih: new Date(girdi.sonrakiTarih),
         bitisTarihi: girdi.bitisTarihi ? new Date(girdi.bitisTarihi) : null,
         aciklamaSablonu: girdi.aciklamaSablonu ?? null, notSablonu: girdi.notSablonu ?? null,
-        faturalananDonem: girdi.faturalananDonem,
+        faturalananDonem: girdi.faturalananDonem, fiyatKaynagi: girdi.fiyatKaynagi,
       }});
     });
   }
@@ -195,6 +196,7 @@ export class FaturaService {
       return tx.tekrarlayanFatura.update({ where: { id }, data: {
         ad: girdi.ad, aktif: girdi.aktif, sonrakiTarih: sonraki, bitisTarihi: bitis,
         aciklamaSablonu: girdi.aciklamaSablonu, notSablonu: girdi.notSablonu, faturalananDonem: girdi.faturalananDonem,
+        fiyatKaynagi: girdi.fiyatKaynagi,
       }});
     });
   }
@@ -203,12 +205,17 @@ export class FaturaService {
    * FTR-10/43: vadesi gelen planlardan taslak üretir. `kalanKota` verilirse en
    * çok o kadar fatura açılır; üretilemeyen dönemde plan bekler (sonraki tarih
    * ilerlemez) ve kota açılınca kaldığı yerden devam eder.
+   *
+   * FTR-45: dövizli taslağa planlanan günün kuru yazılır; kur yoksa plan o
+   * dönemde bekler (`kursuzlar`). "Güncel fiyat" planlarında taslak işlem
+   * bittikten sonra güncel fiyatla olağan güncelleme yolundan geçirilir;
+   * fiyatı bulunamayan satır şablon fiyatıyla kalır (`fiyatUyarilari`).
    */
   async vadesiGelenleriUret(secenek: { kalanKota?: number | null } = {}) {
     const { tenantId } = aktifBaglam();
     const kalanKota = secenek.kalanKota ?? null;
     const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const uretim = await this.prisma.tenantIslem(tenantId, async (tx) => {
       // Manuel tetikleme ve zamanlanmış görev aynı anda çalışabilir. Tenant
       // bazlı transaction kilidi, "kontrol et → oluştur" aralığını sıralar;
       // ikinci çağrı ilk transaction'ın ilerlettiği sonraki tarihi görür.
@@ -224,6 +231,8 @@ export class FaturaService {
         include: { sablonFatura: { include: { satirlar: true } } },
       });
       const uretilenIds: string[] = [];
+      const guncelFiyatlilar: { planId: string; ad: string; faturaId: string }[] = [];
+      const kursuzlar: { planId: string; ad: string; dovizCinsi: string; tarih: string }[] = [];
       let kotaDoldu = false;
       for (const plan of planlar) {
         let planUretimAdedi = 0;
@@ -235,6 +244,9 @@ export class FaturaService {
           if (!mevcut) {
             if (kalanKota !== null && uretilenIds.length >= kalanKota) { kotaDoldu = true; break; }
             const s = plan.sablonFatura;
+            // FTR-45: dövizli belgenin kuru planlanan günden gelir (formdaki alış/satış kuralı).
+            const kur = s.dovizCinsi === "TRY" ? s.kur : await kurCoz(tx, tenantId, s.dovizCinsi, tarih, faturaKurTipi(s.tip));
+            if (!kur) { kursuzlar.push({ planId: plan.id, ad: plan.ad, dovizCinsi: s.dovizCinsi, tarih: tarih.toISOString().slice(0, 10) }); break; }
             const vadeGun = s.vadeTarihi
               ? Math.round((s.vadeTarihi.getTime() - s.tarih.getTime()) / 86_400_000)
               : null;
@@ -245,7 +257,7 @@ export class FaturaService {
             const notlar = plan.notSablonu ? tekrarMetniDoldur(plan.notSablonu, degerler) : s.notlar;
             const yeni = await tx.fatura.create({ data: {
               tenantId, tip: s.tip, durum: "taslak", tarih, vadeTarihi,
-              cariId: s.cariId, depoId: s.depoId, dovizCinsi: s.dovizCinsi, kur: s.kur,
+              cariId: s.cariId, depoId: s.depoId, dovizCinsi: s.dovizCinsi, kur,
               teslimatAdres: s.teslimatAdres, teslimatIl: s.teslimatIl, teslimatIlce: s.teslimatIlce, teslimatPostaKodu: s.teslimatPostaKodu,
               genelIskontoYuzdesi: s.genelIskontoYuzdesi, genelIskontoTutari: s.genelIskontoTutari,
               toplamBrut: s.toplamBrut, toplamSatirIskontosu: s.toplamSatirIskontosu,
@@ -259,6 +271,7 @@ export class FaturaService {
               await tx.faturaSatir.create({ data: { ...veri, partiBilgileri: veri.partiBilgileri === null ? Prisma.JsonNull : veri.partiBilgileri as Prisma.InputJsonValue, ekVergiler: veri.ekVergiler === null ? Prisma.JsonNull : veri.ekVergiler as Prisma.InputJsonValue, id: undefined, faturaId: yeni.id } });
             }
             uretilenIds.push(yeni.id);
+            if (plan.fiyatKaynagi === "guncel") guncelFiyatlilar.push({ planId: plan.id, ad: plan.ad, faturaId: yeni.id });
             planUretimAdedi += 1;
             sonUretimTarihi = tarih;
           }
@@ -269,8 +282,49 @@ export class FaturaService {
           aktif: plan.bitisTarihi ? tarih <= plan.bitisTarihi : true,
         }});
       }
-      return { uretilenAdet: uretilenIds.length, faturaIds: uretilenIds, kotaDoldu };
+      return { uretilenIds, guncelFiyatlilar, kursuzlar, kotaDoldu };
     });
+    // Kilit bırakıldıktan sonra: güncelleme kendi işlemini ve doğrulamalarını açar.
+    const fiyatUyarilari: { planId: string; ad: string; faturaId: string; sorunlar: string[] }[] = [];
+    for (const g of uretim.guncelFiyatlilar) {
+      const sorunlar = await this.guncelFiyatlariUygula(g.faturaId);
+      if (sorunlar.length) fiyatUyarilari.push({ ...g, sorunlar });
+    }
+    return { uretilenAdet: uretim.uretilenIds.length, faturaIds: uretim.uretilenIds, kotaDoldu: uretim.kotaDoldu, kursuzlar: uretim.kursuzlar, fiyatUyarilari };
+  }
+
+  /**
+   * FTR-45: taslağın satırlarına güncel fiyatı uygular; dönen liste şablon
+   * fiyatıyla kalan satırların nedenleridir. Hata taslağı bozmaz.
+   */
+  private async guncelFiyatlariUygula(faturaId: string): Promise<string[]> {
+    const { tenantId } = aktifBaglam();
+    const sorunlar: string[] = [];
+    try {
+      const birimFiyatlari = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const f = await tx.fatura.findUniqueOrThrow({ where: { id: faturaId }, include: { satirlar: { include: { stok: { select: { kod: true, ad: true } } } } } });
+        const belgeKuru = f.dovizCinsi === "TRY" ? 1 : Number(f.kur);
+        const fiyatlar = new Map<string, string>();
+        for (const satir of f.satirlar) {
+          const etiket = `${satir.stok.kod} ${satir.stok.ad}`;
+          const kaynak = await this.stokService.kaynakFiyatBul(tx, { stokId: satir.stokId, varyantId: satir.varyantId, cariId: f.cariId, tip: f.tip });
+          if (!kaynak || !(kaynak.birimFiyat > 0)) { sorunlar.push(`${etiket}: güncel fiyat tanımlı değil`); continue; }
+          let fiyat = kaynak.birimFiyat;
+          if (kaynak.kaynakDoviz !== f.dovizCinsi) {
+            const kaynakKuru = kaynak.kaynakDoviz === "TRY" ? 1 : Number(await kurCoz(tx, tenantId, kaynak.kaynakDoviz, f.tarih, faturaKurTipi(f.tip)) ?? 0);
+            if (!(kaynakKuru > 0) || !(belgeKuru > 0)) { sorunlar.push(`${etiket}: ${kaynak.kaynakDoviz} fiyatı ${f.dovizCinsi} belgeye çevrilemedi (kur yok)`); continue; }
+            fiyat = (fiyat * kaynakKuru) / belgeKuru;
+          }
+          const yeni = fiyat.toFixed(4);
+          if (!D(yeni).equals(satir.birimFiyat)) fiyatlar.set(satir.id, yeni);
+        }
+        return fiyatlar;
+      });
+      if (birimFiyatlari.size) await this.guncelle(faturaId, {}, { birimFiyatlari });
+    } catch (hata) {
+      return [`Güncel fiyat uygulanamadı, taslak şablon fiyatlarıyla kaldı: ${hata instanceof Error ? hata.message : String(hata)}`];
+    }
+    return sorunlar;
   }
 
   // ─── FATURA CRUD İŞLEMLERİ ───────────────────────────────────────────────
@@ -785,7 +839,12 @@ export class FaturaService {
     });
   }
 
-  async guncelle(id: string, girdi: z.infer<typeof faturaGuncelleSemasi>) {
+  /**
+   * `ic.birimFiyatlari` yalnız sunucu içi kullanım içindir (FTR-45): saklı
+   * satırlar korunur, verilen satır kimliklerinin birim fiyatı değişir ve
+   * belge olağan güncelleme yolundan yeniden hesaplanır.
+   */
+  async guncelle(id: string, girdi: z.infer<typeof faturaGuncelleSemasi>, ic: { birimFiyatlari?: ReadonlyMap<string, string> } = {}) {
     const { tenantId, userId } = aktifBaglam();
     const fatura = await this.getir(id);
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih ?? fatura.tarih, "fatura güncelleme");
@@ -845,7 +904,7 @@ export class FaturaService {
           partiBilgileri: s.partiBilgileri as z.infer<typeof faturaOlusturSemasi>["satirlar"][number]["partiBilgileri"],
           miktar: s.miktar,
           birim: s.birim,
-          birimFiyat: s.birimFiyat,
+          birimFiyat: ic.birimFiyatlari?.get(s.id) ?? s.birimFiyat,
           iskontoOrani: s.iskontoOrani,
           kdvOrani: s.kdvOrani,
           tevkifatKodu: s.tevkifatKodu,

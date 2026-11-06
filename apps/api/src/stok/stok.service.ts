@@ -336,6 +336,48 @@ export class StokService {
     }
   }
 
+  /**
+   * FTR-14/45: kalemin kaynak fiyatı. Sıra: varyant fiyatı → ürün fiyatı →
+   * kart fiyatı; satışta carinin (ya da verilen) fiyat listesi hepsini ezer.
+   * Fiyat kaynak dövizindedir; belge dövizine çevirmek çağırana aittir.
+   * Fatura formu önerisi ve tekrarlayan faturanın güncel fiyatı aynı kuralı kullanır.
+   */
+  async kaynakFiyatBul(
+    tx: Prisma.TransactionClient,
+    girdi: { stokId: string; varyantId?: string | null; cariId?: string | null; tip?: string; fiyatListesiId?: string | null },
+  ) {
+    const { tenantId } = aktifBaglam();
+    // Eski tavsiyeFiyat ile birebir: ürün fiyatı tipi alis/satis; kart fiyatı ve liste ham tipe bakar.
+    const hamTip = girdi.tip ?? "satis";
+    const tip = hamTip === "alis" ? "alis" : "satis";
+    const { stokId, varyantId, cariId } = girdi;
+    const stok = await tx.stokKart.findUnique({ where: { id: stokId } });
+    if (!stok) return null;
+    let fiyat = varyantId ? await tx.stokFiyat.findFirst({ where: { tenantId, stokId, varyantId, tip, aktif: true } }) : null;
+    fiyat ??= await tx.stokFiyat.findFirst({ where: { tenantId, stokId, tip, aktif: true, varyantId: null } });
+    let birimFiyat = fiyat ? Number(fiyat.tutar) : Number(hamTip === "satis" ? stok.satisFiyati ?? 0 : stok.alisFiyati ?? 0);
+    let kaynakDoviz: string = fiyat?.dovizCinsi ?? (hamTip === "alis" ? stok.alisFiyatiDoviz : stok.satisFiyatiDoviz);
+    let fiyatKaynagi = fiyat ? "urun" : "kart";
+    let iskontoOrani = 0;
+    const cari = cariId ? await tx.cariHesap.findUnique({ where: { id: cariId } }) : null;
+    if (cari) {
+      iskontoOrani = Number(cari.varsayilanIskonto ?? 0);
+      const etkinListeId = girdi.fiyatListesiId || cari.fiyatListesiId;
+      if (hamTip === "satis" && etkinListeId) {
+        const listeKalemi = await tx.fiyatListesiKalem.findFirst({
+          where: { tenantId, listeId: etkinListeId, stokId, liste: { aktif: true } },
+          include: { liste: { select: { dovizCinsi: true } } },
+        });
+        if (listeKalemi) {
+          birimFiyat = Number(listeKalemi.fiyat);
+          kaynakDoviz = listeKalemi.liste.dovizCinsi;
+          fiyatKaynagi = "fiyat_listesi";
+        }
+      }
+    }
+    return { stok, birimFiyat, kaynakDoviz, fiyatKaynagi, iskontoOrani };
+  }
+
   async tavsiyeFiyat(
     stokId: string,
     cariId?: string,
@@ -350,49 +392,9 @@ export class StokService {
   ) {
     const { tenantId } = aktifBaglam();
 
-    let birimFiyat = 0;
-    let iskontoOrani = 0;
-
-    const stok = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.stokKart.findUnique({ where: { id: stokId } }),
-    );
-    if (!stok) throw new NotFoundException("Stok kartı bulunamadı");
-
-    const fiyat = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      if (varyantId) {
-        const varyantFiyati = await tx.stokFiyat.findFirst({ where: { tenantId, stokId, varyantId, tip: tip === "alis" ? "alis" : "satis", aktif: true } });
-        if (varyantFiyati) return varyantFiyati;
-      }
-      return tx.stokFiyat.findFirst({ where: { tenantId, stokId, tip: tip === "alis" ? "alis" : "satis", aktif: true, varyantId: null } });
-    });
-    birimFiyat = fiyat ? Number(fiyat.tutar) : Number(tip === "satis" ? stok.satisFiyati ?? 0 : stok.alisFiyati ?? 0);
-    let kaynakDoviz = fiyat?.dovizCinsi ?? (tip === "alis" ? stok.alisFiyatiDoviz : stok.satisFiyatiDoviz);
-    let fiyatKaynagi = fiyat ? "urun" : "kart";
-
-    if (cariId) {
-      const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.cariHesap.findUnique({ where: { id: cariId } }),
-      );
-
-      if (cari) {
-        iskontoOrani = Number(cari.varsayilanIskonto ?? 0);
-
-        const etkinListeId = fiyatListesiId || cari.fiyatListesiId;
-        if (tip === "satis" && etkinListeId) {
-          const listeKalemi = await this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.fiyatListesiKalem.findFirst({
-              where: { tenantId, listeId: etkinListeId, stokId, liste: { aktif: true } },
-              include: { liste: { select: { dovizCinsi: true } } },
-            }),
-          );
-          if (listeKalemi) {
-            birimFiyat = Number(listeKalemi.fiyat);
-            kaynakDoviz = listeKalemi.liste.dovizCinsi;
-            fiyatKaynagi = "fiyat_listesi";
-          }
-        }
-      }
-    }
+    const kaynak = await this.prisma.tenantIslem(tenantId, (tx) => this.kaynakFiyatBul(tx, { stokId, varyantId, cariId, tip, fiyatListesiId }));
+    if (!kaynak) throw new NotFoundException("Stok kartı bulunamadı");
+    const { stok, birimFiyat, kaynakDoviz, fiyatKaynagi, iskontoOrani } = kaynak;
 
     const belgeKurDegeri = dovizCinsi === "TRY" ? 1 : Number(belgeKuru);
     const kaynakKurDegeri = kaynakDoviz === "TRY" ? 1 : Number(urunKuru || (kaynakDoviz === dovizCinsi ? belgeKurDegeri : 0));

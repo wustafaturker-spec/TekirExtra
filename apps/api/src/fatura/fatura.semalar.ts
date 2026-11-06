@@ -236,6 +236,7 @@ export const tekrarlayanFaturaSemasi = z.object({
   aciklamaSablonu: tekrarMetinSablonu.nullable().optional(),
   notSablonu: tekrarMetinSablonu.nullable().optional(),
   faturalananDonem: z.enum(["bu_donem", "onceki_donem"]).default("bu_donem"),
+  fiyatKaynagi: z.enum(["sablon", "guncel"]).default("sablon"),
 });
 
 export const tekrarlayanFaturaGuncelleSemasi = z.object({
@@ -246,4 +247,5 @@ export const tekrarlayanFaturaGuncelleSemasi = z.object({
   aciklamaSablonu: tekrarMetinSablonu.nullable().optional(),
   notSablonu: tekrarMetinSablonu.nullable().optional(),
   faturalananDonem: z.enum(["bu_donem", "onceki_donem"]).optional(),
+  fiyatKaynagi: z.enum(["sablon", "guncel"]).optional(),
 });

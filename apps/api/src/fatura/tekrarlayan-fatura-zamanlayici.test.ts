@@ -174,3 +174,110 @@ describe("FTR-44 plan şeması", () => {
     expect(tekrarlayanFaturaGuncelleSemasi.parse({ aciklamaSablonu: "" })).toEqual({ aciklamaSablonu: null });
   });
 });
+
+describe("FTR-45 kur ve güncel fiyat", () => {
+  /** Tek dönemi gecikmiş plan; döviz, kur kayıtları ve fiyat kaynağı ayarlanabilir. */
+  function duzenek(o: { doviz?: string; tip?: string; tcmb?: { dovizCinsi: string; dovizAlis: number; dovizSatis: number }[]; fiyatKaynagi?: string } = {}) {
+    const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
+    const sablon = {
+      tip: o.tip ?? "satis", tarih: gun("2026-01-01"), vadeTarihi: null, cariId: "c1", depoId: "d1", dovizCinsi: o.doviz ?? "TRY", kur: new Prisma.Decimal(30),
+      teslimatAdres: null, teslimatIl: null, teslimatIlce: null, teslimatPostaKodu: null, genelIskontoYuzdesi: null, genelIskontoTutari: null,
+      toplamBrut: 0, toplamSatirIskontosu: 0, genelIskontoToplam: 0, toplamMatrah: 0, toplamKdv: 0, toplamTevkifat: 0, toplamNetKdv: 0, toplamEkVergi: 0, toplamStopaj: 0, genelToplam: 0,
+      aciklama: null, notlar: null, satirlar: [],
+    };
+    const plan = { id: "p1", ad: "Plan", aktif: true, siklik: "aylik", aralik: 1, sonrakiTarih: bugun, bitisTarihi: null, sonUretimTarihi: null, sablonFatura: sablon,
+      aciklamaSablonu: null, notSablonu: null, faturalananDonem: "bu_donem", fiyatKaynagi: o.fiyatKaynagi ?? "sablon" };
+    const tcmb = (o.tcmb ?? []).map((k) => ({ ...k, tarih: bugun, kaynak: "TCMB_XML", alindiAt: bugun, dovizAlis: new Prisma.Decimal(k.dovizAlis), dovizSatis: new Prisma.Decimal(k.dovizSatis) }));
+    const uretilen = { id: "f1", tip: o.tip ?? "satis", dovizCinsi: o.doviz ?? "TRY", kur: new Prisma.Decimal(1), tarih: bugun, cariId: "c1", satirlar: [
+      { id: "s1", stokId: "k1", varyantId: null, birimFiyat: new Prisma.Decimal(100), stok: { kod: "K1", ad: "Danışmanlık" } },
+      { id: "s2", stokId: "k2", varyantId: null, birimFiyat: new Prisma.Decimal(50), stok: { kod: "K2", ad: "Bakım" } },
+    ] };
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ kilit: 1 }]),
+      tekrarlayanFatura: { findMany: vi.fn(async () => [plan]), update: vi.fn(async () => ({})) },
+      fatura: { findFirst: vi.fn(async () => null), create: vi.fn(async (a: { data: { kur: unknown } }) => { uretilen.kur = a.data.kur as Prisma.Decimal; return { id: "f1" }; }), findUniqueOrThrow: vi.fn(async () => uretilen) },
+      faturaSatir: { create: vi.fn() },
+      elleKur: { findMany: vi.fn(async () => []) },
+      tcmbKuru: { findMany: vi.fn(async (a: { where: { dovizCinsi: { in: string[] } } }) => tcmb.filter((k) => a.where.dovizCinsi.in.includes(k.dovizCinsi))) },
+    };
+    const prisma = { tenantIslem: vi.fn(async (_t: string, is: (t: typeof tx) => unknown) => is(tx)) };
+    const stok = { kaynakFiyatBul: vi.fn() };
+    const servis = new FaturaService(prisma as never, stok as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const guncelle = vi.spyOn(servis, "guncelle").mockResolvedValue({} as never);
+    return { servis, tx, plan, stok, guncelle, bugun };
+  }
+
+  it("TL belgede şablon kuru korunur", async () => {
+    const { servis, tx } = duzenek();
+    await servis.vadesiGelenleriUret();
+    expect(String((tx.fatura.create.mock.calls[0] as unknown as [{ data: { kur: unknown } }])[0].data.kur)).toBe("30");
+  });
+
+  it("dövizli satışta günün döviz alış kuru yazılır", async () => {
+    const { servis, tx } = duzenek({ doviz: "USD", tcmb: [{ dovizCinsi: "USD", dovizAlis: 42.1, dovizSatis: 42.3 }] });
+    const sonuc = await servis.vadesiGelenleriUret();
+    expect(sonuc.uretilenAdet).toBe(1);
+    expect(String((tx.fatura.create.mock.calls[0] as unknown as [{ data: { kur: unknown } }])[0].data.kur)).toBe("42.1");
+  });
+
+  it("dövizli alışta döviz satış kuru yazılır", async () => {
+    const { servis, tx } = duzenek({ doviz: "USD", tip: "alis", tcmb: [{ dovizCinsi: "USD", dovizAlis: 42.1, dovizSatis: 42.3 }] });
+    await servis.vadesiGelenleriUret();
+    expect(String((tx.fatura.create.mock.calls[0] as unknown as [{ data: { kur: unknown } }])[0].data.kur)).toBe("42.3");
+  });
+
+  it("kur yoksa üretmez, plan bekler ve kursuz olarak döner", async () => {
+    const { servis, tx, bugun } = duzenek({ doviz: "EUR" });
+    const sonuc = await servis.vadesiGelenleriUret();
+    expect(sonuc.uretilenAdet).toBe(0);
+    expect(sonuc.kursuzlar).toEqual([{ planId: "p1", ad: "Plan", dovizCinsi: "EUR", tarih: bugun.toISOString().slice(0, 10) }]);
+    expect(tx.tekrarlayanFatura.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ sonrakiTarih: bugun }) }));
+  });
+
+  it("şablon fiyatlı planda güncelleme yapılmaz", async () => {
+    const { servis, guncelle, stok } = duzenek();
+    await servis.vadesiGelenleriUret();
+    expect(stok.kaynakFiyatBul).not.toHaveBeenCalled();
+    expect(guncelle).not.toHaveBeenCalled();
+  });
+
+  it("güncel fiyat: değişen satır güncellenir, bulunamayan şablonda kalır ve uyarılır", async () => {
+    const { servis, guncelle, stok } = duzenek({ fiyatKaynagi: "guncel" });
+    stok.kaynakFiyatBul.mockImplementation(async (_tx: unknown, g: { stokId: string }) => g.stokId === "k1"
+      ? { birimFiyat: 120, kaynakDoviz: "TRY", fiyatKaynagi: "fiyat_listesi" }
+      : { birimFiyat: 0, kaynakDoviz: "TRY", fiyatKaynagi: "kart" });
+    const sonuc = await servis.vadesiGelenleriUret();
+    expect(guncelle).toHaveBeenCalledWith("f1", {}, { birimFiyatlari: new Map([["s1", "120.0000"]]) });
+    expect(sonuc.fiyatUyarilari).toEqual([{ planId: "p1", ad: "Plan", faturaId: "f1", sorunlar: ["K2 Bakım: güncel fiyat tanımlı değil"] }]);
+  });
+
+  it("güncel fiyat: kaynak dövizi belgeye kurla çevrilir", async () => {
+    const { servis, guncelle, stok } = duzenek({ fiyatKaynagi: "guncel", tcmb: [{ dovizCinsi: "USD", dovizAlis: 40, dovizSatis: 41 }] });
+    stok.kaynakFiyatBul.mockResolvedValue({ birimFiyat: 2.5, kaynakDoviz: "USD", fiyatKaynagi: "urun" });
+    await servis.vadesiGelenleriUret();
+    // 2,5 USD × 40 (satışta döviz alış) = 100 TL: s1 zaten 100, yalnız s2 değişir.
+    expect(guncelle).toHaveBeenCalledWith("f1", {}, { birimFiyatlari: new Map([["s2", "100.0000"]]) });
+  });
+
+  it("güncelleme hatası taslağı bozmaz, uyarıya döner", async () => {
+    const { servis, guncelle, stok } = duzenek({ fiyatKaynagi: "guncel" });
+    stok.kaynakFiyatBul.mockResolvedValue({ birimFiyat: 999, kaynakDoviz: "TRY", fiyatKaynagi: "urun" });
+    guncelle.mockRejectedValue(new Error("Dönem kilitli"));
+    const sonuc = await servis.vadesiGelenleriUret();
+    expect(sonuc.uretilenAdet).toBe(1);
+    expect(sonuc.fiyatUyarilari[0]?.sorunlar[0]).toContain("Dönem kilitli");
+  });
+});
+
+describe("FTR-45 zamanlayıcı uyarıları", () => {
+  it("kursuz plan ve fiyat sorunu ayrı uyarı bildirimleri üretir", async () => {
+    const faturalar = { vadesiGelenleriUret: vi.fn(async () => ({ uretilenAdet: 0, faturaIds: [], kotaDoldu: false,
+      kursuzlar: [{ planId: "p1", ad: "Kira", dovizCinsi: "EUR", tarih: "2026-11-06" }],
+      fiyatUyarilari: [{ planId: "p2", ad: "Bakım", faturaId: "f9", sorunlar: ["K2 Bakım: güncel fiyat tanımlı değil"] }] })) };
+    const bildirimler = { uret: vi.fn(async () => ({ bildirimId: "b", yeniTeslimat: 1 })) };
+    const z = new TekrarlayanFaturaZamanlayiciService({} as never, faturalar as never, { kalanLimit: vi.fn(async () => ({ kalan: null, limit: null, planAdi: "K" })) } as never, bildirimler as never);
+    await z.firmaIcinUret("t1");
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "tekrarlayan-fatura-kur:p1:2026-11-06", hedefYol: "/panel/ayarlar/doviz-kurlari" }));
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "tekrarlayan-fatura-fiyat:f9", hedefYol: "/panel/fatura?ac=f9", aciklama: expect.stringContaining("K2 Bakım") }));
+  });
+});

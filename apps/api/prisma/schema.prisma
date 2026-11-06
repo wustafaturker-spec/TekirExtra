@@ -3433,6 +3433,12 @@ enum FaturalananDonem {
   onceki_donem
 }
 
+/// FTR-45: üretilen taslağın birim fiyatı şablondan mı, güncel fiyattan mı gelir.
+enum TekrarFiyatKaynagi {
+  sablon
+  guncel
+}
+
 model TekrarlayanFatura {
   id              String        @id @default(uuid()) @db.Uuid
   tenantId        String        @map("tenant_id") @db.Uuid
@@ -3448,6 +3454,7 @@ model TekrarlayanFatura {
   aciklamaSablonu  String?          @map("aciklama_sablonu")
   notSablonu       String?          @map("not_sablonu")
   faturalananDonem FaturalananDonem @default(bu_donem) @map("faturalanan_donem")
+  fiyatKaynagi     TekrarFiyatKaynagi @default(sablon) @map("fiyat_kaynagi")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
