@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri, DOVIZ_CINSLERI, BELGE_DILLERI, teslimSartiGecerliMi, tasimaSekliGecerliMi } from "@tekirextra/shared";
+import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri, DOVIZ_CINSLERI, BELGE_DILLERI, teslimSartiGecerliMi, tasimaSekliGecerliMi, bilinmeyenTekrarDegiskenleri, TEKRAR_DEGISKENLERI } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -218,6 +218,14 @@ export const faturaSeriSemasi = z.object({
   sonSira: z.number().int().min(0).optional().default(0),
 });
 
+/** FTR-44: boş metin "şablon yok" demektir; tanımsız değişken kayıtta reddedilir. */
+const tekrarMetinSablonu = z.string().max(2000, "Şablon metni en çok 2000 karakter olabilir")
+  .transform((m) => m.trim() || null)
+  .superRefine((m, ctx) => {
+    const bilinmeyen = m ? bilinmeyenTekrarDegiskenleri(m) : [];
+    if (bilinmeyen.length) ctx.addIssue({ code: "custom", message: `Tanımsız değişken: ${bilinmeyen.map((d) => `{{${d}}}`).join(", ")}. Kullanılabilenler: ${TEKRAR_DEGISKENLERI.map((d) => `{{${d}}}`).join(", ")}` });
+  });
+
 export const tekrarlayanFaturaSemasi = z.object({
   ad: z.string().trim().min(1).max(100),
   sablonFaturaId: z.string().uuid(),
@@ -225,6 +233,9 @@ export const tekrarlayanFaturaSemasi = z.object({
   aralik: z.number().int().min(1).max(36).default(1),
   sonrakiTarih: z.string().date(),
   bitisTarihi: z.string().date().optional().nullable(),
+  aciklamaSablonu: tekrarMetinSablonu.nullable().optional(),
+  notSablonu: tekrarMetinSablonu.nullable().optional(),
+  faturalananDonem: z.enum(["bu_donem", "onceki_donem"]).default("bu_donem"),
 });
 
 export const tekrarlayanFaturaGuncelleSemasi = z.object({
@@ -232,4 +243,7 @@ export const tekrarlayanFaturaGuncelleSemasi = z.object({
   aktif: z.boolean().optional(),
   sonrakiTarih: z.string().date().optional(),
   bitisTarihi: z.string().date().optional().nullable(),
+  aciklamaSablonu: tekrarMetinSablonu.nullable().optional(),
+  notSablonu: tekrarMetinSablonu.nullable().optional(),
+  faturalananDonem: z.enum(["bu_donem", "onceki_donem"]).optional(),
 });

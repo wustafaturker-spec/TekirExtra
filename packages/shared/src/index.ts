@@ -56,3 +56,4 @@ export * from "./gelen-denetim";
 export * from "./yetki-modulleri";
 export * from "./pos-taksit";
 export * from "./paket-kapsami";
+export * from "./tekrar-donemi";

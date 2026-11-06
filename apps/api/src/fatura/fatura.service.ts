@@ -1,7 +1,7 @@
 import { agirlikliMaliyet, alisBirimMaliyeti } from "../stok/maliyet";
 import { kesinlesmeTahminiYaz } from "../cari/tahmin-isabeti-kaynak";
 import { faturaDagitimKosulu } from "../stok/maliyet-dagitimi.service";
-import { belgeDiliNormalize, ciftDilGecerli, ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
+import { belgeDiliNormalize, ciftDilGecerli, ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, sonrakiTekrarTarihi, tekrarDegiskenDegerleri, tekrarMetniDoldur, type DovizKodu } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -178,6 +178,8 @@ export class FaturaService {
         siklik: girdi.siklik, aralik: girdi.aralik,
         sonrakiTarih: new Date(girdi.sonrakiTarih),
         bitisTarihi: girdi.bitisTarihi ? new Date(girdi.bitisTarihi) : null,
+        aciklamaSablonu: girdi.aciklamaSablonu ?? null, notSablonu: girdi.notSablonu ?? null,
+        faturalananDonem: girdi.faturalananDonem,
       }});
     });
   }
@@ -192,6 +194,7 @@ export class FaturaService {
       if (bitis && bitis < sonraki) throw new BadRequestException("Bitiş tarihi sıradaki tarihten önce olamaz");
       return tx.tekrarlayanFatura.update({ where: { id }, data: {
         ad: girdi.ad, aktif: girdi.aktif, sonrakiTarih: sonraki, bitisTarihi: bitis,
+        aciklamaSablonu: girdi.aciklamaSablonu, notSablonu: girdi.notSablonu, faturalananDonem: girdi.faturalananDonem,
       }});
     });
   }
@@ -236,6 +239,10 @@ export class FaturaService {
               ? Math.round((s.vadeTarihi.getTime() - s.tarih.getTime()) / 86_400_000)
               : null;
             const vadeTarihi = vadeGun === null ? null : new Date(tarih.getTime() + vadeGun * 86_400_000);
+            // FTR-44: plan şablonu varsa açıklama/not dönem değişkenleriyle doldurulur.
+            const degerler = tekrarDegiskenDegerleri(tarih, plan.siklik, plan.aralik, plan.faturalananDonem);
+            const aciklama = plan.aciklamaSablonu ? tekrarMetniDoldur(plan.aciklamaSablonu, degerler) : s.aciklama;
+            const notlar = plan.notSablonu ? tekrarMetniDoldur(plan.notSablonu, degerler) : s.notlar;
             const yeni = await tx.fatura.create({ data: {
               tenantId, tip: s.tip, durum: "taslak", tarih, vadeTarihi,
               cariId: s.cariId, depoId: s.depoId, dovizCinsi: s.dovizCinsi, kur: s.kur,
@@ -245,7 +252,7 @@ export class FaturaService {
               genelIskontoToplam: s.genelIskontoToplam, toplamMatrah: s.toplamMatrah,
               toplamKdv: s.toplamKdv, toplamTevkifat: s.toplamTevkifat,
               toplamNetKdv: s.toplamNetKdv, toplamEkVergi: s.toplamEkVergi, toplamStopaj: s.toplamStopaj, genelToplam: s.genelToplam,
-              aciklama: s.aciklama, notlar: s.notlar, tekrarlayanPlanId: plan.id, planlananTarih: tarih,
+              aciklama, notlar, tekrarlayanPlanId: plan.id, planlananTarih: tarih,
             }});
             for (const satir of s.satirlar) {
               const { id: _id, faturaId: _faturaId, kaynakBelgeSatirId: _kaynakBelgeSatirId, ...veri } = satir;
@@ -255,7 +262,7 @@ export class FaturaService {
             planUretimAdedi += 1;
             sonUretimTarihi = tarih;
           }
-          tarih = this.sonrakiTekrarTarihi(tarih, plan.siklik, plan.aralik);
+          tarih = sonrakiTekrarTarihi(tarih, plan.siklik, plan.aralik);
         }
         await tx.tekrarlayanFatura.update({ where: { id: plan.id }, data: {
           sonrakiTarih: tarih, sonUretimTarihi: planUretimAdedi ? sonUretimTarihi : plan.sonUretimTarihi,
@@ -264,24 +271,6 @@ export class FaturaService {
       }
       return { uretilenAdet: uretilenIds.length, faturaIds: uretilenIds, kotaDoldu };
     });
-  }
-
-  private sonrakiTekrarTarihi(tarih: Date, siklik: "haftalik" | "aylik" | "yillik", aralik: number) {
-    const sonuc = new Date(tarih);
-    if (siklik === "haftalik") sonuc.setUTCDate(sonuc.getUTCDate() + 7 * aralik);
-    else if (siklik === "aylik") {
-      const gun = sonuc.getUTCDate();
-      sonuc.setUTCDate(1);
-      sonuc.setUTCMonth(sonuc.getUTCMonth() + aralik);
-      const sonGun = new Date(Date.UTC(sonuc.getUTCFullYear(), sonuc.getUTCMonth() + 1, 0)).getUTCDate();
-      sonuc.setUTCDate(Math.min(gun, sonGun));
-    } else {
-      const ay = sonuc.getUTCMonth();
-      sonuc.setUTCFullYear(sonuc.getUTCFullYear() + aralik, ay, 1);
-      const sonGun = new Date(Date.UTC(sonuc.getUTCFullYear(), ay + 1, 0)).getUTCDate();
-      sonuc.setUTCDate(Math.min(tarih.getUTCDate(), sonGun));
-    }
-    return sonuc;
   }
 
   // ─── FATURA CRUD İŞLEMLERİ ───────────────────────────────────────────────

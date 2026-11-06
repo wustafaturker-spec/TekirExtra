@@ -21,7 +21,8 @@ function uretimDuzenegi() {
   };
   const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
   const ilk = new Date(Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth() - 2, 1));
-  const plan = { id: "p1", aktif: true, siklik: "aylik", aralik: 1, sonrakiTarih: ilk, bitisTarihi: null, sonUretimTarihi: null, sablonFatura: sablon };
+  const plan = { id: "p1", aktif: true, siklik: "aylik", aralik: 1, sonrakiTarih: ilk, bitisTarihi: null, sonUretimTarihi: null, sablonFatura: sablon,
+    aciklamaSablonu: null as string | null, notSablonu: null as string | null, faturalananDonem: "bu_donem" };
   let sayac = 0;
   const tx = {
     $queryRaw: vi.fn(async () => [{ kilit: 1 }]),
@@ -31,8 +32,30 @@ function uretimDuzenegi() {
   };
   const prisma = { tenantIslem: vi.fn(async (_t: string, is: (t: typeof tx) => unknown) => is(tx)) };
   const servis = new FaturaService(prisma as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
-  return { servis, tx, ilk };
+  return { servis, tx, ilk, plan, sablon };
 }
+
+describe("FTR-44 dönem değişkenleri üretimde", () => {
+  it("plan şablonu varsa açıklama/not her dönem için doldurulur", async () => {
+    const { servis, tx, plan, ilk } = uretimDuzenegi();
+    plan.aciklamaSablonu = "{{AY_ADI}} {{YIL}} danışmanlık";
+    plan.notSablonu = "Dönem: {{DONEM_BAS}}-{{DONEM_BIT}}";
+    await servis.vadesiGelenleriUret();
+    const ay = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+    const ilkVeri = (tx.fatura.create.mock.calls[0] as unknown as [{ data: { aciklama: string; notlar: string } }])[0].data;
+    expect(ilkVeri.aciklama).toBe(`${ay[ilk.getUTCMonth()]} ${ilk.getUTCFullYear()} danışmanlık`);
+    expect(ilkVeri.notlar).toMatch(/^Dönem: 01\.\d\d\.\d{4}-\d\d\.\d\d\.\d{4}$/);
+    const ikinci = (tx.fatura.create.mock.calls[1] as unknown as [{ data: { aciklama: string } }])[0].data;
+    expect(ikinci.aciklama).toBe(`${ay[(ilk.getUTCMonth() + 1) % 12]} ${ilk.getUTCMonth() === 11 ? ilk.getUTCFullYear() + 1 : ilk.getUTCFullYear()} danışmanlık`);
+  });
+
+  it("plan şablonu yoksa şablon faturanın metni kopyalanır", async () => {
+    const { servis, tx, sablon } = uretimDuzenegi();
+    (sablon as { aciklama: string | null }).aciklama = "Sabit metin {{AY}}";
+    await servis.vadesiGelenleriUret();
+    expect((tx.fatura.create.mock.calls[0] as unknown as [{ data: { aciklama: string } }])[0].data.aciklama).toBe("Sabit metin {{AY}}");
+  });
+});
 
 describe("FTR-43 vadesiGelenleriUret kota sınırı", () => {
   it("kota yoksa gecikmiş tüm dönemleri üretir", async () => {
@@ -136,5 +159,18 @@ describe("FTR-43 zaman hesabı", () => {
   });
   it("İstanbul gününü UTC gece yarısına göre değil yerel güne göre verir", () => {
     expect(istanbulGunu(Date.parse("2026-11-06T22:00:00Z"))).toEqual({ baslangic: new Date("2026-11-06T21:00:00Z"), anahtar: "2026-11-07" });
+  });
+});
+
+describe("FTR-44 plan şeması", () => {
+  it("tanımsız değişkeni reddeder, boş metni şablonsuz sayar", async () => {
+    const { tekrarlayanFaturaSemasi, tekrarlayanFaturaGuncelleSemasi } = await import("./fatura.semalar");
+    const taban = { ad: "Kira", sablonFaturaId: "7f0c2f2e-0d4c-4a8b-9a51-3b1f2a0c9d11", siklik: "aylik", sonrakiTarih: "2026-11-03" };
+    const hatali = tekrarlayanFaturaSemasi.safeParse({ ...taban, aciklamaSablonu: "{{AY_ADI}} {{AYY}}" });
+    expect(hatali.success).toBe(false);
+    expect(hatali.error?.issues[0]?.message).toContain("{{AYY}}");
+    const tamam = tekrarlayanFaturaSemasi.parse({ ...taban, aciklamaSablonu: "  {{AY_ADI}} kira  ", notSablonu: "   " });
+    expect(tamam).toMatchObject({ aciklamaSablonu: "{{AY_ADI}} kira", notSablonu: null, faturalananDonem: "bu_donem" });
+    expect(tekrarlayanFaturaGuncelleSemasi.parse({ aciklamaSablonu: "" })).toEqual({ aciklamaSablonu: null });
   });
 });

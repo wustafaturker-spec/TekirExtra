@@ -3427,6 +3427,12 @@ enum TekrarSikligi {
   yillik
 }
 
+/// FTR-44: planlanan tarihin hangi dönemi faturaladığı (dönem değişkenleri için).
+enum FaturalananDonem {
+  bu_donem
+  onceki_donem
+}
+
 model TekrarlayanFatura {
   id              String        @id @default(uuid()) @db.Uuid
   tenantId        String        @map("tenant_id") @db.Uuid
@@ -3438,6 +3444,10 @@ model TekrarlayanFatura {
   bitisTarihi     DateTime?     @map("bitis_tarihi") @db.Date
   aktif           Boolean       @default(true)
   sonUretimTarihi DateTime?     @map("son_uretim_tarihi") @db.Date
+  /// FTR-44: doluysa üretilen taslağın açıklaması/notu bu metinden ({{AY}} vb.) doldurulur.
+  aciklamaSablonu  String?          @map("aciklama_sablonu")
+  notSablonu       String?          @map("not_sablonu")
+  faturalananDonem FaturalananDonem @default(bu_donem) @map("faturalanan_donem")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
