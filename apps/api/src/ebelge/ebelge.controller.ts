@@ -21,6 +21,7 @@ import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { OnDenetimAiService } from "./on-denetim-ai.service";
 import { GelenDenetimAiService } from "./gelen-denetim-ai.service";
+import { sihirbazEngelleri } from "./gonderim-engelleri";
 import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenAiDenetimSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
 import { SaltOkumadaAcik } from "../auth/public.decorator";
 
@@ -207,7 +208,7 @@ export class EbelgeController {
     // kimlik ve tarih kontrollerini anlatır; ihracat ve internet satışı
     // listelerine bakılmazsa eksik belge kuyruğa girer ve hata orada patlar —
     // kullanıcı ise "gönderildi" görür.
-    const engeller = [...(wizard.ihracat?.engeller ?? []), ...(wizard.yurtDisiEarsiv?.engeller ?? []), ...(wizard.internetSatisi?.engeller ?? []), ...(wizard.iade?.engeller ?? []), ...(wizard.kamu?.engeller ?? []), ...(wizard.sgk?.engeller ?? []), ...(wizard.sarj?.engeller ?? []), ...(wizard.idis?.engeller ?? []), ...(wizard.yolcuBeraberi?.engeller ?? []), ...(wizard.ytb?.engeller ?? []), ...(wizard.sevkiyat?.engeller ?? [])];
+    const engeller = sihirbazEngelleri(wizard);
     if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);

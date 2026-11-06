@@ -22,6 +22,7 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
+import { TopluFaturaIslemleri, topluSecilebilir } from "@/components/toplu-fatura-islemleri";
 import { OnDenetimKararlari, OnDenetimPaneli, type AiDenetimSonucu } from "@/components/on-denetim-paneli";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
@@ -473,6 +474,8 @@ function FaturaDurumRozeti({ fatura }: { fatura: Fatura }) {
 export default function FaturaSayfasi() {
   const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
   const [faturalar, setFaturalar] = useState<Fatura[]>([]);
+  /** EBLG-152: toplu işlem için seçilen faturalar. */
+  const [topluSecim, setTopluSecim] = useState<Set<string>>(new Set());
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [stoklar, setStoklar] = useState<Stok[]>([]);
   const [projeler, setProjeler] = useState<Proje[]>([]);
@@ -3769,10 +3772,15 @@ export default function FaturaSayfasi() {
         </HizliKayitPaneli>
       )}
 
+      <TopluFaturaIslemleri secili={topluSecim} faturalar={faturalar} onTemizle={() => setTopluSecim(new Set())} onBitti={() => yukle()} />
       <Card pad={false}>
         <TableWrap>
           <thead>
             <tr>
+              <th style={{ width: "2.5rem" }}>{(() => {
+                const secilebilir = gorunenFaturalar.filter(topluSecilebilir);
+                return secilebilir.length > 0 && <input type="checkbox" aria-label="Görünen uygun faturaların tümünü seç" title="Toplu işlem: yalnız e-Belgesi olmayan satış ve satış iade faturaları seçilir" checked={secilebilir.every((f) => topluSecim.has(f.id))} onChange={(e) => setTopluSecim(new Set(e.target.checked ? secilebilir.map((f) => f.id) : []))} />;
+              })()}</th>
               <th>Fatura No</th>
               <th>Firma / Cari</th>
               <th>Tarih</th>
@@ -3787,7 +3795,7 @@ export default function FaturaSayfasi() {
           <tbody>
             {gorunenFaturalar.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty">{durumFiltresi || ebelgeFiltresi || odemeFiltresi || ihracKayitliFiltresi || aramaFiltresi ? "Bu filtrelere uyan fatura yok." : "Sistemde henüz kayıtlı fatura bulunmuyor."}</td>
+                <td colSpan={10} className="empty">{durumFiltresi || ebelgeFiltresi || odemeFiltresi || ihracKayitliFiltresi || aramaFiltresi ? "Bu filtrelere uyan fatura yok." : "Sistemde henüz kayıtlı fatura bulunmuyor."}</td>
               </tr>
             ) : (
               gorunenFaturalar.map((f) => (
@@ -3799,6 +3807,9 @@ export default function FaturaSayfasi() {
                   onClick={() => faturayiAc(f.id)}
                   onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); faturayiAc(f.id); } }}
                 >
+                  <td onClick={(olay) => olay.stopPropagation()} onKeyDown={(olay) => olay.stopPropagation()}>
+                    {topluSecilebilir(f) && <input type="checkbox" aria-label={`${f.no || "Taslak"} faturasını toplu işlem için seç`} checked={topluSecim.has(f.id)} onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(f.id); else yeni.delete(f.id); setTopluSecim(yeni); }} />}
+                  </td>
                   <td style={{ fontWeight: 700 }} className="mono">{f.no || "(Taslak)"}</td>
                   <td>{f.cari.unvan}</td>
                   <td>{f.tarih}</td>

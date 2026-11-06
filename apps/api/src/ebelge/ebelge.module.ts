@@ -15,15 +15,17 @@ import { EirsaliyeService } from "./eirsaliye.service";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { OnDenetimAiService } from "./on-denetim-ai.service";
 import { GelenDenetimAiService } from "./gelen-denetim-ai.service";
+import { TopluFaturaController } from "./toplu-fatura.controller";
+import { TopluFaturaService } from "./toplu-fatura.service";
 
 @Module({
   // Gelen belgenin taslak alış faturasına dönüşü FaturaService üzerinden
   // yapılır; FaturaModule da e-belge kuyruğunu kullandığı için döngüsel.
   imports: [TenantModule, BildirimlerModule, BelgelerModule, forwardRef(() => FaturaModule)],
-  controllers: [EbelgeController, EirsaliyeController],
+  controllers: [EbelgeController, EirsaliyeController, TopluFaturaController],
   providers: [
     EbelgeService, EbelgeKuyrukService, EbelgeGorunumService, EirsaliyeService, MukellefListesiService,
-    EbelgeUygulamalariService, OnDenetimAiService, GelenDenetimAiService,
+    EbelgeUygulamalariService, OnDenetimAiService, GelenDenetimAiService, TopluFaturaService,
     // EBLG-77: kapalı e-belge uygulamasının ucu reddedilir. Guard global
     // çalışır ama dekoratörsüz uçlara hiç dokunmaz.
     { provide: APP_GUARD, useClass: EbelgeUygulamasiGuard },
