@@ -2225,7 +2225,8 @@ test("mevzuat editörü firma ve tavan menülerini görmez, o sayfalardan Deği�
   await page.route("**/api/v1/platform/mevzuat/**", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/v1/platform/firmalar**", (route) => route.fulfill({ status: 403, json: { message: "Bu işlem için platform yöneticisi yetkisi gerekir" } }));
   await page.goto("/platform/firmalar");
-  await expect(page).toHaveURL(/\/platform$/);
+  // Dev sunucusu /platform sayfasını ilk yönlendirmede derler; yükte 5 sn yetmiyor.
+  await expect(page).toHaveURL(/\/platform$/, { timeout: 15_000 });
   const menu = page.getByRole("navigation", { name: "Platform menüsü" });
   await expect(menu.getByRole("link", { name: "Değişiklikler" })).toBeVisible();
   await expect(menu.getByRole("link", { name: "Denetim izi" })).toBeVisible();

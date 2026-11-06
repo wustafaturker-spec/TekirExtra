@@ -11,7 +11,7 @@ import { EpostaService } from "./eposta.service";
 /** KLN-23: yeni adrese giden doğrulama bağlantısı bir gün geçerlidir. */
 export const EPOSTA_DEGISIMI_GECERLILIK_SAAT = 24;
 
-const yeniEpostaSemasi = z.object({ eposta: z.string().trim().max(254).pipe(z.email("Geçerli bir e-posta adresi girin")) });
+const yeniEpostaSemasi = z.object({ eposta: z.string().trim().max(254).pipe(z.email("Geçerli bir e-posta adresi girin")).transform((deger) => deger.toLowerCase()) });
 const kendiDegisimSemasi = yeniEpostaSemasi.extend({ mevcutParola: z.string().min(1, "Mevcut parolanızı girin").max(200) });
 const onaySemasi = z.object({ token: z.string().min(20).max(200) });
 
@@ -110,10 +110,11 @@ export class EpostaDegisimiService {
         const kullanici = await tx.user.findUnique({ where: { id: kayit.userId }, select: { aktif: true, eposta: true } });
         if (!kullanici?.aktif) throw gecersiz;
         // Tekillik auth_kimlikler'in eposta anahtarıyla korunur; yarışta kaybeden P2002 alır.
-        await tx.authKimlik.update({ where: { userId: kayit.userId }, data: { eposta: kayit.yeniEposta } });
-        await tx.user.update({ where: { id: kayit.userId }, data: { eposta: kayit.yeniEposta, epostaDogrulandi: true } });
+        const yeniEposta = kayit.yeniEposta.trim().toLowerCase();
+        await tx.authKimlik.update({ where: { userId: kayit.userId }, data: { eposta: yeniEposta } });
+        await tx.user.update({ where: { id: kayit.userId }, data: { eposta: yeniEposta, epostaDogrulandi: true } });
         await tx.auditLog.create({
-          data: { tenantId: kayit.tenantId, userId: kayit.userId, islem: "eposta_degisti", varlik: "user", varlikId: kayit.userId, detay: { eskiEposta: kullanici.eposta, yeniEposta: kayit.yeniEposta } },
+          data: { tenantId: kayit.tenantId, userId: kayit.userId, islem: "eposta_degisti", varlik: "user", varlikId: kayit.userId, detay: { eskiEposta: kullanici.eposta, yeniEposta } },
         });
       });
     } catch (hata) {

@@ -22,7 +22,7 @@ function kur() {
   };
   const prisma = {
     tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-    authKimlik: { findUnique: vi.fn(async ({ where }: { where: { eposta: string } }) => (where.eposta === EPOSTA ? { tenantId: "t1", userId: "u1" } : null)) },
+    authKimlik: { findFirst: vi.fn(async ({ where }: { where: { eposta: { equals: string } } }) => (where.eposta.equals.toLowerCase() === EPOSTA.toLowerCase() ? { tenantId: "t1", userId: "u1" } : null)) },
     oturum: { create: vi.fn(async () => ({})) },
   };
   const service = new AuthService(prisma as unknown as PrismaService, { signAsync: async () => "erisim" } as never, GirisDenemeSayaci.bellekte(), { unut: () => undefined } as never);

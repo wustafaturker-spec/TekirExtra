@@ -102,11 +102,11 @@ export class SelfServisService {
         await tx.auditLog.create({ data: { tenantId, userId, islem: "SELF_SERVIS_DAVET", varlik: "personel", varlikId: personelId, detay: { yenilendi: true } } });
         return { eposta: p.kullanici.eposta, adSoyad };
       }
-      const kimlik = await this.prisma.authKimlik.findUnique({ where: { eposta } });
+      const kimlik = await this.prisma.authKimlik.findFirst({ where: { eposta: { equals: eposta, mode: "insensitive" } } });
       if (kimlik) throw new ConflictException("Bu e-posta başka bir kullanıcı hesabında kayıtlı; personel kartına çalışanın kendi e-postasını girin");
       const yeniId = randomUUID();
       await tx.user.create({ data: { id: yeniId, tenantId, eposta, adSoyad, rol: "calisan", parolaHash: await argon2.hash(randomBytes(32).toString("base64url")), epostaDogrulandi: true, personelId, davetAnahtarOzeti: ozet, davetSonGecerlilik: son } });
-      await this.prisma.authKimlik.create({ data: { eposta, tenantId, userId: yeniId } });
+      await tx.authKimlik.create({ data: { eposta, tenantId, userId: yeniId } });
       await tx.auditLog.create({ data: { tenantId, userId, islem: "SELF_SERVIS_DAVET", varlik: "personel", varlikId: personelId, detay: { yenilendi: false } } });
       return { eposta, adSoyad };
     });

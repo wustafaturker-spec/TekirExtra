@@ -114,8 +114,10 @@ model Tenant {
   faturaGecikmeTahminleri FaturaGecikmeTahmini[]
   id                      String                  @id @default(uuid()) @db.Uuid
   unvan                   String
+  kisiTuru                String                  @default("tuzel") @map("kisi_turu")
   vkn                     String                  @unique
   vergiDairesi            String?                 @map("vergi_dairesi")
+  vergiDairesiKodu        String?                 @map("vergi_dairesi_kodu") @db.VarChar(10)
   /// EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan firma bilgisi.
   adres                   String?                 @map("adres")
   ilce                    String?                 @map("ilce")
@@ -286,6 +288,18 @@ model Tenant {
   aiIcgoruleri            AiIcgoru[]
 
   @@map("tenants")
+}
+
+/// Platform tarafından yönetilen GİB vergi dairesi sözlüğü.
+model VergiDairesi {
+  kod        String  @id @db.VarChar(10)
+  ilKodu     String  @map("il_kodu") @db.VarChar(2)
+  il         String  @db.VarChar(80)
+  ilce       String  @db.VarChar(80)
+  ad         String  @db.VarChar(160)
+  aktif      Boolean @default(true)
+  @@index([ilKodu, ilce, ad], map: "vergi_daireleri_il_ilce_ad_idx")
+  @@map("vergi_daireleri")
 }
 
 /// KLN-08: v1.0 fiyatlandırma uygulamaz. Sağlayıcı ve dönem alanları ileride

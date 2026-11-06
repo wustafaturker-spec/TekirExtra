@@ -31,7 +31,7 @@ function kur() {
   };
   const prisma = {
     tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-    authKimlik: { findUnique: vi.fn(async () => ({ tenantId: "t1", userId: "u1" })) },
+    authKimlik: { findFirst: vi.fn(async () => ({ tenantId: "t1", userId: "u1" })) },
     oturum: {
       create: vi.fn(async ({ data }: { data: Omit<Oturum, "id" | "createdAt"> }) => { const o = { ...data, id: `o${oturumlar.length + 1}`, createdAt: new Date() } as Oturum; oturumlar.push(o); return o; }),
       findUnique: vi.fn(async ({ where }: { where: { refreshTokenHash: string } }) => oturumlar.find((o) => o.refreshTokenHash === where.refreshTokenHash) ?? null),

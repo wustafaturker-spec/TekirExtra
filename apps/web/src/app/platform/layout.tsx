@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText, BarChart3, Package } from "lucide-react";
+import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText, BarChart3, Package, MapPinned } from "lucide-react";
 import { Alert, Button, Modal, ModalEylem } from "@/components/ui";
 import { platformApi, platformCikis, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
 
@@ -17,6 +17,7 @@ const MENU = [
   { href: "/platform/istatistikler", ikon: BarChart3, baslik: "Firma istatistikleri", yalnizYonetici: true },
   { href: "/platform/paketler", ikon: Package, baslik: "Paket kataloğu", yalnizYonetici: true },
   { href: "/platform/firmalar", ikon: Building2, baslik: "Firmalar", yalnizYonetici: true },
+  { href: "/platform/vergi-daireleri", ikon: MapPinned, baslik: "Vergi daireleri", yalnizYonetici: true },
   { href: "/platform", ikon: FilePenLine, baslik: "Değişiklikler" },
   { href: "/platform/tablolar", ikon: Table2, baslik: "Yürürlükteki değerler" },
   { href: "/platform/talepler", ikon: Inbox, baslik: "Talepler" },
@@ -85,7 +86,7 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   const bolumler = [
     { ad: "Genel bakış", yollar: ["/platform/ozet", "/platform/gorevler"] },
     { ad: "Mevzuat yönetimi", yollar: ["/platform", "/platform/tablolar", "/platform/talepler", "/platform/denetim"] },
-    { ad: "Platform yönetimi", yollar: ["/platform/duyurular", "/platform/paketler", "/platform/firmalar", "/platform/istatistikler", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
+    { ad: "Platform yönetimi", yollar: ["/platform/duyurular", "/platform/paketler", "/platform/firmalar", "/platform/vergi-daireleri", "/platform/istatistikler", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yapay-zeka", "/platform/kullanicilar"] },
   ];
   return (
     <div className="platform-shell">

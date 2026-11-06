@@ -41,7 +41,7 @@ function kur() {
   };
   const prisma = {
     tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-    authKimlik: { findUnique: vi.fn(async () => ({ tenantId: TENANT, userId: KULLANICI })) },
+    authKimlik: { findFirst: vi.fn(async () => ({ tenantId: TENANT, userId: KULLANICI })) },
     oturum: { create: vi.fn(async () => ({})) },
   };
   const jwt = { signAsync: vi.fn(async () => "erisim-token") };

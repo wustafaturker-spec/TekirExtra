@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
@@ -32,12 +32,15 @@ export class KayitService {
   }
 
   async kaydet(girdi: KayitGirdisi): Promise<{ tenantId: string }> {
-    const mevcut = await this.prisma.authKimlik.findUnique({
-      where: { eposta: girdi.yoneticiEposta },
+    const eposta = girdi.yoneticiEposta.trim().toLowerCase();
+    const mevcut = await this.prisma.authKimlik.findFirst({
+      where: { eposta: { equals: eposta, mode: "insensitive" } },
     });
     if (mevcut) {
       throw new ConflictException("Bu e-posta ile kayıtlı bir hesap zaten var");
     }
+    const daire = await this.prisma.vergiDairesi.findFirst({ where: { kod: girdi.vergiDairesiKodu, il: girdi.il, ilce: girdi.ilce, aktif: true }, select: { kod: true, ad: true } });
+    if (!daire || daire.ad !== girdi.vergiDairesi) throw new BadRequestException("İl, ilçe ve vergi dairesi etkin listeden birlikte seçilmelidir");
     const tenantId = randomUUID();
     const userId = randomUUID();
     const parolaHash = await argon2.hash(girdi.parola);
@@ -59,21 +62,33 @@ export class KayitService {
           data: {
             id: tenantId,
             unvan: girdi.unvan,
+            kisiTuru: girdi.kisiTuru,
             vkn: girdi.vkn,
             vergiDairesi: girdi.vergiDairesi,
+            vergiDairesiKodu: daire.kod,
+            adres: girdi.adres || null,
+            postaKodu: girdi.postaKodu || null,
+            ilce: girdi.ilce || null,
+            il: girdi.il || null,
+            telefon: girdi.telefon || null,
+            eposta: girdi.firmaEposta?.trim().toLowerCase() || null,
+            webSitesi: girdi.webSitesi || null,
           },
         });
         await tx.user.create({
           data: {
             id: userId,
             tenantId,
-            eposta: girdi.yoneticiEposta,
+            eposta,
             parolaHash,
             adSoyad: girdi.yoneticiAdSoyad,
             rol: "yonetici",
             epostaDogrulandi: true,
           },
         });
+        // Kimlik rehberi aynı transaction'da yazılır: eşzamanlı aynı e-posta
+        // kaydı reddedilince firma ve ilk kullanıcı da geri alınır.
+        await tx.authKimlik.create({ data: { eposta, tenantId, userId } });
         const simdi = new Date();
         const denemeBitisi = secilenPaket && secilenPaket.denemeGunSayisi > 0
           ? new Date(simdi.getTime() + secilenPaket.denemeGunSayisi * 86_400_000) : null;
@@ -87,7 +102,7 @@ export class KayitService {
             } : {}),
             durum: denemeBitisi ? "deneme" : "aktif",
             ...(denemeBitisi ? { donemBaslangici: simdi, donemSonu: denemeBitisi } : {}),
-            faturaEpostasi: girdi.yoneticiEposta,
+            faturaEpostasi: eposta,
             faturalandirmaUnvani: girdi.unvan,
           },
         });
@@ -113,15 +128,14 @@ export class KayitService {
       });
     } catch (hata) {
       if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") {
+        const hedef = String(hata.meta?.target ?? "");
+        if (hedef.includes("eposta")) throw new ConflictException("Bu e-posta ile kayıtlı bir hesap zaten var");
         throw new ConflictException("Bu VKN/TCKN ile kayıtlı bir firma zaten var");
       }
       throw hata;
     }
-    await this.prisma.authKimlik.create({
-      data: { eposta: girdi.yoneticiEposta, tenantId, userId },
-    });
 
-    await this.dogrulamaOlusturVeGonder(tenantId, userId, girdi.yoneticiEposta, girdi.yoneticiAdSoyad);
+    await this.dogrulamaOlusturVeGonder(tenantId, userId, eposta, girdi.yoneticiAdSoyad);
     return { tenantId };
   }
 

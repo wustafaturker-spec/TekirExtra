@@ -75,8 +75,13 @@ async function firmaAc(etiket: string, vkn: string) {
     method: "POST",
     body: {
       unvan: `Kabul Test ${etiket}`,
+      kisiTuru: "tuzel",
       vkn,
-      vergiDairesi: "Test VD",
+      // Kayıt GİB sözlüğünden il + ilçe + daire üçlüsü ister (seed migration'ı).
+      il: "Adana",
+      ilce: "Ceyhan",
+      vergiDairesi: "Ceyhan Vergi Dairesi Müdürlüğü",
+      vergiDairesiKodu: "01201",
       yoneticiEposta: eposta,
       yoneticiAdSoyad: "Kabul Yönetici",
       parola,
@@ -120,7 +125,7 @@ async function entegratorBagla(jeton: string, saglayici = "izibiz") {
   expect(aktif.durum, JSON.stringify(aktif.veri)).toBe(201);
 
   // EBLG-62 sonrası: e-belge işlemleri firmanın mükellefiyeti belirtilmeden açılmaz.
-  const firma = await istek("/firma", { method: "PATCH", jeton, body: { efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, adres: "Kabul Cad. No:1", ilce: "Kadıköy", il: "İstanbul" } });
+  const firma = await istek("/firma", { method: "PATCH", jeton, body: { efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, adres: "Kabul Cad. No:1", ilce: "Ceyhan", il: "Adana" } });
   expect(firma.durum, JSON.stringify(firma.veri)).toBe(200);
   return olustur.veri.id;
 }

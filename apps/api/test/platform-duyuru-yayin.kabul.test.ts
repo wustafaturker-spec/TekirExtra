@@ -69,7 +69,13 @@ describe("duyuru hedefleme ve yayın — gerçek PostgreSQL", () => {
   });
   it("dahil/hariç, paket, abonelik ve rol birlikte süzülür; hedef dışı detay/olay kapalıdır", async () => {
     const { d,p } = await yayin({ ...hedef(), kapsam: "tum", firmaIds: [], haricFirmaIds: [t2], paketIds: [paketId], durumlar: ["aktif"] });
-    expect(p).toMatchObject({ firmaSayisi: 1, kullaniciSayisi: 1 });
+    // Kabul DB'si diğer kabul dosyalarının firmalarını da taşır; "tum" kapsamı
+    // onları da sayar. Süzgeç bu dosyanın firmaları üzerinden doğrulanır.
+    expect(p.firmaSayisi).toBeGreaterThanOrEqual(1);
+    const alicilar = await admin.$queryRaw<{ tenant_id: string; user_id: string }[]>`
+      SELECT tenant_id::text, user_id::text FROM platform_duyuru_alicilari
+      WHERE duyuru_id=${d.id}::uuid AND tenant_id IN (${t1}::uuid, ${t2}::uuid)`;
+    expect(alicilar).toEqual([{ tenant_id: t1, user_id: u1 }]);
     expect(await kiraci(() => tenant.getir(d.id,false))).toMatchObject({ baslik: "Yayın kabulü", okundu: false });
     for (const [tid,uid] of [[t1,u2],[t2,u3]]) {
       await expect(kiraci(() => tenant.getir(d.id,false),tid,uid)).rejects.toThrow("bulunamadı");

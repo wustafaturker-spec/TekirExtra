@@ -19,6 +19,8 @@ const fiyatlandirma = { paraBirimi: "TRY" as const, vergiDahil: false as const, 
 const kapsam: PaketKapsamSozlesmesi = { semaSurumu: 1, moduller: [...PAKET_MODUL_KODLARI], kotalar: {
   kullanici: { sinir: 7, uyariYuzdesi: 80 }, cari: { sinir: 80, uyariYuzdesi: 80 }, stok: { sinir: 120, uyariYuzdesi: 80 }, aylikFatura: { sinir: 60, uyariYuzdesi: 80 },
 } };
+/** Kayıt GİB sözlüğünden il + ilçe + daire üçlüsü ister (seed migration'ı). */
+const firmaKimligi = { kisiTuru: "tuzel" as const, il: "Adana", ilce: "Ceyhan", vergiDairesi: "Ceyhan Vergi Dairesi Müdürlüğü", vergiDairesiKodu: "01201" };
 let paketId: string;
 let planKodu: string;
 
@@ -56,9 +58,9 @@ describe("yeni firma kaydında açık katalog satışı — gerçek PostgreSQL",
       fiyatlandirma: { paraBirimi: "TRY", kdvOrani: "20", donemler: [{ aySayisi: 1, matrah: "123.45" }] },
       limitler: { kullanici: 7, cari: 80, stok: 120, aylikFatura: 60 }, kapsamSozlesmesi: kapsam,
     });
-    await expect(kayit.kaydet({ unvan: "Paket seçimi hatası AŞ", vkn: String(Math.floor(1_000_000_000 + Math.random() * 9_000_000_000)), yoneticiEposta: `${randomUUID()}@invalid.test`, yoneticiAdSoyad: "Kabul Kullanıcı", parola: "GucluParola2026", paketSurumId: randomUUID() })).rejects.toThrow("satıştan kalkmış");
+    await expect(kayit.kaydet({ ...firmaKimligi, unvan: "Paket seçimi hatası AŞ", vkn: String(Math.floor(1_000_000_000 + Math.random() * 9_000_000_000)), yoneticiEposta: `${randomUUID()}@invalid.test`, yoneticiAdSoyad: "Kabul Kullanıcı", parola: "GucluParola2026", paketSurumId: randomUUID() })).rejects.toThrow("satıştan kalkmış");
     const sonuc = await kayit.kaydet({
-      unvan: "Açık katalogla kayıt AŞ", vkn: String(Math.floor(1_000_000_000 + Math.random() * 9_000_000_000)),
+      ...firmaKimligi, unvan: "Açık katalogla kayıt AŞ", vkn: String(Math.floor(1_000_000_000 + Math.random() * 9_000_000_000)),
       yoneticiEposta: `${randomUUID()}@invalid.test`, yoneticiAdSoyad: "Kabul Kullanıcı", parola: "GucluParola2026",
       paketSurumId: teklifler[0].surumId,
     });
@@ -86,7 +88,7 @@ describe("yeni firma kaydında açık katalog satışı — gerçek PostgreSQL",
     await expect(admin.platformPaketSurumu.update({ where: { id: yayin.id }, data: { denemeGunSayisi: 15 } })).rejects.toThrow();
     await yonetici(() => platformPaket.satisDegistir(paketId, { acik: true, surumId: yayin.id, kilitSurumu: satis.kilitSurumu, surumKilitSurumu: yayin.kilitSurumu, neden: "Yeni kayıtlara 14 gün deneme" }));
     expect((await kayit.acikSatisPaketleri())[0]).toMatchObject({ surumId: yayin.id, denemeGunSayisi: 14 });
-    const sonuc = await kayit.kaydet({ unvan: "Deneme katalog kabul AŞ", vkn: String(Math.floor(1_000_000_000 + Math.random() * 9_000_000_000)), yoneticiEposta: `${randomUUID()}@invalid.test`, yoneticiAdSoyad: "Deneme Kullanıcı", parola: "GucluParola2026", paketSurumId: yayin.id });
+    const sonuc = await kayit.kaydet({ ...firmaKimligi, unvan: "Deneme katalog kabul AŞ", vkn: String(Math.floor(1_000_000_000 + Math.random() * 9_000_000_000)), yoneticiEposta: `${randomUUID()}@invalid.test`, yoneticiAdSoyad: "Deneme Kullanıcı", parola: "GucluParola2026", paketSurumId: yayin.id });
     const abonelik = await admin.tenantAbonelik.findUniqueOrThrow({ where: { tenantId: sonuc.tenantId } });
     expect(abonelik).toMatchObject({ durum: "deneme", paketSurumId: yayin.id });
     expect(abonelik.donemSonu!.getTime() - abonelik.donemBaslangici!.getTime()).toBe(14 * 86_400_000);

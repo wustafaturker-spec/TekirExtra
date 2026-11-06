@@ -61,7 +61,7 @@ function FirmaCalismaAlani({ firma: f, donus, yenile }: { firma: Firma; donus: s
   const [takipYenileme, setTakipYenileme] = useState(0);
   const tamamlandi = (mesaj: string) => { setBasari(mesaj); yenile(); setTakipYenileme((v) => v + 1); };
   return <>
-    <PageHeader title={f.unvan} subtitle={`VKN ${f.vkn} · Kayıt ${tarih(f.kayitTarihi)}`} actions={<div className="platform-row-actions"><Link className="btn btn--ghost" href={donus}>Firma listesine dön</Link><Button onClick={yenile}>Firma bilgilerini yenile</Button></div>} />
+    <PageHeader title={f.unvan} subtitle={`${f.vkn.length === 11 ? "TCKN" : "VKN"} ${f.vkn} · Kayıt ${tarih(f.kayitTarihi)}`} actions={<div className="platform-row-actions"><Link className="btn btn--ghost" href={donus}>Firma listesine dön</Link><Button onClick={yenile}>Firma bilgilerini yenile</Button></div>} />
     <Alert tone="success">{basari}</Alert>
     <nav className="platform-section-nav" aria-label="Firma bölümleri"><a href="#firma-ozeti">Genel bilgiler</a><Link href={`/platform/istatistikler?firma=${f.tenantId}`}>Kullanım istatistikleri</Link><a href="#firma-takibi">Takip</a><a href="#firma-notlari">İç notlar</a><a href="#firma-gorevleri">Görevler</a><a href="#firma-abonelik">Abonelik ve ödemeler</a><a href="#firma-duyurular">Duyurular</a><a href="#firma-olaylari">İşlem geçmişi</a></nav>
     <Card id="firma-ozeti" title="Genel bilgiler"><dl className="platform-firma-summary">
@@ -74,6 +74,7 @@ function FirmaCalismaAlani({ firma: f, donus, yenile }: { firma: Firma; donus: s
     </dl>{f.askiyaAlinacak && <Alert tone="warning">Ödemesi 15 günden fazla gecikmiş. Ödeme ve abonelik geçmişini inceleyin.</Alert>}
       {f.destek && <p className="subtle">Destek izni {zaman(f.destek.izinBitis)} tarihine kadar geçerli.{f.destek.acikOturum ? ` Açık oturum: ${f.destek.acikOturum.kisi}.` : ""} Destek oturumlarını firma listesinden yönetebilirsiniz.</p>}
     </Card>
+    <VergiNumarasiDegisikligi firmaId={f.tenantId} mevcut={f.vkn} onTamam={tamamlandi} />
     <TakipBolumu firmaId={f.tenantId} onTamam={tamamlandi} />
     <Notlar firmaId={f.tenantId} onTamam={tamamlandi} />
     <FirmaGorevleri firmaId={f.tenantId} />
@@ -83,6 +84,32 @@ function FirmaCalismaAlani({ firma: f, donus, yenile }: { firma: Firma; donus: s
     <FirmaEkHacmi tenantId={f.tenantId} />
     <FirmaOlaylari key={takipYenileme} firmaId={f.tenantId} />
   </>;
+}
+
+function VergiNumarasiDegisikligi({ firmaId, mevcut, onTamam }: { firmaId: string; mevcut: string; onTamam: (mesaj: string) => void }) {
+  const [yeni, setYeni] = useState("");
+  const [destekTalepNo, setDestekTalepNo] = useState("");
+  const [not, setNot] = useState("");
+  const [hata, setHata] = useState("");
+  const [islem, setIslem] = useState(false);
+  async function kaydet(e: FormEvent) {
+    e.preventDefault(); setHata(""); setIslem(true);
+    try {
+      await platformApi(`/platform/firmalar/${firmaId}/vergi-numarasi`, { method: "POST", body: JSON.stringify({ yeniVkn: yeni, destekTalepNo: destekTalepNo.trim(), dogrulamaNotu: not.trim() }) });
+      setYeni(""); setDestekTalepNo(""); setNot(""); onTamam("Firma vergi numarası destek kaydıyla doğrulanıp değiştirildi.");
+    } catch (err) { setHata(err instanceof Error ? err.message : "Vergi numarası değiştirilemedi."); }
+    finally { setIslem(false); }
+  }
+  return <Card title="VKN / TCKN değişikliği">
+    <p className="subtle">Mevcut numara: <span className="mono">{mevcut}</span>. Yalnızca firma talebi doğrulandıktan sonra kullanın. İşlem denetim geçmişine kaydedilir.</p>
+    <Alert tone="error">{hata}</Alert>
+    <form className="stack" onSubmit={(e) => void kaydet(e)}>
+      <Field label="Yeni VKN / TCKN"><Input value={yeni} onChange={(e) => setYeni(e.target.value.replace(/\D/g, "").slice(0, 11))} inputMode="numeric" required minLength={10} maxLength={11} /></Field>
+      <Field label="Destek talep / kayıt numarası"><Input value={destekTalepNo} onChange={(e) => setDestekTalepNo(e.target.value)} required minLength={3} maxLength={100} /></Field>
+      <Field label="Doğrulama yöntemi ve dayanağı"><textarea className="input" rows={3} value={not} onChange={(e) => setNot(e.target.value)} required minLength={10} maxLength={1000} /></Field>
+      <Button variant="primary" type="submit" disabled={islem || yeni === mevcut || yeni.length < 10 || destekTalepNo.trim().length < 3 || not.trim().length < 10}>{islem ? "Kaydediliyor…" : "Destek kaydını doğrula ve değiştir"}</Button>
+    </form>
+  </Card>;
 }
 
 function FirmaDuyurulari({ firmaId }: { firmaId: string }) {

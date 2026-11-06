@@ -72,3 +72,15 @@ Dağıtım sonrasında API readiness 200 (PostgreSQL, Redis ve nesne deposu haz�
 ## Duyuru oluşturma düğmesi — 5 Kasım 2026
 
 `/platform/duyurular` sayfasındaki oluşturma bağlantısı birincil düğme olarak belirginleştirildi. Firma panelindeki `/panel/duyurular` alanına bu sayfanın yalnız platformca yayımlanan duyuruları gösterdiğini açıklayan metin eklendi. Yeni web build ID `OxoeqXWsoo093JuvOob_p`; güncelleme `.release-candidates/platform-duyuru-pilot-20261105b` paketinde yerel pilota geçirildi. API readiness 200 ve dört servis `healthy`. Oturumsuz istek hâlâ platform girişine yönlendiriliyor; gerçek kullanıcı oturumuyla düğmenin görsel kabulü bu turda yapılmadı. Ayrıntı: `.release-candidates/platform-duyuru-pilot-20261105b/yayin-ozeti.json`.
+
+## Firma kaydı ve vergi bilgileri yerel pilot güncellemesi — 5 Kasım 2026
+
+Gerçek/tüzel kişi seçimi, TCKN/VKN doğrulaması, kayıt sırasında firma iletişim ve adres bilgileri, e-posta tekilliği, değiştirilemeyen VKN ve destek doğrulamasıyla platformdan VKN değişikliği ile GİB vergi dairesi sözlüğü yerel pilota geçirildi. Aday `.release-candidates/platform-onboarding-pilot-20261105`; kaynak özeti `aef01bf2037043e8ee1d0d3217ef94355c422f0d8444e7582ebb9ff913dd01db`, web build ID `ktRrY11qZ9iSRWzVYmUSQ`. Runtime 26.769 dosya içerir; SHA-256 `83f1da73c895d519dbcebc2eefbd23c2300488d6fa1e5dc90f4e5e80c8f65742`.
+
+Geçiş öncesi `backups/platform-onboarding-pilot-20261105/tekirextra-gecis-oncesi.dump` tam yedeği alındı (621.089.512 bayt, dosya izni 0600, klasör izni 0700); `pg_restore --list` doğrulaması geçti. Pilot DB'sindeki 351 migration günceldi; yeni migration uygulanmadı. Eski compose yapılandırması adayın `ops/geri-donus-compose.json` dosyasında saklandı. Mevcut oturum ve şifreleme anahtarları korunarak API, web, genel worker ve söz hatırlatma worker'ı yeni runtime'a geçti.
+
+Dağıtım sonrası dört servis `healthy`, API readiness 200. `http://localhost:3100/` ve `/kayit` 200; paket listesi 200; aktif vergi dairesi uç noktası 200 ve 860 kayıt döndürdü. Platform yönetim vergi dairesi uç noktası oturumsuz isteğe beklenen 401'i verdi. Gerçek kullanıcıyla firma oluşturma/kayıt kabulü bu turda yapılmadı; gerçek test hesabı veya şirket kaydı oluşturulmadı. Bu yalnız yerel pilot yayınıdır; uzak üretime yayın yapılmadı. Makinece okunur yayın özeti: `.release-candidates/platform-onboarding-pilot-20261105/yayin-ozeti.json`.
+
+## Firma kayıt ekranı tasarımı — aynı gün
+
+Kayıt ekranı geniş masaüstü formu ve dar telefon görünümü için yeniden düzenlendi. Koyu tanıtım paneli; firma bilgileri, yönetici hesabı ve alan grupları daha rahat taranacak bir düzene alındı. Yeni web build ID `vfmSP3vhJ6zZR1glKK3ig`; `.release-candidates/platform-onboarding-design-20261105` paketi yerel pilota geçirildi. API readiness 200, kayıt ekranı 200; masaüstü ve 390 px mobil görünüm Chromium ile açılarak gözle kontrol edildi. Önceki ekran paketi `.release-candidates/platform-onboarding-pilot-20261105` rollback hedefi olarak korundu. Veri tabanı veya migration değişmedi. Yayın özeti: `.release-candidates/platform-onboarding-design-20261105/yayin-ozeti.json`.

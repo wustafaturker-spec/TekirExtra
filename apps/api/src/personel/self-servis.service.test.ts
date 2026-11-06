@@ -10,13 +10,14 @@ beforeAll(() => { process.env.BAGLANTI_SIFRELEME_ANAHTARI ??= "0".repeat(64); })
 
 function kur(ek: { kullanici?: unknown; kimlik?: unknown; userBagi?: unknown; bordro?: unknown } = {}) {
   const tx = {
+    authKimlik: { create: vi.fn(async () => ({})) },
     personel: { findFirst: vi.fn(async () => ({ id: PID, ad: "Ali", soyad: "Veli", eposta: "Ali@Ornek.com", durum: "aktif", kullanici: ek.kullanici ?? null })) },
     user: { create: vi.fn(async () => ({})), update: vi.fn(async () => ({})), findUnique: vi.fn(async () => ek.userBagi ?? null), findFirst: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 1 })) },
     personelBordro: { findFirst: vi.fn(async () => ek.bordro ?? null) },
     auditLog: { create: vi.fn(async () => ({})) },
     tenant: { findUnique: vi.fn(async () => ({ unvan: "Firma" })) },
   };
-  const prisma = { tenantIslem: (_t: string, cb: (t: unknown) => unknown) => cb(tx), authKimlik: { findUnique: vi.fn(async () => ek.kimlik ?? null), create: vi.fn(async () => ({})) } };
+  const prisma = { tenantIslem: (_t: string, cb: (t: unknown) => unknown) => cb(tx), authKimlik: { findFirst: vi.fn(async () => ek.kimlik ?? null) } };
   const eposta = { iletiGonder: vi.fn(async () => undefined) };
   const pusula = { pdfUret: vi.fn(async () => ({ buffer: Buffer.from("x"), dosyaAdi: "p.pdf" })) };
   const s = new SelfServisService(prisma as never, eposta as never, pusula as never, {} as never);
@@ -28,7 +29,7 @@ describe("self-servis (PRS-21)", () => {
     const { s, tx, prisma, eposta } = kur();
     const r = await s.davetEt("t1", PID, "u1", { epostaGonder: false });
     expect(tx.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({ rol: "calisan", eposta: "ali@ornek.com", personelId: PID, davetAnahtarOzeti: expect.any(String) }) });
-    expect(prisma.authKimlik.create).toHaveBeenCalled();
+    expect(tx.authKimlik.create).toHaveBeenCalled();
     expect(eposta.iletiGonder).not.toHaveBeenCalled();
     expect(r.davetAdresi).toMatch(/\/davet\/t1\/[A-Za-z0-9_-]{43}$/);
   });

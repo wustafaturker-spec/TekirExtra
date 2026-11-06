@@ -9,6 +9,7 @@ describe("KayitService abonelik altyapisi", () => {
   it("yeni firma icin fiyatlandirmasiz v1 profili olusturur", async () => {
     const abonelikCreate = vi.fn().mockResolvedValue({});
     const tx = {
+      authKimlik: { create: vi.fn().mockResolvedValue({}) },
       tenant: { create: vi.fn().mockResolvedValue({}) },
       user: { create: vi.fn().mockResolvedValue({}) },
       tenantAbonelik: { create: abonelikCreate },
@@ -17,7 +18,8 @@ describe("KayitService abonelik altyapisi", () => {
     };
     const prisma = {
       $queryRaw: vi.fn().mockResolvedValue([]),
-      authKimlik: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
+      vergiDairesi: { findFirst: vi.fn().mockResolvedValue({ kod: "34123", ad: "Kadıköy Vergi Dairesi Müdürlüğü" }) },
+      authKimlik: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
       tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)),
       epostaDogrulama: { create: vi.fn().mockResolvedValue({}) },
     } as any;
@@ -25,7 +27,7 @@ describe("KayitService abonelik altyapisi", () => {
     const servis = new KayitService(prisma, eposta);
 
     await servis.kaydet({
-      unvan: "Örnek Firma AŞ", vkn: "1234567890", vergiDairesi: "Kadıköy",
+      unvan: "Örnek Firma AŞ", kisiTuru: "tuzel", vkn: "1234567890", vergiDairesi: "Kadıköy Vergi Dairesi Müdürlüğü", vergiDairesiKodu: "34123", il: "İstanbul", ilce: "Kadıköy",
       yoneticiAdSoyad: "Ada Yılmaz", yoneticiEposta: "ada@example.com", parola: "gucluParola1",
     });
 
@@ -39,14 +41,15 @@ describe("KayitService abonelik altyapisi", () => {
     const authKimlikCreate = vi.fn();
     const prisma = {
       $queryRaw: vi.fn().mockResolvedValue([]),
-      authKimlik: { findUnique: vi.fn().mockResolvedValue(null), create: authKimlikCreate },
+      vergiDairesi: { findFirst: vi.fn().mockResolvedValue({ kod: "34123", ad: "Kadıköy Vergi Dairesi Müdürlüğü" }) },
+      authKimlik: { findFirst: vi.fn().mockResolvedValue(null), create: authKimlikCreate },
       tenantIslem: vi.fn().mockRejectedValue(ihlal),
       epostaDogrulama: { create: vi.fn() },
     } as any;
     const servis = new KayitService(prisma, { dogrulamaGonder: vi.fn() } as any);
 
     const sonuc = servis.kaydet({
-      unvan: "Örnek Firma AŞ", vkn: "1234567890",
+      unvan: "Örnek Firma AŞ", kisiTuru: "tuzel", vkn: "1234567890", vergiDairesi: "Kadıköy Vergi Dairesi Müdürlüğü", vergiDairesiKodu: "34123", il: "İstanbul", ilce: "Kadıköy",
       yoneticiAdSoyad: "Ada Yılmaz", yoneticiEposta: "ada@example.com", parola: "gucluParola1",
     });
 

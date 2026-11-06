@@ -157,7 +157,7 @@ export class ParolaService {
    */
   async sifirlamaIste(govde: unknown): Promise<{ mesaj: string }> {
     const { eposta } = ayristir(istekSemasi, govde);
-    const kimlik = await this.prisma.authKimlik.findUnique({ where: { eposta: eposta.trim() } });
+    const kimlik = await this.prisma.authKimlik.findFirst({ where: { eposta: { equals: eposta.trim(), mode: "insensitive" } } });
     if (!kimlik) return { mesaj: SIFIRLAMA_ISTEK_YANITI };
     const kullanici = await this.prisma.tenantIslem(kimlik.tenantId, (tx) =>
       tx.user.findUnique({ where: { id: kimlik.userId }, select: { aktif: true, adSoyad: true, eposta: true, rol: true } }),

@@ -186,6 +186,20 @@ export class PlatformFirmaService {
     return { mesaj: "Destek oturumu kapatıldı; açık sekme en geç 10 saniyede düşer." };
   }
 
+  /** Vergi numarası yalnızca platform yöneticisinin doğrulanmış talebiyle değiştirilebilir. */
+  async vknDegistir(tenantId: string, yeniVkn: string, destekTalepNo: string, dogrulamaNotu: string) {
+    const { kullaniciId, rol } = aktifPlatformBaglam();
+    if (rol !== "yonetici") throw new BadRequestException("Vergi numarası değişikliği platform yöneticisi gerektirir");
+    return this.cagir(() => this.platform.db.$transaction(async (tx) => {
+      const [sonuc] = await tx.$queryRaw<{ eski_vkn: string; yeni_vkn: string; kisi_turu: string }[]>`
+        SELECT * FROM platform_firma_vkn_degistir(${tenantId}::uuid, ${yeniVkn})`;
+      if (!sonuc) throw new NotFoundException("Firma bulunamadı");
+      if (sonuc.eski_vkn === sonuc.yeni_vkn) throw new BadRequestException("Yeni vergi numarası mevcut numarayla aynı");
+      await this.olay(tx, kullaniciId, "firma_vkn_degistirildi", { tenantId, eskiVkn: sonuc.eski_vkn, yeniVkn: sonuc.yeni_vkn, kisiTuru: sonuc.kisi_turu, destekTalepNo, dogrulamaNotu });
+      return { tenantId, vkn: sonuc.yeni_vkn };
+    }));
+  }
+
   async gecmis(tenantId: string) {
     const [satir] = await this.platform.db.$queryRaw<{ gecmis: unknown }[]>`SELECT platform_firma_abonelik_gecmisi(${tenantId}::uuid) AS gecmis`;
     return satir?.gecmis ?? { degisiklikler: [], talepler: [], odemeler: [] };
@@ -260,6 +274,8 @@ export class PlatformFirmaService {
     } catch (hata) {
       const mesaj = hata instanceof Error ? hata.message : String(hata);
       if (mesaj.includes("firma_yok")) throw new NotFoundException("Firma bulunamadı");
+      if (mesaj.includes("vergi_numarasi_cakisma")) throw new ConflictException("Bu VKN/TCKN başka bir firmada kayıtlı");
+      if (mesaj.includes("gecersiz_vergi_numarasi")) throw new BadRequestException("Firma türü için uygun uzunlukta VKN/TCKN girin");
       if (mesaj.includes("izin_yok")) throw new BadRequestException("Firma destek izni vermemiş ya da izin süresi dolmuş");
       if (mesaj.includes("talep_bekliyor_degil")) throw new ConflictException("Talep artık beklemiyor (karar verilmiş ya da geri çekilmiş)");
       if (mesaj.includes("islem_anahtari_cakisma")) throw new ConflictException("Bu form ile farklı bilgilerle bir ödeme zaten kaydedilmiş. Mükerrer kayıt olmaması için önce firmanın ödeme geçmişini kontrol edin; yeni bir ödeme gerekiyorsa paneli kapatıp yeniden açın.");

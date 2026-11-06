@@ -33,6 +33,9 @@ const serbestMetin = (sinir: number) => z.string().trim().max(sinir).transform((
 
 const firmaGuncelleSemasi = z.object({
   unvan: z.string().min(2).max(255).optional(),
+  vergiDairesiKodu: z.string().trim().min(1).max(10).optional(),
+  // VKN yalnızca tenant oluşturulurken belirlenir. Sonraki değişiklikler
+  // doğrulanmış platform destek sürecinden yapılmalıdır.
   vergiDairesi: z.string().min(2).max(120).optional(),
   // EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan bilgiler.
   adres: serbestMetin(300),
@@ -68,7 +71,7 @@ const firmaGuncelleSemasi = z.object({
 
 /** Firma ekranının okuduğu alanlar; e-belge eksikleri de bununla hesaplanır. */
 const FIRMA_ALANLARI = {
-  id: true, unvan: true, vkn: true, vergiDairesi: true,
+  id: true, unvan: true, kisiTuru: true, vkn: true, vergiDairesi: true, vergiDairesiKodu: true,
   adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true,
   araciKurumVkn: true, araciKurumEtiket: true, araciKurumUnvan: true,
   sgkIlaveFaturaTipi: true, sgkMukellefKodu: true, sgkMukellefAdi: true,
@@ -93,6 +96,12 @@ export class TenantController {
   @Get("tenant/kayit/paketler")
   async kayitPaketleri() {
     return this.kayit.acikSatisPaketleri();
+  }
+
+  @Public()
+  @Get("vergi-daireleri")
+  async vergiDaireleri() {
+    return this.prisma.vergiDairesi.findMany({ where: { aktif: true }, orderBy: [{ ilKodu: "asc" }, { ilce: "asc" }, { ad: "asc" }] });
   }
 
   /** Self-servis firma kaydı (KLN-07) — kimliksiz erişilir. */
@@ -150,10 +159,25 @@ export class TenantController {
     }
     const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const yeni = ayristirma.data;
+      if (yeni.il || yeni.ilce || yeni.vergiDairesi || yeni.vergiDairesiKodu) {
+        const mevcut = await tx.tenant.findUnique({ where: { id: tenantId }, select: { il: true, ilce: true, vergiDairesi: true, vergiDairesiKodu: true } });
+        const il = yeni.il ?? mevcut?.il;
+        const ilce = yeni.ilce ?? mevcut?.ilce;
+        const vergiDairesi = yeni.vergiDairesi ?? mevcut?.vergiDairesi;
+        // Gönderilmeyen kod mevcut koddur; aynı il/ilçeyi yeniden göndermek konum değişikliği sayılmaz.
+        const kod = yeni.vergiDairesiKodu ?? mevcut?.vergiDairesiKodu;
+        const konumDegisti = il !== mevcut?.il || ilce !== mevcut?.ilce || vergiDairesi !== mevcut?.vergiDairesi || kod !== mevcut?.vergiDairesiKodu;
+        const daire = kod && il && ilce ? await tx.vergiDairesi.findFirst({ where: { kod, il, ilce, aktif: true }, select: { kod: true, ad: true } }) : null;
+        if (konumDegisti && (!il || !ilce || !daire)) {
+          throw new BadRequestException("İl, ilçe ve vergi dairesi etkin listeden birlikte seçilmelidir");
+        }
+        if (daire) Object.assign(yeni, { vergiDairesi: daire.ad, vergiDairesiKodu: daire.kod, il, ilce });
+      }
       const onceki = await tx.tenant.findUnique({ where: { id: tenantId }, select: FIRMA_ALANLARI });
       const tenant = await tx.tenant.update({
         where: { id: tenantId },
-        data: ayristirma.data,
+        data: yeni,
         select: FIRMA_ALANLARI,
       });
       // Yönetim P1-4: firma kimliği (VKN, unvan, e-belge mükellefiyeti…) değişikliği izlenir.

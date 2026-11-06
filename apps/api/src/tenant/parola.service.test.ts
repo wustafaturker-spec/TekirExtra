@@ -37,8 +37,8 @@ function kur() {
   const prisma = {
     tenantIslem: vi.fn(async (_t: string, fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     authKimlik: {
-      findUnique: vi.fn(async ({ where }: { where: { eposta: string } }) => {
-        const k = [...kullanicilar.values()].find((u) => u.eposta === where.eposta);
+      findFirst: vi.fn(async ({ where }: { where: { eposta: { equals: string } } }) => {
+        const k = [...kullanicilar.values()].find((u) => u.eposta.toLowerCase() === where.eposta.equals.toLowerCase());
         return k ? { tenantId: TENANT, userId: k.id, eposta: k.eposta } : null;
       }),
     },

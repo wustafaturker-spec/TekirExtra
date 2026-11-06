@@ -301,6 +301,12 @@ export class PlatformFirmaController {
     return this.firmalar.planDegistir(tenantId, g.planKodu, g.neden);
   }
 
+  @Post(":tenantId/vergi-numarasi")
+  vergiNumarasiDegistir(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {
+    const g = ayristir(z.object({ yeniVkn: z.string().regex(/^\d{10,11}$/, "VKN 10 veya TCKN 11 haneli olmalıdır"), destekTalepNo: z.string().trim().min(3).max(100), dogrulamaNotu: z.string().trim().min(10).max(1000) }), govde);
+    return this.firmalar.vknDegistir(tenantId, g.yeniVkn, g.destekTalepNo, g.dogrulamaNotu);
+  }
+
   /** PLT-09: elle tahsilat; dönem uzar, durum değişmez. */
   @Post(":tenantId/odeme")
   odeme(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) {

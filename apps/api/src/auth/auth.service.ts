@@ -70,7 +70,7 @@ export class AuthService {
       );
     }
     // Rehber RLS'siz: oturum açarken kiracı bağlamı henüz yok (MIMARI §7)
-    const kimlik = await this.prisma.authKimlik.findUnique({ where: { eposta } });
+    const kimlik = await this.prisma.authKimlik.findFirst({ where: { eposta: { equals: eposta.trim(), mode: "insensitive" } } });
     // Kullanıcı yok/parola yanlış ayrımı sızdırılmaz — tek mesaj; sayaç her durumda işler
     const hataliGiris = async () => {
       if ((await this.denemeler.hataKaydet("parola", eposta)) && kimlik) await this.kilitKaydet(kimlik.tenantId, kimlik.userId, "parola");

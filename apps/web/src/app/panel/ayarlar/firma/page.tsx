@@ -16,8 +16,10 @@ interface Logo {
 interface Firma {
   id: string;
   unvan: string;
+  kisiTuru: "gercek" | "tuzel";
   vkn: string;
   vergiDairesi: string | null;
+  vergiDairesiKodu: string | null;
   logo: Logo | null;
   /** EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan bilgiler. */
   adres: string | null;
@@ -80,6 +82,9 @@ export default function FirmaAyarlariSayfasi() {
   const [firma, setFirma] = useState<Firma | null>(null);
   const [unvan, setUnvan] = useState("");
   const [vergiDairesi, setVergiDairesi] = useState("");
+  const [vergiDaireleri, setVergiDaireleri] = useState<{ kod: string; ilKodu: string; il: string; ilce: string; ad: string }[]>([]);
+  const [seciliIlKodu, setSeciliIlKodu] = useState("");
+  const [seciliDaireKodu, setSeciliDaireKodu] = useState("");
   const [mukellefiyetler, setMukellefiyetler] = useState<Record<EbelgeUygulamaKodu, boolean | null>>({ efatura: null, earsiv: null, eirsaliye: null });
   const [iletisim, setIletisim] = useState<Record<IletisimAlani, string>>(BOS_ILETISIM);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -107,6 +112,7 @@ export default function FirmaAyarlariSayfasi() {
       setFirma(veri);
       setUnvan(veri.unvan);
       setVergiDairesi(veri.vergiDairesi ?? "");
+      setSeciliDaireKodu(veri.vergiDairesiKodu ?? "");
       setMukellefiyetler({ efatura: veri.efaturaMukellefi, earsiv: veri.earsivMukellefi, eirsaliye: veri.eirsaliyeMukellefi });
       setIletisim(iletisimOku(veri));
       if (veri.logo) {
@@ -132,6 +138,16 @@ export default function FirmaAyarlariSayfasi() {
     void yukle();
   }, [yonlendir, yukle]);
 
+  useEffect(() => { void api<typeof vergiDaireleri>("/vergi-daireleri").then(setVergiDaireleri).catch(() => setVergiDaireleri([])); }, []);
+  useEffect(() => {
+    if (!firma || !vergiDaireleri.length) return;
+    const d = vergiDaireleri.find((x) => x.kod === firma.vergiDairesiKodu && x.ilce === firma.ilce && x.il === firma.il);
+    if (d) setSeciliIlKodu(d.ilKodu);
+  }, [firma, vergiDaireleri]);
+  const iller = [...new Map(vergiDaireleri.map((d) => [d.ilKodu, { kod: d.ilKodu, ad: d.il }])).values()];
+  const ilceler = [...new Set(vergiDaireleri.filter((d) => d.ilKodu === seciliIlKodu).map((d) => d.ilce))];
+  const seciliDaireler = vergiDaireleri.filter((d) => d.ilKodu === seciliIlKodu && d.ilce === iletisim.ilce);
+
   async function bilgileriKaydet(e: FormEvent) {
     e.preventDefault();
     setHata("");
@@ -143,6 +159,7 @@ export default function FirmaAyarlariSayfasi() {
         body: JSON.stringify({
           unvan: unvan || undefined,
           vergiDairesi: vergiDairesi || undefined,
+          vergiDairesiKodu: seciliDaireKodu || undefined,
           efaturaMukellefi: mukellefiyetler.efatura,
           earsivMukellefi: mukellefiyetler.earsiv,
           eirsaliyeMukellefi: mukellefiyetler.eirsaliye,
@@ -295,13 +312,16 @@ export default function FirmaAyarlariSayfasi() {
                 </Field>
               </div>
               <div style={{ flex: 1, minWidth: 220 }}>
-                <Field label="VKN / TCKN (Değiştirilemez)">
+                <Field label={`${firma?.kisiTuru === "gercek" ? "TCKN" : "VKN"} (Değiştirilemez)`}>
                   <Input value={firma?.vkn ?? ""} disabled style={{ background: "var(--surface-2)", color: "var(--text-subtle)", cursor: "not-allowed" }} />
                 </Field>
               </div>
             </div>
             <Field label="Vergi Dairesi">
-              <Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} placeholder="Ör. Kadıköy Vergi Dairesi" />
+              {vergiDaireleri.length ? <Select value={seciliDaireler.some((d) => d.kod === seciliDaireKodu) ? seciliDaireKodu : "__eski"} onChange={(e) => { const d = seciliDaireler.find((x) => x.kod === e.target.value); setSeciliDaireKodu(d?.kod ?? ""); setVergiDairesi(d?.ad ?? ""); }}>
+                {vergiDairesi && !seciliDaireler.some((d) => d.kod === seciliDaireKodu) && <option value="__eski">Mevcut: {vergiDairesi}</option>}
+                <option value="">Vergi dairesi seçin</option>{seciliDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}
+              </Select> : <Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} placeholder="Ör. Kadıköy Vergi Dairesi" />}
             </Field>
             {/*
               * EBLG-77: firma hangi e-belge uygulamalarına kayıtlı? Kapalı
@@ -337,10 +357,12 @@ export default function FirmaAyarlariSayfasi() {
             </Field>
             <div className="row">
               <div style={{ flex: 1, minWidth: 160 }}>
-                <Field label="İlçe"><Input value={iletisim.ilce} onChange={(e) => setIletisim({ ...iletisim, ilce: e.target.value })} maxLength={80} /></Field>
+                <Field label="İlçe">{seciliIlKodu && ilceler.length ? <Select value={iletisim.ilce} onChange={(e) => { setIletisim({ ...iletisim, ilce: e.target.value }); setVergiDairesi(""); setSeciliDaireKodu(""); }}><option value="">İlçe seçin</option>{ilceler.map((x) => <option key={x} value={x}>{x}</option>)}</Select> : <Input value={iletisim.ilce} onChange={(e) => setIletisim({ ...iletisim, ilce: e.target.value })} maxLength={80} />}</Field>
               </div>
               <div style={{ flex: 1, minWidth: 160 }}>
-                <Field label="İl"><Input value={iletisim.il} onChange={(e) => setIletisim({ ...iletisim, il: e.target.value })} maxLength={80} /></Field>
+                <Field label="İl">{iller.length ? <Select value={seciliIlKodu || "__eski"} onChange={(e) => { const secim = iller.find((x) => x.kod === e.target.value); setSeciliIlKodu(secim?.kod ?? ""); setIletisim({ ...iletisim, il: secim?.ad ?? "", ilce: "" }); setVergiDairesi(""); setSeciliDaireKodu(""); }}>
+                  {iletisim.il && !seciliIlKodu && <option value="__eski">Mevcut: {iletisim.il}</option>}<option value="">İl seçin</option>{iller.map((x) => <option key={x.kod} value={x.kod}>{x.ad}</option>)}
+                </Select> : <Input value={iletisim.il} onChange={(e) => setIletisim({ ...iletisim, il: e.target.value })} maxLength={80} />}</Field>
               </div>
               <div style={{ flex: "0 1 120px", minWidth: 100 }}>
                 <Field label="Posta kodu"><Input value={iletisim.postaKodu} onChange={(e) => setIletisim({ ...iletisim, postaKodu: e.target.value })} maxLength={10} inputMode="numeric" /></Field>

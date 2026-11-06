@@ -10,7 +10,7 @@ vi.mock("argon2", async (asil) => ({ ...(await asil<typeof import("argon2")>()),
 const firmaServisi = (kimlik: unknown, kullanici: unknown) => {
   const tx = { user: { findUnique: async () => kullanici } };
   const prisma = {
-    authKimlik: { findUnique: async () => kimlik },
+    authKimlik: { findFirst: async () => kimlik },
     tenantIslem: async (_t: string, fn: (t: typeof tx) => unknown) => fn(tx),
   };
   return new AuthService(prisma as never, {} as never, GirisDenemeSayaci.bellekte(), {} as never);

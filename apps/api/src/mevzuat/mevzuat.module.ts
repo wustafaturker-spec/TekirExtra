@@ -30,6 +30,7 @@ import { PlatformGorevController } from "./platform-gorev.controller";
 import { PlatformGorevService } from "./platform-gorev.service";
 import { EklerModule } from "../ekler/ekler.module";
 import { DuyuruGorselController } from "./duyuru-gorsel.controller";
+import { PlatformVergiDaireleriController } from "./platform-vergi-daireleri.controller";
 
 /**
  * Mevzuat Merkezi (MVZ). `MevzuatService` diğer modüllerin (fatura, e-belge,
@@ -39,7 +40,7 @@ import { DuyuruGorselController } from "./duyuru-gorsel.controller";
 @Global()
 @Module({
   imports: [PlatformFirmaIstisnaModule, PlatformKotaModule, EklerModule],
-  controllers: [TenantDuyuruController, PlatformDuyuruController, DuyuruGorselController, PlatformPaketController, PlatformIstatistikController, PlatformFirmaTakipController, PlatformGorevController, MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
+  controllers: [TenantDuyuruController, PlatformDuyuruController, DuyuruGorselController, PlatformVergiDaireleriController, PlatformPaketController, PlatformIstatistikController, PlatformFirmaTakipController, PlatformGorevController, MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
   providers: [TenantDuyuruService, PlatformDuyuruService, PlatformPaketService, PlatformPaketZamanlayiciService, PlatformIstatistikService, PlatformIstatistikZamanlayiciService, PlatformFirmaTakipService, PlatformGorevService, MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci, PlatformOturumDurumService],
   exports: [MevzuatService, PlatformPrismaService, PlatformOturumDurumService],
 })

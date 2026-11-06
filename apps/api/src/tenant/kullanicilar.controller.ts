@@ -27,7 +27,7 @@ import { EpostaDegisimiService } from "./eposta-degisimi.service";
 import { ParolaService } from "./parola.service";
 
 const kullaniciOlusturSemasi = z.object({
-  eposta: z.email(),
+  eposta: z.email().transform((deger) => deger.trim().toLowerCase()),
   adSoyad: z.string().min(2).max(120),
   rol: z.enum(ROLLER),
   // Yönetim P2-3: davetle açılan hesapta parolayı kullanıcı belirler.
@@ -122,8 +122,8 @@ export class KullanicilarController {
     const { tenantId } = aktifBaglam();
     await this.bayiCariDogrula(tenantId, girdi.bayiCariId);
 
-    const mevcut = await this.prisma.authKimlik.findUnique({
-      where: { eposta: girdi.eposta },
+    const mevcut = await this.prisma.authKimlik.findFirst({
+      where: { eposta: { equals: girdi.eposta, mode: "insensitive" } },
     });
     if (mevcut) {
       throw new ConflictException("Bu e-posta ile kayıtlı bir hesap zaten var");
@@ -134,8 +134,8 @@ export class KullanicilarController {
     const parolaHash = await argon2.hash(girdi.davet ? randomBytes(32).toString("base64url") : (girdi.parola as string));
     // Yönetici parolası verilen hesapta e-posta doğrulaması aranmaz (KLN-09
     // self-servis kayıt içindir). Davetli hesap bağlantı kullanılınca doğrulanır.
-    const kullanici = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.user.create({
+    const kullanici = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const kayit = await tx.user.create({
         data: {
           id: userId,
           tenantId,
@@ -151,10 +151,12 @@ export class KullanicilarController {
           bayiCariId: girdi.rol === "b2b_bayi" ? girdi.bayiCariId : null,
         },
         select: KULLANICI_SECIMI,
-      }),
-    );
-    await this.prisma.authKimlik.create({
-      data: { eposta: girdi.eposta, tenantId, userId },
+        });
+        await tx.authKimlik.create({ data: { eposta: girdi.eposta, tenantId, userId } });
+        return kayit;
+      }).catch((hata: unknown) => {
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Bu e-posta ile kayıtlı bir hesap zaten var");
+      throw hata;
     });
     if (!girdi.davet) return kullanici;
     return { ...kullanici, davet: await this.parola.davetGonder(userId) };
