@@ -1671,6 +1671,8 @@ Diğer ihtiyaç adayları [ayrı yol haritasında](PLATFORM-KURUMSAL-YONETIM-YOL
 
 v1.0 aşağıdaki uçtan uca senaryolar hatasız çalıştığında kabul edilir:
 
+**Kabul testi ortamı (karar 2026-11-06):** kabul testleri (`vitest.kabul.config.ts`) pilotla ortak geliştirme veritabanına yazmaz. Aynı PostgreSQL sunucusunda ayrı `<db>_kabul` veritabanı (koşu başında oluşturulur, `migrate deploy` uygulanır; `KABUL_SIFIRLA=1` baştan kurar), Redis'te ayrı mantıksal veritabanı (varsayılan 1) ve ayrı nesne deposu kovası (`<kova>-kabul`) kullanılır; hedef pilotla aynı çıkarsa koşu başlamaz (`apps/api/test/kabul-ortami.ts`). Yarış ve HTTP kabul betikleri zaten kendi geçici konteynerlerinde çalışır. Açık: web Playwright testleri pilot API'sine bağlanır.
+
 1. Cari kartı aç → stoklu satış faturası kes → faturayı kesinleştir → **e-Fatura Oluştur** wizard'ını açıp kontrol et ve gönder → entegratörden "iletildi" durumu görülsün → stok düşsün → cari borçlansın → tahsilat gir → bakiye kapansın.
 2. Gelen e-Fatura entegratörden çekilsin → alış faturası olarak işlensin → stok artsın → ödeme girilsin.
 3. İade faturası ile stok ve cari hareketler ters yönde doğru işlensin.
