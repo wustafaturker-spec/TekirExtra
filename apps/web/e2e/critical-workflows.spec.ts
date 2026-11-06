@@ -1972,7 +1972,7 @@ test("yönetici aboneliği panelden kartla öder; ödeme sağlayıcının sayfas
   await page.route("**/api/v1/abonelik", (route) => route.fulfill({ json: { abonelik: { planKodu: "baslangic", durum: "askida", donemSonu: "2026-10-31T21:00:00Z" }, plan, planlar: [plan], kullanim: { kullanici: 1, cari: 1, stok: 1, aylikFatura: 1 }, sonTalep: null } }));
   await page.route("**/api/v1/abonelik/gecmis", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/v1/abonelik/odeme", async (route) => {
-    if (route.request().method() === "POST") { istek = route.request().postDataJSON(); return route.fulfill({ json: { denemeId: "d1", odemeSayfasiUrl: "http://localhost:3100/odeme-saglayici-sahte" } }); }
+    if (route.request().method() === "POST") { istek = route.request().postDataJSON(); return route.fulfill({ json: { denemeId: "d1", odemeSayfasiUrl: "http://odeme-saglayici.invalid/odeme-saglayici-sahte" } }); }
     return route.fulfill({ json: {
       etkin: true, saglayici: "iyzico", testOrtami: true, neden: null, donemSonu: "2026-10-31T21:00:00Z",
       secenekler: [{ aySayisi: 1, matrah: "399.00", kdv: "79.80", toplam: "478.80" }, { aySayisi: 12, matrah: "4788.00", kdv: "957.60", toplam: "5745.60" }],
