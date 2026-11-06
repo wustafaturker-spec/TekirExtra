@@ -63,7 +63,12 @@ export class FaturaController {
 
   @Post("tekrarlayanlar/uret")
   @Roller("muhasebe")
-  async tekrarlayanlariUret() { return this.faturaService.vadesiGelenleriUret(); }
+  async tekrarlayanlariUret() {
+    // FTR-43: elle üretim de aylık fatura kotasına tabidir.
+    const kota = await this.abonelik.kalanLimit("aylikFatura");
+    if (kota.kalan === 0) throw new BadRequestException(`${kota.planAdi} planının aylık fatura limiti doldu (${kota.limit})`);
+    return this.faturaService.vadesiGelenleriUret({ kalanKota: kota.kalan });
+  }
 
   @Patch("tekrarlayanlar/:id")
   @Roller("muhasebe")

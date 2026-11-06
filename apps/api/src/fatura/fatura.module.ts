@@ -10,16 +10,19 @@ import { FaturaController } from "./fatura.controller";
 import { FaturaService } from "./fatura.service";
 import { KurFarkiController } from "./kur-farki.controller";
 import { KurFarkiService } from "./kur-farki.service";
+import { TekrarlayanFaturaZamanlayiciService } from "./tekrarlayan-fatura-zamanlayici.service";
+import { BildirimlerModule } from "../bildirimler/bildirimler.module";
 
 @Module({
   imports: [
     StokModule,
     TenantModule,
     BelgelerModule,
+    BildirimlerModule,
     forwardRef(() => EbelgeModule),
   ],
   controllers: [FaturaController, KurFarkiController],
-  providers: [FaturaService, KurFarkiService],
+  providers: [FaturaService, KurFarkiService, TekrarlayanFaturaZamanlayiciService],
   exports: [FaturaService],
 })
 export class FaturaModule implements OnModuleInit {

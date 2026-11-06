@@ -137,17 +137,23 @@ export class AbonelikService {
   }
 
   async limitDogrula(anahtar: LimitAnahtari) {
+    const kalan = await this.kalanLimit(anahtar);
+    if (kalan.kalan !== null && kalan.kalan <= 0) throw new BadRequestException(`${kalan.planAdi} planının ${anahtar} limiti doldu (${kalan.limit})`);
+  }
+
+  /** FTR-43: toplu üretim kaç kayıt açabileceğini bilmelidir; `kalan: null` limitsiz demektir. */
+  async kalanLimit(anahtar: LimitAnahtari): Promise<{ kalan: number | null; limit: number | null; planAdi: string }> {
     const { tenantId } = aktifBaglam();
-    await this.prisma.tenantIslem(tenantId, async (tx) => {
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
       const abonelik = (await etkinFiyatKosullariniBagla(tx, tenantId, await this.abonelikSagla(tx, tenantId)))!;
       if (abonelik.durum === AbonelikDurumu.askida) throw new BadRequestException("Abonelik askıya alınmış");
       const erisim = abonelikErisimiHesapla({ durum: abonelik.durum, donemSonu: abonelik.donemSonu ?? null, iptalTarihi: abonelik.iptalTarihi ?? null });
       if (erisim.kisitli) throw new BadRequestException(erisim.neden ?? "Abonelik salt okunur");
       const plan = etkinAbonelikPlani(abonelik);
       const limit = plan.limitler[anahtar];
-      if (limit === null) return;
+      if (limit === null) return { kalan: null, limit: null, planAdi: plan.ad };
       const kullanim = await this.kullanimSay(tx);
-      if (kullanim[anahtar] >= limit) throw new BadRequestException(`${plan.ad} planının ${anahtar} limiti doldu (${limit})`);
+      return { kalan: Math.max(0, limit - kullanim[anahtar]), limit, planAdi: plan.ad };
     });
   }
 }

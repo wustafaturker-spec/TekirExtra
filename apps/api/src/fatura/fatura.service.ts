@@ -196,8 +196,14 @@ export class FaturaService {
     });
   }
 
-  async vadesiGelenleriUret() {
+  /**
+   * FTR-10/43: vadesi gelen planlardan taslak üretir. `kalanKota` verilirse en
+   * çok o kadar fatura açılır; üretilemeyen dönemde plan bekler (sonraki tarih
+   * ilerlemez) ve kota açılınca kaldığı yerden devam eder.
+   */
+  async vadesiGelenleriUret(secenek: { kalanKota?: number | null } = {}) {
     const { tenantId } = aktifBaglam();
+    const kalanKota = secenek.kalanKota ?? null;
     const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       // Manuel tetikleme ve zamanlanmış görev aynı anda çalışabilir. Tenant
@@ -215,6 +221,7 @@ export class FaturaService {
         include: { sablonFatura: { include: { satirlar: true } } },
       });
       const uretilenIds: string[] = [];
+      let kotaDoldu = false;
       for (const plan of planlar) {
         let planUretimAdedi = 0;
         let sonUretimTarihi = plan.sonUretimTarihi;
@@ -223,6 +230,7 @@ export class FaturaService {
         while (tarih <= bugun && (!plan.bitisTarihi || tarih <= plan.bitisTarihi) && sayac++ < 120) {
           const mevcut = await tx.fatura.findFirst({ where: { tekrarlayanPlanId: plan.id, planlananTarih: tarih } });
           if (!mevcut) {
+            if (kalanKota !== null && uretilenIds.length >= kalanKota) { kotaDoldu = true; break; }
             const s = plan.sablonFatura;
             const vadeGun = s.vadeTarihi
               ? Math.round((s.vadeTarihi.getTime() - s.tarih.getTime()) / 86_400_000)
@@ -254,7 +262,7 @@ export class FaturaService {
           aktif: plan.bitisTarihi ? tarih <= plan.bitisTarihi : true,
         }});
       }
-      return { uretilenAdet: uretilenIds.length, faturaIds: uretilenIds };
+      return { uretilenAdet: uretilenIds.length, faturaIds: uretilenIds, kotaDoldu };
     });
   }
 
