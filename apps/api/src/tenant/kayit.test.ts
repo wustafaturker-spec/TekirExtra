@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import { KayitService } from "./kayit.service";
@@ -56,5 +56,21 @@ describe("KayitService abonelik altyapisi", () => {
     await expect(sonuc).rejects.toBeInstanceOf(ConflictException);
     await expect(sonuc).rejects.toThrow("Bu VKN/TCKN ile kayıtlı bir firma zaten var");
     expect(authKimlikCreate).not.toHaveBeenCalled();
+  });
+
+  it("büyükşehir ilçesi resmi listeden, daire il içinden doğrulanır (GİB 'Merkez')", async () => {
+    const daireBul = vi.fn().mockResolvedValue({ kod: "34250", ad: "Kadıköy Vergi Dairesi Müdürlüğü" });
+    const prisma = {
+      vergiDairesi: { findFirst: daireBul },
+      authKimlik: { findFirst: vi.fn().mockResolvedValue(null) },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      tenantIslem: vi.fn().mockRejectedValue(new Error("tx-yok")),
+    } as any;
+    const servis = new KayitService(prisma, { dogrulamaGonder: vi.fn() } as any);
+    const girdi = { unvan: "Örnek Firma AŞ", kisiTuru: "tuzel" as const, vkn: "1234567890", vergiDairesi: "Kadıköy Vergi Dairesi Müdürlüğü", vergiDairesiKodu: "34250", il: "İstanbul", ilce: "Kadıköy", yoneticiAdSoyad: "Ada Yılmaz", yoneticiEposta: "ada@example.com", parola: "gucluParola1" };
+
+    await expect(servis.kaydet(girdi)).rejects.toThrow("tx-yok");
+    expect(daireBul).toHaveBeenCalledWith(expect.objectContaining({ where: { kod: "34250", il: "İstanbul", aktif: true } }));
+    await expect(servis.kaydet({ ...girdi, ilce: "Çankaya" })).rejects.toBeInstanceOf(BadRequestException);
   });
 });

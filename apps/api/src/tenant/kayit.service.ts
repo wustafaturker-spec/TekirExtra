@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from "@nestjs/comm
 import { Prisma } from "@prisma/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
-import { tenantKayitSemasi } from "@tekirextra/shared";
+import { ilceGecerliMi, tenantKayitSemasi } from "@tekirextra/shared";
 import { z } from "zod";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { PrismaService } from "../core/prisma.service";
@@ -39,8 +39,10 @@ export class KayitService {
     if (mevcut) {
       throw new ConflictException("Bu e-posta ile kayıtlı bir hesap zaten var");
     }
-    const daire = await this.prisma.vergiDairesi.findFirst({ where: { kod: girdi.vergiDairesiKodu, il: girdi.il, ilce: girdi.ilce, aktif: true }, select: { kod: true, ad: true } });
-    if (!daire || daire.ad !== girdi.vergiDairesi) throw new BadRequestException("İl, ilçe ve vergi dairesi etkin listeden birlikte seçilmelidir");
+    // İlçe resmi listeden; daire il içinden seçilir (GİB büyükşehir dairelerini "Merkez" altında verir).
+    if (!ilceGecerliMi(girdi.il, girdi.ilce)) throw new BadRequestException("İlçe, seçilen ilin ilçelerinden biri olmalıdır");
+    const daire = await this.prisma.vergiDairesi.findFirst({ where: { kod: girdi.vergiDairesiKodu, il: girdi.il, aktif: true }, select: { kod: true, ad: true } });
+    if (!daire || daire.ad !== girdi.vergiDairesi) throw new BadRequestException("Vergi dairesi, seçilen ilin etkin dairelerinden seçilmelidir");
     const tenantId = randomUUID();
     const userId = randomUUID();
     const parolaHash = await argon2.hash(girdi.parola);

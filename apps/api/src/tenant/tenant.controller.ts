@@ -1,4 +1,4 @@
-import { firmaEbelgeEksikleri, ILAVE_FATURA_TIPLERI } from "@tekirextra/shared";
+import { firmaEbelgeEksikleri, ilceGecerliMi, ILAVE_FATURA_TIPLERI } from "@tekirextra/shared";
 import {
   BadRequestException,
   Body,
@@ -168,8 +168,9 @@ export class TenantController {
         // Gönderilmeyen kod mevcut koddur; aynı il/ilçeyi yeniden göndermek konum değişikliği sayılmaz.
         const kod = yeni.vergiDairesiKodu ?? mevcut?.vergiDairesiKodu;
         const konumDegisti = il !== mevcut?.il || ilce !== mevcut?.ilce || vergiDairesi !== mevcut?.vergiDairesi || kod !== mevcut?.vergiDairesiKodu;
-        const daire = kod && il && ilce ? await tx.vergiDairesi.findFirst({ where: { kod, il, ilce, aktif: true }, select: { kod: true, ad: true } }) : null;
-        if (konumDegisti && (!il || !ilce || !daire)) {
+        // İlçe resmi listeden; daire il içinden seçilir (GİB büyükşehir dairelerini "Merkez" altında verir).
+        const daire = kod && il ? await tx.vergiDairesi.findFirst({ where: { kod, il, aktif: true }, select: { kod: true, ad: true } }) : null;
+        if (konumDegisti && (!il || !ilceGecerliMi(il, ilce) || !daire)) {
           throw new BadRequestException("İl, ilçe ve vergi dairesi etkin listeden birlikte seçilmelidir");
         }
         if (daire) Object.assign(yeni, { vergiDairesi: daire.ad, vergiDairesiKodu: daire.kod, il, ilce });

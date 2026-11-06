@@ -15,6 +15,7 @@ export * from "./plaka";
 export * from "./birim-kodu";
 export * from "./ulke";
 export * from "./adres";
+export * from "./il-ilce";
 export * from "./internet-satisi";
 export * from "./ihracat";
 export * from "./kap-cinsleri";

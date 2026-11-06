@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { Alert, Button, Field, Input } from "@/components/ui";
+import { ILLER, ilBul, tekVergiDairesi, vergiDaireleriniSirala } from "@tekirextra/shared";
 
 export default function KayitSayfasi() {
   const [hata, setHata] = useState("");
@@ -25,9 +26,15 @@ export default function KayitSayfasi() {
   }, []);
 
   useEffect(() => { void api<typeof vergiDaireleri>("/vergi-daireleri").then(setVergiDaireleri).catch(() => setVergiDaireleri([])); }, []);
-  const iller = [...new Map(vergiDaireleri.map((d) => [d.ilKodu, { kod: d.ilKodu, ad: d.il }])).values()];
-  const ilceler = [...new Set(vergiDaireleri.filter((d) => d.ilKodu === seciliIlKodu).map((d) => d.ilce))];
-  const secilebilirDaireler = vergiDaireleri.filter((d) => d.ilKodu === seciliIlKodu && d.ilce === seciliIlce);
+  // İlçe resmi listeden gelir; GİB büyükşehir dairelerini "Merkez" altında verdiği
+  // için daire ilçeye göre değil il içinden seçilir, ilçeye yakın olanlar öne alınır.
+  const iller = ILLER;
+  const ilceler = ilBul(seciliIlKodu)?.ilceler ?? [];
+  const { yakin: yakinDaireler, diger: digerDaireler } = vergiDaireleriniSirala(vergiDaireleri, seciliIlKodu, seciliIlce);
+  function ilceSec(ilce: string) {
+    setSeciliIlce(ilce);
+    setVergiDairesiKodu(tekVergiDairesi(vergiDaireleri, seciliIlKodu, ilce)?.kod ?? "");
+  }
 
   async function gonder(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -110,8 +117,8 @@ export default function KayitSayfasi() {
                   <div className="kayit-identity-note kayit-full"><span aria-hidden="true">ⓘ</span> Vergi kimlik bilgisi kayıt sırasında belirlenir. Değişiklikler destek doğrulamasıyla yapılır.</div>
                   <div className="kayit-grid kayit-grid--location kayit-full">
                     <Field label="İl"><select className="input" required value={seciliIlKodu} onChange={(e) => { setSeciliIlKodu(e.target.value); setSeciliIlce(""); setVergiDairesiKodu(""); }}><option value="">İl seçin</option>{iller.map((i) => <option key={i.kod} value={i.kod}>{i.ad}</option>)}</select></Field>
-                    <Field label="İlçe"><select className="input" required value={seciliIlce} disabled={!seciliIlKodu} onChange={(e) => { setSeciliIlce(e.target.value); setVergiDairesiKodu(""); }}><option value="">İlçe seçin</option>{ilceler.map((i) => <option key={i} value={i}>{i}</option>)}</select></Field>
-                    <Field label="Vergi dairesi"><select className="input" required value={vergiDairesiKodu} disabled={!seciliIlce} onChange={(e) => setVergiDairesiKodu(e.target.value)}><option value="">Daire seçin</option>{secilebilirDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}</select></Field>
+                    <Field label="İlçe"><select className="input" required value={seciliIlce} disabled={!seciliIlKodu} onChange={(e) => ilceSec(e.target.value)}><option value="">İlçe seçin</option>{ilceler.map((i) => <option key={i} value={i}>{i}</option>)}</select></Field>
+                    <Field label="Vergi dairesi"><select className="input" required value={vergiDairesiKodu} disabled={!seciliIlce} onChange={(e) => setVergiDairesiKodu(e.target.value)}><option value="">Daire seçin</option>{yakinDaireler.length > 0 && <optgroup label={`${seciliIlce} ilçesindeki daireler`}>{yakinDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}</optgroup>}<optgroup label={yakinDaireler.length ? `${iller.find((i) => i.kod === seciliIlKodu)?.ad ?? ""} ilindeki diğer daireler` : `${iller.find((i) => i.kod === seciliIlKodu)?.ad ?? ""} ilindeki daireler`}>{digerDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}</optgroup></select></Field>
                   </div>
                   <Field label="Firma e-postası"><Input name="firmaEposta" type="email" autoComplete="email" placeholder="firma@ornek.com" /></Field>
                   <Field label="Telefon"><Input name="telefon" type="tel" autoComplete="tel" placeholder="05__ ___ __ __" /></Field>

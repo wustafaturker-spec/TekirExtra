@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, kimlikliFetch, tokenAl, tokenYaz } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select } from "@/components/ui";
-import { EBELGE_UYGULAMALARI, ebelgeKullanilmiyor, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, SGK_TANIMSIZ_KOD, type EbelgeUygulamaKodu, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { EBELGE_UYGULAMALARI, ebelgeKullanilmiyor, ILAVE_FATURA_TIPLERI, ILLER, ilBul, tekVergiDairesi, vergiDaireleriniSirala, ilaveFaturaTipiBul, SGK_TANIMSIZ_KOD, type EbelgeUygulamaKodu, type EbelgeUygulamalari } from "@tekirextra/shared";
 
 interface Logo {
   id: string;
@@ -140,13 +140,16 @@ export default function FirmaAyarlariSayfasi() {
 
   useEffect(() => { void api<typeof vergiDaireleri>("/vergi-daireleri").then(setVergiDaireleri).catch(() => setVergiDaireleri([])); }, []);
   useEffect(() => {
-    if (!firma || !vergiDaireleri.length) return;
-    const d = vergiDaireleri.find((x) => x.kod === firma.vergiDairesiKodu && x.ilce === firma.ilce && x.il === firma.il);
-    if (d) setSeciliIlKodu(d.ilKodu);
-  }, [firma, vergiDaireleri]);
-  const iller = [...new Map(vergiDaireleri.map((d) => [d.ilKodu, { kod: d.ilKodu, ad: d.il }])).values()];
-  const ilceler = [...new Set(vergiDaireleri.filter((d) => d.ilKodu === seciliIlKodu).map((d) => d.ilce))];
-  const seciliDaireler = vergiDaireleri.filter((d) => d.ilKodu === seciliIlKodu && d.ilce === iletisim.ilce);
+    const il = ilBul(firma?.il);
+    if (il) setSeciliIlKodu(il.kod);
+  }, [firma]);
+  // İlçe resmi listeden gelir; GİB büyükşehir dairelerini "Merkez" altında verdiği
+  // için daire ilçeye göre değil il içinden seçilir, ilçeye yakın olanlar öne alınır.
+  const iller = ILLER;
+  const ilceler = ilBul(seciliIlKodu)?.ilceler ?? [];
+  const { yakin: yakinDaireler, diger: digerDaireler } = vergiDaireleriniSirala(vergiDaireleri, seciliIlKodu, iletisim.ilce);
+  const seciliDaireler = [...yakinDaireler, ...digerDaireler];
+  const seciliIlAdi = iller.find((i) => i.kod === seciliIlKodu)?.ad ?? "";
 
   async function bilgileriKaydet(e: FormEvent) {
     e.preventDefault();
@@ -320,7 +323,9 @@ export default function FirmaAyarlariSayfasi() {
             <Field label="Vergi Dairesi">
               {vergiDaireleri.length ? <Select value={seciliDaireler.some((d) => d.kod === seciliDaireKodu) ? seciliDaireKodu : "__eski"} onChange={(e) => { const d = seciliDaireler.find((x) => x.kod === e.target.value); setSeciliDaireKodu(d?.kod ?? ""); setVergiDairesi(d?.ad ?? ""); }}>
                 {vergiDairesi && !seciliDaireler.some((d) => d.kod === seciliDaireKodu) && <option value="__eski">Mevcut: {vergiDairesi}</option>}
-                <option value="">Vergi dairesi seçin</option>{seciliDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}
+                <option value="">Vergi dairesi seçin</option>
+                {yakinDaireler.length > 0 && <optgroup label={`${iletisim.ilce} ilçesindeki daireler`}>{yakinDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}</optgroup>}
+                {digerDaireler.length > 0 && <optgroup label={yakinDaireler.length ? `${seciliIlAdi} ilindeki diğer daireler` : `${seciliIlAdi} ilindeki daireler`}>{digerDaireler.map((d) => <option key={d.kod} value={d.kod}>{d.ad}</option>)}</optgroup>}
               </Select> : <Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} placeholder="Ör. Kadıköy Vergi Dairesi" />}
             </Field>
             {/*
@@ -357,7 +362,7 @@ export default function FirmaAyarlariSayfasi() {
             </Field>
             <div className="row">
               <div style={{ flex: 1, minWidth: 160 }}>
-                <Field label="İlçe">{seciliIlKodu && ilceler.length ? <Select value={iletisim.ilce} onChange={(e) => { setIletisim({ ...iletisim, ilce: e.target.value }); setVergiDairesi(""); setSeciliDaireKodu(""); }}><option value="">İlçe seçin</option>{ilceler.map((x) => <option key={x} value={x}>{x}</option>)}</Select> : <Input value={iletisim.ilce} onChange={(e) => setIletisim({ ...iletisim, ilce: e.target.value })} maxLength={80} />}</Field>
+                <Field label="İlçe">{seciliIlKodu && ilceler.length ? <Select value={iletisim.ilce} onChange={(e) => { const ilce = e.target.value; const tek = tekVergiDairesi(vergiDaireleri, seciliIlKodu, ilce); setIletisim({ ...iletisim, ilce }); setVergiDairesi(tek?.ad ?? ""); setSeciliDaireKodu(tek?.kod ?? ""); }}>{iletisim.ilce && !ilceler.includes(iletisim.ilce) && <option value={iletisim.ilce}>Mevcut: {iletisim.ilce}</option>}<option value="">İlçe seçin</option>{ilceler.map((x) => <option key={x} value={x}>{x}</option>)}</Select> : <Input value={iletisim.ilce} onChange={(e) => setIletisim({ ...iletisim, ilce: e.target.value })} maxLength={80} />}</Field>
               </div>
               <div style={{ flex: 1, minWidth: 160 }}>
                 <Field label="İl">{iller.length ? <Select value={seciliIlKodu || "__eski"} onChange={(e) => { const secim = iller.find((x) => x.kod === e.target.value); setSeciliIlKodu(secim?.kod ?? ""); setIletisim({ ...iletisim, il: secim?.ad ?? "", ilce: "" }); setVergiDairesi(""); setSeciliDaireKodu(""); }}>
