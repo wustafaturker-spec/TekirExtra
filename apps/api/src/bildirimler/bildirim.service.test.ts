@@ -131,6 +131,36 @@ describe("BildirimService kapsam ve kapatma", () => {
   });
 });
 
+describe("BLD-11 taramaEksikleriniKapat (kapatEksikleri ile aynı kural, tek işlem)", () => {
+  const acik = [
+    { id: "1", tur: "stok", birlesimAnahtari: "stok_kritik:2026-09-04" },   // tespit edilmedi → kapanır
+    { id: "2", tur: "stok", birlesimAnahtari: "stok_kritik:2026-09-05" },   // bu taramada var → açık kalır
+    { id: "3", tur: "ebelge", birlesimAnahtari: "ebelge-ret:f1" },          // olay bildirimi (önek dışı) → dokunulmaz
+    { id: "4", tur: "ebelge", birlesimAnahtari: "ebelge:hata:f2" },         // tespit edilmedi → kapanır
+    { id: "5", tur: "personel", birlesimAnahtari: "personel:x" },           // tür taranmadı → dokunulmaz
+  ];
+  const kapsam = [
+    { tur: "stok" as const, acikAnahtarlar: ["stok_kritik:2026-09-05"], onekler: ["stok_kritik:"] },
+    { tur: "ebelge" as const, acikAnahtarlar: [], onekler: ["ebelge:"] },
+  ];
+
+  it("kapanacakları tek okumayla bulur ve tek güncellemeyle kapatır", async () => {
+    const findMany = vi.fn().mockResolvedValue(acik);
+    const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+    const servis = servisKur({ bildirim: { findMany, updateMany } });
+    await expect(servis.taramaEksikleriniKapat(kapsam)).resolves.toBe(2);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { kapandiAt: null, tur: { in: ["stok", "ebelge"] } } }));
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: { in: ["1", "4"] }, kapandiAt: null }, data: { kapandiAt: expect.any(Date) } });
+  });
+
+  it("kapanacak yoksa yazmaz", async () => {
+    const updateMany = vi.fn();
+    const servis = servisKur({ bildirim: { findMany: vi.fn().mockResolvedValue([acik[1], acik[2]]), updateMany } });
+    await expect(servis.taramaEksikleriniKapat(kapsam)).resolves.toBe(0);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("BildirimService durum geçişleri", () => {
   it("okundu yalnız yeni teslimatları etkiler ve kullanıcıyla sınırlıdır", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 2 });

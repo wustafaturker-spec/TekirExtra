@@ -130,6 +130,27 @@ export class BildirimService {
     return sonuc.count;
   }
 
+  /**
+   * BLD-11: taramanın `kapatEksikleri` adımı, tür başına ayrı işlem yerine tek
+   * okuma + en çok bir yazmayla. Kural birebir aynıdır: türü taranmış, anahtarı
+   * öneklerden biriyle başlayan ve bu taramada bulunmayan açık kayıt kapanır.
+   */
+  async taramaEksikleriniKapat(kapsamlar: { tur: BildirimTuru; acikAnahtarlar: string[]; onekler: string[] }[]): Promise<number> {
+    const { tenantId } = aktifBaglam();
+    const turler = kapsamlar.filter((k) => k.onekler.length).map((k) => k.tur);
+    if (!turler.length) return 0;
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const acik = await tx.bildirim.findMany({ where: { kapandiAt: null, tur: { in: turler } }, select: { id: true, tur: true, birlesimAnahtari: true } });
+      const kural = new Map(kapsamlar.map((k) => [k.tur, { acik: new Set(k.acikAnahtarlar), onekler: k.onekler }]));
+      const kapanacak = acik.filter((b) => {
+        const k = kural.get(b.tur);
+        return !!k && k.onekler.some((o) => b.birlesimAnahtari.startsWith(o)) && !k.acik.has(b.birlesimAnahtari);
+      }).map((b) => b.id);
+      if (!kapanacak.length) return 0;
+      return (await tx.bildirim.updateMany({ where: { id: { in: kapanacak }, kapandiAt: null }, data: { kapandiAt: new Date() } })).count;
+    });
+  }
+
   async listele(girdi: ListeGirdisi) {
     const { tenantId, userId, rol } = aktifBaglam();
     if (girdi.kapsam === "firma" && rol !== "yonetici") throw new ForbiddenException("Firma geneli bildirimleri yalnız yönetici görebilir");

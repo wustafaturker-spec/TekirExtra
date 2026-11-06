@@ -228,46 +228,7 @@ export class RaporService {
   /** Vadesi geçmiş, halen açık satış ve alış faturaları (panel özeti). */
   async vadesiGecenler() {
     const { tenantId } = aktifBaglam();
-    const bugun = new Date();
-    const bugunBaslangic = new Date(Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth(), bugun.getUTCDate()));
-    // RPR-17 (inceleme P2-2): eskiden en eski 200 fatura alınıp ödenmişler
-    // sonradan eleniyordu; 200'den fazla vadesi geçmiş faturada toplam ve sayı
-    // eksik kalıyordu. Şimdi hepsi 500'erli sayfalarla taranır; toplam ve
-    // sayı tamdır, listeler en eski LISTE_SINIRI kayıtla sınırlıdır.
-    const LISTE_SINIRI = 50;
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      type Satir = { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: string };
-      const alacaklar: Satir[] = [], borclar: Satir[] = [];
-      let toplamAlacak = D(0), toplamBorc = D(0), alacakSayisi = 0, borcSayisi = 0;
-      let imlec: string | undefined;
-      for (;;) {
-        const faturalar = await tx.fatura.findMany({
-          // Vadesiz fatura fatura tarihinde vadesi gelmiş sayılır (yaşlandırma, vade hatırlatma ve tahsilat riskiyle aynı kural).
-          where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, OR: [{ vadeTarihi: { lt: bugunBaslangic } }, { vadeTarihi: null, tarih: { lt: bugunBaslangic } }] },
-          orderBy: { id: "asc" }, take: 500, ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
-          select: { id: true, no: true, tip: true, tarih: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, durum: true, ...FATURA_ODEME_SECIMI },
-        });
-        for (const f of faturalar) {
-          const kalanTry = faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2);
-          if (!kalanTry.gt(0)) continue;
-          const vade = f.vadeTarihi ?? f.tarih;
-          const gecikmeGun = Math.max(1, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
-          const satir = { faturaId: f.id, no: f.no, cariId: f.cari.id, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10), gecikmeGun, kalanTry: kalanTry.toFixed(2), tip: f.tip };
-          if (f.tip === "satis") { toplamAlacak = toplamAlacak.add(kalanTry); alacakSayisi++; alacaklar.push(satir); }
-          else { toplamBorc = toplamBorc.add(kalanTry); borcSayisi++; borclar.push(satir); }
-        }
-        if (faturalar.length < 500) break;
-        imlec = faturalar[faturalar.length - 1].id;
-      }
-      // Vade veritabanında boş olabildiği için en eskiler hesaplanan vadeyle seçilir.
-      const enEskiler = (l: Satir[]) => l.sort((a, b) => a.vadeTarihi.localeCompare(b.vadeTarihi) || a.faturaId.localeCompare(b.faturaId)).slice(0, LISTE_SINIRI);
-      // KSB-23: faturası vadesi geçmiş görünen cari aslında faturaya bağlanmamış bir ödemeyle ödemiş olabilir.
-      const baglanmamisEkle = async (l: Satir[], tip: "tahsilat" | "tediye") => {
-        const harita = await baglanmamisOdemeler(tx, [...new Set(l.map((s) => s.cariId))], tip);
-        return l.map((s) => ({ ...s, baglanmamisOdemeTry: harita.get(s.cariId)?.toFixed(2) ?? null }));
-      };
-      return { alacaklar: await baglanmamisEkle(enEskiler(alacaklar), "tahsilat"), borclar: await baglanmamisEkle(enEskiler(borclar), "tediye"), toplamAlacak: toplamAlacak.toFixed(2), toplamBorc: toplamBorc.toFixed(2), alacakSayisi, borcSayisi };
-    });
+    return this.prisma.tenantIslem(tenantId, (tx) => vadesiGecenleriHesapla(tx, tenantId));
   }
 
   /**
@@ -409,4 +370,52 @@ export class RaporService {
       };
     });
   }
+}
+
+/**
+ * RPR-17: vadesi geçmiş satış/alış faturaları (kalan TL karşılığıyla). Rapor ve
+ * bildirim taraması aynı tanımı kullanır; taramada çağıran kendi işlemini verir.
+ */
+export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenantId: string, secenek: { yalnizOzet?: boolean } = {}) {
+  const bugun = new Date();
+  const bugunBaslangic = new Date(Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth(), bugun.getUTCDate()));
+  // RPR-17 (inceleme P2-2): eskiden en eski 200 fatura alınıp ödenmişler
+  // sonradan eleniyordu; 200'den fazla vadesi geçmiş faturada toplam ve sayı
+  // eksik kalıyordu. Şimdi hepsi 500'erli sayfalarla taranır; toplam ve
+  // sayı tamdır, listeler en eski LISTE_SINIRI kayıtla sınırlıdır.
+  const LISTE_SINIRI = 50;
+  type Satir = { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: string };
+  const alacaklar: Satir[] = [], borclar: Satir[] = [];
+  let toplamAlacak = D(0), toplamBorc = D(0), alacakSayisi = 0, borcSayisi = 0;
+  let imlec: string | undefined;
+  for (;;) {
+    const faturalar = await tx.fatura.findMany({
+      // Vadesiz fatura fatura tarihinde vadesi gelmiş sayılır (yaşlandırma, vade hatırlatma ve tahsilat riskiyle aynı kural).
+      where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, OR: [{ vadeTarihi: { lt: bugunBaslangic } }, { vadeTarihi: null, tarih: { lt: bugunBaslangic } }] },
+      orderBy: { id: "asc" }, take: 500, ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
+      select: { id: true, no: true, tip: true, tarih: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, durum: true, ...FATURA_ODEME_SECIMI },
+    });
+    for (const f of faturalar) {
+      const kalanTry = faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2);
+      if (!kalanTry.gt(0)) continue;
+      const vade = f.vadeTarihi ?? f.tarih;
+      const gecikmeGun = Math.max(1, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
+      const satir = { faturaId: f.id, no: f.no, cariId: f.cari.id, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10), gecikmeGun, kalanTry: kalanTry.toFixed(2), tip: f.tip };
+      if (f.tip === "satis") { toplamAlacak = toplamAlacak.add(kalanTry); alacakSayisi++; alacaklar.push(satir); }
+      else { toplamBorc = toplamBorc.add(kalanTry); borcSayisi++; borclar.push(satir); }
+    }
+    if (faturalar.length < 500) break;
+    imlec = faturalar[faturalar.length - 1].id;
+  }
+  // Vade veritabanında boş olabildiği için en eskiler hesaplanan vadeyle seçilir.
+  const enEskiler = (l: Satir[]) => l.sort((a, b) => a.vadeTarihi.localeCompare(b.vadeTarihi) || a.faturaId.localeCompare(b.faturaId)).slice(0, LISTE_SINIRI);
+  // KSB-23: faturası vadesi geçmiş görünen cari aslında faturaya bağlanmamış bir ödemeyle ödemiş olabilir.
+  const baglanmamisEkle = async (l: Satir[], tip: "tahsilat" | "tediye") => {
+    const harita = await baglanmamisOdemeler(tx, [...new Set(l.map((s) => s.cariId))], tip);
+    return l.map((s) => ({ ...s, baglanmamisOdemeTry: harita.get(s.cariId)?.toFixed(2) ?? null }));
+  };
+  const ozet = { toplamAlacak: toplamAlacak.toFixed(2), toplamBorc: toplamBorc.toFixed(2), alacakSayisi, borcSayisi };
+  // Bildirim taraması yalnız sayı ve toplamı kullanır; liste ve bağlanmamış ödeme sorgusu atlanır.
+  if (secenek.yalnizOzet) return { alacaklar: [], borclar: [], ...ozet };
+  return { alacaklar: await baglanmamisEkle(enEskiler(alacaklar), "tahsilat"), borclar: await baglanmamisEkle(enEskiler(borclar), "tediye"), ...ozet };
 }

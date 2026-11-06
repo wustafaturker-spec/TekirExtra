@@ -6,6 +6,9 @@ import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }) }));
 // EBLG-133: bağlantı ayarı testte düz JSON tutulur.
 vi.mock("../core/kripto", () => ({ coz: (metin: string) => metin }));
+// Vade sayısı raporla aynı fonksiyondan gelir (vadesiGecenleriHesapla); testler onu rapor.vadesiGecenler üzerinden ayarlar.
+const vadeHesap = vi.hoisted(() => ({ fn: vi.fn() }));
+vi.mock("../rapor/rapor.service", () => ({ RaporService: class {}, vadesiGecenleriHesapla: (...a: unknown[]) => vadeHesap.fn(...a) }));
 
 interface TxSecenekleri {
   /** EBLG-133: e-Belge bağlantılarının (düz JSON) ayarları. */
@@ -105,8 +108,13 @@ function servisKur(secenek: TxSecenekleri = {}) {
     mevzuatDegisiklik: { findMany: vi.fn().mockResolvedValue(secenek.mevzuatDegisiklikleri ?? []) },
     mevzuatKayit: { findMany: vi.fn().mockResolvedValue(secenek.mevzuatKayitlari ?? guncelDonemKayitlari()), findFirst: vi.fn().mockResolvedValue(null) },
   } as never;
-  const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0) };
+  const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0), taramaEksikleriniKapat: vi.fn() };
+  // Toplu kapatma tür tür kapatEksikleri çağrılarına açılır; testler türe göre doğrular.
+  bildirimler.taramaEksikleriniKapat.mockImplementation(async (kapsamlar: { tur: string; acikAnahtarlar: string[]; onekler: string[] }[]) => {
+    let n = 0; for (const k of kapsamlar) n += await bildirimler.kapatEksikleri(k.tur, k.acikAnahtarlar, k.onekler); return n;
+  });
   const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00", alacakSayisi: 0, borcSayisi: 0 }) };
+  vadeHesap.fn.mockImplementation((_tx: unknown, _tenantId: string, secenek: unknown) => { expect(secenek).toEqual({ yalnizOzet: true }); return rapor.vadesiGecenler(); });
   const ayarlar = { getir: vi.fn(async (modul: string) => modul === "kasaBanka" ? secenek.kasaBankaAyarlari ?? {} : {}) };
   return { servis: new BildirimUreticiService(prisma, bildirimler as never, rapor as never, ayarlar as never), bildirimler, rapor, tx, teslimatCreateMany, bildirimUpdate };
 }
@@ -605,5 +613,17 @@ describe("banka bakiye farkı bildirimi (KSB-31)", () => {
     });
     await servis.tara();
     expect(bildirimler.uret.mock.calls.some(([g]) => g.birlesimAnahtari.startsWith("banka-bakiye-farki:"))).toBe(false);
+  });
+});
+
+describe("BLD-11 tarama tek işlemde", () => {
+  it("14 dedektör tek okuma işleminde çalışır; yalnız yükseltme ayrı işlem açar", async () => {
+    const { servis } = servisKur();
+    const prisma = (servis as unknown as { prisma: { tenantIslem: ReturnType<typeof vi.fn> } }).prisma;
+    prisma.tenantIslem.mockClear();
+    await servis.tara();
+    // 1: dedektörlerin ortak işlemi, 1: yükseltme (yazma).
+    expect(prisma.tenantIslem).toHaveBeenCalledTimes(2);
+    expect(prisma.tenantIslem.mock.calls[0][2]).toEqual({ timeout: 60_000 });
   });
 });

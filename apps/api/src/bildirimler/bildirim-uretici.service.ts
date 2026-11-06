@@ -1,5 +1,6 @@
 import { Injectable, Optional } from "@nestjs/common";
-import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { BildirimTuru, DuzeltmeTuru, Prisma } from "@prisma/client";
 import { bugunTR, DONEMSEL_DEGERLER, yayinTakvimi, EIRSALIYE_YANIT_GUN_SAYISI, MUHTELIF_MUSTERI_VKN, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -7,7 +8,7 @@ import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { ENTEGRATOR_IPTAL_ANAHTAR_ONEKI, entegratorIptalBildirimi } from "../ebelge/entegrator-iptal-bildirimi";
 import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_ONAY_ESIGI, onaylayabilecekRoller } from "../satin-alma/satin-alma.hesap";
-import { RaporService } from "../rapor/rapor.service";
+import { RaporService, vadesiGecenleriHesapla } from "../rapor/rapor.service";
 import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
 import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { CEKILEN_SAGLAYICILAR } from "../kasa-banka/banka-saglayici-kaydi";
@@ -105,6 +106,11 @@ function gunAnahtari(tarih = new Date()): string {
  * bağlantıdan filtrelenmiş listeye gider. Aksi hâlde ilk tarama zilin altına
  * yüzlerce kayıt boşaltır ve bildirim merkezi ilk günde okunmaz hâle gelirdi.
  */
+/** Tarama işleminin bağlamı; `oku()` bunu görürse ayrı işlem açmaz. */
+const taramaIslemi = new AsyncLocalStorage<{ tenantId: string; tx: Prisma.TransactionClient }>();
+/** Büyük firmada 14 dedektörün toplamı varsayılan 5 sn işlem süresini aşabilir. */
+const TARAMA_ISLEM_SURESI_MS = 60_000;
+
 @Injectable()
 export class BildirimUreticiService {
   constructor(
@@ -115,8 +121,25 @@ export class BildirimUreticiService {
     @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
+  /**
+   * Dedektörlerin okuma işlemi. Tarama sırasında açılmış ortak işlem varsa onu
+   * kullanır (firma başına tek işlem); yoksa kendi işlemini açar.
+   */
+  private oku<T>(tenantId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const ortak = taramaIslemi.getStore();
+    return ortak && ortak.tenantId === tenantId ? fn(ortak.tx) : this.prisma.tenantIslem(tenantId, fn);
+  }
+
   async tara(): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
-    const girdiler = [
+    const { tenantId } = aktifBaglam();
+    // Performans: 14 dedektör ayrı ayrı işlem açmak yerine tek okuma işleminde
+    // çalışır; firma başına sabit maliyet düşer. Yazmalar (üret/kapat/yükselt) ayrıdır.
+    const girdiler = await this.prisma.tenantIslem(tenantId, (tx) => taramaIslemi.run({ tenantId, tx }, () => this.dedektorleriCalistir()), { timeout: TARAMA_ISLEM_SURESI_MS });
+    return this.isle(girdiler);
+  }
+
+  private async dedektorleriCalistir(): Promise<BildirimGirdisi[]> {
+    return [
       ...(await this.duzeltmeKayitlari()),
       ...(await this.ebelgeHatalari()),
       ...(await this.tasarimVergiKodlari()),
@@ -132,18 +155,18 @@ export class BildirimUreticiService {
       ...(await this.mevzuatDegisiklikleri()),
       ...(await this.mevzuatYayinEksikleri()),
     ];
+  }
 
+  private async isle(girdiler: BildirimGirdisi[]): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
     let yeniTeslimat = 0;
     for (const girdi of girdiler) yeniTeslimat += (await this.bildirimler.uret(girdi)).yeniTeslimat;
 
     // Yalnız bu taramada gerçekten bakılan türler kapatılır; bakılmayan bir
     // türün kayıtları "artık tespit edilmiyor" sanılıp kapanmamalıdır.
     const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel", "mevzuat"];
-    let kapanan = 0;
-    for (const tur of taranan) {
-      const anahtarlar = girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari);
-      kapanan += await this.bildirimler.kapatEksikleri(tur, anahtarlar, TARAMA_ONEKLERI[tur]);
-    }
+    const kapanan = await this.bildirimler.taramaEksikleriniKapat(taranan.map((tur) => ({
+      tur, acikAnahtarlar: girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari), onekler: TARAMA_ONEKLERI[tur],
+    })));
 
     return { uretilen: girdiler.length, yeniTeslimat, kapanan, yukseltilen: await this.yukselt() };
   }
@@ -164,7 +187,7 @@ export class BildirimUreticiService {
     // PRS-27: son tarihi 30 günden eski gecikmiş bildirge bildirim üretmez (ekranda "gecikti" kalır).
     const gecikmeSiniri = new Date(`${bugun}T00:00:00.000Z`);
     gecikmeSiniri.setUTCDate(gecikmeSiniri.getUTCDate() - 30);
-    const [belgeler, izin, avans, bilgi, bordro, girisler, cikislar] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+    const [belgeler, izin, avans, bilgi, bordro, girisler, cikislar] = await this.oku(tenantId, (tx) => Promise.all([
       tx.personelBelgesi.findMany({
         where: { gecerlilikTarihi: { not: null, lte: sinir }, personel: { durum: { not: "isten_ayrildi" } } },
         include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } },
@@ -289,7 +312,7 @@ export class BildirimUreticiService {
     });
     if (!degisiklikler.length) return [];
     const anahtar = (id: string) => `mevzuat:degisiklik:${id}`;
-    const mevcut = new Set((await this.prisma.tenantIslem(tenantId, (tx) =>
+    const mevcut = new Set((await this.oku(tenantId, (tx) =>
       tx.bildirim.findMany({ where: { birlesimAnahtari: { in: degisiklikler.map((d) => anahtar(d.id)) } }, select: { birlesimAnahtari: true } }),
     )).map((b) => b.birlesimAnahtari));
     return degisiklikler.filter((d) => !mevcut.has(anahtar(d.id))).map((d) => ({
@@ -321,7 +344,7 @@ export class BildirimUreticiService {
       .filter((s) => s.durum === "eksik");
     if (!eksikler.length) return [];
     const calisanVar = eksikler.some((s) => s.tur === "bordro_parametreleri")
-      && (await this.prisma.tenantIslem(tenantId, (tx) => tx.personel.count({ where: { aktif: true } }))) > 0;
+      && (await this.oku(tenantId, (tx) => tx.personel.count({ where: { aktif: true } }))) > 0;
     return eksikler.filter((s) => s.tur !== "bordro_parametreleri" || calisanVar).map((s) => ({
       tur: "mevzuat" as const,
       onem: "kritik" as const,
@@ -339,7 +362,7 @@ export class BildirimUreticiService {
     const { tenantId } = aktifBaglam();
     const ayar = this.ayarlar ? await this.ayarlar.getir("satin_alma") : {};
     const esik = Number(ayar.onayEsigi ?? VARSAYILAN_ONAY_ESIGI);
-    const talepler = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const talepler = await this.oku(tenantId, (tx) =>
       tx.satinAlmaTalebi.findMany({
         where: { durum: "onay_bekliyor" },
         select: { id: true, no: true, tahminiToplam: true, talepEden: { select: { adSoyad: true } } },
@@ -362,7 +385,7 @@ export class BildirimUreticiService {
 
   private async duzeltmeKayitlari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const kayitlar = await this.oku(tenantId, (tx) =>
       tx.duzeltmeKaydi.findMany({
         where: { durum: { in: ["acik", "incelemede", "beklemede"] }, OR: [{ onem: "kritik" }, { sonTarih: { lt: new Date() } }] },
         select: { id: true, tur: true, onem: true, aciklama: true, onerilenEylem: true, sonTarih: true },
@@ -390,7 +413,7 @@ export class BildirimUreticiService {
 
   private async ebelgeHatalari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const kayitlar = await this.oku(tenantId, (tx) =>
       tx.ebelgeKayit.findMany({
         // Taze `hata` bildirim doğurmaz (EBLG-46): gönderim işi düşünce kayıt
         // hemen `hata` yazılır ama kuyruk birkaç kez daha dener, ikinci
@@ -430,7 +453,7 @@ export class BildirimUreticiService {
    */
   private async tasarimVergiKodlari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const [baglantilar, firma] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+    const [baglantilar, firma] = await this.oku(tenantId, (tx) => Promise.all([
       tx.baglanti.findMany({ where: { aile: "ebelge", durum: "aktif" }, select: { id: true, sifreliConfig: true } }),
       tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }),
     ]));
@@ -468,7 +491,7 @@ export class BildirimUreticiService {
    */
   private async eirsaliyeYanitlari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const kayitlar = await this.oku(tenantId, (tx) =>
       tx.eirsaliyeKayit.findMany({
         where: {
           OR: [
@@ -511,7 +534,7 @@ export class BildirimUreticiService {
   private async gelenEirsaliyeYanitSureleri(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const bugun = bugunTR();
-    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const kayitlar = await this.oku(tenantId, (tx) =>
       tx.gelenEirsaliye.findMany({
         where: { durum: "yeni", kendiSevkimiz: false, sevkTarihi: { gte: new Date(`${gunEkleTR(-EIRSALIYE_YANIT_GUN_SAYISI)}T00:00:00Z`) } },
         select: { id: true, belgeNo: true, gonderenUnvan: true, sevkTarihi: true },
@@ -545,7 +568,7 @@ export class BildirimUreticiService {
    */
   private async bankaEntegrasyonu(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const [baglantilar, bekleyenler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+    const [baglantilar, bekleyenler] = await this.oku(tenantId, (tx) => Promise.all([
       tx.baglanti.findMany({
         where: { aile: "banka", saglayici: { in: CEKILEN_SAGLAYICILAR() }, durum: "aktif", OR: [{ ardisikHata: { gte: 3 } }, { otomatikDurduNedeni: { not: null } }] },
         select: { id: true, ardisikHata: true, sonSenkronHatasi: true, otomatikDurduNedeni: true },
@@ -553,7 +576,7 @@ export class BildirimUreticiService {
       tx.bankaEkstreSatir.groupBy({ by: ["bankaHesapId"], where: { durum: "beklemede" }, _count: { _all: true } }),
     ]));
     const hesapAdlari = bekleyenler.length
-      ? new Map((await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findMany({ where: { id: { in: bekleyenler.map((b) => b.bankaHesapId) } }, select: { id: true, ad: true } }))).map((h) => [h.id, h.ad]))
+      ? new Map((await this.oku(tenantId, (tx) => tx.bankaHesap.findMany({ where: { id: { in: bekleyenler.map((b) => b.bankaHesapId) } }, select: { id: true, ad: true } }))).map((h) => [h.id, h.ad]))
       : new Map<string, string>();
     const bakiyeFarklari = await this.bankaBakiyeFarklari();
     return [
@@ -595,7 +618,7 @@ export class BildirimUreticiService {
   private async bankaBakiyeFarklari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const sinir = new Date(Date.now() - 35 * 86_400_000);
-    const hesaplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findMany({
+    const hesaplar = await this.oku(tenantId, (tx) => tx.bankaHesap.findMany({
       where: { ekstreSatirlari: { some: { bakiye: { not: null }, tarih: { gte: sinir } } } },
       select: { id: true, ad: true, dovizCinsi: true },
     }));
@@ -603,7 +626,7 @@ export class BildirimUreticiService {
     for (const hesap of hesaplar) {
       // Bir hesabın hesabı başarısız olursa diğer bildirimler (ve tarama) sürer.
       try {
-      const [satirlar, hareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      const [satirlar, hareketler] = await this.oku(tenantId, (tx) => Promise.all([
         tx.bankaEkstreSatir.findMany({ where: { bankaHesapId: hesap.id }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
         tx.kasaBankaHareket.findMany({ where: { bankaHesapId: hesap.id }, select: { tarih: true, tip: true, tutar: true } }),
       ]));
@@ -636,7 +659,7 @@ export class BildirimUreticiService {
 
     // Vade tanımı rapor motorundan gelir; aynı sayı iki yerde ayrı hesaplanırsa
     // kullanıcı zilde ve raporda farklı rakam görür.
-    const vadesiGecenler = await this.rapor.vadesiGecenler();
+    const vadesiGecenler = await this.oku(tenantId, (tx) => vadesiGecenleriHesapla(tx, tenantId, { yalnizOzet: true }));
     const alacak = vadesiGecenler.alacakSayisi;
     const borc = vadesiGecenler.borcSayisi;
     if (alacak || borc) {
@@ -659,7 +682,7 @@ export class BildirimUreticiService {
     const cekGunu = bugunTR();
     const bugun = new Date(`${cekGunu}T00:00:00Z`);
     const erkenTarih = gunEkle(bugun, erkenGun);
-    const [erken, bugunku, geciken] = await this.prisma.tenantIslem(tenantId, (tx) => {
+    const [erken, bugunku, geciken] = await this.oku(tenantId, (tx) => {
       const where = { tenantId, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "verildi"] as const } };
       return Promise.all([
         erkenGun > 0 ? tx.cekSenet.count({ where: { ...where, durum: { in: [...where.durum.in] }, vadeTarihi: erkenTarih } }) : 0,
@@ -697,7 +720,7 @@ export class BildirimUreticiService {
   private async kartEkstreUyarilari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const bugun = bugunTR();
-    const kartlar = await this.prisma.tenantIslem(tenantId, (tx) => kartEkstreleriniOku(tx, bugun));
+    const kartlar = await this.oku(tenantId, (tx) => kartEkstreleriniOku(tx, bugun));
     const girdiler: BildirimGirdisi[] = [];
     for (const { kart, donemler } of kartlar) {
       const ekstre = ekstreOzeti(donemler).sonKesilen;
@@ -737,7 +760,7 @@ export class BildirimUreticiService {
     const bugun = bugunTR();
     const sinir = new Date(`${bugun}T00:00:00.000Z`);
     sinir.setUTCDate(sinir.getUTCDate() + TEMINAT_UYARI_GUNU);
-    const teminatlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariTeminat.findMany({
+    const teminatlar = await this.oku(tenantId, (tx) => tx.cariTeminat.findMany({
       where: { durum: "aktif", bitisTarihi: { not: null, lte: sinir } },
       include: { cari: { select: { id: true, kod: true, unvan: true } } },
       orderBy: { bitisTarihi: "asc" },
@@ -773,7 +796,7 @@ export class BildirimUreticiService {
   private async aracUyarilari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const bugun = bugunTR();
-    const araclar = await this.prisma.tenantIslem(tenantId, async (tx) => {
+    const araclar = await this.oku(tenantId, async (tx) => {
       // Birim testlerinin sahte işlemlerinde araç tabloları yoktur.
       if (!tx.arac || !tx.aracKmKaydi) return [];
       const a = await tx.arac.findMany({ where: { aktif: true }, select: { id: true, plaka: true, bakimKmAraligi: true, bakimAyAraligi: true, sonBakimTarihi: true, sonBakimKm: true, yukumlulukler: { select: { id: true, tur: true, bitis: true } } } });
@@ -819,7 +842,7 @@ export class BildirimUreticiService {
    */
   private async mutabakatItirazlari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const itirazlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariMutabakat.findMany({
+    const itirazlar = await this.oku(tenantId, (tx) => tx.cariMutabakat.findMany({
       where: { durum: "itiraz", itirazKapandiAt: null },
       include: { cari: { select: { kod: true, unvan: true } } },
       orderBy: { yanitAt: "asc" },
@@ -840,7 +863,7 @@ export class BildirimUreticiService {
     const bugun = bugunTR();
     const sinir = new Date(`${bugun}T00:00:00.000Z`);
     sinir.setUTCDate(sinir.getUTCDate() + KART_UYARI_GUNU);
-    const taksitler = await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaKrediTaksiti.findMany({
+    const taksitler = await this.oku(tenantId, (tx) => tx.bankaKrediTaksiti.findMany({
       where: { islemId: null, vadeTarihi: { lte: sinir }, kredi: { durum: "aktif" } },
       include: { kredi: { select: { id: true, ad: true, dovizCinsi: true } } },
       orderBy: { vadeTarihi: "asc" },
@@ -875,7 +898,7 @@ export class BildirimUreticiService {
    */
   private async irsaliyeFaturaOzetleri(gun: string): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const bekleyenler = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const bekleyenler = await this.oku(tenantId, (tx) =>
       tx.belge.findMany({
         where: {
           tur: "irsaliye",
@@ -944,7 +967,7 @@ export class BildirimUreticiService {
    */
   private async ihracKayitliOzetleri(gun: string): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const aciklar = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const aciklar = await this.oku(tenantId, (tx) =>
       tx.fatura.findMany({
         where: { ihracKayitliKodu: { not: null }, durum: "kesin", gumrukBeyannameNo: null, tip: { in: ["satis", "alis"] } },
         select: { tarih: true, tip: true },
@@ -996,7 +1019,7 @@ export class BildirimUreticiService {
   private async stokOzetleri(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const gun = gunAnahtari();
-    const [kritikStok, taslakSayim] = await this.prisma.tenantIslem(tenantId, async (tx) => [
+    const [kritikStok, taslakSayim] = await this.oku(tenantId, async (tx) => [
       await tx.$queryRaw<{ sayi: bigint }[]>`
         SELECT count(*)::bigint AS sayi FROM "stok_kartlari"
         WHERE "tenant_id" = ${tenantId}::uuid AND "aktif" = true
@@ -1042,7 +1065,7 @@ export class BildirimUreticiService {
     const [yil, ay, gun] = bugun.split("-").map(Number);
     const aySonu = new Date(Date.UTC(yil, ay, 0)).getUTCDate();
     if (aySonu - gun > 3) return [];
-    const kalemler = await this.prisma.tenantIslem(tenantId, (tx) => kurFarkiKalemleri(tx, tenantId, { durum: "bekleyen" }));
+    const kalemler = await this.oku(tenantId, (tx) => kurFarkiKalemleri(tx, tenantId, { durum: "bekleyen" }));
     if (!kalemler.length) return [];
     const biz = kalemler.filter((k) => k.yon === "biz_keseriz" && !k.yurtDisi);
     const toplam = biz.reduce((t, k) => t + Math.abs(Number(k.kurFarkiTry)), 0);
@@ -1062,7 +1085,7 @@ export class BildirimUreticiService {
 
   private async donemKontrolleri(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
-    const donemler = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const donemler = await this.oku(tenantId, (tx) =>
       tx.maliDonem.findMany({
         where: { durum: "acik", kontroller: { some: { basarili: false } } },
         select: { id: true, yil: true, ay: true, kontroller: { where: { basarili: false }, select: { aciklama: true } } },
