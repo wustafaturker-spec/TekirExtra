@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalismaAlani } from "@/components/calisma-alani";
 import { api, tokenAl } from "@/lib/api";
+import { faturaNoMetni } from "@/lib/fatura-no";
 
 interface SatisOzeti { buAyToplam: string; buAyAdet: number; buAyKdv: string; yillikToplam: string; acikTahsilat: string; oncekiAyaGoreDegisim: number | null }
 interface SonSatis { id: string; no: string | null; tarih: string; durum: string; genelToplam: string; cari: { unvan: string } }
@@ -61,7 +62,7 @@ export default function SatisCalismaAlani() {
             <article className="sales-metric"><span>Yıllık net satış</span><strong>{ozet?.yillikToplam != null ? para(ozet.yillikToplam) : "—"}</strong><small>Yılbaşından bugüne</small></article>
             <article className="sales-metric sales-metric--warning"><span>Açık tahsilat</span><strong>{ozet?.acikTahsilat != null ? para(ozet.acikTahsilat) : "—"}</strong><small>Kesin faturaların kalan bakiyesi</small></article>
           </div>}
-          {sonSatislar.length > 0 && <div className="sales-recent"><div className="section-heading sales-recent__head"><div><p className="workspace-eyebrow">Son hareketler</p><h3 className="section-title">Son satışlar</h3></div><a className="btn btn--ghost btn--sm" href="/panel/fatura?yon=satis">Tümünü gör</a></div><div className="table-wrap"><table className="table sales-recent__table"><thead><tr><th>Belge</th><th>Cari</th><th>Tarih</th><th className="num">Tutar</th></tr></thead><tbody>{sonSatislar.map((fatura) => <tr key={fatura.id}><td><a className="sales-recent__invoice" href={`/panel/fatura?faturaId=${fatura.id}`}>{fatura.no ?? "Taslak"}</a></td><td>{fatura.cari.unvan}</td><td>{new Date(fatura.tarih).toLocaleDateString("tr-TR")}</td><td className="num"><strong>{para(fatura.genelToplam)}</strong></td></tr>)}</tbody></table></div></div>}
+          {sonSatislar.length > 0 && <div className="sales-recent"><div className="section-heading sales-recent__head"><div><p className="workspace-eyebrow">Son hareketler</p><h3 className="section-title">Son satışlar</h3></div><a className="btn btn--ghost btn--sm" href="/panel/fatura?yon=satis">Tümünü gör</a></div><div className="table-wrap"><table className="table sales-recent__table"><thead><tr><th>Belge</th><th>Cari</th><th>Tarih</th><th className="num">Tutar</th></tr></thead><tbody>{sonSatislar.map((fatura) => <tr key={fatura.id}><td><a className="sales-recent__invoice" href={`/panel/fatura?faturaId=${fatura.id}`}>{faturaNoMetni(fatura.no, fatura.durum)}</a></td><td>{fatura.cari.unvan}</td><td>{new Date(fatura.tarih).toLocaleDateString("tr-TR")}</td><td className="num"><strong>{para(fatura.genelToplam)}</strong></td></tr>)}</tbody></table></div></div>}
         </section>
       }
       kuyruklar={[

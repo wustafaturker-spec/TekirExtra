@@ -44,6 +44,7 @@ import {
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { CariSecici } from "@/components/cari-secici";
+import { faturaNoMetni } from "@/lib/fatura-no";
 
 const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
 const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
@@ -1767,7 +1768,7 @@ export default function BelgelerSayfasi() {
             })}
             {detay.fatura ? (
               <a className="document-timeline__step is-complete" href={"/panel/fatura?faturaId=" + detay.fatura.id}>
-                <span>✓</span><strong>Fatura</strong><small>{detay.fatura.no ?? "Taslak"}</small>
+                <span>✓</span><strong>Fatura</strong><small>{faturaNoMetni(detay.fatura.no, detay.fatura.durum)}</small>
               </a>
             ) : (
               <button
@@ -2016,7 +2017,7 @@ export default function BelgelerSayfasi() {
             {detay.fatura && (
               <div className="invoice-summary">
                 <h4>Fatura</h4>
-                <div className="invoice-summary__line"><span>Numara</span><strong>{detay.fatura.no ?? "Taslak"}</strong></div>
+                <div className="invoice-summary__line"><span>Numara</span><strong>{faturaNoMetni(detay.fatura.no, detay.fatura.durum)}</strong></div>
                 {detay.fatura.ebelge && <div className="invoice-summary__line"><span>e-Belge</span><strong>{EBELGE_DURUM_ADI[detay.fatura.ebelge.durum] ?? detay.fatura.ebelge.durum}</strong></div>}
                 <div className="invoice-summary__line"><span>{detay.yon === "alis" ? "Ödeme" : "Tahsilat"}</span><strong>{ODEME_DURUM_ADI[detay.fatura.odemeOzeti.durum] ?? detay.fatura.odemeOzeti.durum}</strong></div>
                 {Number(detay.fatura.odemeOzeti.kalan) > 0 && <div className="invoice-summary__line"><span>Kalan</span><strong>{tl(detay.fatura.odemeOzeti.kalan)}</strong></div>}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, BulkActionsBar, Modal, Table } from "@/components/ui";
+import { faturaNoMetni } from "@/lib/fatura-no";
 
 /** EBLG-152: sunucudaki sınırla aynı. */
 export const TOPLU_FATURA_SINIRI = 50;
@@ -78,7 +79,7 @@ export function TopluFaturaIslemleri({ secili, faturalar, onTemizle, onBitti }: 
       <Table>
         <thead><tr><th>Fatura</th><th>Cari</th><th>Sonuç</th><th>Açıklama</th></tr></thead>
         <tbody>{sonuc.sonuclar.map((s) => <tr key={s.faturaId}>
-          <td className="mono">{s.no || "(Taslak)"}</td>
+          <td className="mono">{faturaNoMetni(s.no, s.taslagaAlindi ? "taslak" : s.kesinlesti ? "kesin" : faturalar.find((f) => f.id === s.faturaId)?.durum, true)}</td>
           <td>{s.cari ?? "—"}</td>
           <td>{s.sonuc === "tamam" ? <Badge variant="success">{s.taslagaAlindi ? "Taslağa alındı" : s.kuyrugaAlindi ? (s.kesinlesti ? "Kesinleşti · kuyrukta" : "Kuyrukta") : "Kesinleşti"}</Badge> : s.sonuc === "kismi" ? <Badge variant="warning">Kesinleşti · gönderilmedi</Badge> : <Badge variant="neutral">Atlandı</Badge>}</td>
           <td>{s.mesaj ?? ""}</td>

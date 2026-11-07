@@ -47,6 +47,7 @@ import {
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { ekVergiGovdesi, ekVergiHesapGirdileri, ekVergiOzeti, karttanEkVergiler, type EkVergiSatiri } from "@/lib/ek-vergi";
+import { faturaNoMetni } from "@/lib/fatura-no";
 
 interface Cari {
   id: string;
@@ -2855,7 +2856,7 @@ export default function FaturaSayfasi() {
         />
       )}
 
-      {ekleriAcikFatura && <FaturaEkPaneli faturaId={ekleriAcikFatura.id} baslik={ekleriAcikFatura.no ?? "Taslak"} onKapat={() => setEkleriAcikFatura(null)} />}
+      {ekleriAcikFatura && <FaturaEkPaneli faturaId={ekleriAcikFatura.id} baslik={faturaNoMetni(ekleriAcikFatura.no, ekleriAcikFatura.durum)} onKapat={() => setEkleriAcikFatura(null)} />}
 
       {hizliPanel === "stok" && (
         <HizliKayitPaneli baslik="Yeni ürün" onKapat={() => setHizliPanel(null)}>
@@ -3803,14 +3804,14 @@ export default function FaturaSayfasi() {
                   key={f.id}
                   className="row-link"
                   tabIndex={0}
-                  aria-label={`${f.no || "Taslak"} faturasını aç`}
+                  aria-label={`${faturaNoMetni(f.no, f.durum)} faturasını aç`}
                   onClick={() => faturayiAc(f.id)}
                   onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); faturayiAc(f.id); } }}
                 >
                   <td onClick={(olay) => olay.stopPropagation()} onKeyDown={(olay) => olay.stopPropagation()}>
-                    {topluSecilebilir(f) && <input type="checkbox" aria-label={`${f.no || "Taslak"} faturasını toplu işlem için seç`} checked={topluSecim.has(f.id)} onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(f.id); else yeni.delete(f.id); setTopluSecim(yeni); }} />}
+                    {topluSecilebilir(f) && <input type="checkbox" aria-label={`${faturaNoMetni(f.no, f.durum)} faturasını toplu işlem için seç`} checked={topluSecim.has(f.id)} onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(f.id); else yeni.delete(f.id); setTopluSecim(yeni); }} />}
                   </td>
-                  <td style={{ fontWeight: 700 }} className="mono">{f.no || "(Taslak)"}</td>
+                  <td style={{ fontWeight: 700 }} className="mono">{faturaNoMetni(f.no, f.durum, true)}</td>
                   <td>{f.cari.unvan}</td>
                   <td>{f.tarih}</td>
                   <td>
