@@ -33,6 +33,25 @@ type Tespit = {
  * kararlıdır ki kesik taramada aynı kayıtlar turdan tura gidip gelmesin.
  */
 export const TARAMA_SINIRI = 2_000;
+/** BLD-16: aynı firmada aynı anda en çok bu kadar okuma işlemi; işlem başına süre; yazma parçası. */
+export const OKUMA_ESZAMANLI = 4;
+const ISLEM_SURESI_MS = 30_000;
+export const YAZMA_PARCASI = 500;
+/** Taramanın otomatik çözdüğü neden kodları (elle açılan kayıtlar bu listede değildir). */
+const OTOMATIK_COZULEN_KODLAR = ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "KUR_FARKI_BEKLIYOR", "UCLU_ESLESME_FARKI"];
+
+/** BLD-16: en çok `n` işi aynı anda yürüten sıra; sonuç türleri korunur. */
+export function sinirlayici(n: number) {
+  let calisan = 0;
+  const bekleyen: (() => void)[] = [];
+  return async <T>(is: () => Promise<T>): Promise<T> => {
+    // Boşalan yer doğrudan bekleyene devredilir; arada gelen iş sınırı aşamaz.
+    if (calisan >= n) await new Promise<void>((r) => bekleyen.push(r));
+    else calisan++;
+    try { return await is(); } finally { const sonraki = bekleyen.shift(); if (sonraki) sonraki(); else calisan--; }
+  };
+}
+const parcala = <T>(dizi: readonly T[], boy: number): T[][] => Array.from({ length: Math.ceil(dizi.length / boy) }, (_, i) => dizi.slice(i * boy, (i + 1) * boy));
 const KAYNAK_KODLARI: { kaynak: string; kodlar: string[] }[] = [
   { kaynak: "banka_ekstre", kodlar: ["ESLESMEMIS_EKSTRE"] },
   { kaynak: "masraf", kodlar: ["ODEME_BAGLANTISI_YOK"] },
@@ -124,20 +143,26 @@ export class DuzeltmelerService {
    */
   async tara(secenek: { stokDegisimSonrasi?: Date } = {}) {
     const { tenantId } = aktifBaglam();
-    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
+    // BLD-16: her dedektör kendi kısa okuma işleminde, en çok OKUMA_ESZAMANLI tanesi aynı anda; yazma
+    // ayrı kısa işlemlerle parça parça. (Varsayılan READ COMMITTED'da tek işlem de her sorguya ayrı
+    // anlık görüntü veriyordu; tutarlılık değişmez.)
+    const sira = sinirlayici(OKUMA_ESZAMANLI);
+    const oku = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => sira(() => this.prisma.tenantIslem(tenantId, fn, { timeout: ISLEM_SURESI_MS }));
+    const yaz = (fn: (tx: Prisma.TransactionClient) => Promise<void>) => this.prisma.tenantIslem(tenantId, fn, { timeout: ISLEM_SURESI_MS });
+    const sonuc = await (async () => {
       const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
-      const [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari] = await Promise.all([
-        tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.ebelgeKayit.findMany({ where: { OR: [yerlesmisHataKosulu(), takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, orderBy: [{ mevcutMiktar: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, orderBy: [{ vadeTarihi: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
-        tx.fatura.findMany({ where: { durum: "kesin" }, select: { id: true, no: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+      const [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari, { stokKartlari, tutarlilik }, tolerans, kurKalemleri] = await Promise.all([
+        oku((tx) => tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.ebelgeKayit.findMany({ where: { OR: [yerlesmisHataKosulu(), takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, orderBy: [{ mevcutMiktar: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, orderBy: [{ vadeTarihi: "asc" }, { id: "asc" }], take: TARAMA_SINIRI })),
+        oku((tx) => tx.fatura.findMany({ where: { durum: "kesin" }, select: { id: true, no: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take: TARAMA_SINIRI })),
         // SAT-11: kaynağı olan kesin alış faturaları üçlü eşleştirmeye girer.
-        tx.fatura.findMany({
+        oku((tx) => tx.fatura.findMany({
           where: { tip: "alis", durum: "kesin", zincirBelgeleri: { some: { durum: { not: "iptal" } } } },
           select: {
             id: true,
@@ -153,23 +178,26 @@ export class DuzeltmelerService {
           },
           orderBy: [{ createdAt: "desc" }, { id: "asc" }],
           take: TARAMA_SINIRI,
+        })),
+        // STK-39: bakiye–hareket uyumu (tutarlılık denetiminin otomatik hâli), kart başına tek kayıt.
+        oku(async (tx) => {
+          let stokKartlari: string[] | undefined;
+          if (secenek.stokDegisimSonrasi) {
+            const acikTutarlilik = await tx.duzeltmeKaydi.findMany({
+              where: { nedenKodu: { in: ["STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } },
+              select: { kaynakRef: true },
+            });
+            stokKartlari = [...new Set([...(await degisenStokKartlari(tx, secenek.stokDegisimSonrasi)), ...acikTutarlilik.map((k) => k.kaynakRef)])];
+          }
+          return { stokKartlari, tutarlilik: await stokTutarlilikHesapla(tx, stokKartlari) };
         }),
+        oku((tx) => this.ayarlar.getir("satin_alma", tx)),
+        oku((tx) => kurFarkiKalemleri(tx, tenantId, { durum: "bekleyen" })),
       ]);
       // BLD-13: sınıra ulaşan kaynağın fazlası görülmedi; o kaynağın neden kodları bu turda otomatik çözülmez.
       const kesikKaynaklar = KAYNAK_KODLARI.filter((_, i) => [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari][i].length >= TARAMA_SINIRI);
       const kesikKodlar = new Set(kesikKaynaklar.flatMap((k) => k.kodlar));
-      // STK-39: bakiye–hareket uyumu (tutarlılık denetiminin otomatik hâli), kart başına tek kayıt.
-      let stokKartlari: string[] | undefined;
-      if (secenek.stokDegisimSonrasi) {
-        const acikTutarlilik = await tx.duzeltmeKaydi.findMany({
-          where: { nedenKodu: { in: ["STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } },
-          select: { kaynakRef: true },
-        });
-        stokKartlari = [...new Set([...(await degisenStokKartlari(tx, secenek.stokDegisimSonrasi)), ...acikTutarlilik.map((k) => k.kaynakRef)])];
-      }
-      const tutarlilik = await stokTutarlilikHesapla(tx, stokKartlari);
       const farkliKartlar = kartBazinda(tutarlilik.farklar);
-      const tolerans = await this.ayarlar.getir("satin_alma", tx);
       const eslesmeFarklari = alisFaturalari.flatMap((fatura) => {
         const farklar = ucluEslestir({
           faturaSatirlari: fatura.satirlar.map((s) => ({ stokId: s.stokId, stokKod: s.stok.kod, miktar: Number(s.miktar), birimFiyat: Number(s.birimFiyat) })),
@@ -195,7 +223,7 @@ export class DuzeltmelerService {
       });
       // KSB-30: faturalanmamış/kapatılmamış kur farkları, cari başına tek kayıt.
       const kurFarklari = new Map<string, { unvan: string; adet: number; toplam: number }>();
-      for (const k of await kurFarkiKalemleri(tx, tenantId, { durum: "bekleyen" })) {
+      for (const k of kurKalemleri) {
         const c = kurFarklari.get(k.cari.id) ?? { unvan: k.cari.unvan, adet: 0, toplam: 0 };
         c.adet++; c.toplam += Math.abs(Number(k.kurFarkiTry));
         kurFarklari.set(k.cari.id, c);
@@ -224,33 +252,42 @@ export class DuzeltmelerService {
       // BLD-14: yeni kayıt açılıyor mu? (bildirim taraması kritik düzeltmeyi okur; yalnız yeni/çözülen kayıt firmayı "değişmiş" yapar)
       const bilinenAnahtarlar = new Set<string>();
       const anahtarListesi = [...aktifAnahtarlar];
-      for (let i = 0; i < anahtarListesi.length; i += 5_000) {
-        for (const k of await tx.duzeltmeKaydi.findMany({ where: { tekillikAnahtari: { in: anahtarListesi.slice(i, i + 5_000) } }, select: { tekillikAnahtari: true } })) {
+      for (const parca of parcala(anahtarListesi, 5_000)) {
+        for (const k of await oku((tx) => tx.duzeltmeKaydi.findMany({ where: { tekillikAnahtari: { in: parca } }, select: { tekillikAnahtari: true } }))) {
           if (k.tekillikAnahtari) bilinenAnahtarlar.add(k.tekillikAnahtari);
         }
       }
       const yeniKayit = anahtarListesi.filter((a) => !bilinenAnahtarlar.has(a)).length;
-      for (const tespit of tespitler) {
-        const anahtar = `${tespit.nedenKodu}:${tespit.kaynakTur}:${tespit.kaynakRef}`;
-        await tx.duzeltmeKaydi.upsert({
-          where: { tenantId_tekillikAnahtari: { tenantId, tekillikAnahtari: anahtar } },
-          create: { tenantId, ...tespit, tekillikAnahtari: anahtar, sonTarih: new Date(Date.now() + 24 * 60 * 60 * 1000) },
-          update: { ...tespit, sonTespitTarihi: new Date() },
+      // BLD-16: yazma YAZMA_PARCASI'lık kısa işlemlerle; upsert tekrarlanabilir, yarıda kalan tur sonraki turda tamamlanır.
+      for (const parca of parcala(tespitler, YAZMA_PARCASI)) {
+        await yaz(async (tx) => {
+          for (const tespit of parca) {
+            const anahtar = `${tespit.nedenKodu}:${tespit.kaynakTur}:${tespit.kaynakRef}`;
+            await tx.duzeltmeKaydi.upsert({
+              where: { tenantId_tekillikAnahtari: { tenantId, tekillikAnahtari: anahtar } },
+              create: { tenantId, ...tespit, tekillikAnahtari: anahtar, sonTarih: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+              update: { ...tespit, sonTespitTarihi: new Date() },
+            });
+          }
         });
       }
 
-      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "KUR_FARKI_BEKLIYOR", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true, nedenKodu: true } });
+      const mevcutlar = await oku((tx) => tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: OTOMATIK_COZULEN_KODLAR }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true, nedenKodu: true } }));
+      const cozulecek = mevcutlar.filter((kayit) => !(kayit.tekillikAnahtari && aktifAnahtarlar.has(kayit.tekillikAnahtari)) && !kesikKodlar.has(kayit.nedenKodu));
       let otomatikCozulen = 0;
-      for (const kayit of mevcutlar) {
-        if (kayit.tekillikAnahtari && aktifAnahtarlar.has(kayit.tekillikAnahtari)) continue;
-        if (kesikKodlar.has(kayit.nedenKodu)) continue;
-        await tx.duzeltmeKaydi.update({ where: { id: kayit.id }, data: { durum: "cozuldu", cozulmeTarihi: new Date(), tekillikAnahtari: null } });
-        await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: kayit.id, oncekiDurum: kayit.durum, yeniDurum: "cozuldu", olayTuru: "otomatik_cozum", aciklama: "Kaynak sorun yeniden taramada bulunamadı." } });
-        otomatikCozulen++;
+      for (const parca of parcala(cozulecek, YAZMA_PARCASI)) {
+        await yaz(async (tx) => {
+          for (const kayit of parca) {
+            // BLD-16: okuma ile yazma artık ayrı işlem; arada kullanıcı kaydı değiştirdiyse dokunulmaz.
+            const { count } = await tx.duzeltmeKaydi.updateMany({ where: { id: kayit.id, durum: kayit.durum, tekillikAnahtari: kayit.tekillikAnahtari }, data: { durum: "cozuldu", cozulmeTarihi: new Date(), tekillikAnahtari: null } });
+            if (!count) continue;
+            await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: kayit.id, oncekiDurum: kayit.durum, yeniDurum: "cozuldu", olayTuru: "otomatik_cozum", aciklama: "Kaynak sorun yeniden taramada bulunamadı." } });
+            otomatikCozulen++;
+          }
+        });
       }
       return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen, yeniKayit, kesikKaynaklar: kesikKaynaklar.map((k) => k.kaynak), stokDenetimi: stokKartlari ? { tur: "artimli" as const, kart: stokKartlari.length } : { tur: "tam" as const, kart: tutarlilik.kartSayisi } };
-      // BLD-11: ~12 dedektör tek işlemde; soğuk açılışta/yük altında 5 sn varsayılanı aşılıyordu.
-    }, { timeout: 30_000 });
+    })();
     // BLD-14: tarama yazımı iz bırakmaz; yeni açılan ya da çözülen kayıt bildirim taraması için gerçek değişimdir.
     if (sonuc.yeniKayit || sonuc.otomatikCozulen) degisimKaydet(tenantId);
     return sonuc;

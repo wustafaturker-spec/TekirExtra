@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
-import { DuzeltmelerService, TARAMA_SINIRI } from "./duzeltmeler.service";
+import { DuzeltmelerService, OKUMA_ESZAMANLI, sinirlayici, TARAMA_SINIRI } from "./duzeltmeler.service";
 
 const tutarlilik = vi.hoisted(() => vi.fn());
 const degisenKartlar = vi.hoisted(() => vi.fn());
@@ -40,6 +40,7 @@ describe("DuzeltmelerService", () => {
     tx.fatura.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.upsert.mockResolvedValue({});
+    tx.duzeltmeKaydi.updateMany.mockResolvedValue({ count: 1 });
     tutarlilik.mockResolvedValue({ farklar: [], dagitilmamis: [], kartSayisi: 0 });
     service = new DuzeltmelerService(prisma as never, { getir: vi.fn().mockResolvedValue({ miktarToleransYuzde: 1, fiyatToleransYuzde: 1 }) } as never);
   });
@@ -75,7 +76,7 @@ describe("DuzeltmelerService", () => {
     );
 
     expect(sonuc.otomatikCozulen).toBe(1);
-    expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "duzeltme-1" }, data: expect.objectContaining({ durum: "cozuldu", tekillikAnahtari: null }) }));
+    expect(tx.duzeltmeKaydi.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "duzeltme-1", durum: "acik", tekillikAnahtari: "ESLESMEMIS_EKSTRE:banka_ekstre_satiri:satir-1" }, data: expect.objectContaining({ durum: "cozuldu", tekillikAnahtari: null }) }));
     expect(tx.duzeltmeOlayi.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ olayTuru: "otomatik_cozum" }) }));
   });
 
@@ -91,8 +92,8 @@ describe("DuzeltmelerService", () => {
 
     expect(sonuc.kesikKaynaklar).toEqual(["banka_ekstre"]);
     expect(sonuc.otomatikCozulen).toBe(1);
-    expect(tx.duzeltmeKaydi.update).toHaveBeenCalledTimes(1);
-    expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "biten-masraf" } }));
+    expect(tx.duzeltmeKaydi.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.duzeltmeKaydi.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "biten-masraf" }) }));
     expect(tx.bankaEkstreSatir.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }));
   });
 
@@ -108,6 +109,27 @@ describe("DuzeltmelerService", () => {
     expect(degisenKartlar).toHaveBeenCalledWith(tx, sonra);
     expect(tutarlilik).toHaveBeenLastCalledWith(tx, ["kart-1", "kart-2", "kart-acik"]);
     expect(sonuc.stokDenetimi).toEqual({ tur: "artimli", kart: 3 });
+  });
+
+  it("BLD-16: okuma ile yazma arasında kullanıcının kapattığı kayıt otomatik çözülmez, olay yazılmaz", async () => {
+    tx.duzeltmeKaydi.findMany.mockResolvedValue([{ id: "d1", tekillikAnahtari: "NEGATIF_STOK:stok_depo_bakiyesi:b1", durum: "acik", nedenKodu: "NEGATIF_STOK" }]);
+    tx.duzeltmeKaydi.updateMany.mockResolvedValue({ count: 0 });
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara());
+    expect(sonuc.otomatikCozulen).toBe(0);
+    expect(tx.duzeltmeOlayi.create).not.toHaveBeenCalled();
+  });
+
+  it("BLD-16: okumalar ayrı kısa işlemlerde, aynı anda en çok OKUMA_ESZAMANLI; yazma ayrı işlemde", async () => {
+    let anlik = 0; let enCok = 0;
+    const yavas = (sonuc: unknown) => async () => { anlik++; enCok = Math.max(enCok, anlik); await new Promise((r) => setTimeout(r, 5)); anlik--; return sonuc; };
+    for (const m of [tx.bankaEkstreSatir, tx.masraf, tx.krediKartiHareket, tx.posTahsilat, tx.ebelgeKayit, tx.stokDepoBakiye, tx.sayim, tx.cekSenet, tx.fatura]) m.findMany.mockImplementation(yavas([]));
+    tx.bankaEkstreSatir.findMany.mockImplementation(yavas([{ id: "s1", aciklama: "x", tutar: { toString: () => "1" } }]));
+    prisma.tenantIslem.mockClear();
+    await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara());
+    expect(enCok).toBeLessThanOrEqual(OKUMA_ESZAMANLI);
+    expect(enCok).toBeGreaterThan(1);
+    // 13 okuma + bilinen anahtar + 1 yazma parçası + mevcut kayıtlar = 16 ayrı işlem
+    expect(prisma.tenantIslem).toHaveBeenCalledTimes(16);
   });
 
   it("fark içeren taslak sayımı onaysız sayım bulgusu olarak açar", async () => {
@@ -207,5 +229,18 @@ describe("DuzeltmelerService", () => {
       () => service.durumDegistir("duzeltme-1", "incelemede"),
     )).rejects.toThrow("Kapanmış düzeltme kaydının durumu değiştirilemez");
     expect(tx.duzeltmeKaydi.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("BLD-16 sınırlayıcı", () => {
+  it("aynı anda en çok n iş yürütür; boşalan yer arada gelen işe kaptırılmaz", async () => {
+    const sira = sinirlayici(2);
+    let anlik = 0; let enCok = 0;
+    const is = () => sira(async () => { anlik++; enCok = Math.max(enCok, anlik); await Promise.resolve(); await new Promise((r) => setTimeout(r, 1)); anlik--; return 1; });
+    const ilk = Array.from({ length: 5 }, is);
+    await new Promise((r) => setTimeout(r, 2));
+    const sonra = Array.from({ length: 5 }, is);
+    expect((await Promise.all([...ilk, ...sonra])).length).toBe(10);
+    expect(enCok).toBe(2);
   });
 });
