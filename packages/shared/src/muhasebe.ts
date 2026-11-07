@@ -16,7 +16,7 @@ export const MUHASEBE_HESAPLARI = {
   sarf_alis: { kod: "150", ad: "İlk madde ve malzeme (sarf alımı)" },
   mal_alis: { kod: "153", ad: "Ticari mallar" },
   indirilecek_kdv: { kod: "191", ad: "İndirilecek KDV" },
-  pesin_vergi: { kod: "193", ad: "Peşin ödenen vergiler (gelir stopajı)" },
+  pesin_vergi: { kod: "193", ad: "Peşin ödenen vergiler ve fonlar (gelir, satış ve e-ticaret stopajı)" },
   personel_avans: { kod: "196", ad: "Personel avansları" },
   kisa_vadeli_kredi: { kod: "300", ad: "Banka kredileri (kısa vadeli)" },
   kredi_karti: { kod: "309", ad: "Diğer mali borçlar (kredi kartı)" },
