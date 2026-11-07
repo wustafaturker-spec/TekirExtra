@@ -33,7 +33,7 @@ export class BildirimZamanlayiciService implements OnModuleInit, OnModuleDestroy
     const ayar = Number(process.env.BILDIRIM_TARAMA_INTERVAL_MS || BES_DAKIKA_MS);
     const aralik = Math.min(Number.isFinite(ayar) && ayar > 0 ? ayar : BES_DAKIKA_MS, BES_DAKIKA_MS);
     this.aralikMs = aralik;
-    this.zamanlayici = setInterval(() => void nabizla("bildirim-zamanlayici", () => this.calistir()), aralik);
+    this.zamanlayici = setInterval(() => void nabizla("bildirim-zamanlayici", () => this.calistir(), aralik), aralik);
     this.logger.log(JSON.stringify({ event: "notification_scan_scheduled", intervalMs: aralik }));
   }
 
@@ -67,6 +67,9 @@ export class BildirimZamanlayiciService implements OnModuleInit, OnModuleDestroy
           uretilen += sonuc.tarama.uretilen;
           teslimat += sonuc.tarama.yeniTeslimat;
           gonderilen += sonuc.posta.gonderilen;
+          // BLD-13: sınıra takılan dedektör; o önekteki bildirimler bu turda kapatılmadı.
+          for (const onek of sonuc.tarama.kesikOnekler) this.metrics.increment("notification_scan_truncated_total", { onek });
+          if (sonuc.tarama.kesikOnekler.length) this.logger.warn(JSON.stringify({ event: "notification_scan_truncated", tenantId, onekler: sonuc.tarama.kesikOnekler }));
           this.metrics.increment("notification_scan_tenant_total", { result: "success" });
         } catch (hata) {
           basarisizTenant++;

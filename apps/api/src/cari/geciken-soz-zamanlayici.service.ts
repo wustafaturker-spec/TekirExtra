@@ -22,7 +22,7 @@ export class GecikenSozZamanlayiciService implements OnModuleInit, OnModuleDestr
   onModuleInit() {
     if (process.env.TEKIR_WORKER !== "1") return;
     this.ilk = setImmediate(() => void nabizla("geciken-soz-zamanlayici", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("geciken-soz-zamanlayici", () => this.calistir()), ARALIK_MS);
+    this.zamanlayici = setInterval(() => void nabizla("geciken-soz-zamanlayici", () => this.calistir(), ARALIK_MS), ARALIK_MS);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
 

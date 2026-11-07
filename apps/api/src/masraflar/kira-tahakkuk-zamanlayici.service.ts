@@ -61,7 +61,7 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
     setImmediate(() => void nabizla("kira-tahakkuk-zamanlayici", () => this.calistir()));
     this.ilkGunlukKontrol = setTimeout(() => {
       void this.calistir();
-      this.zamanlayici = setInterval(() => void nabizla("kira-tahakkuk-zamanlayici", () => this.calistir()), BIR_GUN_MS);
+      this.zamanlayici = setInterval(() => void nabizla("kira-tahakkuk-zamanlayici", () => this.calistir(), BIR_GUN_MS), BIR_GUN_MS);
     }, sonrakiGunlukKontrolMs());
     this.logger.log("Kira tahakkuk kontrolü her gün İstanbul saatiyle 00:05 için planlandı");
   }

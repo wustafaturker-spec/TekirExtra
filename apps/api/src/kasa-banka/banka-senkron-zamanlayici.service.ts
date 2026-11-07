@@ -26,7 +26,7 @@ export class BankaSenkronZamanlayiciService implements OnModuleInit, OnModuleDes
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
     setImmediate(() => void nabizla("banka-senkron-zamanlayici", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("banka-senkron-zamanlayici", () => this.calistir()), BES_DAKIKA_MS);
+    this.zamanlayici = setInterval(() => void nabizla("banka-senkron-zamanlayici", () => this.calistir(), BES_DAKIKA_MS), BES_DAKIKA_MS);
   }
 
   onModuleDestroy(): void {

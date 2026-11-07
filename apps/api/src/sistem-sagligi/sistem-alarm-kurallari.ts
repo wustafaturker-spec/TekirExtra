@@ -1,3 +1,5 @@
+import { TUR_ASIM_ORANI } from "../core/nabiz/nabiz";
+
 /**
  * PLT-19: alarm kuralları — saf işlev; veri toplamadan ve e-postadan ayrı
  * tutulur ki eşikler birim testle sınansın.
@@ -11,6 +13,11 @@ export const ESIK = {
   kursorSaat: 3,
   /** Zamanlayıcı art arda bu kadar kez hata verdiyse. */
   ardisikHata: 3,
+  /** BLD-12: tur süresi aralığın bu oranını art arda `ardisikUzunTur` kez aşarsa. */
+  turAsimOrani: TUR_ASIM_ORANI,
+  ardisikUzunTur: 2,
+  /** BLD-12: son bu kadar saatte tur atlandıysa. */
+  atlamaSaat: 1,
 } as const;
 
 export interface AlarmGirdisi {
@@ -21,12 +28,19 @@ export interface AlarmGirdisi {
   oncekiWorkerVar: boolean;
   oluIsler: { id: string; tenantId: string; unvan?: string; isTuru: string; hata: string }[];
   kursorler: { tenantId: string; unvan: string; sonCekimAt: Date | null }[];
-  isler: { isAdi: string; ardisikHata: number; sonHata: string | null }[];
+  isler: { isAdi: string; ardisikHata: number; sonHata: string | null; aralikMs?: number | null; sonSureMs?: number | null; ardisikUzun?: number; sonAtlamaAt?: Date | null; atlamaPencereAt?: Date | null; pencereAtlama?: number }[];
 }
 
 export interface Sorun { anahtar: string; tur: string; ozet: string }
 
 const dk = (ms: number) => Math.round(ms / 60_000);
+const sureMetni = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 6_000) / 10} dk` : `${Math.round(ms / 100) / 10} sn`);
+
+/** BLD-12: penceresi son 1 saat içinde açılmışsa penceredeki sayı, değilse en az 1 (son atlama). */
+export function saatlikAtlama(i: { sonAtlamaAt?: Date | null; atlamaPencereAt?: Date | null; pencereAtlama?: number }, t: number): number {
+  if (!i.sonAtlamaAt || t - i.sonAtlamaAt.getTime() > 3_600_000) return 0;
+  return i.atlamaPencereAt && t - i.atlamaPencereAt.getTime() <= 3_600_000 ? Math.max(1, i.pencereAtlama ?? 1) : 1;
+}
 
 export function sorunlariBul(g: AlarmGirdisi): Sorun[] {
   const t = g.simdi.getTime();
@@ -54,6 +68,17 @@ export function sorunlariBul(g: AlarmGirdisi): Sorun[] {
   }
   for (const i of g.isler) {
     if (i.ardisikHata >= ESIK.ardisikHata) sorunlar.push({ anahtar: `is:${i.isAdi}`, tur: "zamanlayici", ozet: `${i.isAdi} art arda ${i.ardisikHata} kez hata verdi: ${i.sonHata ?? ""}`.slice(0, 1000) });
+    // BLD-12: tur aşımı — atlanan tur ya da art arda uzun tur; düzelince kendiliğinden kapanır.
+    const atlama = i.sonAtlamaAt && t - i.sonAtlamaAt.getTime() <= ESIK.atlamaSaat * 3_600_000;
+    const uzun = (i.ardisikUzun ?? 0) >= ESIK.ardisikUzunTur && !!i.aralikMs;
+    if (atlama || uzun) {
+      const aralik = i.aralikMs ? `aralık ${sureMetni(i.aralikMs)}` : "aralık bilinmiyor";
+      const neden = [
+        atlama ? `son 1 saatte ${saatlikAtlama(i, t)} tur atlandı (önceki tur bitmeden yenisi geldi)` : null,
+        uzun ? `art arda ${i.ardisikUzun} turda süre aralığın %${Math.round(ESIK.turAsimOrani * 100)}'ini aştı (son tur ${sureMetni(i.sonSureMs ?? 0)})` : null,
+      ].filter(Boolean).join("; ");
+      sorunlar.push({ anahtar: `is-asim:${i.isAdi}`, tur: "zamanlayici_asim", ozet: `${i.isAdi} kendi aralığına sığmıyor (${aralik}): ${neden}.`.slice(0, 1000) });
+    }
   }
   return sorunlar;
 }

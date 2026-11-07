@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
-import { DuzeltmelerService } from "./duzeltmeler.service";
+import { DuzeltmelerService, TARAMA_SINIRI } from "./duzeltmeler.service";
 
 const tutarlilik = vi.hoisted(() => vi.fn());
 vi.mock("../stok/stok-tutarlilik.service", () => ({ stokTutarlilikHesapla: tutarlilik }));
@@ -76,6 +76,23 @@ describe("DuzeltmelerService", () => {
     expect(sonuc.otomatikCozulen).toBe(1);
     expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "duzeltme-1" }, data: expect.objectContaining({ durum: "cozuldu", tekillikAnahtari: null }) }));
     expect(tx.duzeltmeOlayi.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ olayTuru: "otomatik_cozum" }) }));
+  });
+
+  it("BLD-13: sınıra ulaşan kaynağın kayıtları o turda otomatik çözülmez, diğer kaynaklarınki çözülür", async () => {
+    const satirlar = Array.from({ length: TARAMA_SINIRI }, (_, i) => ({ id: `satir-${i}`, aciklama: "Havale", tutar: { toString: () => "1" } }));
+    tx.bankaEkstreSatir.findMany.mockResolvedValue(satirlar);
+    tx.duzeltmeKaydi.findMany.mockResolvedValue([
+      { id: "gorulmeyen-ekstre", tekillikAnahtari: "ESLESMEMIS_EKSTRE:banka_ekstre_satiri:satir-9999", durum: "acik", nedenKodu: "ESLESMEMIS_EKSTRE" },
+      { id: "biten-masraf", tekillikAnahtari: "ODEME_BAGLANTISI_YOK:masraf:m1", durum: "acik", nedenKodu: "ODEME_BAGLANTISI_YOK" },
+    ]);
+
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara());
+
+    expect(sonuc.kesikKaynaklar).toEqual(["banka_ekstre"]);
+    expect(sonuc.otomatikCozulen).toBe(1);
+    expect(tx.duzeltmeKaydi.update).toHaveBeenCalledTimes(1);
+    expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "biten-masraf" } }));
+    expect(tx.bankaEkstreSatir.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }));
   });
 
   it("fark içeren taslak sayımı onaysız sayım bulgusu olarak açar", async () => {

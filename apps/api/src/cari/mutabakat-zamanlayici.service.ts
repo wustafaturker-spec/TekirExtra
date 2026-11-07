@@ -23,7 +23,7 @@ export class MutabakatZamanlayiciService implements OnModuleInit, OnModuleDestro
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
     setImmediate(() => void nabizla("mutabakat-zamanlayici", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("mutabakat-zamanlayici", () => this.calistir()), SAAT_MS);
+    this.zamanlayici = setInterval(() => void nabizla("mutabakat-zamanlayici", () => this.calistir(), SAAT_MS), SAAT_MS);
   }
 
   onModuleDestroy(): void {

@@ -95,7 +95,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
-    this.zamanlayici = setInterval(() => void nabizla("teklif-talebi", () => this.taraGuvenli()), BES_DAKIKA_MS);
+    this.zamanlayici = setInterval(() => void nabizla("teklif-talebi", () => this.taraGuvenli(), BES_DAKIKA_MS), BES_DAKIKA_MS);
     setImmediate(() => void nabizla("teklif-talebi", () => this.taraGuvenli()));
   }
 

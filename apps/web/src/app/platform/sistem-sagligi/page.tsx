@@ -6,12 +6,12 @@ import { Alert, Badge, Button, Card, PageHeader, Stat, StatGrid, TableWrap } fro
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
 
 interface Surec { basladiAt: string; sonNabizAt: string; rssMb: number | null; heapMb: number | null; heapSinirMb: number | null; makine?: string | null }
-interface Is { isAdi: string; sonBaslangic: string | null; sonSureMs: number | null; sonBasariAt: string | null; sonHata: string | null; sonHataAt: string | null; ardisikHata: number; calismaSayisi: number }
+interface Is { isAdi: string; sonBaslangic: string | null; sonSureMs: number | null; sonBasariAt: string | null; sonHata: string | null; sonHataAt: string | null; ardisikHata: number; calismaSayisi: number; aralikMs: number | null; ardisikUzun: number; saatlikAtlama: number }
 interface OluIs { id: string; tenantId: string; unvan: string; isTuru: string; hata: string; zaman: string }
 interface Alarm { anahtar: string; tur: string; acik: boolean; ozet: string; ilkAt: string; sonBildirimAt: string | null; kapandiAt: string | null }
 interface Saglik {
   zaman: string;
-  esikler: { workerNabizDk: number; saatlikYenidenBaslama: number; kursorSaat: number; ardisikHata: number };
+  esikler: { workerNabizDk: number; saatlikYenidenBaslama: number; kursorSaat: number; ardisikHata: number; turAsimOrani: number; ardisikUzunTur: number };
   worker: { son: Surec | null; nabizGecikmesiDk: number | null; acilis24s: number; acilislar: { basladiAt: string; sonNabizAt: string; rssMb: number | null }[] };
   api: Surec | null;
   isler: Is[];
@@ -23,7 +23,7 @@ interface Saglik {
 }
 
 const zaman = (s: string | null) => (s ? new Date(s).toLocaleString("tr-TR") : "—");
-const sure = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} sn`);
+const sure = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${ms} ms` : ms < 120_000 ? `${(ms / 1000).toFixed(1)} sn` : ms < 7_200_000 ? `${Math.round(ms / 60_000)} dk` : `${Math.round(ms / 3_600_000)} sa`);
 
 /**
  * PLT-17/18: sistem sağlığı. Yalnız sayı, durum ve hata metni; firma verisinin
@@ -104,12 +104,12 @@ export default function PlatformSistemSagligi() {
 
       <Card title="Zamanlayıcılar" pad={false}>
         <TableWrap className="platform-responsive-table platform-health-table">
-          <thead><tr><th>İş</th><th>Son çalışma</th><th className="num">Süre</th><th>Son başarı</th><th>Son hata</th><th className="num">Çalışma</th></tr></thead>
+          <thead><tr><th>İş</th><th>Son çalışma</th><th className="num">Süre / aralık</th><th>Son başarı</th><th>Son hata</th><th className="num">Çalışma</th></tr></thead>
           <tbody>
             {v.isler.map((i) => <tr key={i.isAdi}>
-              <td data-label="İş" className="mono platform-cell-title">{i.isAdi}{i.ardisikHata > 0 && <div style={{ marginTop: 4 }}><Badge variant={i.ardisikHata >= v.esikler.ardisikHata ? "danger" : "warning"}>{i.ardisikHata} ardışık hata</Badge></div>}</td>
+              <td data-label="İş" className="mono platform-cell-title">{i.isAdi}{i.ardisikHata > 0 && <div style={{ marginTop: 4 }}><Badge variant={i.ardisikHata >= v.esikler.ardisikHata ? "danger" : "warning"}>{i.ardisikHata} ardışık hata</Badge></div>}{i.saatlikAtlama > 0 && <div style={{ marginTop: 4 }}><Badge variant="danger">Son 1 saatte {i.saatlikAtlama} tur atlandı</Badge></div>}{i.ardisikUzun > 0 && <div style={{ marginTop: 4 }}><Badge variant={i.ardisikUzun >= v.esikler.ardisikUzunTur ? "danger" : "warning"}>{i.ardisikUzun} turdur aralığın %{Math.round(v.esikler.turAsimOrani * 100)}'inden uzun</Badge></div>}</td>
               <td data-label="Son çalışma" className="subtle">{zaman(i.sonBaslangic)}</td>
-              <td data-label="Süre" className="num">{sure(i.sonSureMs)}</td>
+              <td data-label="Süre / aralık" className="num">{sure(i.sonSureMs)}{i.aralikMs ? <div className="subtle">/ {sure(i.aralikMs)}</div> : null}</td>
               <td data-label="Son başarı" className="subtle">{zaman(i.sonBasariAt)}</td>
               <td data-label="Son hata">{i.sonHata ? <><span className="subtle">{zaman(i.sonHataAt)}</span><div style={{ fontSize: "0.85rem" }}>{i.sonHata}</div></> : "—"}</td>
               <td data-label="Çalışma" className="num">{i.calismaSayisi}</td>

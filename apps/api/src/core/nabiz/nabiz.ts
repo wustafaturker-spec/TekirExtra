@@ -11,7 +11,11 @@ interface Calisma { hatalar: string[] }
 
 const calismaBaglami = new AsyncLocalStorage<Calisma>();
 
-export interface NabizSonucu { ad: string; baslangic: Date; bitis: Date; hata: string | null }
+/**
+ * BLD-12: `aralikMs` işin tetik aralığıdır (açılış tetiğinde bilinmez, verilmez).
+ * `atlandi`: önceki tur hâlâ sürerken gelen tetik; iş çalıştırılmaz, süre ezilmez.
+ */
+export interface NabizSonucu { ad: string; baslangic: Date; bitis: Date; hata: string | null; aralikMs?: number; atlandi?: boolean }
 export type NabizKaydedici = (s: NabizSonucu) => Promise<void>;
 
 let kaydedici: NabizKaydedici | null = null;
@@ -33,17 +37,32 @@ export class NabizLogger extends ConsoleLogger {
   }
 }
 
-export async function nabizla<T>(ad: string, is: () => Promise<T>): Promise<T | undefined> {
-  const c: Calisma = { hatalar: [] };
+/** BLD-12: tur süresi aralığın bu oranını aşınca "uzun tur" sayılır. */
+export const TUR_ASIM_ORANI = 0.8;
+
+/** BLD-12: bu süreçte hâlâ süren işler (ad başına tek tur). */
+const surenIsler = new Set<string>();
+
+export async function nabizla<T>(ad: string, is: () => Promise<T>, aralikMs?: number): Promise<T | undefined> {
   const baslangic = new Date();
+  // BLD-12: önceki tur bitmeden gelen tetik atlanır ve ayrıca kaydedilir;
+  // eskiden iş kendi korumasıyla hemen dönüyor, "0 ms başarılı" yazılıyordu.
+  if (surenIsler.has(ad)) {
+    if (kaydedici) await kaydedici({ ad, baslangic, bitis: baslangic, hata: null, aralikMs, atlandi: true }).catch(() => undefined);
+    return undefined;
+  }
+  surenIsler.add(ad);
+  const c: Calisma = { hatalar: [] };
   let sonuc: T | undefined;
   try {
     sonuc = await calismaBaglami.run(c, is);
   } catch (hata) {
     c.hatalar.push(metin(hata));
+  } finally {
+    surenIsler.delete(ad);
   }
   if (kaydedici) {
-    await kaydedici({ ad, baslangic, bitis: new Date(), hata: c.hatalar.length ? c.hatalar.join(" · ").slice(0, 1000) : null }).catch(() => undefined);
+    await kaydedici({ ad, baslangic, bitis: new Date(), hata: c.hatalar.length ? c.hatalar.join(" · ").slice(0, 1000) : null, aralikMs }).catch(() => undefined);
   }
   return sonuc;
 }

@@ -153,6 +153,14 @@ describe("BLD-11 taramaEksikleriniKapat (kapatEksikleri ile aynı kural, tek iş
     expect(updateMany).toHaveBeenCalledWith({ where: { id: { in: ["1", "4"] }, kapandiAt: null }, data: { kapandiAt: expect.any(Date) } });
   });
 
+  it("BLD-13: bu turda sınıra takılan önekteki bildirim kapatılmaz", async () => {
+    const findMany = vi.fn().mockResolvedValue(acik);
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const servis = servisKur({ bildirim: { findMany, updateMany } });
+    await expect(servis.taramaEksikleriniKapat(kapsam, ["ebelge:"])).resolves.toBe(1);
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: { in: ["1"] }, kapandiAt: null }, data: { kapandiAt: expect.any(Date) } });
+  });
+
   it("kapanacak yoksa yazmaz", async () => {
     const updateMany = vi.fn();
     const servis = servisKur({ bildirim: { findMany: vi.fn().mockResolvedValue([acik[1], acik[2]]), updateMany } });

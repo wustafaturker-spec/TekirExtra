@@ -38,7 +38,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
     if (process.env.TEKIR_ODEME_SOZU_WORKER !== "1") return;
     z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
     this.ilk = setImmediate(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir()), ARALIK);
+    this.zamanlayici = setInterval(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir(), ARALIK), ARALIK);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
   saglikli() { return this.sonBasariliTarama !== null && Date.now() - this.sonBasariliTarama < ARALIK * 2; }

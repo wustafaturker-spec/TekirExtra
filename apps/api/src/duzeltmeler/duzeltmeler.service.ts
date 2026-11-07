@@ -24,6 +24,26 @@ type Tespit = {
   onerilenEylem: string;
 };
 
+
+/**
+ * BLD-13: dedektör sorgularının üst sınırı (yük gerekçesiyle) ve her kaynağın
+ * beslediği neden kodları. Sıra `tara()` içindeki Promise.all sırasıdır.
+ * Sorun listeleri en eski önce, fatura denetimleri en yeni önce okunur; sıra
+ * kararlıdır ki kesik taramada aynı kayıtlar turdan tura gidip gelmesin.
+ */
+export const TARAMA_SINIRI = 2_000;
+const KAYNAK_KODLARI: { kaynak: string; kodlar: string[] }[] = [
+  { kaynak: "banka_ekstre", kodlar: ["ESLESMEMIS_EKSTRE"] },
+  { kaynak: "masraf", kodlar: ["ODEME_BAGLANTISI_YOK"] },
+  { kaynak: "kredi_karti", kodlar: ["BELGESIZ_KART_HARCAMASI"] },
+  { kaynak: "pos", kodlar: ["POS_FINANS_HAREKETI_EKSIK"] },
+  { kaynak: "ebelge", kodlar: ["EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR"] },
+  { kaynak: "negatif_stok", kodlar: ["NEGATIF_STOK"] },
+  { kaynak: "sayim", kodlar: ["SAYIM_FARKI_ONAYSIZ"] },
+  { kaynak: "cek_senet", kodlar: ["VADE_GECTI_DURUM_ACIK"] },
+  { kaynak: "fatura_odeme", kodlar: ["FATURA_ODEME_TOPLAMI_ASIMI"] },
+  { kaynak: "uclu_eslesme", kodlar: ["UCLU_ESLESME_FARKI"] },
+];
 @Injectable()
 export class DuzeltmelerService {
   constructor(
@@ -100,15 +120,15 @@ export class DuzeltmelerService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
       const [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari] = await Promise.all([
-        tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
-        tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, take: 2_000 }),
-        tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
-        tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, take: 2_000 }),
-        tx.ebelgeKayit.findMany({ where: { OR: [yerlesmisHataKosulu(), takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, take: 2_000 }),
-        tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, take: 2_000 }),
-        tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, take: 2_000 }),
-        tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, take: 2_000 }),
-        tx.fatura.findMany({ where: { durum: "kesin" }, select: { id: true, no: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI }, take: 2_000 }),
+        tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.ebelgeKayit.findMany({ where: { OR: [yerlesmisHataKosulu(), takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, orderBy: [{ mevcutMiktar: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, orderBy: [{ vadeTarihi: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
+        tx.fatura.findMany({ where: { durum: "kesin" }, select: { id: true, no: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take: TARAMA_SINIRI }),
         // SAT-11: kaynağı olan kesin alış faturaları üçlü eşleştirmeye girer.
         tx.fatura.findMany({
           where: { tip: "alis", durum: "kesin", zincirBelgeleri: { some: { durum: { not: "iptal" } } } },
@@ -124,9 +144,13 @@ export class DuzeltmelerService {
               },
             },
           },
-          take: 2_000,
+          orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+          take: TARAMA_SINIRI,
         }),
       ]);
+      // BLD-13: sınıra ulaşan kaynağın fazlası görülmedi; o kaynağın neden kodları bu turda otomatik çözülmez.
+      const kesikKaynaklar = KAYNAK_KODLARI.filter((_, i) => [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari][i].length >= TARAMA_SINIRI);
+      const kesikKodlar = new Set(kesikKaynaklar.flatMap((k) => k.kodlar));
       // STK-39: bakiye–hareket uyumu (tutarlılık denetiminin otomatik hâli), kart başına tek kayıt.
       const tutarlilik = await stokTutarlilikHesapla(tx);
       const farkliKartlar = kartBazinda(tutarlilik.farklar);
@@ -192,15 +216,16 @@ export class DuzeltmelerService {
         });
       }
 
-      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "KUR_FARKI_BEKLIYOR", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true } });
+      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "KUR_FARKI_BEKLIYOR", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true, nedenKodu: true } });
       let otomatikCozulen = 0;
       for (const kayit of mevcutlar) {
         if (kayit.tekillikAnahtari && aktifAnahtarlar.has(kayit.tekillikAnahtari)) continue;
+        if (kesikKodlar.has(kayit.nedenKodu)) continue;
         await tx.duzeltmeKaydi.update({ where: { id: kayit.id }, data: { durum: "cozuldu", cozulmeTarihi: new Date(), tekillikAnahtari: null } });
         await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: kayit.id, oncekiDurum: kayit.durum, yeniDurum: "cozuldu", olayTuru: "otomatik_cozum", aciklama: "Kaynak sorun yeniden taramada bulunamadı." } });
         otomatikCozulen++;
       }
-      return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen };
+      return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen, kesikKaynaklar: kesikKaynaklar.map((k) => k.kaynak) };
       // BLD-11: ~12 dedektör tek işlemde; soğuk açılışta/yük altında 5 sn varsayılanı aşılıyordu.
     }, { timeout: 30_000 });
   }

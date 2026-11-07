@@ -55,7 +55,7 @@ export class TekrarlayanFaturaZamanlayiciService implements OnModuleInit, OnModu
     setImmediate(() => void nabizla(NABIZ_ADI, () => this.calistir()));
     this.ilkGunlukKontrol = setTimeout(() => {
       void nabizla(NABIZ_ADI, () => this.calistir());
-      this.zamanlayici = setInterval(() => void nabizla(NABIZ_ADI, () => this.calistir()), BIR_GUN_MS);
+      this.zamanlayici = setInterval(() => void nabizla(NABIZ_ADI, () => this.calistir(), BIR_GUN_MS), BIR_GUN_MS);
     }, sonrakiGunlukKontrolMs());
     this.logger.log("Tekrarlayan fatura üretimi her gün İstanbul saatiyle 00:15 için planlandı");
   }

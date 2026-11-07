@@ -12,7 +12,7 @@ export class PlatformPaketZamanlayiciService implements OnModuleInit, OnModuleDe
   onModuleInit() {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
     this.ilk = setImmediate(() => void nabizla("platform-planli-paket", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("platform-planli-paket", () => this.calistir()), 60_000);
+    this.zamanlayici = setInterval(() => void nabizla("platform-planli-paket", () => this.calistir(), 60_000), 60_000);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
   async calistir() {

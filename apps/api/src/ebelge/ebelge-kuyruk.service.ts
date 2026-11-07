@@ -136,7 +136,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     await this.worker.waitUntilReady();
     this.logger.log(`e-Belge worker hazır; concurrency=${this.worker.opts.concurrency}`);
     setImmediate(() => void nabizla("ebelge-kuyruk", () => this.periyodikIsleriPlanla()));
-    this.periyodikKontrol = setInterval(() => void nabizla("ebelge-kuyruk", () => this.periyodikIsleriPlanla()), Number(process.env.EBELGE_SCHEDULE_INTERVAL_MS || 300_000));
+    const aralik = Number(process.env.EBELGE_SCHEDULE_INTERVAL_MS || 300_000);
+    this.periyodikKontrol = setInterval(() => void nabizla("ebelge-kuyruk", () => this.periyodikIsleriPlanla(), aralik), aralik);
   }
 
   async onModuleDestroy() { if (this.periyodikKontrol) clearInterval(this.periyodikKontrol); await this.worker?.close(); await this.kuyrukOlaylari.close(); await this.deadLetter.close(); await this.kuyruk.close(); }

@@ -28,7 +28,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     const ayar = Number(process.env.DUZELTME_TARAMA_INTERVAL_MS || ON_BES_DAKIKA_MS);
     const aralik = Math.min(Number.isFinite(ayar) && ayar > 0 ? ayar : ON_BES_DAKIKA_MS, ON_BES_DAKIKA_MS);
     this.aralikMs = aralik;
-    this.zamanlayici = setInterval(() => void nabizla("duzeltme-tarama-zamanlayici", () => this.calistir()), aralik);
+    this.zamanlayici = setInterval(() => void nabizla("duzeltme-tarama-zamanlayici", () => this.calistir(), aralik), aralik);
     this.logger.log(JSON.stringify({ event: "correction_scan_scheduled", intervalMs: aralik }));
   }
 
@@ -53,6 +53,9 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
         try {
           const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
           bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;
+          // BLD-13: sınıra ulaşan kaynak; o kaynağın kayıtları bu turda otomatik çözülmedi.
+          for (const kaynak of sonuc.kesikKaynaklar ?? []) this.metrics.increment("correction_scan_truncated_total", { kaynak });
+          if (sonuc.kesikKaynaklar?.length) this.logger.warn(JSON.stringify({ event: "correction_scan_truncated", tenantId, kaynaklar: sonuc.kesikKaynaklar }));
           this.metrics.increment("correction_scan_tenant_total", { result: "success" });
         } catch (hata) {
           basarisizTenant++;

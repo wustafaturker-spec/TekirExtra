@@ -84,7 +84,7 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
     setImmediate(() => void nabizla("tahsilat-hatirlatma", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("tahsilat-hatirlatma", () => this.calistir()), BIR_SAAT_MS);
+    this.zamanlayici = setInterval(() => void nabizla("tahsilat-hatirlatma", () => this.calistir(), BIR_SAAT_MS), BIR_SAAT_MS);
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }

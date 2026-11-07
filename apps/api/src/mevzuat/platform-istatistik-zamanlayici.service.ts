@@ -16,7 +16,7 @@ export class PlatformIstatistikZamanlayiciService implements OnModuleInit, OnMod
   onModuleInit() {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
     this.ilk = setImmediate(() => void nabizla("platform-firma-istatistik", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("platform-firma-istatistik", () => this.calistir()), 10 * 60 * 1000);
+    this.zamanlayici = setInterval(() => void nabizla("platform-firma-istatistik", () => this.calistir(), 10 * 60 * 1000), 10 * 60 * 1000);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
   async calistir() {

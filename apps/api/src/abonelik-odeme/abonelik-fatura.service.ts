@@ -94,7 +94,7 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
     this.fatura.kesinlesinceCalistir((tenantId, faturaId) => this.faturaKesinlesti(tenantId, faturaId));
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
     setImmediate(() => void nabizla("abonelik-fatura", () => this.bekleyenleriIsle()));
-    this.zamanlayici = setInterval(() => void nabizla("abonelik-fatura", () => this.bekleyenleriIsle()), ON_DAKIKA_MS);
+    this.zamanlayici = setInterval(() => void nabizla("abonelik-fatura", () => this.bekleyenleriIsle(), ON_DAKIKA_MS), ON_DAKIKA_MS);
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }

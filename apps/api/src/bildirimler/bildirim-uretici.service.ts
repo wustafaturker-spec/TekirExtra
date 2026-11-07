@@ -107,7 +107,17 @@ function gunAnahtari(tarih = new Date()): string {
  * yüzlerce kayıt boşaltır ve bildirim merkezi ilk günde okunmaz hâle gelirdi.
  */
 /** Tarama işleminin bağlamı; `oku()` bunu görürse ayrı işlem açmaz. */
-const taramaIslemi = new AsyncLocalStorage<{ tenantId: string; tx: Prisma.TransactionClient }>();
+const taramaIslemi = new AsyncLocalStorage<{ tenantId: string; tx: Prisma.TransactionClient; kesik?: Set<string> }>();
+
+/**
+ * BLD-13: sınırlı dedektör sorgusu sınırı doldurduysa fazlası görülmedi;
+ * verilen öneklerdeki açık bildirimler bu turda "artık yok" sayılıp kapatılmaz.
+ */
+function kesikse<T>(liste: T[], sinir: number, ...onekler: string[]): T[] {
+  const kesik = taramaIslemi.getStore()?.kesik;
+  if (kesik && liste.length >= sinir) for (const o of onekler) kesik.add(o);
+  return liste;
+}
 /** Büyük firmada 14 dedektörün toplamı varsayılan 5 sn işlem süresini aşabilir. */
 const TARAMA_ISLEM_SURESI_MS = 60_000;
 
@@ -130,12 +140,13 @@ export class BildirimUreticiService {
     return ortak && ortak.tenantId === tenantId ? fn(ortak.tx) : this.prisma.tenantIslem(tenantId, fn);
   }
 
-  async tara(): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
+  async tara(): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number; kesikOnekler: string[] }> {
     const { tenantId } = aktifBaglam();
     // Performans: 14 dedektör ayrı ayrı işlem açmak yerine tek okuma işleminde
     // çalışır; firma başına sabit maliyet düşer. Yazmalar (üret/kapat/yükselt) ayrıdır.
-    const girdiler = await this.prisma.tenantIslem(tenantId, (tx) => taramaIslemi.run({ tenantId, tx }, () => this.dedektorleriCalistir()), { timeout: TARAMA_ISLEM_SURESI_MS });
-    return this.isle(girdiler);
+    const kesik = new Set<string>();
+    const girdiler = await this.prisma.tenantIslem(tenantId, (tx) => taramaIslemi.run({ tenantId, tx, kesik }, () => this.dedektorleriCalistir()), { timeout: TARAMA_ISLEM_SURESI_MS });
+    return { ...(await this.isle(girdiler, [...kesik])), kesikOnekler: [...kesik] };
   }
 
   private async dedektorleriCalistir(): Promise<BildirimGirdisi[]> {
@@ -157,7 +168,7 @@ export class BildirimUreticiService {
     ];
   }
 
-  private async isle(girdiler: BildirimGirdisi[]): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
+  private async isle(girdiler: BildirimGirdisi[], kesikOnekler: string[] = []): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
     let yeniTeslimat = 0;
     for (const girdi of girdiler) yeniTeslimat += (await this.bildirimler.uret(girdi)).yeniTeslimat;
 
@@ -166,7 +177,7 @@ export class BildirimUreticiService {
     const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel", "mevzuat"];
     const kapanan = await this.bildirimler.taramaEksikleriniKapat(taranan.map((tur) => ({
       tur, acikAnahtarlar: girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari), onekler: TARAMA_ONEKLERI[tur],
-    })));
+    })), kesikOnekler);
 
     return { uretilen: girdiler.length, yeniTeslimat, kapanan, yukseltilen: await this.yukselt() };
   }
@@ -191,20 +202,20 @@ export class BildirimUreticiService {
       tx.personelBelgesi.findMany({
         where: { gecerlilikTarihi: { not: null, lte: sinir }, personel: { durum: { not: "isten_ayrildi" } } },
         include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } },
-        orderBy: { gecerlilikTarihi: "asc" }, take: 100,
-      }),
+        orderBy: [{ gecerlilikTarihi: "asc" }, { id: "asc" }], take: 100,
+      }).then((l) => kesikse(l, 100, "personel:belge:")),
       tx.personelIzinTalebi.count({ where: { durum: "talep" } }),
       tx.personelAvans.count({ where: { durum: "talep" } }),
       tx.personelBilgiTalebi.count({ where: { durum: "bekliyor" } }),
       tx.personelBordro.count({ where: { durum: "onay_bekliyor" } }),
       tx.personelIstihdamDonemi.findMany({
         where: { iseGirisBildirgeTarihi: null, baslangicTarihi: { gte: gunEkle(gecikmeSiniri, 1) }, personel: { durum: { not: "taslak" } } },
-        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } }, orderBy: { baslangicTarihi: "asc" }, take: 100,
-      }),
+        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } }, orderBy: [{ baslangicTarihi: "asc" }, { id: "asc" }], take: 100,
+      }).then((l) => kesikse(l, 100, "personel:sgk-")),
       tx.personelIstihdamDonemi.findMany({
         where: { istenCikisBildirgeTarihi: null, bitisTarihi: { not: null, gte: gunEkle(gecikmeSiniri, -10) }, personel: { durum: { not: "taslak" } } },
-        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } }, orderBy: { bitisTarihi: "asc" }, take: 100,
-      }),
+        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } }, orderBy: [{ bitisTarihi: "asc" }, { id: "asc" }], take: 100,
+      }).then((l) => kesikse(l, 100, "personel:sgk-")),
     ]));
     const BELGE_ADI: Record<string, string> = { kimlik: "Kimlik", is_sozlesmesi: "İş sözleşmesi", diploma: "Diploma", sertifika: "Sertifika", saglik_raporu: "Sağlık raporu", adli_sicil: "Adli sicil kaydı", ikametgah: "İkametgâh", askerlik: "Askerlik belgesi", sgk_bildirgesi: "SGK bildirgesi", diger: "Belge" };
     const girdiler: BildirimGirdisi[] = belgeler.map((b) => {
@@ -370,6 +381,7 @@ export class BildirimUreticiService {
         take: 200,
       }),
     );
+    kesikse(talepler, 200, "satin_alma:talep:");
     return talepler.map((t) => ({
       tur: "satin_alma" as const,
       onem: "uyari" as const,
@@ -393,6 +405,7 @@ export class BildirimUreticiService {
         take: 200,
       }),
     );
+    kesikse(kayitlar, 200, "duzeltme:");
     return kayitlar.map((kayit) => {
       const gecikti = Boolean(kayit.sonTarih && kayit.sonTarih < new Date());
       const tur = DUZELTME_TUR_ESLEMESI[kayit.tur];
@@ -426,6 +439,7 @@ export class BildirimUreticiService {
         take: 200,
       }),
     );
+    kesikse(kayitlar, 200, "ebelge:");
     // EBLG-39: entegratörde iptal edilmiş belge, fatura iptal edilene kadar
     // hatırlatılır; fatura iptal edilince tespit edilmez ve bildirim kapanır.
     const iptaller = kayitlar
@@ -504,6 +518,7 @@ export class BildirimUreticiService {
         take: 200,
       }),
     );
+    kesikse(kayitlar, 200, "ebelge:irsaliye:");
     return kayitlar.map((kayit) => {
       const ret = kayit.durum === "ret";
       const onem = ret ? ("kritik" as const) : ("uyari" as const);
@@ -538,9 +553,11 @@ export class BildirimUreticiService {
       tx.gelenEirsaliye.findMany({
         where: { durum: "yeni", kendiSevkimiz: false, sevkTarihi: { gte: new Date(`${gunEkleTR(-EIRSALIYE_YANIT_GUN_SAYISI)}T00:00:00Z`) } },
         select: { id: true, belgeNo: true, gonderenUnvan: true, sevkTarihi: true },
+        orderBy: [{ sevkTarihi: "asc" }, { id: "asc" }],
         take: 200,
       }),
     );
+    kesikse(kayitlar, 200, "ebelge:gelen-irsaliye-yanit:");
     return kayitlar.flatMap((kayit) => {
       const sure = eirsaliyeYanitSuresi({ sevkGunu: kayit.sevkTarihi.toISOString().slice(0, 10), bugun });
       if (!sure.yaklasiyor) return [];
@@ -766,6 +783,7 @@ export class BildirimUreticiService {
       orderBy: { bitisTarihi: "asc" },
       take: 100,
     }));
+    kesikse(teminatlar, 100, "vade:teminat:");
     return teminatlar.map((t): BildirimGirdisi => {
       const bitis = t.bitisTarihi!.toISOString().slice(0, 10);
       const doldu = bitis < bugun;
@@ -848,6 +866,7 @@ export class BildirimUreticiService {
       orderBy: { yanitAt: "asc" },
       take: 100,
     }));
+    kesikse(itirazlar, 100, "vade:mutabakat:");
     return itirazlar.map((k) => mutabakatItirazBildirimi({
       id: k.id, cariId: k.cariId, cari: k.cari, mutabakatTarihi: k.mutabakatTarihi, yanitlayanAd: k.yanitlayanAd,
       farklar: bakiyeFarklari(k.bakiyeler as unknown as DovizBakiyesi[], (k.karsiBakiyeler as unknown as DovizBakiyesi[] | null) ?? []),
@@ -869,6 +888,7 @@ export class BildirimUreticiService {
       orderBy: { vadeTarihi: "asc" },
       take: 100,
     }));
+    kesikse(taksitler, 100, "vade:kredi:");
     return taksitler.map((t): BildirimGirdisi => {
       const vade = t.vadeTarihi.toISOString().slice(0, 10);
       const gecikti = vade < bugun;
@@ -1093,6 +1113,7 @@ export class BildirimUreticiService {
         take: 12,
       }),
     );
+    kesikse(donemler, 12, "donem:");
     return donemler.map((donem) => ({
       tur: "donem" as const,
       onem: "uyari" as const,

@@ -24,9 +24,9 @@ export class PosZamanlayiciService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
     setImmediate(() => void nabizla("pos-zamanlayici", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("pos-zamanlayici", () => this.calistir()), BIR_SAAT_MS);
+    this.zamanlayici = setInterval(() => void nabizla("pos-zamanlayici", () => this.calistir(), BIR_SAAT_MS), BIR_SAAT_MS);
     // KSB-38: bildirimi gelmemiş iyzico ödemeleri yarım saatte bir sorgulanır.
-    this.sorguZamanlayici = setInterval(() => void nabizla("pos-durum-sorgusu", () => this.sorgula()), YARIM_SAAT_MS);
+    this.sorguZamanlayici = setInterval(() => void nabizla("pos-durum-sorgusu", () => this.sorgula(), YARIM_SAAT_MS), YARIM_SAAT_MS);
   }
 
   onModuleDestroy(): void {

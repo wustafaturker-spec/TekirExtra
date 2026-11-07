@@ -6,7 +6,7 @@ import { PrismaService } from "../core/prisma.service";
 import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
-import { ESIK, sorunlariBul, type Sorun } from "./sistem-alarm-kurallari";
+import { ESIK, saatlikAtlama, sorunlariBul, type Sorun } from "./sistem-alarm-kurallari";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const GUN_MS = 86_400_000;
@@ -81,7 +81,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
         acilislar: v.workerSurecleri.slice(0, 20).map((s) => ({ basladiAt: s.basladiAt, sonNabizAt: s.sonNabizAt, rssMb: s.rssMb })),
       },
       api: sureci(sonApi),
-      isler: v.isler.map((i) => ({ ...i, calismaSayisi: Number(i.calismaSayisi) })),
+      isler: v.isler.map((i) => ({ ...i, calismaSayisi: Number(i.calismaSayisi), saatlikAtlama: saatlikAtlama(i, t) })),
       kuyruk: {
         sayilar: v.kuyruk.sayilar,
         firmalar: v.kuyruk.firmalar.map((f) => ({ ...f, unvan: v.adlar.get(f.tenantId) ?? f.tenantId })).sort((a, b) => (b.failed ?? 0) - (a.failed ?? 0)),

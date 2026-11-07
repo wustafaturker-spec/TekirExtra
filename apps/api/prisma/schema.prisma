@@ -7430,6 +7430,15 @@ model SistemIsi {
   sonHataAt     DateTime? @map("son_hata_at")
   ardisikHata   Int       @default(0) @map("ardisik_hata")
   calismaSayisi BigInt    @default(0) @map("calisma_sayisi")
+  /// BLD-12: işin tetik aralığı; tur süresi bununla kıyaslanır.
+  aralikMs        Int?      @map("aralik_ms")
+  /// BLD-12: art arda aralığın %80'ini aşan tur sayısı.
+  ardisikUzun     Int       @default(0) @map("ardisik_uzun")
+  /// BLD-12: önceki tur sürerken gelen (atlanan) son tetik.
+  sonAtlamaAt     DateTime? @map("son_atlama_at")
+  /// BLD-12: 1 saatlik atlama sayım penceresinin başı ve penceredeki atlama sayısı.
+  atlamaPencereAt DateTime? @map("atlama_pencere_at")
+  pencereAtlama   Int       @default(0) @map("pencere_atlama")
   updatedAt     DateTime  @default(now()) @map("updated_at")
 
   @@map("sistem_isleri")

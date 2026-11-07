@@ -26,7 +26,7 @@ export class RaporAbonelikZamanlayiciService implements OnModuleInit, OnModuleDe
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
     setImmediate(() => void nabizla("rapor-abonelik-zamanlayici", () => this.calistir()));
-    this.zamanlayici = setInterval(() => void nabizla("rapor-abonelik-zamanlayici", () => this.calistir()), BES_DAKIKA_MS);
+    this.zamanlayici = setInterval(() => void nabizla("rapor-abonelik-zamanlayici", () => this.calistir(), BES_DAKIKA_MS), BES_DAKIKA_MS);
     this.logger.log(JSON.stringify({ event: "report_subscription_scan_scheduled", intervalMs: BES_DAKIKA_MS }));
   }
 

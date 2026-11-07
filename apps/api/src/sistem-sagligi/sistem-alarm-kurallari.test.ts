@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { afterEach, describe, expect, it } from "vitest";
 import { NabizLogger, nabizKaydediciAyarla, nabizla, type NabizSonucu } from "../core/nabiz/nabiz";
-import { sorunlariBul, type AlarmGirdisi } from "./sistem-alarm-kurallari";
+import { saatlikAtlama, sorunlariBul, type AlarmGirdisi } from "./sistem-alarm-kurallari";
 
 const simdi = new Date("2026-10-29T13:00:00Z");
 const once = (dk: number) => new Date(simdi.getTime() - dk * 60_000);
@@ -34,6 +34,24 @@ describe("sistem alarm kuralları (PLT-19)", () => {
     expect(s[1].ozet).toBe("DEMO: gelen e-Fatura taraması 6 saattir başarıyla bitmiyor (son 2026-10-29T06:20:00.000Z).");
     expect(s[2].ozet).toContain("hiç tamamlanmadı");
   });
+
+  it("BLD-12: art arda 2 uzun tur ya da son 1 saatte atlanan tur alarm; tek uzun tur, eski atlama ve aralıksız iş alarm değil", () => {
+    const is = { isAdi: "bildirim-zamanlayici", ardisikHata: 0, sonHata: null, aralikMs: 300_000, sonSureMs: 260_000 };
+    expect(sorunlariBul({ ...bos, isler: [{ ...is, ardisikUzun: 1 }] })).toEqual([]);
+    expect(sorunlariBul({ ...bos, isler: [{ ...is, ardisikUzun: 5, aralikMs: null }] })).toEqual([]);
+    expect(sorunlariBul({ ...bos, isler: [{ ...is, ardisikUzun: 0, sonAtlamaAt: once(61) }] })).toEqual([]);
+    const uzun = sorunlariBul({ ...bos, isler: [{ ...is, ardisikUzun: 2 }] });
+    expect(uzun).toEqual([{ anahtar: "is-asim:bildirim-zamanlayici", tur: "zamanlayici_asim", ozet: "bildirim-zamanlayici kendi aralığına sığmıyor (aralık 5 dk): art arda 2 turda süre aralığın %80'ini aştı (son tur 4.3 dk)." }]);
+    const atlama = sorunlariBul({ ...bos, isler: [{ ...is, ardisikUzun: 0, sonAtlamaAt: once(10), atlamaPencereAt: once(40), pencereAtlama: 3 }] });
+    expect(atlama[0].ozet).toContain("son 1 saatte 3 tur atlandı");
+  });
+
+  it("BLD-12: saatlik atlama sayısı penceresi eskiyse en az son atlamayı sayar", () => {
+    const t = simdi.getTime();
+    expect(saatlikAtlama({ sonAtlamaAt: once(5), atlamaPencereAt: once(70), pencereAtlama: 9 }, t)).toBe(1);
+    expect(saatlikAtlama({ sonAtlamaAt: once(5), atlamaPencereAt: once(30), pencereAtlama: 4 }, t)).toBe(4);
+    expect(saatlikAtlama({ sonAtlamaAt: once(90), atlamaPencereAt: once(95), pencereAtlama: 4 }, t)).toBe(0);
+  });
 });
 
 describe("zamanlayıcı nabzı (PLT-16)", () => {
@@ -53,5 +71,21 @@ describe("zamanlayıcı nabzı (PLT-16)", () => {
     await nabizla("deneme", async () => { throw new Error("patladı"); });
     expect(kayitlar.map((k) => k.hata)).toEqual([expect.stringContaining("banka zaman aşımı"), null, "patladı"]);
     Logger.overrideLogger(true);
+  });
+
+  it("BLD-12: önceki tur sürerken gelen tetik işi çalıştırmaz, atlandı diye ve aralıkla kaydedilir", async () => {
+    const kayitlar: NabizSonucu[] = [];
+    nabizKaydediciAyarla(async (s) => { kayitlar.push(s); });
+    let bitir!: () => void;
+    let calisma = 0;
+    const is = () => { calisma++; return new Promise<void>((r) => { bitir = r; }); };
+    const ilk = nabizla("uzun", is, 300_000);
+    await nabizla("uzun", is, 300_000);
+    await nabizla("baska", async () => undefined, 60_000);
+    bitir();
+    await ilk;
+    await nabizla("uzun", async () => { calisma++; }, 300_000);
+    expect(calisma).toBe(2);
+    expect(kayitlar.map((k) => [k.ad, k.atlandi ?? false, k.aralikMs])).toEqual([["uzun", true, 300_000], ["baska", false, 60_000], ["uzun", false, 300_000], ["uzun", false, 300_000]]);
   });
 });

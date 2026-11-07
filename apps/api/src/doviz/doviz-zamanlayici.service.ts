@@ -32,7 +32,7 @@ export class DovizZamanlayiciService implements OnModuleInit, OnModuleDestroy {
     setImmediate(() => void nabizla("doviz-zamanlayici", () => this.calistir()));
     this.ilkCekim = setTimeout(() => {
       void this.calistir();
-      this.zamanlayici = setInterval(() => void nabizla("doviz-zamanlayici", () => this.calistir()), BIR_GUN_MS);
+      this.zamanlayici = setInterval(() => void nabizla("doviz-zamanlayici", () => this.calistir(), BIR_GUN_MS), BIR_GUN_MS);
     }, sonrakiCekimMs());
     this.logger.log("TCMB kur çekimi her gün İstanbul saatiyle 16:05 için planlandı");
   }

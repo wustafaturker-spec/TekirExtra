@@ -135,7 +135,8 @@ export class BildirimService {
    * okuma + en çok bir yazmayla. Kural birebir aynıdır: türü taranmış, anahtarı
    * öneklerden biriyle başlayan ve bu taramada bulunmayan açık kayıt kapanır.
    */
-  async taramaEksikleriniKapat(kapsamlar: { tur: BildirimTuru; acikAnahtarlar: string[]; onekler: string[] }[]): Promise<number> {
+  /** BLD-13: `kesikOnekler` — bu turda sınıra takılan dedektörlerin önekleri; bu anahtarlar kapatılmaz. */
+  async taramaEksikleriniKapat(kapsamlar: { tur: BildirimTuru; acikAnahtarlar: string[]; onekler: string[] }[], kesikOnekler: string[] = []): Promise<number> {
     const { tenantId } = aktifBaglam();
     const turler = kapsamlar.filter((k) => k.onekler.length).map((k) => k.tur);
     if (!turler.length) return 0;
@@ -144,7 +145,8 @@ export class BildirimService {
       const kural = new Map(kapsamlar.map((k) => [k.tur, { acik: new Set(k.acikAnahtarlar), onekler: k.onekler }]));
       const kapanacak = acik.filter((b) => {
         const k = kural.get(b.tur);
-        return !!k && k.onekler.some((o) => b.birlesimAnahtari.startsWith(o)) && !k.acik.has(b.birlesimAnahtari);
+        return !!k && k.onekler.some((o) => b.birlesimAnahtari.startsWith(o)) && !k.acik.has(b.birlesimAnahtari)
+          && !kesikOnekler.some((o) => b.birlesimAnahtari.startsWith(o));
       }).map((b) => b.id);
       if (!kapanacak.length) return 0;
       return (await tx.bildirim.updateMany({ where: { id: { in: kapanacak }, kapandiAt: null }, data: { kapandiAt: new Date() } })).count;
