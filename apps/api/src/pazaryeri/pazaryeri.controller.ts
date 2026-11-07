@@ -41,7 +41,7 @@ export class PazaryeriController {
   }
   @Get("kesintiler") @Roller("yonetici", "muhasebe")
   kesintileriListele(@Query("durum") durum?: string) {
-    if (durum && !["bekliyor", "giderlesti"].includes(durum)) throw new BadRequestException("Geçersiz kesinti durumu");
+    if (durum && !["bekliyor", "giderlesti", "faturayla_eslesti", "faturasiz"].includes(durum)) throw new BadRequestException("Geçersiz kesinti durumu");
     return this.service.kesintileriListele(durum);
   }
   @Post("kesintiler/ice-aktar") @Roller("yonetici", "muhasebe")

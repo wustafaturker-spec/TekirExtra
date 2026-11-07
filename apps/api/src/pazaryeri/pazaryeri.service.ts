@@ -12,6 +12,7 @@ import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 import { pazaryeriFaturaSatirlari } from "./pazaryeri-fiyat";
+import { kesintiBaslangicDurumu, kesintiSinifiBul } from "./pazaryeri-kesinti-sinifi";
 
 @Injectable()
 export class PazaryeriService {
@@ -189,7 +190,8 @@ export class PazaryeriService {
       if (!baglanti) throw new NotFoundException("Pazaryeri bağlantısı bulunamadı");
       return tx.pazaryeriKesinti.upsert({
         where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId } },
-        create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined },
+        // PZR-06/08: sınıf ad kalıbından; faturasız sınıf doğrudan `faturasiz`. Güncellemede sınıf/duruma dokunulmaz (kullanıcı seçimi korunur).
+        create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined, sinif: kesintiSinifiBul(girdi.tur), durum: kesintiBaslangicDurumu(kesintiSinifiBul(girdi.tur)) },
         update: { ...(girdi.siparisNo ? { siparisNo: girdi.siparisNo } : {}), tur: girdi.tur, aciklama: girdi.aciklama, tarih: new Date(girdi.tarih), ...(girdi.hamVeri ? { hamVeri: girdi.hamVeri as Prisma.InputJsonValue } : {}) },
       });
     });
@@ -205,6 +207,15 @@ export class PazaryeriService {
       const kesintiler = await tx.pazaryeriKesinti.findMany({ where: { id: { in: girdi.kesintiIds } } });
       if (kesintiler.length !== girdi.kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
       if (kesintiler.some((k) => k.durum === "giderlesti")) throw new BadRequestException("Seçilen kayıtlardan biri daha önce giderleştirilmiş");
+      // PZR-06: gider pazaryerinin e-Faturasından yazılır; kesinti yalnız mutabakat kaydıdır. Yalnız stopaj kasa/banka hareketine döner (PZR-09).
+      const stopajDisi = kesintiler.filter((k) => k.sinif !== "stopaj");
+      if (stopajDisi.length) {
+        const faturali = stopajDisi.some((k) => k.sinif === "faturali");
+        throw new BadRequestException(faturali
+          ? "Faturalı kesinti (komisyon, kargo, hizmet, reklam) giderleştirilmez: gider, pazaryerinin kestiği e-Faturadan alış olarak yazılır; kesinti o faturayla eşleştirilir."
+          : "Yalnız stopaj kesintisi giderleştirilebilir. Sınıflandırılmamış kesintinin önce türünü belirleyin; ceza ve diğer faturasız kesintiler masraf kaydına dönüştürülür.");
+      }
+      if (kesintiler.some((k) => k.durum !== "bekliyor")) throw new BadRequestException("Yalnız bekleyen kesinti giderleştirilebilir");
       if (kesintiler.some((k) => k.dovizCinsi !== hesap.dovizCinsi)) throw new BadRequestException("Kesinti dövizi ile hesap dövizi aynı olmalıdır");
       for (const kesinti of kesintiler) {
         const kur = kesinti.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : girdi.kur ? new Prisma.Decimal(girdi.kur) : await kurZorunlu(tx, kesinti.dovizCinsi, kesinti.tarih);

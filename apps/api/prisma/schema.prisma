@@ -68,6 +68,19 @@ enum PazaryeriSiparisDurumu {
 enum PazaryeriKesintiDurumu {
   bekliyor
   giderlesti
+  /// PZR-06/07: pazaryerinin komisyon e-Faturasıyla eşleşti (gider faturadan).
+  faturayla_eslesti
+  /// PZR-06/10: faturası olmayan kesinti (ceza, diğer).
+  faturasiz
+}
+
+/// PZR-06/08: kesinti sınıfı; giderleştirme yalnız stopajda.
+enum PazaryeriKesintiSinifi {
+  faturali
+  stopaj
+  ceza
+  diger_faturasiz
+  siniflandirilmamis
 }
 
 enum PosTahsilatDurumu {
@@ -722,6 +735,7 @@ model PazaryeriKesinti {
   tutar      Decimal                @db.Decimal(15, 2)
   dovizCinsi DovizCinsi             @default(TRY) @map("doviz_cinsi")
   durum      PazaryeriKesintiDurumu @default(bekliyor)
+  sinif      PazaryeriKesintiSinifi @default(siniflandirilmamis)
   hareketId  String?                @unique @map("hareket_id") @db.Uuid
   hamVeri    Json?                  @map("ham_veri")
   createdAt  DateTime               @default(now()) @map("created_at")

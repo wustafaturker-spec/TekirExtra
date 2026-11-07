@@ -88,6 +88,31 @@ describe("PazaryeriService", () => {
     }));
   });
 
+  it("PZR-06: faturalı ya da sınıflandırılmamış kesinti giderleştirilmez, hareket açılmaz", async () => {
+    for (const [sinif, beklenen] of [["faturali", /e-Faturadan alış/], ["siniflandirilmamis", /Yalnız stopaj/]] as const) {
+      const create = vi.fn();
+      const tx = {
+        kasa: { findFirst: vi.fn().mockResolvedValue({ dovizCinsi: "TRY" }) }, bankaHesap: { findFirst: vi.fn() },
+        pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([{ id: "k1", durum: "bekliyor", sinif, tur: "Commission", siparisNo: null, aciklama: null, tarih: new Date("2026-08-10"), tutar: new Prisma.Decimal(24), dovizCinsi: "TRY" }]), updateMany: vi.fn(), update: vi.fn() },
+        kasaBankaHareket: { create },
+      };
+      const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+      await expect(servis.kesintileriGiderlestir({ kesintiIds: ["11111111-1111-4111-8111-111111111111"], kasaId: "22222222-2222-4222-8222-222222222222", kur: 1 })).rejects.toThrow(beklenen);
+      expect(create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("PZR-06: içe aktarılan kesinti sınıflanır; ceza doğrudan faturasız durumda başlar", async () => {
+    const upsert = vi.fn().mockResolvedValue({ id: "k1" });
+    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert } };
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+    await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "f-1", tur: "Commission", tarih: "2026-08-10", tutar: 24, dovizCinsi: "TRY" });
+    await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "f-2", tur: "Late shipment penalty", tarih: "2026-08-10", tutar: 10, dovizCinsi: "TRY" });
+    expect(upsert.mock.calls[0][0].create).toEqual(expect.objectContaining({ sinif: "faturali", durum: "bekliyor" }));
+    expect(upsert.mock.calls[1][0].create).toEqual(expect.objectContaining({ sinif: "ceza", durum: "faturasiz" }));
+    expect(upsert.mock.calls[0][0].update).not.toHaveProperty("sinif");
+  });
+
   it("bekleyen kesintiyi kaynak referansli tediye giderine donusturur", async () => {
     const hareketCreate = vi.fn().mockResolvedValue({ id: "h1" });
     const kesintiUpdate = vi.fn().mockResolvedValue({});
@@ -95,7 +120,7 @@ describe("PazaryeriService", () => {
     const tx = {
       kasa: { findFirst: vi.fn().mockResolvedValue({ dovizCinsi: "TRY" }) },
       bankaHesap: { findFirst: vi.fn() },
-      pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([{ id: "k1", durum: "bekliyor", tur: "komisyon", siparisNo: "SP-42", aciklama: null, tarih: new Date("2026-08-10"), tutar: new Prisma.Decimal(24), dovizCinsi: "TRY" }]), updateMany: kesintiUpdateMany, update: kesintiUpdate },
+      pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([{ id: "k1", durum: "bekliyor", sinif: "stopaj", tur: "stopaj", siparisNo: "SP-42", aciklama: null, tarih: new Date("2026-08-10"), tutar: new Prisma.Decimal(24), dovizCinsi: "TRY" }]), updateMany: kesintiUpdateMany, update: kesintiUpdate },
       kasaBankaHareket: { create: hareketCreate },
     };
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
