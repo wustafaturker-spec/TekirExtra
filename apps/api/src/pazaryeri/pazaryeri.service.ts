@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { bugunTR } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -198,6 +199,85 @@ export class PazaryeriService {
         create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined, sinif, durum: kesintiBaslangicDurumu(sinif) },
         update: { ...(girdi.siparisNo ? { siparisNo: girdi.siparisNo } : {}), tur: girdi.tur, aciklama: girdi.aciklama, tarih: new Date(girdi.tarih), ...(girdi.hamVeri ? { hamVeri: girdi.hamVeri as Prisma.InputJsonValue } : {}) },
       });
+    });
+  }
+
+  /**
+   * PZR-11: eski giderleştirmelerin taraması. PZR-06 öncesinde kesinti doğrudan
+   * kasa/banka gider hareketine (760) dönüştürülebiliyordu; aynı dönemin
+   * komisyon e-Faturası da alış olarak işlendiyse gider iki kez yazılmıştır.
+   * - `ciftKayitAdaylari`: stopaj dışı giderleştirilmiş kesinti + aynı ay,
+   *   bağlantının fatura kesen VKN'sinden alış faturasına dönüşmüş e-Fatura.
+   * - `yanlisHesapStopaj`: stopaj olduğu hâlde eski türle (760) yazılmış.
+   * - `faturasiBulunamayan`: stopaj dışı giderleştirilmiş, aynı ay işlenmiş fatura yok (bilgi).
+   * - `denetlenemeyen`: bağlantının fatura kesen VKN'si yok.
+   * Yalnız rapordur; düzeltme `giderlestirmeyiGeriAl` ile kullanıcı onayıyla.
+   */
+  async giderlestirmeTaramasi() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kesintiler = await tx.pazaryeriKesinti.findMany({
+        where: { durum: "giderlesti", hareketId: { not: null } },
+        select: { id: true, tur: true, sinif: true, tarih: true, tutar: true, dovizCinsi: true, siparisNo: true, baglanti: { select: { id: true, saglayici: true, faturaKesenVkn: true } }, hareket: { select: { id: true, kaynakTur: true, tarih: true, tutarTry: true } } },
+        orderBy: { tarih: "asc" }, take: 5_000,
+      });
+      const ayAnahtari = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+      const vknler = [...new Set(kesintiler.map((k) => k.baglanti.faturaKesenVkn).filter((v): v is string => Boolean(v)))];
+      const faturalar = vknler.length ? await tx.gelenEbelge.findMany({ where: { gonderenVkn: { in: vknler }, faturaId: { not: null } }, select: { id: true, gonderenVkn: true, belgeNo: true, tarih: true, genelToplam: true, faturaId: true } }) : [];
+      const faturaHaritasi = new Map<string, typeof faturalar>();
+      for (const f of faturalar) { const a = `${f.gonderenVkn}|${ayAnahtari(f.tarih)}`; faturaHaritasi.set(a, [...(faturaHaritasi.get(a) ?? []), f]); }
+      const ozet = (k: (typeof kesintiler)[number]) => ({ id: k.id, tur: k.tur, sinif: k.sinif, tarih: k.tarih, tutar: k.tutar.toFixed(2), dovizCinsi: k.dovizCinsi, siparisNo: k.siparisNo, saglayici: k.baglanti.saglayici, hareketId: k.hareket!.id, hareketTry: k.hareket!.tutarTry.toFixed(2) });
+      const ciftKayitAdaylari = []; const yanlisHesapStopaj = []; const faturasiBulunamayan = []; let denetlenemeyen = 0;
+      for (const k of kesintiler) {
+        if (k.sinif === "stopaj") { if (k.hareket?.kaynakTur === "pazaryeri_kesinti") yanlisHesapStopaj.push(ozet(k)); continue; }
+        if (!k.baglanti.faturaKesenVkn) { denetlenemeyen++; continue; }
+        const ayinFaturalari = faturaHaritasi.get(`${k.baglanti.faturaKesenVkn}|${ayAnahtari(k.tarih)}`) ?? [];
+        if (ayinFaturalari.length) ciftKayitAdaylari.push({ ...ozet(k), faturalar: ayinFaturalari.map((f) => ({ id: f.id, belgeNo: f.belgeNo, tarih: f.tarih, toplam: f.genelToplam?.toFixed(2) ?? null, faturaId: f.faturaId })) });
+        else faturasiBulunamayan.push(ozet(k));
+      }
+      return { ciftKayitAdaylari, yanlisHesapStopaj, faturasiBulunamayan, denetlenemeyen };
+    });
+  }
+
+  /**
+   * PZR-11: giderleştirmeyi geri alır (kullanıcı onayıyla). Hareketin dönemi
+   * açıksa hareket silinir; kapalıysa bugünün tarihiyle ters kayıt atılır.
+   * Banka ekstresine eşleşmiş hareket önce ekstreden çözülmelidir. Kesinti
+   * sınıfının başlangıç durumuna döner (faturalı → bekliyor, eşleştirmeye
+   * girer; stopaj → bekliyor, "Stopajı kaydet" ile 193'e yeniden yazılır).
+   */
+  async giderlestirmeyiGeriAl(kesintiIds: string[]) {
+    const { tenantId } = aktifBaglam();
+    const kapaliMi = async (tarih: Date) => {
+      try { await this.donemKilidi?.tarihDogrula(tenantId, tarih, "geri alma"); return false; }
+      catch (hata) { if (hata instanceof ConflictException) return true; throw hata; }
+    };
+    const kesintiler = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findMany({ where: { id: { in: kesintiIds } }, select: { id: true, sinif: true, durum: true, hareket: { select: { id: true, tarih: true, ekstreSatirId: true } } } }));
+    if (kesintiler.length !== kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
+    if (kesintiler.some((k) => k.durum !== "giderlesti" || !k.hareket)) throw new BadRequestException("Yalnız kasa/banka hareketine dönüşmüş (giderleştirilmiş) kesinti geri alınabilir");
+    if (kesintiler.some((k) => k.hareket!.ekstreSatirId)) throw new BadRequestException("Hareketlerden biri banka ekstresine eşleşmiş; önce Banka Ekstresi ekranından eşleşmeyi geri alın");
+    const kapalilar = new Set<string>();
+    for (const k of kesintiler) if (await kapaliMi(k.hareket!.tarih)) kapalilar.add(k.id);
+    const bugun = new Date(`${bugunTR()}T00:00:00.000Z`);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (kapalilar.size) await this.donemKilidi?.tarihDogrula(tenantId, bugun, "ters kayıt", tx);
+      let silinen = 0; let tersKayit = 0;
+      for (const k of kesintiler) {
+        const { count } = await tx.pazaryeriKesinti.updateMany({ where: { id: k.id, durum: "giderlesti", hareketId: k.hareket!.id }, data: { durum: kesintiBaslangicDurumu(k.sinif as KesintiSinifi), hareketId: null } });
+        if (count !== 1) throw new BadRequestException("Kesintilerden biri bu sırada değişti; listeyi yenileyip yeniden deneyin");
+        const h = await tx.kasaBankaHareket.findUniqueOrThrow({ where: { id: k.hareket!.id } });
+        if (kapalilar.has(k.id)) {
+          await tx.kasaBankaHareket.create({ data: {
+            tenantId, kasaId: h.kasaId, bankaHesapId: h.bankaHesapId, tip: h.tip === "tediye" ? "tahsilat" : "tediye", tutar: h.tutar, dovizCinsi: h.dovizCinsi, kur: h.kur, tutarTry: h.tutarTry, tarih: bugun,
+            aciklama: `Ters kayıt: ${h.aciklama ?? "pazaryeri kesintisi"} — giderleştirme geri alındı (PZR-11)`.slice(0, 500), kaynakTur: "ters_kayit", kaynakRef: h.id,
+          } });
+          tersKayit++;
+        } else {
+          await tx.kasaBankaHareket.delete({ where: { id: h.id } });
+          silinen++;
+        }
+      }
+      return { geriAlinan: kesintiler.length, silinen, tersKayit };
     });
   }
 

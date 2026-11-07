@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi, pazaryeriGiderGeriAlSemasi } from "./pazaryeri.semalar";
 import { PazaryeriEslestirmeService } from "./pazaryeri-eslestirme.service";
 import { PazaryeriService } from "./pazaryeri.service";
 
@@ -51,6 +51,20 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.kesintiIceAktar(sonuc.data);
   }
+  /** PZR-11: eski giderleştirmelerin çift kayıt taraması (yalnız rapor). */
+  @Get("kesintiler/giderlestirme-taramasi") @Roller("yonetici", "muhasebe")
+  giderlestirmeTaramasi() {
+    return this.service.giderlestirmeTaramasi();
+  }
+
+  /** PZR-11: giderleştirmeyi geri al (onaylı; dönem kapalıysa ters kayıt). */
+  @Post("kesintiler/giderlestirme-geri-al") @Roller("yonetici", "muhasebe")
+  giderlestirmeyiGeriAl(@Body() govde: unknown) {
+    const sonuc = pazaryeriGiderGeriAlSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.service.giderlestirmeyiGeriAl(sonuc.data.kesintiIds);
+  }
+
   /** PZR-10: faturasız kesintileri (ceza, diğer) masraf kaydına dönüştür. */
   @Post("kesintiler/masrafa-donustur") @Roller("yonetici", "muhasebe")
   kesintileriMasrafla(@Body() govde: unknown) {

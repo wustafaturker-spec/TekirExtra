@@ -22,6 +22,9 @@ export const pazaryeriFaturaVknSemasi = z.object({ vkn: z.string().regex(/^\d{10
 /** PZR-07: kesintileri pazaryerinin komisyon e-Faturasına bağla. */
 export const pazaryeriKesintiEslestirSemasi = z.object({ gelenEbelgeId: z.string().uuid(), kesintiIds: z.array(z.string().uuid()).min(1).max(2000) });
 
+/** PZR-11: giderleştirmeyi geri al (kullanıcı onayıyla). */
+export const pazaryeriGiderGeriAlSemasi = z.object({ kesintiIds: z.array(z.string().uuid()).min(1).max(200) });
+
 /** PZR-10: faturasız kesintileri masraf kaydına dönüştür. */
 export const pazaryeriKesintiMasrafSemasi = z.object({
   kesintiIds: z.array(z.string().uuid()).min(1).max(100), kategoriId: z.string().uuid(), cariId: z.string().uuid(),

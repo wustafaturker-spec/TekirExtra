@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { PazaryeriService } from "./pazaryeri.service";
 import { Prisma } from "@prisma/client";
+import { ConflictException } from "@nestjs/common";
 
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1" }) }));
 
@@ -111,6 +112,55 @@ describe("PazaryeriService", () => {
     expect(upsert.mock.calls[0][0].create).toEqual(expect.objectContaining({ sinif: "faturali", durum: "bekliyor" }));
     expect(upsert.mock.calls[1][0].create).toEqual(expect.objectContaining({ sinif: "ceza", durum: "faturasiz" }));
     expect(upsert.mock.calls[0][0].update).not.toHaveProperty("sinif");
+  });
+
+  it("PZR-11: tarama çift kayıt adayını (aynı ay işlenmiş fatura), 760'a yazılmış stopajı ve VKN'siz olanı ayırır", async () => {
+    const h = (id: string, kaynakTur = "pazaryeri_kesinti") => ({ id, kaynakTur, tarih: new Date("2026-08-10"), tutarTry: new Prisma.Decimal(30) });
+    const b = (vkn: string | null) => ({ id: "b", saglayici: "amazon_tr", faturaKesenVkn: vkn });
+    const k = (id: string, sinif: string, tarih: string, baglanti = b("1234567890"), hareket = h(`h-${id}`)) => ({ id, tur: "Commission", sinif, tarih: new Date(tarih), tutar: new Prisma.Decimal(30), dovizCinsi: "TRY", siparisNo: null, baglanti, hareket });
+    const tx = {
+      pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([k("a", "faturali", "2026-08-05"), k("b", "faturali", "2026-07-05"), k("c", "stopaj", "2026-08-05"), k("d", "stopaj", "2026-08-05", b("1234567890"), h("h-d", "pazaryeri_stopaj")), k("e", "faturali", "2026-08-05", b(null))]) },
+      gelenEbelge: { findMany: vi.fn().mockResolvedValue([{ id: "f1", gonderenVkn: "1234567890", belgeNo: "AMZ8", tarih: new Date("2026-08-31"), genelToplam: new Prisma.Decimal(30), faturaId: "alis1" }]) },
+    };
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+    const r = await servis.giderlestirmeTaramasi();
+    expect(r.ciftKayitAdaylari.map((x) => [x.id, x.faturalar.map((f) => f.belgeNo)])).toEqual([["a", ["AMZ8"]]]);
+    expect(r.faturasiBulunamayan.map((x) => x.id)).toEqual(["b"]);
+    expect(r.yanlisHesapStopaj.map((x) => x.id)).toEqual(["c"]);
+    expect(r.denetlenemeyen).toBe(1);
+  });
+
+  it("PZR-11: geri alma açık dönemde hareketi siler, kapalı dönemde ters kayıt atar; kesinti başlangıç durumuna döner", async () => {
+    const hareketler: Record<string, unknown> = {
+      h1: { id: "h1", kasaId: "kasa", bankaHesapId: null, tip: "tediye", tutar: new Prisma.Decimal(30), dovizCinsi: "TRY", kur: new Prisma.Decimal(1), tutarTry: new Prisma.Decimal(30), aciklama: "Pazaryeri Commission" },
+      h2: { id: "h2", kasaId: "kasa", bankaHesapId: null, tip: "tediye", tutar: new Prisma.Decimal(5), dovizCinsi: "TRY", kur: new Prisma.Decimal(1), tutarTry: new Prisma.Decimal(5), aciklama: "Pazaryeri stopaj" },
+    };
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const del = vi.fn(); const create = vi.fn();
+    const tx = {
+      pazaryeriKesinti: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "k1", sinif: "faturali", durum: "giderlesti", hareket: { id: "h1", tarih: new Date("2026-10-10"), ekstreSatirId: null } },
+          { id: "k2", sinif: "stopaj", durum: "giderlesti", hareket: { id: "h2", tarih: new Date("2025-12-10"), ekstreSatirId: null } },
+        ]),
+        updateMany,
+      },
+      kasaBankaHareket: { findUniqueOrThrow: vi.fn(({ where }) => Promise.resolve(hareketler[where.id])), delete: del, create },
+    };
+    const tarihDogrula = vi.fn(async (_t: string, tarih: Date) => { if (tarih.getUTCFullYear() === 2025) throw new ConflictException("kapalı"); });
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any, { tarihDogrula } as any);
+    await expect(servis.giderlestirmeyiGeriAl(["k1", "k2"])).resolves.toEqual({ geriAlinan: 2, silinen: 1, tersKayit: 1 });
+    expect(del).toHaveBeenCalledWith({ where: { id: "h1" } });
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ tip: "tahsilat", kaynakTur: "ters_kayit", kaynakRef: "h2", tutar: new Prisma.Decimal(5) }) });
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: "k1", durum: "giderlesti", hareketId: "h1" }, data: { durum: "bekliyor", hareketId: null } });
+  });
+
+  it("PZR-11: ekstreye eşleşmiş ya da giderleştirilmemiş kesinti geri alınmaz", async () => {
+    for (const [k, hata] of [[{ id: "k1", sinif: "faturali", durum: "giderlesti", hareket: { id: "h1", tarih: new Date(), ekstreSatirId: "es1" } }, /banka ekstresine/], [{ id: "k1", sinif: "faturali", durum: "bekliyor", hareket: null }, /Yalnız kasa\/banka/]] as const) {
+      const tx = { pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([k]) } };
+      const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+      await expect(servis.giderlestirmeyiGeriAl(["k1"])).rejects.toThrow(hata);
+    }
   });
 
   it("PZR-10: faturasız kesinti onaylı, KDV'siz masrafa döner; cariye alacak yazılır; kesinti bağlanır", async () => {
