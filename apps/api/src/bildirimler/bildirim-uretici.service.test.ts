@@ -75,6 +75,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     krediKarti: { findMany: vi.fn().mockResolvedValue(secenek.kartlar ?? []) },
+    baglantiOtomatikIsi: { findMany: vi.fn().mockResolvedValue((secenek as { pazaryeriIsleri?: unknown[] }).pazaryeriIsleri ?? []) },
     baglanti: { findMany: vi.fn(async ({ where }: { where: { aile: string } }) => (where.aile === "ebelge"
       ? (secenek.ebelgeAyarlari ?? []).map((ayar, i) => ({ id: `e${i + 1}`, sifreliConfig: JSON.stringify(ayar) }))
       : secenek.bankaBaglantilari ?? [])) },

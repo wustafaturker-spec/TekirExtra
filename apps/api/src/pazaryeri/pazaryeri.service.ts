@@ -8,6 +8,8 @@ import { FaturaService } from "../fatura/fatura.service";
 import { coz } from "../core/kripto";
 import { TrendyolAdapter, type NormalizeKesinti, type PazaryeriConfig } from "./trendyol.adapter";
 import { cekimPencereleri } from "./trendyol-finans";
+import { denemeSonucu, varsayilanAralik, type OtomatikIs } from "./otomatik-is";
+import { kilitle } from "../core/redis-kilit";
 import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
@@ -122,8 +124,8 @@ export class PazaryeriService {
       where: { aile: "pazaryeri", durum: "aktif", ...(baglantiId ? { id: baglantiId } : {}) },
     }));
     if (baglantiId && !baglantilar.length) throw new NotFoundException("Aktif pazaryeri bağlantısı bulunamadı");
-    const sonuclar = [];
-    for (const baglanti of baglantilar) {
+    const sonuclar: Record<string, unknown>[] = [];
+    for (const baglanti of baglantilar) sonuclar.push(await this.otomatikIsle(tenantId, baglanti, "siparis", async () => {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
         const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : baglanti.saglayici === "n11" ? new N11Adapter() : baglanti.saglayici === "amazon_tr" ? new AmazonAdapter() : null;
@@ -138,13 +140,13 @@ export class PazaryeriService {
           imlec = sayfa.sonrakiImlec;
           await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { senkronImleci: imlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
         } while (imlec && sayfaSayisi < 50);
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi, devamImleci: Boolean(imlec) });
+        return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi, devamImleci: Boolean(imlec) };
       } catch (hata) {
         const mesaj = hata instanceof Error ? hata.message : "Senkronizasyon hatası";
         await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: mesaj } }));
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj });
+        return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj };
       }
-    }
+    }));
     return { sonuclar };
   }
 
@@ -453,11 +455,11 @@ export class PazaryeriService {
     const { tenantId } = aktifBaglam();
     const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({ where: { aile: "pazaryeri", durum: "aktif", saglayici: { in: ["amazon_tr", "trendyol"] }, ...(baglantiId ? { id: baglantiId } : {}) } }));
     if (baglantiId && !baglantilar.length) throw new NotFoundException("Finans hareketi çekilebilen aktif pazaryeri bağlantısı bulunamadı (Amazon TR, Trendyol)");
-    const sonuclar = [];
-    for (const baglanti of baglantilar) {
+    const sonuclar: Record<string, unknown>[] = [];
+    for (const baglanti of baglantilar) sonuclar.push(await this.otomatikIsle(tenantId, baglanti, "finans", async () => {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
-        if (baglanti.saglayici === "trendyol") { sonuclar.push(await this.trendyolKesintileriCek(tenantId, baglanti, config)); continue; }
+        if (baglanti.saglayici === "trendyol") return await this.trendyolKesintileriCek(tenantId, baglanti, config);
         let imlec = baglanti.kesintiSenkronImleci; let eklenen = 0; let alinan = 0; let sayfaSayisi = 0;
         do {
           const sayfa = await new AmazonAdapter().komisyonKayitlariCek(config, imlec); sayfaSayisi += 1; alinan += sayfa.kesintiler.length;
@@ -470,14 +472,41 @@ export class PazaryeriService {
           if (!parsed.token) break;
         } while (sayfaSayisi < 50);
         await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { kesintiSenkronImleci: imlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi });
+        return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi };
       } catch (hata) {
         const mesaj = hata instanceof Error ? hata.message : "Kesinti senkronizasyon hatası";
         await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: mesaj } }));
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj });
+        return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj };
       }
-    }
+    }));
     return { sonuclar };
+  }
+
+  /**
+   * PZR-18: bağlantının işini kilitle çalıştırır (otomatik ile düğme aynı anda
+   * çalışmaz) ve sonucu iş durumuna yazar. Başarı durmayı ve sayaçları sıfırlar;
+   * kimlik reddi işi durdurur; geçici hata sonraki aralığı uzatır.
+   */
+  private async otomatikIsle(tenantId: string, baglanti: { id: string; saglayici: string }, is: OtomatikIs, fn: () => Promise<Record<string, unknown> & { hata?: string }>): Promise<Record<string, unknown>> {
+    const birak = await kilitle(`tekir:pazaryeri:kilit:${baglanti.id}:${is}`, 30 * 60);
+    if (!birak) return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: "Bu bağlantıda çekim sürüyor; birkaç dakika sonra yeniden deneyin.", suruyor: true };
+    try {
+      const sonuc = await fn();
+      await this.otomatikDurumYaz(tenantId, baglanti.id, is, typeof sonuc.hata === "string" ? sonuc.hata : null).catch(() => undefined);
+      return sonuc;
+    } finally {
+      await birak();
+    }
+  }
+
+  private async otomatikDurumYaz(tenantId: string, baglantiId: string, is: OtomatikIs, hata: string | null) {
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const once = await tx.baglantiOtomatikIsi.findUnique({ where: { tenantId_baglantiId_is: { tenantId, baglantiId, is } } });
+      const durum = once ?? { aralikDk: varsayilanAralik(is), ardisikHata: 0, beklemeCarpani: 1 };
+      const yeni = denemeSonucu(durum, hata);
+      if (once) await tx.baglantiOtomatikIsi.update({ where: { id: once.id }, data: yeni });
+      else await tx.baglantiOtomatikIsi.create({ data: { tenantId, baglantiId, is, aralikDk: durum.aralikDk, ...yeni } });
+    });
   }
 
   /** PZR-15: Trendyol cari hesap ekstresinden kesintiler; 15 günlük pencereler, imleç son bitiş. */

@@ -28,6 +28,10 @@ export interface TaramaKuyruguAyari<T extends { tenantId: string }> {
   planla: () => Promise<T[]>;
   /** Tek firma işi. */
   isle: (veri: T) => Promise<void>;
+  /** İş kimliği (varsayılan firma kimliği). Aynı kimlikle kuyrukta ikinci iş açılmaz; ':' kullanılmaz (BullMQ). */
+  isKimligi?: (veri: T) => string;
+  /** Eşzamanlılık ortam değişkeni (varsayılan TARAMA_ESZAMANLI). */
+  eszamanliDegiskeni?: string;
 }
 
 const PLANLA = "planla";
@@ -50,7 +54,7 @@ export class TaramaKuyrugu<T extends { tenantId: string }> {
   }
 
   async baslat(): Promise<void> {
-    const eszamanli = Math.max(1, Math.min(8, Number(process.env.TARAMA_ESZAMANLI || 2) || 2));
+    const eszamanli = Math.max(1, Math.min(8, Number(process.env[this.ayar.eszamanliDegiskeni ?? "TARAMA_ESZAMANLI"] || 2) || 2));
     this.worker = new Worker(this.kuyruk.name, (is) => this.isle(is), { connection: redisBaglantisi(), concurrency: eszamanli });
     this.worker.on("error", (hata) => this.logger.error(JSON.stringify({ event: "scan_queue_worker_error", tur: this.ayar.tur, error: hata.message })));
     await this.worker.waitUntilReady();
@@ -84,7 +88,7 @@ export class TaramaKuyrugu<T extends { tenantId: string }> {
     }
     const isler = await this.ayar.planla();
     if (isler.length) {
-      await this.kuyruk.addBulk(isler.map((veri) => ({ name: this.ayar.tur, data: veri, opts: { jobId: veri.tenantId } })));
+      await this.kuyruk.addBulk(isler.map((veri) => ({ name: this.ayar.tur, data: veri, opts: { jobId: this.ayar.isKimligi?.(veri) ?? veri.tenantId } })));
     }
     return { eklenen: isler.length, bekleyen };
   }

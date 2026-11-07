@@ -1,4 +1,5 @@
 import { Injectable, Optional } from "@nestjs/common";
+import { HATA_ESIGI } from "../pazaryeri/otomatik-is";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { BildirimTuru, DuzeltmeTuru, Prisma } from "@prisma/client";
 import { bugunTR, DONEMSEL_DEGERLER, yayinTakvimi, EIRSALIYE_YANIT_GUN_SAYISI, MUHTELIF_MUSTERI_VKN, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
@@ -162,6 +163,7 @@ export class BildirimUreticiService {
       ...(await this.kurFarkiHatirlatmasi()),
       ...(await this.satinAlmaOnaylari()),
       ...(await this.bankaEntegrasyonu()),
+      ...(await this.pazaryeriOtomatik()),
       ...(await this.personelBildirimleri()),
       ...(await this.mevzuatDegisiklikleri()),
       ...(await this.mevzuatYayinEksikleri()),
@@ -623,6 +625,35 @@ export class BildirimUreticiService {
         roller: HEDEF_ROLLER.entegrasyon,
       })),
     ];
+  }
+
+  /**
+   * PZR-18: pazaryeri otomatik çekim işi 3 kez üst üste başarısız (uyarı) ya da
+   * kimlik reddiyle durmuş (kritik). İş başına; başarılı çekimde kendiliğinden kapanır.
+   */
+  private async pazaryeriOtomatik(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const isler = await this.oku(tenantId, (tx) => tx.baglantiOtomatikIsi.findMany({
+      where: { aralikDk: { gt: 0 }, baglanti: { aile: "pazaryeri", durum: "aktif" }, OR: [{ ardisikHata: { gte: HATA_ESIGI } }, { durduNedeni: { not: null } }] },
+      select: { baglantiId: true, is: true, ardisikHata: true, sonHata: true, durduNedeni: true, baglanti: { select: { saglayici: true } } },
+    }));
+    const ad = (s: string) => ({ amazon_tr: "Amazon", trendyol: "Trendyol", hepsiburada: "Hepsiburada", n11: "n11" }[s] ?? s);
+    return isler.map((i): BildirimGirdisi => {
+      const isAdi = i.is === "finans" ? "finans hareketleri" : "siparişler";
+      return {
+        tur: "entegrasyon",
+        onem: i.durduNedeni ? "kritik" : "uyari",
+        baslik: i.durduNedeni ? `${ad(i.baglanti.saglayici)} otomatik çekimi durdu` : `${ad(i.baglanti.saglayici)} ${isAdi} çekilemiyor`,
+        aciklama: i.durduNedeni
+          ? `${i.durduNedeni}. Bağlantı bilgilerini düzeltip "Şimdi çalıştır" ile deneyin ya da aralığı yeniden kaydedin; başarılı çekimde otomatik çekim sürer.`
+          : `Son ${i.ardisikHata} otomatik çekim başarısız oldu: ${i.sonHata ?? "bilinmeyen hata"}. ${i.is === "finans" ? "Kesinti ve hakediş verisi" : "Sipariş listesi"} güncel olmayabilir.`,
+        birlesimAnahtari: `pazaryeri-otomatik:${i.baglantiId}:${i.is}`,
+        kaynakTur: "baglanti",
+        kaynakRef: i.baglantiId,
+        hedefYol: "/panel/ayarlar/pazaryerleri",
+        roller: HEDEF_ROLLER.entegrasyon,
+      };
+    });
   }
 
   /**

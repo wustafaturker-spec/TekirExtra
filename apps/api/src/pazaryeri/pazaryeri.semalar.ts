@@ -73,3 +73,6 @@ export const pazaryeriHakedisSemasi = z.object({
   ekstreSatirId: z.string().uuid(), baglantiId: z.string().uuid(),
   siparisIds: z.array(z.string().uuid()).max(5000), kesintiIds: z.array(z.string().uuid()).max(5000),
 }).refine((g) => g.siparisIds.length > 0, { message: "En az bir sipariş seçin" });
+
+/** PZR-18: otomatik iş aralığı (dk; 0 = kapalı). */
+export const pazaryeriOtomatikSemasi = z.object({ is: z.enum(["siparis", "finans"]), aralikDk: z.number().int().refine((v) => [0, 15, 30, 60, 360, 1440].includes(v), "Geçersiz aralık") });

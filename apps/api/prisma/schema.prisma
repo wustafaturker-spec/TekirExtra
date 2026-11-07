@@ -200,6 +200,7 @@ model Tenant {
   pazaryeriKesintileri      PazaryeriKesinti[]
   pazaryeriHakedisleri PazaryeriHakedis[]
   pazaryeriOdemeDonemleri PazaryeriOdemeDonemi[]
+  baglantiOtomatikIsleri BaglantiOtomatikIsi[]
   pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   bankaHesapEslemeleri      BankaBaglantiHesap[]
   bankaOdemeTalimatlari     BankaOdemeTalimati[]
@@ -1150,6 +1151,7 @@ model Baglanti {
   pazaryeriKesintileri PazaryeriKesinti[]
   pazaryeriHakedisleri PazaryeriHakedis[]
   pazaryeriOdemeDonemleri PazaryeriOdemeDonemi[]
+  baglantiOtomatikIsleri BaglantiOtomatikIsi[]
   pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   posHesaplari         PosHesap[]
   bankaHesapEslemeleri BankaBaglantiHesap[]
@@ -8034,4 +8036,31 @@ model PazaryeriOdemeDonemi {
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, baglantiId, odemeTarihi])
   @@map("pazaryeri_odeme_donemleri")
+}
+
+/// PZR-18: pazaryeri bağlantısının otomatik işi (siparis | finans | stok_fiyat).
+/// Kayıt yoksa varsayılan aralık geçerlidir (sipariş 60 dk, finans günde bir).
+model BaglantiOtomatikIsi {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  baglantiId     String    @map("baglanti_id") @db.Uuid
+  is             String    @db.VarChar(20)
+  /// 0 = kapalı.
+  aralikDk       Int       @map("aralik_dk")
+  sonDeneme      DateTime? @map("son_deneme")
+  sonBasari      DateTime? @map("son_basari")
+  ardisikHata    Int       @default(0) @map("ardisik_hata")
+  sonHata        String?   @map("son_hata")
+  /// Kimlik reddi: iş durur; elle başarılı çalıştırma ya da aralığı yeniden kaydetme açar.
+  durduNedeni    String?   @map("durdu_nedeni")
+  /// Geçici hatada aralık çarpanı (1, 2, 4 …; en çok bir güne kadar).
+  beklemeCarpani Int       @default(1) @map("bekleme_carpani")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti Baglanti @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, baglantiId, is])
+  @@map("baglanti_otomatik_isleri")
 }

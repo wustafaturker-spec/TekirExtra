@@ -1,14 +1,15 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi, pazaryeriGiderGeriAlSemasi, pazaryeriCariSemasi, pazaryeriHakedisSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi, pazaryeriGiderGeriAlSemasi, pazaryeriCariSemasi, pazaryeriHakedisSemasi, pazaryeriOtomatikSemasi } from "./pazaryeri.semalar";
+import { PazaryeriOtomatikService } from "./pazaryeri-otomatik.service";
 import { PazaryeriHakedisService } from "./pazaryeri-hakedis.service";
 import { PazaryeriEslestirmeService } from "./pazaryeri-eslestirme.service";
 import { PazaryeriService } from "./pazaryeri.service";
 
 @Controller("pazaryeri")
 export class PazaryeriController {
-  constructor(private readonly service: PazaryeriService, private readonly eslestirme: PazaryeriEslestirmeService, private readonly hakedis: PazaryeriHakedisService) {}
+  constructor(private readonly service: PazaryeriService, private readonly eslestirme: PazaryeriEslestirmeService, private readonly hakedis: PazaryeriHakedisService, private readonly otomatik: PazaryeriOtomatikService) {}
   // Müşterinin adı, telefonu, TCKN/VKN'si ve adresi döner; ekran yalnız muhasebede.
   @Get("siparisler") @Roller("muhasebe") listele(@Query("durum") durum?: string) { return this.service.listele(durum); }
   @Post("siparisler/ice-aktar") @Roller("yonetici")
@@ -175,5 +176,17 @@ export class PazaryeriController {
   hakedisGeriAl(@Param("id") id: string) {
     if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz hakediş");
     return this.hakedis.geriAl(id);
+  }
+
+  /** PZR-18: bağlantıların otomatik çekim işleri. */
+  @Get("otomatik") @Roller("yonetici", "muhasebe")
+  otomatikIsler() { return this.otomatik.liste(); }
+
+  @Post("baglantilar/:id/otomatik") @Roller("yonetici")
+  otomatikAralik(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = pazaryeriOtomatikSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.otomatik.aralikKaydet(id, sonuc.data.is, sonuc.data.aralikDk);
   }
 }
