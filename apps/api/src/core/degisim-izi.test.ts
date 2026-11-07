@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { degismeyenleriAyikla } from "./aktif-firmalar";
-import { DEGISIM_PENCERESI_MS, degisimDenetlenmeli, degisimIziniSifirla, degisimKaydet, taramaYazimiyla } from "./degisim-izi";
+import { DEGISIM_PENCERESI_MS, degisimDenetlenmeli, degisimIziniSifirla, degisimKaydet, TaramaDurumu, taramaYazimiyla } from "./degisim-izi";
 
 const DK = 60_000;
 const simdi = Date.UTC(2026, 10, 7, 9, 0, 0);
@@ -43,5 +43,13 @@ describe("BLD-14 değişim izi", () => {
 
   it("kapalıyken (test ortamı, Redis yok) hiç denetlemez", () => {
     expect(degisimDenetlenmeli("t1", simdi)).toBe(false);
+  });
+});
+
+describe("BLD-17 tarama durumu", () => {
+  it("Redis yokken süreç belleğinde tutar; bilinmeyen firma haritada yer almaz (hiç taranmadı sayılır)", async () => {
+    const d = new TaramaDurumu("deneme");
+    await d.yaz("t1", 123);
+    expect(await d.oku(["t1", "t2"])).toEqual(new Map([["t1", 123]]));
   });
 });

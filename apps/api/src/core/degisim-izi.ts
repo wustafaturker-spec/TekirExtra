@@ -87,3 +87,39 @@ export function degisimIziniSifirla(etkin: boolean | null = null) {
   sonIsaret.clear();
   testEtkin = etkin;
 }
+
+/**
+ * BLD-17: taramanın firma başına durumu (son tarama, son tam stok denetimi).
+ * Birden çok worker aynı durumu görsün diye Redis'te; Redis yoksa (test,
+ * kuyruksuz mod) ya da okunamazsa süreç belleğine iner. Eksik değer "hiç
+ * taranmadı" sayılır, yani güvenli yönde tarama yapılır.
+ */
+export class TaramaDurumu {
+  private readonly bellek = new Map<string, number>();
+  constructor(private readonly ad: string) {}
+
+  private anahtar(tenantId: string) {
+    return `tekir:tarama:${this.ad}:${tenantId}`;
+  }
+
+  async oku(tenantIdleri: string[]): Promise<Map<string, number>> {
+    const r = tenantIdleri.length ? await redis() : null;
+    if (r) {
+      try {
+        const degerler = await r.mGet(tenantIdleri.map((id) => this.anahtar(id)));
+        return new Map(tenantIdleri.flatMap((id, i) => (degerler[i] ? [[id, Number(degerler[i])] as const] : [])));
+      } catch (hata) {
+        structuredLogger.warn("tarama_durumu_okunamadi", { ad: this.ad, hata: String(hata) });
+      }
+    }
+    return new Map(tenantIdleri.flatMap((id) => (this.bellek.has(id) ? [[id, this.bellek.get(id)!] as const] : [])));
+  }
+
+  async yaz(tenantId: string, ms: number): Promise<void> {
+    if (this.bellek.size > 50_000) this.bellek.clear();
+    this.bellek.set(tenantId, ms);
+    const r = await redis();
+    if (r) await r.set(this.anahtar(tenantId), String(ms), { EX: IZ_OMRU_SN }).catch((hata) => structuredLogger.warn("tarama_durumu_yazilamadi", { ad: this.ad, hata: String(hata) }));
+  }
+}
+

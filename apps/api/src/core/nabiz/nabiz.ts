@@ -66,3 +66,13 @@ export async function nabizla<T>(ad: string, is: () => Promise<T>, aralikMs?: nu
   }
   return sonuc;
 }
+
+/**
+ * BLD-17: kuyruklu taramada tur, planlayıcı yeniden çalıştığında önceki turun
+ * firma işleri hâlâ kuyruktaysa "atlandı" sayılır (BLD-12 alarmı aynı kalır).
+ */
+export async function nabizAtlandi(ad: string, aralikMs?: number): Promise<void> {
+  const simdi = new Date();
+  if (kaydedici) await kaydedici({ ad, baslangic: simdi, bitis: simdi, hata: null, aralikMs, atlandi: true }).catch(() => undefined);
+}
+
