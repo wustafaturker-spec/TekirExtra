@@ -100,7 +100,7 @@ export class AmazonAdapter {
         return {
           hariciSatirId: String(s.orderItemId ?? s.OrderItemId), sku: String(s.product?.sellerSku ?? s.SellerSKU ?? ""),
           barkod: s.product?.asin ?? s.ASIN ?? undefined, urunAdi: String(s.product?.title ?? s.Title ?? "Amazon ürünü"),
-          miktar, birimFiyat: miktar ? toplam / miktar : toplam, kdvOrani: Number(s.tax?.rate ?? s.TaxRate ?? 20),
+          miktar, birimFiyat: miktar ? toplam / miktar : toplam, kdvOrani: (s.tax?.rate ?? s.TaxRate) != null ? Number(s.tax?.rate ?? s.TaxRate) : null,
         };
       });
       const toplam = para(p.orderTotal ?? p.OrderTotal) || satirlar.reduce((sum: number, s: NormalizeSiparis["satirlar"][number]) => sum + s.miktar * s.birimFiyat, 0);

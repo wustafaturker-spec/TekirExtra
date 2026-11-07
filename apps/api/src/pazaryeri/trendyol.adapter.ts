@@ -6,7 +6,8 @@ export interface NormalizeSiparis {
   hariciId: string; siparisNo: string; hariciDurum?: string; siparisTarihi: string;
   musteriUnvani: string; musteriEposta?: string; musteriTelefon?: string; vknTckn?: string;
   dovizCinsi: DovizKodu; toplam: number; teslimatAdresi?: Record<string, unknown>;
-  satirlar: { hariciSatirId: string; sku: string; barkod?: string; urunAdi: string; miktar: number; birimFiyat: number; kdvOrani: number }[];
+  /** PZR-01: birimFiyat KDV dahil, indirimler düşülmüş; PZR-03: kdvOrani gelmediyse null. */
+  satirlar: { hariciSatirId: string; sku: string; barkod?: string; urunAdi: string; miktar: number; birimFiyat: number; kdvOrani: number | null }[];
 }
 export interface PazaryeriStokFiyat {
   sku: string; barkod: string; miktar: number; fiyat: number;
@@ -49,7 +50,7 @@ export class TrendyolAdapter {
       musteriEposta: p.customerEmail || undefined, musteriTelefon: p.shipmentAddress?.phone || undefined,
       vknTckn: p.taxNumber || p.identityNumber || undefined, dovizCinsi: dovizKoduMu(p.currencyCode) ? p.currencyCode : "TRY",
       toplam: Number(p.packageTotalPrice ?? 0), teslimatAdresi: p.shipmentAddress,
-      satirlar: (Array.isArray(p.lines) ? p.lines : []).map((s: any) => ({ hariciSatirId: String(s.lineId), sku: String(s.stockCode), barkod: s.barcode || undefined, urunAdi: String(s.productName), miktar: Number(s.quantity), birimFiyat: Number(s.lineUnitPrice ?? s.lineGrossAmount ?? 0), kdvOrani: Number(s.vatRate ?? 20) })),
+      satirlar: (Array.isArray(p.lines) ? p.lines : []).map((s: any) => ({ hariciSatirId: String(s.lineId), sku: String(s.stockCode), barkod: s.barcode || undefined, urunAdi: String(s.productName), miktar: Number(s.quantity), birimFiyat: s.lineUnitPrice != null ? Number(s.lineUnitPrice) : Number(s.lineGrossAmount ?? 0) - Number(s.lineTotalDiscount ?? 0), kdvOrani: s.vatRate != null ? Number(s.vatRate) : null })),
     })).filter((s: NormalizeSiparis) => s.satirlar.length > 0);
     return { siparisler, sonrakiImlec: veri.hasMore && veri.nextCursor ? String(veri.nextCursor) : null };
   }

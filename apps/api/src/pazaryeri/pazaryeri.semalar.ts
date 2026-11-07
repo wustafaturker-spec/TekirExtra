@@ -3,8 +3,9 @@ import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const satir = z.object({
   hariciSatirId: z.string().min(1), sku: z.string().min(1), barkod: z.string().optional(),
+  // PZR-01: birim fiyat KDV dahil, indirimler düşülmüş (müşterinin ödediği). PZR-03: oran yoksa boş (stok kartından).
   urunAdi: z.string().min(1), miktar: z.number().positive(), birimFiyat: z.number().nonnegative(),
-  kdvOrani: z.number().min(0).max(100).default(20),
+  kdvOrani: z.number().min(0).max(100).nullable().optional(),
 });
 
 export const pazaryeriSiparisSemasi = z.object({

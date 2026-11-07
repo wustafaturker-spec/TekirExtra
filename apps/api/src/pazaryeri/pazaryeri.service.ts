@@ -11,6 +11,7 @@ import { AmazonAdapter } from "./amazon.adapter";
 import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturaSatirlari } from "./pazaryeri-fiyat";
 
 @Injectable()
 export class PazaryeriService {
@@ -77,7 +78,7 @@ export class PazaryeriService {
     for (const istek of siparisler) {
       try {
         const siparis = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({
-          where: { id: istek.siparisId }, include: { satirlar: { include: { stok: { select: { anaBirim: true } } } } },
+          where: { id: istek.siparisId }, include: { satirlar: { include: { stok: { select: { anaBirim: true, kdvOrani: true } } } } },
         }));
         if (!siparis) throw new NotFoundException("Sipariş bulunamadı");
         if (siparis.faturaId) { sonuclar.push({ siparisId: siparis.id, faturaId: siparis.faturaId }); continue; }
@@ -86,13 +87,19 @@ export class PazaryeriService {
         const cari = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findFirst({ where: { id: istek.cariId, aktif: true }, select: { id: true } }));
         if (!cari) throw new BadRequestException("Aktif cari hesap bulunamadı");
         const kur = siparis.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await this.prisma.tenantIslem(tenantId, (tx) => kurZorunlu(tx, siparis.dovizCinsi, siparis.siparisTarihi, "alis", tenantId));
+        // PZR-01/03: pazaryeri fiyatı KDV dahildir; matrah iç yüzdeyle ayrılır, toplam siparişle kuruşuna eşleşmezse fatura açılmaz.
+        // KDV oranı pazaryerinin gönderdiği (müşteriden o alındı), yoksa stok kartınınki.
+        const net = pazaryeriFaturaSatirlari(siparis.satirlar.map((s) => ({
+          stokId: s.stokId!, miktar: s.miktar, kdvDahilBirimFiyat: s.birimFiyat, kdvOrani: s.kdvOrani ?? s.stok?.kdvOrani ?? 20,
+        })), siparis.toplam);
         const hak = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.updateMany({ where: { id: siparis.id, faturaId: null, durum: "faturalanmaya_hazir" }, data: { durum: "yeni", hataMesaji: null } }));
         if (hak.count !== 1) throw new BadRequestException("Sipariş başka bir işlem tarafından işleniyor");
         const fatura = await this.faturalar.olustur({
           tip: "satis", tarih: siparis.siparisTarihi.toISOString().slice(0, 10), cariId: istek.cariId,
           dovizCinsi: siparis.dovizCinsi, kur: kur.toString(), genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
-          aciklama: `Pazaryeri siparişi ${siparis.siparisNo}`,
-          satirlar: siparis.satirlar.map((s) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: s.stok?.anaBirim ?? "adet", birimFiyat: s.birimFiyat.toString(), iskontoOrani: "0", kdvOrani: s.kdvOrani.toString() })),
+          // PZR-01: KDV satır yuvarlamasından doğan kuruş farkı açıklamada belirtilir.
+          aciklama: `Pazaryeri siparişi ${siparis.siparisNo}` + (Number(net.fark) ? ` · Pazaryeri tahsilatı ${new Prisma.Decimal(siparis.toplam).toFixed(2)}; KDV satır yuvarlaması farkı ${net.fark}` : ""),
+          satirlar: siparis.satirlar.map((s, i) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: s.stok?.anaBirim ?? "adet", birimFiyat: net.satirlar[i].birimFiyat, iskontoOrani: "0", kdvOrani: net.satirlar[i].kdvOrani })),
         });
         await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.update({ where: { id: siparis.id }, data: { cariId: istek.cariId, faturaId: fatura.id, durum: "faturalandi", hataMesaji: null } }));
         sonuclar.push({ siparisId: siparis.id, faturaId: fatura.id });

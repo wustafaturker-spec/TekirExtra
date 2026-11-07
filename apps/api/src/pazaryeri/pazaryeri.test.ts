@@ -42,15 +42,40 @@ describe("PazaryeriService", () => {
     const update = vi.fn().mockResolvedValue({});
     const tx = { pazaryeriSiparis: {
       findUnique: vi.fn().mockResolvedValue({ id: "p1", siparisNo: "SP-42", siparisTarihi: new Date("2026-08-10"), dovizCinsi: "TRY", durum: "faturalanmaya_hazir", faturaId: null,
-        satirlar: [{ stokId: "s1", varyantId: null, miktar: { toString: () => "2" }, birimFiyat: { toString: () => "120" }, kdvOrani: { toString: () => "20" } }] }),
+        toplam: new Prisma.Decimal(240),
+        satirlar: [{ stokId: "s1", varyantId: null, miktar: new Prisma.Decimal(2), birimFiyat: new Prisma.Decimal(120), kdvOrani: new Prisma.Decimal(20), stok: { anaBirim: "adet", kdvOrani: new Prisma.Decimal(10) } }] }),
       update, updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     }, cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "c1" }) } };
     const faturaOlustur = vi.fn().mockResolvedValue({ id: "f1" });
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, { olustur: faturaOlustur } as any);
     const sonuc = await servis.faturalastir([{ siparisId: "p1", cariId: "c1" }]);
     expect(sonuc).toEqual(expect.objectContaining({ basarili: 1, hatali: 0 }));
-    expect(faturaOlustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "satis", cariId: "c1" }));
+    // PZR-01: 2 × 120 TL KDV dahil (%20) → net birim 100, fatura toplamı 240 (288 değil).
+    expect(faturaOlustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "satis", cariId: "c1", satirlar: [expect.objectContaining({ birimFiyat: "100.0000", kdvOrani: "20" })] }));
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ faturaId: "f1", durum: "faturalandi" }) }));
+  });
+
+  it("PZR-01/03: toplam tutmazsa fatura açılmaz; oran gelmediyse stok kartının oranı kullanılır", async () => {
+    const yap = (toplam: number, kdvOrani: Prisma.Decimal | null) => {
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const tx = { pazaryeriSiparis: {
+        findUnique: vi.fn().mockResolvedValue({ id: "p1", siparisNo: "SP-42", siparisTarihi: new Date("2026-08-10"), dovizCinsi: "TRY", durum: "faturalanmaya_hazir", faturaId: null, toplam: new Prisma.Decimal(toplam),
+          satirlar: [{ stokId: "s1", varyantId: null, miktar: new Prisma.Decimal(1), birimFiyat: new Prisma.Decimal(110), kdvOrani, stok: { anaBirim: "adet", kdvOrani: new Prisma.Decimal(10) } }] }),
+        update: vi.fn(), updateMany,
+      }, cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "c1" }) } };
+      const olustur = vi.fn().mockResolvedValue({ id: "f1" });
+      return { servis: new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, { olustur } as any), olustur, updateMany };
+    };
+    const tamam = yap(110, null);
+    expect(await tamam.servis.faturalastir([{ siparisId: "p1", cariId: "c1" }])).toEqual(expect.objectContaining({ basarili: 1 }));
+    expect(tamam.olustur).toHaveBeenCalledWith(expect.objectContaining({ satirlar: [expect.objectContaining({ birimFiyat: "100.0000", kdvOrani: "10" })] }));
+
+    const tutmaz = yap(132, null); // KDV hariç yorumlansaydı 110 + %20 = 132 olurdu
+    const sonuc = await tutmaz.servis.faturalastir([{ siparisId: "p1", cariId: "c1" }]);
+    expect(sonuc).toEqual(expect.objectContaining({ basarili: 0, hatali: 1 }));
+    expect(sonuc.sonuclar[0].hata).toContain("Tutar uyuşmuyor");
+    expect(tutmaz.olustur).not.toHaveBeenCalled();
+    expect(tutmaz.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "hata" }) }));
   });
 
   it("komisyon kaydini yalnizca bir kez ice aktarir ve tekrarinda bilgileri gunceller", async () => {

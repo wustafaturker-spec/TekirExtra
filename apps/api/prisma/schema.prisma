@@ -692,8 +692,10 @@ model PazaryeriSiparisSatiri {
   barkod        String?
   urunAdi       String   @map("urun_adi")
   miktar        Decimal  @db.Decimal(15, 4)
+  /// PZR-01: KDV dahil, indirimler düşülmüş birim fiyat (müşterinin ödediği).
   birimFiyat    Decimal  @map("birim_fiyat") @db.Decimal(15, 6)
-  kdvOrani      Decimal  @default(20) @map("kdv_orani") @db.Decimal(5, 2)
+  /// PZR-03: pazaryerinin gönderdiği KDV oranı; göndermediyse boş (faturada stok kartının oranı).
+  kdvOrani      Decimal? @map("kdv_orani") @db.Decimal(5, 2)
   stokId        String?  @map("stok_id") @db.Uuid
   varyantId     String?  @map("varyant_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")

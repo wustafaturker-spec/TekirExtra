@@ -29,7 +29,7 @@ export class N11Adapter {
     const siparisler: NormalizeSiparis[] = content.map((p: any): NormalizeSiparis => {
       const satirlar: NormalizeSiparis["satirlar"] = (Array.isArray(p.lines) ? p.lines : []).map((s: any, i: number) => {
         const miktar = Number(s.quantity ?? 0); const faturaTutari = Number(s.sellerInvoiceAmount ?? (Number(s.price ?? 0) * miktar));
-        return { hariciSatirId: String(s.orderLineId ?? `${p.orderNumber}-${i}`), sku: String(s.stockCode ?? ""), barkod: s.barcode ? String(s.barcode) : undefined, urunAdi: String(s.productName ?? "N11 ürünü"), miktar, birimFiyat: miktar ? faturaTutari / miktar : 0, kdvOrani: Number(s.vatRate ?? 20) };
+        return { hariciSatirId: String(s.orderLineId ?? `${p.orderNumber}-${i}`), sku: String(s.stockCode ?? ""), barkod: s.barcode ? String(s.barcode) : undefined, urunAdi: String(s.productName ?? "N11 ürünü"), miktar, birimFiyat: miktar ? faturaTutari / miktar : 0, kdvOrani: s.vatRate != null ? Number(s.vatRate) : null };
       });
       const olusma = (Array.isArray(p.packageHistories) ? p.packageHistories : []).find((h: any) => String(h.status).trim().toLowerCase() === "created")?.createdDate ?? p.lastModifiedDate;
       const adres = p.shippingAddress; const toplam = satirlar.reduce((t, s) => t + s.miktar * s.birimFiyat, 0);

@@ -24,4 +24,13 @@ describe("TrendyolAdapter", () => {
     expect(sonuc.siparisler[0].satirlar[0]).toEqual(expect.objectContaining({ sku: "TS-RED-M", miktar: 2 }));
     expect(String(fetchMock.mock.calls[0][0])).toContain("/orders/stream?size=50");
   });
+
+  it("PZR-03/04: oran gelmezse null; net birim fiyat yoksa brütten indirim düşülür (indirimsiz brüt alınmaz)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ hasMore: false, content: [{
+      shipmentPackageId: 43, orderNumber: "SP-43", orderDate: 1786363200000, currencyCode: "TRY", packageTotalPrice: 630, status: "Created",
+      lines: [{ lineId: 8, stockCode: "AY-1", productName: "Ayakkabı", quantity: 2, lineGrossAmount: 350, lineTotalDiscount: 35 }],
+    }] }) }));
+    const s = (await new TrendyolAdapter().siparisleriCek({ kullaniciAdi: "k", parola: "p", saticiId: "1" })).siparisler[0].satirlar[0];
+    expect(s).toEqual(expect.objectContaining({ birimFiyat: 315, kdvOrani: null }));
+  });
 });
