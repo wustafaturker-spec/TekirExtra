@@ -6,11 +6,12 @@ import { kilitle } from "../core/redis-kilit";
 const t = (dk: number) => new Date(Date.UTC(2026, 10, 7, 12, 0) + dk * 60_000);
 
 describe("pazaryeri otomatik çekim kuralları (PZR-18)", () => {
-  it("varsayılan aralıklar kullanıcı kararıyla: sipariş 60 dk, finans günde bir; finans yalnız Amazon/Trendyol", () => {
+  it("varsayılan aralıklar kullanıcı kararıyla: sipariş 60 dk, finans günde bir; finans Amazon, Trendyol ve Hepsiburada", () => {
     expect(varsayilanAralik("siparis")).toBe(60);
     expect(varsayilanAralik("finans")).toBe(1440);
     expect(isUygun("hepsiburada", "siparis")).toBe(true);
-    expect(isUygun("hepsiburada", "finans")).toBe(false);
+    expect(isUygun("hepsiburada", "finans")).toBe(true);
+    expect(isUygun("n11", "finans")).toBe(false);
     expect(isUygun("trendyol", "finans")).toBe(true);
   });
 
@@ -55,7 +56,7 @@ describe("planlayıcı (PZR-18)", () => {
   it("kaydı olmayan bağlantı varsayılanla hemen; aralığı dolmamış, kapalı ve durmuş iş atlanır; finans uygun olmayan sağlayıcıda yok", async () => {
     const isler = await servis().vadesiGelenler([
       { id: "b1", tenantId: "t1", saglayici: "trendyol", baglantiOtomatikIsleri: [] },
-      { id: "b2", tenantId: "t1", saglayici: "hepsiburada", baglantiOtomatikIsleri: [kayit("siparis", { sonDeneme: t(-30) })] },
+      { id: "b2", tenantId: "t1", saglayici: "n11", baglantiOtomatikIsleri: [kayit("siparis", { sonDeneme: t(-30) })] },
       { id: "b3", tenantId: "t2", saglayici: "amazon_tr", baglantiOtomatikIsleri: [kayit("siparis", { aralikDk: 0 }), kayit("finans", { durduNedeni: "x" })] },
       { id: "b4", tenantId: "t2", saglayici: "n11", baglantiOtomatikIsleri: [kayit("siparis", { sonDeneme: t(-61) })] },
     ], t(0));

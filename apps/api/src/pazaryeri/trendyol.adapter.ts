@@ -8,6 +8,8 @@ const bekle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export interface TrendyolOdemeEmri { id: string | number; status?: string; amount?: number; payoutDate?: number; paymentType?: string; [alan: string]: unknown }
 export interface PazaryeriConfig {
   kullaniciAdi: string; parola?: string; apiAnahtari?: string; saticiId?: string; magazaId?: string; servisAdresi?: string;
+  /** PZR-21: Hepsiburada entegratör adı (User-Agent). */
+  entegratorAdi?: string;
 }
 export interface NormalizeSiparis {
   hariciId: string; siparisNo: string; hariciDurum?: string; siparisTarihi: string;
@@ -24,6 +26,8 @@ export interface NormalizeKesinti {
   tutar: number; dovizCinsi: DovizKodu; hamVeri?: Record<string, unknown>;
   /** PZR-16: pazaryerinin ödeme numarası (Trendyol paymentOrderId). */
   odemeNo?: string;
+  /** PZR-21: sağlayıcının bilinen kod eşlemesinden gelen sınıf (kullanıcı kuralı önce gelir). */
+  sinif?: import("./pazaryeri-kesinti-sinifi").KesintiSinifi;
 }
 
 export class TrendyolAdapter {

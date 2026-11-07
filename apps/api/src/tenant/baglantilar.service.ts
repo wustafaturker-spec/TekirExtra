@@ -77,6 +77,8 @@ export const baglantiOlusturSemasi = z.object({
     postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
     magazaId: z.string().optional(),
+    /** PZR-21: Hepsiburada entegratör adı (User-Agent; yeni kimlik doğrulama yapısı). */
+    entegratorAdi: z.string().trim().min(1).max(100).optional(),
     gondericiAdi: z.string().optional(),
     bankaHesapId: z.string().uuid().optional(),
   }),

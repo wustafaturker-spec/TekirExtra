@@ -9,7 +9,7 @@ export const EN_UZUN_ARALIK_DK = 1440;
 /** Bu sayıda üst üste başarısız denemede Bildirim Merkezi uyarısı. */
 export const HATA_ESIGI = 3;
 /** Finans hareketi çekilebilen sağlayıcılar. */
-export const FINANS_SAGLAYICILARI = ["amazon_tr", "trendyol"];
+export const FINANS_SAGLAYICILARI = ["amazon_tr", "trendyol", "hepsiburada"];
 
 export function isUygun(saglayici: string, is: OtomatikIs): boolean {
   return is === "siparis" ? ["trendyol", "hepsiburada", "n11", "amazon_tr"].includes(saglayici) : FINANS_SAGLAYICILARI.includes(saglayici);
