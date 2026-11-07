@@ -3,5 +3,6 @@ import { PazaryeriController } from "./pazaryeri.controller";
 import { PazaryeriService } from "./pazaryeri.service";
 import { PazaryeriEslestirmeService } from "./pazaryeri-eslestirme.service";
 import { FaturaModule } from "../fatura/fatura.module";
-@Module({ imports: [FaturaModule], controllers: [PazaryeriController], providers: [PazaryeriService, PazaryeriEslestirmeService] })
+import { DonemKapatmaModule } from "../donem-kapatma/donem-kapatma.module";
+@Module({ imports: [FaturaModule, DonemKapatmaModule], controllers: [PazaryeriController], providers: [PazaryeriService, PazaryeriEslestirmeService] })
 export class PazaryeriModule {}

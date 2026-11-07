@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -16,7 +17,7 @@ import { kesintiBaslangicDurumu, kesintiSinifiBul, type KesintiSinifi } from "./
 
 @Injectable()
 export class PazaryeriService {
-  constructor(private readonly prisma: PrismaService, private readonly faturalar: FaturaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly faturalar: FaturaService, @Optional() private readonly donemKilidi?: DonemKilidiService) {}
 
   async listele(durum?: string) {
     const { tenantId } = aktifBaglam();
@@ -179,7 +180,7 @@ export class PazaryeriService {
     return this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findMany({
       where: durum ? { durum: durum as never } : undefined,
       orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
-      include: { baglanti: { select: { id: true, saglayici: true, sonSenkronTarihi: true, sonSenkronHatasi: true } }, hareket: { select: { id: true, kasaId: true, bankaHesapId: true, kur: true, tutarTry: true } } },
+      include: { masraf: { select: { id: true, durum: true, kategori: { select: { ad: true } } } }, baglanti: { select: { id: true, saglayici: true, sonSenkronTarihi: true, sonSenkronHatasi: true } }, hareket: { select: { id: true, kasaId: true, bankaHesapId: true, kur: true, tutarTry: true } } },
     }));
   }
 
@@ -197,6 +198,49 @@ export class PazaryeriService {
         create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined, sinif, durum: kesintiBaslangicDurumu(sinif) },
         update: { ...(girdi.siparisNo ? { siparisNo: girdi.siparisNo } : {}), tur: girdi.tur, aciklama: girdi.aciklama, tarih: new Date(girdi.tarih), ...(girdi.hamVeri ? { hamVeri: girdi.hamVeri as Prisma.InputJsonValue } : {}) },
       });
+    });
+  }
+
+  /**
+   * PZR-10: faturasız kesintiyi (ceza, diğer) masraf kaydına dönüştürür.
+   * Kesinti başına bir masraf: KDV'siz, seçilen kategoride, pazaryeri carisine
+   * borç (komisyon faturalarıyla aynı cari), **onaylı**; ödemesi pazaryeri
+   * hakedişinden mahsup edilir (kasa/banka hareketi açılmaz). Masraf, masraflar
+   * ekranından iptal edilirse kesinti faturasıza döner. Tek işlem.
+   */
+  async kesintileriMasrafla(girdi: { kesintiIds: string[]; kategoriId: string; cariId: string; kur?: number }) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [kategori, cari, kesintiler] = await Promise.all([
+        tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId }, select: { id: true, ad: true } }),
+        tx.cariHesap.findFirst({ where: { id: girdi.cariId, aktif: true }, select: { id: true, unvan: true, vknTckn: true } }),
+        tx.pazaryeriKesinti.findMany({ where: { id: { in: girdi.kesintiIds } }, include: { baglanti: { select: { saglayici: true } } } }),
+      ]);
+      if (!kategori) throw new BadRequestException("Masraf kategorisi bulunamadı");
+      if (!cari) throw new BadRequestException("Aktif cari hesap bulunamadı");
+      if (kesintiler.length !== girdi.kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
+      if (kesintiler.some((k) => k.sinif !== "ceza" && k.sinif !== "diger_faturasiz")) throw new BadRequestException("Yalnız ceza ve diğer faturasız kesintiler masrafa dönüştürülür; faturalı kesintinin gideri e-Faturadan, stopaj 193'e yazılır");
+      if (kesintiler.some((k) => k.durum !== "faturasiz" || k.masrafId || k.hareketId)) throw new BadRequestException("Seçilen kesintilerden biri faturasız durumda değil ya da zaten işlenmiş");
+      const masrafIdleri: string[] = [];
+      for (const k of kesintiler) {
+        await this.donemKilidi?.tarihDogrula(tenantId, k.tarih, "pazaryeri kesintisinin masraf kaydı", tx);
+        const kur = k.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : girdi.kur ? new Prisma.Decimal(girdi.kur) : await kurZorunlu(tx, k.dovizCinsi, k.tarih);
+        const aciklama = `Pazaryeri ${k.sinif === "ceza" ? "cezası" : "kesintisi"} · ${k.tur}${k.siparisNo ? ` · sipariş ${k.siparisNo}` : ""}${k.aciklama ? ` · ${k.aciklama}` : ""}`.slice(0, 500);
+        const masraf = await tx.masraf.create({ data: {
+          tenantId, kategoriId: kategori.id, cariId: cari.id, belgeTuru: "diger", belgeNo: k.siparisNo ?? null, tarih: k.tarih,
+          saticiUnvan: cari.unvan, vknTckn: cari.vknTckn ?? null, aciklama, matrah: k.tutar, kdvOrani: 0, kdvTutari: 0, toplam: k.tutar,
+          dovizCinsi: k.dovizCinsi, kur, durum: "onaylandi", kaynakTur: "pazaryeri_kesinti",
+        } });
+        // Masraf onayıyla aynı: carinin alacağı (MasraflarService.onayla).
+        await tx.cariHareket.create({ data: {
+          tenantId, cariId: cari.id, tip: "alacak", tutar: k.tutar, dovizCinsi: k.dovizCinsi, kur, tutarTry: k.tutar.mul(kur).toDecimalPlaces(2),
+          tarih: k.tarih, aciklama: `${cari.unvan} masraf kaydı (${kategori.ad} · pazaryeri kesintisi)`, kaynakTur: "masraf", kaynakRef: masraf.id,
+        } });
+        const { count } = await tx.pazaryeriKesinti.updateMany({ where: { id: k.id, durum: "faturasiz", masrafId: null, hareketId: null }, data: { durum: "masrafa_donustu", masrafId: masraf.id } });
+        if (count !== 1) throw new BadRequestException("Kesintilerden biri bu sırada değişti; listeyi yenileyip yeniden deneyin");
+        masrafIdleri.push(masraf.id);
+      }
+      return { masrafaDonusen: masrafIdleri.length, masrafIdleri };
     });
   }
 

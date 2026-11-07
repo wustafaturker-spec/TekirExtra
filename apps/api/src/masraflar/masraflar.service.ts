@@ -227,6 +227,10 @@ export class MasraflarService {
           },
         });
       }
+      // PZR-10: pazaryeri kesintisinden doğan masraf iptal edilince kesinti faturasıza döner (yeniden dönüştürülebilir).
+      if (mevcut.kaynakTur === "pazaryeri_kesinti") {
+        await tx.pazaryeriKesinti.updateMany({ where: { masrafId: id, durum: "masrafa_donustu" }, data: { durum: "faturasiz", masrafId: null } });
+      }
       return tx.masraf.update({ where: { id }, data: { durum: "iptal" } });
     });
   }

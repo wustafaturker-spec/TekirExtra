@@ -72,6 +72,8 @@ enum PazaryeriKesintiDurumu {
   faturayla_eslesti
   /// PZR-06/10: faturası olmayan kesinti (ceza, diğer).
   faturasiz
+  /// PZR-10: faturasız kesinti masraf kaydına dönüştü (masraf iptal edilirse faturasız'a döner).
+  masrafa_donustu
 }
 
 /// PZR-06/08: kesinti sınıfı; giderleştirme yalnız stopajda.
@@ -740,6 +742,8 @@ model PazaryeriKesinti {
   hareketId  String?                @unique @map("hareket_id") @db.Uuid
   /// PZR-07: kesintinin eşleştiği pazaryeri komisyon e-Faturası (gider o faturadan).
   gelenEbelgeId String?             @map("gelen_ebelge_id") @db.Uuid
+  /// PZR-10: faturasız kesintinin dönüştüğü masraf kaydı.
+  masrafId   String?                @unique @map("masraf_id") @db.Uuid
   hamVeri    Json?                  @map("ham_veri")
   createdAt  DateTime               @default(now()) @map("created_at")
   updatedAt  DateTime               @updatedAt @map("updated_at")
@@ -748,6 +752,7 @@ model PazaryeriKesinti {
   baglanti Baglanti          @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
   hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
   gelenEbelge GelenEbelge?    @relation(fields: [gelenEbelgeId], references: [id], onDelete: SetNull)
+  masraf      Masraf?         @relation(fields: [masrafId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, gelenEbelgeId])
@@ -4791,6 +4796,8 @@ model Masraf {
   odemeler        MasrafOdeme[]
 
   maliyetDagitimlari MaliyetDagitimi[]
+  /// PZR-10: bu masrafın kaynağı olan faturasız pazaryeri kesintisi.
+  pazaryeriKesintisi PazaryeriKesinti?
 
   @@unique([kiraSozlesmeId, kiraDonemi])
   @@index([tenantId, tarih])

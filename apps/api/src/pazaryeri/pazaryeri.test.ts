@@ -113,6 +113,39 @@ describe("PazaryeriService", () => {
     expect(upsert.mock.calls[0][0].update).not.toHaveProperty("sinif");
   });
 
+  it("PZR-10: faturasız kesinti onaylı, KDV'siz masrafa döner; cariye alacak yazılır; kesinti bağlanır", async () => {
+    const masrafCreate = vi.fn().mockResolvedValue({ id: "m1" });
+    const cariHareketCreate = vi.fn();
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tarihDogrula = vi.fn();
+    const tx = {
+      masrafKategori: { findUnique: vi.fn().mockResolvedValue({ id: "kat", ad: "Pazaryeri cezaları" }) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "c-amz", unvan: "AMAZON TURKEY", vknTckn: "1234567890" }) },
+      pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([{ id: "k1", sinif: "ceza", durum: "faturasiz", masrafId: null, hareketId: null, tur: "Late shipment penalty", siparisNo: "AMZ-9", aciklama: null, tarih: new Date("2026-10-03"), tutar: new Prisma.Decimal(40), dovizCinsi: "TRY", baglanti: { saglayici: "amazon_tr" } }]), updateMany },
+      masraf: { create: masrafCreate }, cariHareket: { create: cariHareketCreate },
+    };
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any, { tarihDogrula } as any);
+    await expect(servis.kesintileriMasrafla({ kesintiIds: ["k1"], kategoriId: "kat", cariId: "c-amz" })).resolves.toEqual({ masrafaDonusen: 1, masrafIdleri: ["m1"] });
+    expect(tarihDogrula).toHaveBeenCalledWith("t1", new Date("2026-10-03"), expect.any(String), tx);
+    expect(masrafCreate.mock.calls[0][0].data).toEqual(expect.objectContaining({ cariId: "c-amz", kdvOrani: 0, kdvTutari: 0, durum: "onaylandi", kaynakTur: "pazaryeri_kesinti", belgeNo: "AMZ-9" }));
+    expect(cariHareketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ cariId: "c-amz", tip: "alacak", kaynakTur: "masraf", kaynakRef: "m1" }) });
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: "k1", durum: "faturasiz", masrafId: null, hareketId: null }, data: { durum: "masrafa_donustu", masrafId: "m1" } });
+  });
+
+  it("PZR-10: faturalı/stopaj ya da işlenmiş kesinti masrafa dönüşmez", async () => {
+    for (const [ek, hata] of [[{ sinif: "faturali" }, /Yalnız ceza/], [{ sinif: "stopaj" }, /Yalnız ceza/], [{ masrafId: "m0" }, /zaten işlenmiş/], [{ durum: "bekliyor" }, /faturasız durumda değil/]] as const) {
+      const create = vi.fn();
+      const tx = {
+        masrafKategori: { findUnique: vi.fn().mockResolvedValue({ id: "kat", ad: "X" }) }, cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "c", unvan: "C", vknTckn: null }) },
+        pazaryeriKesinti: { findMany: vi.fn().mockResolvedValue([{ id: "k1", sinif: "ceza", durum: "faturasiz", masrafId: null, hareketId: null, tarih: new Date(), tutar: new Prisma.Decimal(1), dovizCinsi: "TRY", ...ek }]) },
+        masraf: { create },
+      };
+      const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+      await expect(servis.kesintileriMasrafla({ kesintiIds: ["k1"], kategoriId: "kat", cariId: "c" })).rejects.toThrow(hata);
+      expect(create).not.toHaveBeenCalled();
+    }
+  });
+
   it("PZR-09: yıllık stopaj özeti aylara göre kesilen, kaydedilen ve bekleyeni verir", async () => {
     const findMany = vi.fn().mockResolvedValue([
       { tarih: new Date("2026-03-10"), tutar: new Prisma.Decimal(10), dovizCinsi: "TRY", durum: "giderlesti", hareket: { tutarTry: new Prisma.Decimal(10) } },

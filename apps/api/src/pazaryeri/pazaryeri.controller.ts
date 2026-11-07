@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi } from "./pazaryeri.semalar";
 import { PazaryeriEslestirmeService } from "./pazaryeri-eslestirme.service";
 import { PazaryeriService } from "./pazaryeri.service";
 
@@ -42,7 +42,7 @@ export class PazaryeriController {
   }
   @Get("kesintiler") @Roller("yonetici", "muhasebe")
   kesintileriListele(@Query("durum") durum?: string) {
-    if (durum && !["bekliyor", "giderlesti", "faturayla_eslesti", "faturasiz"].includes(durum)) throw new BadRequestException("Geçersiz kesinti durumu");
+    if (durum && !["bekliyor", "giderlesti", "faturayla_eslesti", "faturasiz", "masrafa_donustu"].includes(durum)) throw new BadRequestException("Geçersiz kesinti durumu");
     return this.service.kesintileriListele(durum);
   }
   @Post("kesintiler/ice-aktar") @Roller("yonetici", "muhasebe")
@@ -51,6 +51,14 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.kesintiIceAktar(sonuc.data);
   }
+  /** PZR-10: faturasız kesintileri (ceza, diğer) masraf kaydına dönüştür. */
+  @Post("kesintiler/masrafa-donustur") @Roller("yonetici", "muhasebe")
+  kesintileriMasrafla(@Body() govde: unknown) {
+    const sonuc = pazaryeriKesintiMasrafSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.service.kesintileriMasrafla(sonuc.data);
+  }
+
   /** PZR-09: yıllık stopaj özeti. */
   @Get("kesintiler/stopaj-ozeti") @Roller("yonetici", "muhasebe")
   stopajOzeti(@Query("yil") yil?: string) {
