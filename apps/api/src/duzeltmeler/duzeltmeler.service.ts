@@ -201,7 +201,8 @@ export class DuzeltmelerService {
         otomatikCozulen++;
       }
       return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen };
-    });
+      // BLD-11: ~12 dedektör tek işlemde; soğuk açılışta/yük altında 5 sn varsayılanı aşılıyordu.
+    }, { timeout: 30_000 });
   }
 
   async ata(id: string, userId: string | null) {
