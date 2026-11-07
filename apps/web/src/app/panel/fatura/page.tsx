@@ -2856,7 +2856,7 @@ export default function FaturaSayfasi() {
         />
       )}
 
-      {ekleriAcikFatura && <FaturaEkPaneli faturaId={ekleriAcikFatura.id} baslik={faturaNoMetni(ekleriAcikFatura.no, ekleriAcikFatura.durum)} onKapat={() => setEkleriAcikFatura(null)} />}
+      {ekleriAcikFatura && <FaturaEkPaneli faturaId={ekleriAcikFatura.id} baslik={faturaNoMetni(ekleriAcikFatura.no, ekleriAcikFatura.durum, false, ekleriAcikFatura.tip)} onKapat={() => setEkleriAcikFatura(null)} />}
 
       {hizliPanel === "stok" && (
         <HizliKayitPaneli baslik="Yeni ürün" onKapat={() => setHizliPanel(null)}>
@@ -3804,14 +3804,14 @@ export default function FaturaSayfasi() {
                   key={f.id}
                   className="row-link"
                   tabIndex={0}
-                  aria-label={`${faturaNoMetni(f.no, f.durum)} faturasını aç`}
+                  aria-label={`${faturaNoMetni(f.no, f.durum, false, f.tip)} faturasını aç`}
                   onClick={() => faturayiAc(f.id)}
                   onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); faturayiAc(f.id); } }}
                 >
                   <td onClick={(olay) => olay.stopPropagation()} onKeyDown={(olay) => olay.stopPropagation()}>
-                    {topluSecilebilir(f) && <input type="checkbox" aria-label={`${faturaNoMetni(f.no, f.durum)} faturasını toplu işlem için seç`} checked={topluSecim.has(f.id)} onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(f.id); else yeni.delete(f.id); setTopluSecim(yeni); }} />}
+                    {topluSecilebilir(f) && <input type="checkbox" aria-label={`${faturaNoMetni(f.no, f.durum, false, f.tip)} faturasını toplu işlem için seç`} checked={topluSecim.has(f.id)} onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(f.id); else yeni.delete(f.id); setTopluSecim(yeni); }} />}
                   </td>
-                  <td style={{ fontWeight: 700 }} className="mono">{faturaNoMetni(f.no, f.durum, true)}</td>
+                  <td style={{ fontWeight: 700 }} className="mono">{faturaNoMetni(f.no, f.durum, true, f.tip)}</td>
                   <td>{f.cari.unvan}</td>
                   <td>{f.tarih}</td>
                   <td>

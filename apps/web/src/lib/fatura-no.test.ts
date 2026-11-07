@@ -8,5 +8,8 @@ describe("faturaNoMetni", () => {
     expect(faturaNoMetni(null, "kesin", true)).toBe("(Gönderilmedi)");
     expect(faturaNoMetni(null, "iptal")).toBe("Gönderilmedi");
     expect(faturaNoMetni("", undefined)).toBe("Taslak");
+    expect(faturaNoMetni(null, "iptal", true, "alis")).toBe("(Numarasız)");
+    expect(faturaNoMetni(null, "taslak", true, "alis")).toBe("(Taslak)");
+    expect(faturaNoMetni(null, "kesin", false, "alis_iade")).toBe("Gönderilmedi");
   });
 });
