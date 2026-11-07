@@ -12,6 +12,7 @@ import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { stokTutarlilikHesapla } from "../stok/stok-tutarlilik.service";
 import { kartBazinda, tutarlilikOzeti } from "../stok/stok-tutarlilik";
 import { kurFarkiKalemleri } from "../fatura/kur-farki-kalem";
+import { degisimKaydet } from "../core/degisim-izi";
 
 type ListeGirdisi = z.infer<typeof duzeltmeListeSemasi>;
 type Tespit = {
@@ -117,7 +118,7 @@ export class DuzeltmelerService {
 
   async tara() {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
       const [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari] = await Promise.all([
         tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }),
@@ -205,10 +206,18 @@ export class DuzeltmelerService {
         ...odemesiAsanFaturalar.map((fatura) => ({ tur: "fatura_cari" as const, onem: "kritik" as const, kaynakTur: "fatura", kaynakRef: fatura.id, nedenKodu: "FATURA_ODEME_TOPLAMI_ASIMI", aciklama: `${fatura.no || fatura.id} numaralı faturada ödeme toplamı ${fatura.odenen.toFixed(2)}, fatura toplamı ${fatura.genelToplam.toString()}.`, onerilenEylem: "Faturaya bağlı tahsilat/ödeme hareketlerini inceleyip fazla veya yinelenen kaydı geri alın." })),
       ];
 
-      const aktifAnahtarlar = new Set<string>();
+      const aktifAnahtarlar = new Set(tespitler.map((t) => `${t.nedenKodu}:${t.kaynakTur}:${t.kaynakRef}`));
+      // BLD-14: yeni kayıt açılıyor mu? (bildirim taraması kritik düzeltmeyi okur; yalnız yeni/çözülen kayıt firmayı "değişmiş" yapar)
+      const bilinenAnahtarlar = new Set<string>();
+      const anahtarListesi = [...aktifAnahtarlar];
+      for (let i = 0; i < anahtarListesi.length; i += 5_000) {
+        for (const k of await tx.duzeltmeKaydi.findMany({ where: { tekillikAnahtari: { in: anahtarListesi.slice(i, i + 5_000) } }, select: { tekillikAnahtari: true } })) {
+          if (k.tekillikAnahtari) bilinenAnahtarlar.add(k.tekillikAnahtari);
+        }
+      }
+      const yeniKayit = anahtarListesi.filter((a) => !bilinenAnahtarlar.has(a)).length;
       for (const tespit of tespitler) {
         const anahtar = `${tespit.nedenKodu}:${tespit.kaynakTur}:${tespit.kaynakRef}`;
-        aktifAnahtarlar.add(anahtar);
         await tx.duzeltmeKaydi.upsert({
           where: { tenantId_tekillikAnahtari: { tenantId, tekillikAnahtari: anahtar } },
           create: { tenantId, ...tespit, tekillikAnahtari: anahtar, sonTarih: new Date(Date.now() + 24 * 60 * 60 * 1000) },
@@ -225,9 +234,12 @@ export class DuzeltmelerService {
         await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: kayit.id, oncekiDurum: kayit.durum, yeniDurum: "cozuldu", olayTuru: "otomatik_cozum", aciklama: "Kaynak sorun yeniden taramada bulunamadı." } });
         otomatikCozulen++;
       }
-      return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen, kesikKaynaklar: kesikKaynaklar.map((k) => k.kaynak) };
+      return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen, yeniKayit, kesikKaynaklar: kesikKaynaklar.map((k) => k.kaynak) };
       // BLD-11: ~12 dedektör tek işlemde; soğuk açılışta/yük altında 5 sn varsayılanı aşılıyordu.
     }, { timeout: 30_000 });
+    // BLD-14: tarama yazımı iz bırakmaz; yeni açılan ya da çözülen kayıt bildirim taraması için gerçek değişimdir.
+    if (sonuc.yeniKayit || sonuc.otomatikCozulen) degisimKaydet(tenantId);
+    return sonuc;
   }
 
   async ata(id: string, userId: string | null) {

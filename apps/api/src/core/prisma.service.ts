@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { baglamAl } from "./istek-baglami";
+import { degisimDenetlenmeli, degisimKaydet } from "./degisim-izi";
 
 /**
  * Kiracı bağlamlı Prisma erişimi (MIMARI §3).
@@ -38,13 +39,23 @@ export class PrismaService
     /** Süre varsayılanı 5 sn; tutarlı çok sorgulu okumalar ayrıca snapshot izolasyonu seçebilir. */
     secenek?: { timeout?: number; isolationLevel?: Prisma.TransactionIsolationLevel },
   ): Promise<T> {
-    return this.$transaction(async (tx) => {
+    let yazdi = false;
+    const sonuc = await this.$transaction(async (tx) => {
       // PLT-10: destek oturumu hiçbir şey yazamaz; ilk komut olmalıdır.
       if (baglamAl()?.destek) await tx.$executeRaw`SET TRANSACTION READ ONLY`;
       // EBLG-35: durum geçmişi tetikleyicisi değiştiren kullanıcıyı `app.user_id`'den okur.
       const kullanici = baglamAl()?.userId ?? "";
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true), set_config('app.user_id', ${kullanici}, true)`;
-      return fn(tx);
+      const deger = await fn(tx);
+      // BLD-14: işlem kimliği yalnız ilk yazmada atanır; okuma işleminde boş kalır.
+      if (degisimDenetlenmeli(tenantId)) {
+        const [satir] = await tx.$queryRaw<{ yazdi: boolean }[]>`SELECT pg_current_xact_id_if_assigned() IS NOT NULL AS yazdi`;
+        yazdi = !!satir?.yazdi;
+      }
+      return deger;
     }, { maxWait: BAGLANTI_BEKLEME_MS, ...(secenek?.timeout ? { timeout: secenek.timeout } : {}), ...(secenek?.isolationLevel ? { isolationLevel: secenek.isolationLevel } : {}) });
+    // İz işlem kesinleştikten sonra bırakılır; tarama izi görünce veriyi de görür.
+    if (yazdi) degisimKaydet(tenantId);
+    return sonuc;
   }
 }

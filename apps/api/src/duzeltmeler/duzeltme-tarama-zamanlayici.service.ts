@@ -4,7 +4,8 @@ import { baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { DuzeltmelerService } from "./duzeltmeler.service";
 import { nabizla } from "../core/nabiz/nabiz";
-import { firmaListesiAl, taranacakFirmalar } from "../core/aktif-firmalar";
+import { degismeyenleriAyikla, firmaListesiAl, taranacakFirmalar } from "../core/aktif-firmalar";
+import { sonDegisimler, taramaYazimiyla } from "../core/degisim-izi";
 
 const ON_BES_DAKIKA_MS = 15 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
@@ -17,6 +18,8 @@ const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DuzeltmeTaramaZamanlayiciService.name);
   private zamanlayici?: NodeJS.Timeout;
+  /** BLD-14: firmanın son başarılı taramasının başlangıcı (bu süreçte). */
+  private readonly sonTaramalar = new Map<string, number>();
   private calisiyor = false;
   private aralikMs = ON_BES_DAKIKA_MS;
 
@@ -46,12 +49,16 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
       let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0;
       const firmalar = await this.tenantIdleriAl();
       const secim = taranacakFirmalar(firmalar.tumu, firmalar.aktifler, this.aralikMs);
-      const tenantIdleri = secim.taranacak;
+      // BLD-14: son taramadan beri yazmayan firma (saatte bir zorunlu tarama dışında) atlanır.
+      const degisim = degismeyenleriAyikla(secim.taranacak, this.sonTaramalar, await sonDegisimler(secim.taranacak), this.aralikMs);
+      const tenantIdleri = degisim.taranacak;
       for (const tenantId of tenantIdleri) {
         // PLT-05: askıdaki firmada düzeltme kaydı üretilmez.
         if (await this.erisim?.otomasyonDurdu(tenantId, "donem_kapatma")) continue;
         try {
-          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
+          const taramaBasi = Date.now();
+          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => taramaYazimiyla(() => this.duzeltmeler.tara()));
+          this.sonTaramalar.set(tenantId, taramaBasi);
           bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;
           // BLD-13: sınıra ulaşan kaynak; o kaynağın kayıtları bu turda otomatik çözülmedi.
           for (const kaynak of sonuc.kesikKaynaklar ?? []) this.metrics.increment("correction_scan_truncated_total", { kaynak });
@@ -69,9 +76,10 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
       this.metrics.increment("correction_auto_resolutions_total", {}, otomatikCozulen);
       this.metrics.set("correction_scan_duration_seconds", sureMs / 1000);
       this.metrics.set("correction_scan_tenants", tenantIdleri.length);
+      this.metrics.set("correction_scan_unchanged_tenants", degisim.degismeyen);
       this.metrics.set("correction_scan_failed_tenants", basarisizTenant);
       if (!basarisizTenant) this.metrics.set("correction_scan_last_success_timestamp_seconds", Math.floor(Date.now() / 1000));
-      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
+      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, degismeyen: degisim.degismeyen, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
     } catch (hata) {
       this.metrics.increment("correction_scan_runs_total", { result: "failed" });
       this.logger.error(JSON.stringify({ event: "correction_scan_failed", durationMs: Date.now() - baslangic, error: hata instanceof Error ? hata.message : String(hata) }), hata instanceof Error ? hata.stack : undefined);

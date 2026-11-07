@@ -40,7 +40,8 @@ describe("askıdaki firmada zamanlanmış işler durur (PLT-05)", () => {
   it("düzeltme taraması askıdaki firmada kayıt üretmez", async () => {
     const duzeltmeler = { tara: vi.fn(async () => ({ bulunan: 0, otomatikCozulen: 0 })) };
     const s = new DuzeltmeTaramaZamanlayiciService(duzeltmeler as never, { increment: vi.fn(), set: vi.fn() } as never, erisim);
-    kesif(s, "tenantIdleriAl", [ASKIDA, ACIK]);
+    // BLD-11: firma listesi aktif/pasif ayrımıyla gelir; ikisi de aktif → bu turda taranır.
+    kesif(s, "tenantIdleriAl", { tumu: [ASKIDA, ACIK], aktifler: new Set([ASKIDA, ACIK]) });
     await s.calistir();
     expect(duzeltmeler.tara).toHaveBeenCalledTimes(1);
   });

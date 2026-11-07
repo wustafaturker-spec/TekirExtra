@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { DEGISIM_PENCERESI_MS } from "./degisim-izi";
 
 /**
  * BLD-11: tüm firmaları tarayan zamanlayıcıların ortak seçimi. Aktif firma her
@@ -51,4 +52,28 @@ export async function firmaListesiAl(isAdi: string): Promise<{ tumu: string[]; a
   } finally {
     await yonetim.$disconnect();
   }
+}
+
+/**
+ * BLD-14: değişmeyen firmayı atlama. Firma son başarılı taramasından (başlangıç
+ * anı) beri yazmadıysa atlanır; değişim izi pencere kadar geç düşebildiği için
+ * `DEGISIM_PENCERESI_MS` pay bırakılır. Zamana bağlı bulgular (vade, son tarih,
+ * SLA) için firma en geç saatte bir yine taranır. İz okunamadıysa (null) ya da
+ * firma bu süreçte hiç taranmadıysa taranır.
+ */
+export function degismeyenleriAyikla(
+  tenantIdleri: string[],
+  sonTaramalar: ReadonlyMap<string, number>,
+  sonDegisim: ReadonlyMap<string, number> | null,
+  aralikMs: number,
+  simdiMs = Date.now(),
+): { taranacak: string[]; degismeyen: number } {
+  if (!sonDegisim) return { taranacak: tenantIdleri, degismeyen: 0 };
+  const zorunlu = Math.max(0, SAAT_MS - aralikMs);
+  const taranacak = tenantIdleri.filter((id) => {
+    const son = sonTaramalar.get(id);
+    if (son === undefined || simdiMs - son >= zorunlu) return true;
+    return (sonDegisim.get(id) ?? 0) >= son - DEGISIM_PENCERESI_MS;
+  });
+  return { taranacak, degismeyen: tenantIdleri.length - taranacak.length };
 }

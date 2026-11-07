@@ -4,10 +4,12 @@ import { MetricsService } from "../core/observability/metrics.service";
 import { BildirimEpostaService } from "./bildirim-eposta.service";
 import { BildirimUreticiService } from "./bildirim-uretici.service";
 import { nabizla } from "../core/nabiz/nabiz";
-import { firmaListesiAl, taranacakFirmalar } from "../core/aktif-firmalar";
+import { degismeyenleriAyikla, firmaListesiAl, taranacakFirmalar } from "../core/aktif-firmalar";
+import { sonDegisimler, taramaYazimiyla } from "../core/degisim-izi";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
+const BOS_TARAMA = { uretilen: 0, yeniTeslimat: 0, kapanan: 0, yukseltilen: 0, kesikOnekler: [] as string[] };
 
 /**
  * Worker içinde tüm tenantların bildirim taramasını ve bekleyen e-posta
@@ -20,6 +22,8 @@ export class BildirimZamanlayiciService implements OnModuleInit, OnModuleDestroy
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
   private aralikMs = BES_DAKIKA_MS;
+  /** BLD-14: firmanın son başarılı taramasının başlangıcı (bu süreçte). */
+  private readonly sonTaramalar = new Map<string, number>();
 
   constructor(
     private readonly uretici: BildirimUreticiService,
@@ -57,13 +61,18 @@ export class BildirimZamanlayiciService implements OnModuleInit, OnModuleDestroy
       const firmalar = await this.tenantIdleriAl();
       const secim = taranacakFirmalar(firmalar.tumu, firmalar.aktifler, this.aralikMs);
       const tenantIdleri = secim.taranacak;
+      // BLD-14: değişmeyen firmada dedektörler çalışmaz; bekleyen e-postası (sessiz saat, yeniden deneme) yine gönderilir.
+      const degisim = degismeyenleriAyikla(tenantIdleri, this.sonTaramalar, await sonDegisimler(tenantIdleri), this.aralikMs);
+      const taranacak = new Set(degisim.taranacak);
       for (const tenantId of tenantIdleri) {
         try {
-          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, async () => {
-            const tarama = await this.uretici.tara();
+          const taramaBasi = Date.now();
+          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => taramaYazimiyla(async () => {
+            const tarama = taranacak.has(tenantId) ? await this.uretici.tara() : BOS_TARAMA;
             const posta = await this.eposta.bekleyenleriGonder();
             return { tarama, posta };
-          });
+          }));
+          if (taranacak.has(tenantId)) this.sonTaramalar.set(tenantId, taramaBasi);
           uretilen += sonuc.tarama.uretilen;
           teslimat += sonuc.tarama.yeniTeslimat;
           gonderilen += sonuc.posta.gonderilen;
@@ -82,8 +91,9 @@ export class BildirimZamanlayiciService implements OnModuleInit, OnModuleDestroy
       this.metrics.increment("notification_deliveries_total", {}, teslimat);
       this.metrics.increment("notification_emails_sent_total", {}, gonderilen);
       this.metrics.set("notification_scan_duration_seconds", sureMs / 1000);
-      this.metrics.set("notification_scan_tenants", tenantIdleri.length);
-      this.logger.log(JSON.stringify({ event: "notification_scan_completed", tenants: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, uretilen, teslimat, gonderilen, basarisizTenant, sureMs }));
+      this.metrics.set("notification_scan_tenants", degisim.taranacak.length);
+      this.metrics.set("notification_scan_unchanged_tenants", degisim.degismeyen);
+      this.logger.log(JSON.stringify({ event: "notification_scan_completed", tenants: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, degismeyen: degisim.degismeyen, uretilen, teslimat, gonderilen, basarisizTenant, sureMs }));
     } catch (hata) {
       this.metrics.increment("notification_scan_runs_total", { result: "failed" });
       this.logger.error(JSON.stringify({ event: "notification_scan_failed", error: hata instanceof Error ? hata.message : String(hata) }));
