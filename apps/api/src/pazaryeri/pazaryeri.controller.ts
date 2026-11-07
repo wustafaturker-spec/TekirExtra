@@ -1,12 +1,13 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi } from "./pazaryeri.semalar";
+import { PazaryeriEslestirmeService } from "./pazaryeri-eslestirme.service";
 import { PazaryeriService } from "./pazaryeri.service";
 
 @Controller("pazaryeri")
 export class PazaryeriController {
-  constructor(private readonly service: PazaryeriService) {}
+  constructor(private readonly service: PazaryeriService, private readonly eslestirme: PazaryeriEslestirmeService) {}
   // Müşterinin adı, telefonu, TCKN/VKN'si ve adresi döner; ekran yalnız muhasebede.
   @Get("siparisler") @Roller("muhasebe") listele(@Query("durum") durum?: string) { return this.service.listele(durum); }
   @Post("siparisler/ice-aktar") @Roller("yonetici")
@@ -50,6 +51,36 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.kesintiIceAktar(sonuc.data);
   }
+  /** PZR-07: komisyon faturası eşleştirme durumu (bağlantı başına VKN, faturalar, öneriler, faturası gelmeyenler). */
+  @Get("kesintiler/eslestirme") @Roller("yonetici", "muhasebe")
+  eslestirmeDurumu() {
+    return this.eslestirme.durum();
+  }
+
+  /** PZR-07: bağlantının fatura kesen VKN'si. */
+  @Post("baglantilar/:id/fatura-vkn") @Roller("yonetici", "muhasebe")
+  faturaVknAyarla(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = pazaryeriFaturaVknSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.eslestirme.vknAyarla(id, sonuc.data.vkn);
+  }
+
+  /** PZR-07: kesintileri faturaya bağla (öneri onayı ya da elle seçim). */
+  @Post("kesintiler/eslestir") @Roller("yonetici", "muhasebe")
+  kesintileriEslestir(@Body() govde: unknown) {
+    const sonuc = pazaryeriKesintiEslestirSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.eslestirme.eslestir(sonuc.data);
+  }
+
+  /** PZR-07: faturanın eşleşmesini kaldır. */
+  @Post("kesintiler/eslesme-kaldir/:gelenEbelgeId") @Roller("yonetici", "muhasebe")
+  eslesmeyiKaldir(@Param("gelenEbelgeId") gelenEbelgeId: string) {
+    if (!z.string().uuid().safeParse(gelenEbelgeId).success) throw new BadRequestException("Geçersiz fatura");
+    return this.eslestirme.eslesmeyiKaldir(gelenEbelgeId);
+  }
+
   /** PZR-08: kesinti türleri ve sınıfları. */
   @Get("kesintiler/turler") @Roller("yonetici", "muhasebe")
   kesintiTurleri() {

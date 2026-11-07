@@ -17,6 +17,11 @@ export const pazaryeriSiparisSemasi = z.object({
   teslimatAdresi: z.record(z.string(), z.unknown()).optional(), satirlar: z.array(satir).min(1),
 });
 
+/** PZR-07: bağlantının fatura kesen VKN'si (null: kaldır). */
+export const pazaryeriFaturaVknSemasi = z.object({ vkn: z.string().regex(/^\d{10,11}$/, "VKN 10, TCKN 11 haneli olmalıdır").nullable() });
+/** PZR-07: kesintileri pazaryerinin komisyon e-Faturasına bağla. */
+export const pazaryeriKesintiEslestirSemasi = z.object({ gelenEbelgeId: z.string().uuid(), kesintiIds: z.array(z.string().uuid()).min(1).max(2000) });
+
 /** PZR-08: kesinti türünün sınıfı (kullanıcı seçer, kalıcı kural). */
 export const pazaryeriKesintiSinifSemasi = z.object({
   baglantiId: z.string().uuid(), tur: z.string().min(1).max(80),

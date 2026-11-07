@@ -738,6 +738,8 @@ model PazaryeriKesinti {
   durum      PazaryeriKesintiDurumu @default(bekliyor)
   sinif      PazaryeriKesintiSinifi @default(siniflandirilmamis)
   hareketId  String?                @unique @map("hareket_id") @db.Uuid
+  /// PZR-07: kesintinin eşleştiği pazaryeri komisyon e-Faturası (gider o faturadan).
+  gelenEbelgeId String?             @map("gelen_ebelge_id") @db.Uuid
   hamVeri    Json?                  @map("ham_veri")
   createdAt  DateTime               @default(now()) @map("created_at")
   updatedAt  DateTime               @updatedAt @map("updated_at")
@@ -745,8 +747,10 @@ model PazaryeriKesinti {
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   baglanti Baglanti          @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
   hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
+  gelenEbelge GelenEbelge?    @relation(fields: [gelenEbelgeId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, baglantiId, hariciId])
+  @@index([tenantId, gelenEbelgeId])
   @@index([tenantId, durum, tarih])
   @@map("pazaryeri_kesintileri")
 }
@@ -1082,6 +1086,8 @@ model Baglanti {
   ardisikHata          Int            @default(0) @map("ardisik_hata")
   /// KSB-15: sağlayıcı kimlik bilgisini reddetti; otomatik çekim durdu.
   otomatikDurduNedeni  String?        @map("otomatik_durdu_nedeni")
+  /// PZR-07: pazaryerinin komisyon e-Faturasını kesen VKN (yalnız pazaryeri bağlantısı).
+  faturaKesenVkn       String?        @map("fatura_kesen_vkn") @db.VarChar(11)
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
@@ -3772,6 +3778,8 @@ model GelenEbelge {
   updatedAt          DateTime          @updatedAt @map("updated_at")
 
   fatura             Fatura?           @relation(fields: [faturaId], references: [id])
+  /// PZR-07: bu faturayla eşleşen pazaryeri kesintileri.
+  pazaryeriKesintileri PazaryeriKesinti[]
   onDenetimKararlari OnDenetimKarari[]
 
   @@unique([tenantId, uuid])
