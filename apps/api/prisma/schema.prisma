@@ -199,6 +199,7 @@ model Tenant {
   posTahsilatlari           PosTahsilat[]
   pazaryeriKesintileri      PazaryeriKesinti[]
   pazaryeriHakedisleri PazaryeriHakedis[]
+  pazaryeriOdemeDonemleri PazaryeriOdemeDonemi[]
   pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   bankaHesapEslemeleri      BankaBaglantiHesap[]
   bankaOdemeTalimatlari     BankaOdemeTalimati[]
@@ -697,12 +698,15 @@ model PazaryeriSiparis {
   fatura   Fatura?                  @relation(fields: [faturaId], references: [id])
   satirlar PazaryeriSiparisSatiri[]
 
+  /// PZR-16: pazaryerinin ödeme numarası (Trendyol paymentOrderId).
+  odemeNo       String?  @map("odeme_no")
   /// PZR-13: siparişin tahsil edildiği hakediş.
   hakedisId     String?  @map("hakedis_id") @db.Uuid
   hakedis       PazaryeriHakedis? @relation(fields: [hakedisId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, durum, siparisTarihi])
+  @@index([tenantId, baglantiId, odemeNo])
   @@map("pazaryeri_siparisleri")
 }
 
@@ -751,6 +755,8 @@ model PazaryeriKesinti {
   gelenEbelgeId String?             @map("gelen_ebelge_id") @db.Uuid
   /// PZR-10: faturasız kesintinin dönüştüğü masraf kaydı.
   masrafId   String?                @unique @map("masraf_id") @db.Uuid
+  /// PZR-16: pazaryerinin ödeme numarası (Trendyol paymentOrderId).
+  odemeNo    String?                @map("odeme_no")
   /// PZR-13: kesintinin netleştiği hakediş.
   hakedisId  String?                @map("hakedis_id") @db.Uuid
   hamVeri    Json?                  @map("ham_veri")
@@ -767,6 +773,7 @@ model PazaryeriKesinti {
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, gelenEbelgeId])
   @@index([tenantId, durum, tarih])
+  @@index([tenantId, baglantiId, odemeNo])
   @@map("pazaryeri_kesintileri")
 }
 
@@ -1142,6 +1149,7 @@ model Baglanti {
   pazaryeriSiparises   PazaryeriSiparis[]
   pazaryeriKesintileri PazaryeriKesinti[]
   pazaryeriHakedisleri PazaryeriHakedis[]
+  pazaryeriOdemeDonemleri PazaryeriOdemeDonemi[]
   pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   posHesaplari         PosHesap[]
   bankaHesapEslemeleri BankaBaglantiHesap[]
@@ -7998,4 +8006,32 @@ model PlatformDuyuruOlayi {
   alici PlatformDuyuruAlicisi @relation(fields: [duyuruId, tenantId, userId], references: [duyuruId, tenantId, userId], onDelete: Restrict)
   @@id([duyuruId, tenantId, userId, tur])
   @@map("platform_duyuru_olaylari")
+}
+
+/// PZR-16: pazaryerinin ödeme dönemi (Trendyol payment-order). Hakediş önerisi
+/// banka girişine uyan dönemin siparişleri ve kesintileriyle yapılır.
+model PazaryeriOdemeDonemi {
+  id               String     @id @default(uuid()) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  baglantiId       String     @map("baglanti_id") @db.Uuid
+  /// Pazaryerinin ödeme numarası (paymentOrderId).
+  hariciId         String     @map("harici_id")
+  tutar            Decimal    @db.Decimal(15, 2)
+  dovizCinsi       DovizCinsi @default(TRY) @map("doviz_cinsi")
+  odemeTarihi      DateTime   @map("odeme_tarihi")
+  durum            String?
+  /// Dönemin kalemleri (settlements/otherfinancials) çekilip siparişe/kesintiye yazıldığında.
+  kalemlerAlindiAt DateTime?  @map("kalemler_alindi_at")
+  siparisSayisi    Int        @default(0) @map("siparis_sayisi")
+  kesintiSayisi    Int        @default(0) @map("kesinti_sayisi")
+  hamVeri          Json?      @map("ham_veri")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti Baglanti @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, baglantiId, hariciId])
+  @@index([tenantId, baglantiId, odemeTarihi])
+  @@map("pazaryeri_odeme_donemleri")
 }

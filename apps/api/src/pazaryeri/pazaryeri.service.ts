@@ -493,8 +493,49 @@ export class PazaryeriService {
       // Pencere bitince imleç ilerler; yarıda kalan çekim kaldığı pencereden sürer.
       await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { kesintiSenkronImleci: JSON.stringify({ sonBitis: p.bitis }) } }));
     }
+    const odeme = await this.trendyolOdemeDonemleriniIsle(tenantId, baglanti.id, config);
+    eklenen += odeme.eklenen; sayfaSayisi += odeme.istekSayisi;
     await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
-    return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi };
+    return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi, odemeDonemi: odeme.yeniDonem, islenenDonem: odeme.islenen };
+  }
+
+  /**
+   * PZR-16: Trendyol ödeme emirleri (son 120 gün) kaydedilir; ödeme tarihinden
+   * en az bir gün geçmiş ve kalemleri alınmamış dönemlerin (her çekimde en çok
+   * 10) kalemleri `paymentOrderId` ile çekilir: eksik kesintiler eklenir, ödeme
+   * numarası kesintilere ve siparişlere (paket no, yoksa sipariş no) yazılır.
+   * Belge: ödeme emri oluştuktan sonra veriler gecikmeli güncellenebilir.
+   */
+  private async trendyolOdemeDonemleriniIsle(tenantId: string, baglantiId: string, config: PazaryeriConfig) {
+    const adaptor = new TrendyolAdapter();
+    const { odemeler, istekSayisi: emirIstegi } = await adaptor.odemeEmirleriCek(config, Date.now() - 120 * 86_400_000);
+    let istekSayisi = emirIstegi; let eklenen = 0; let islenen = 0;
+    const yeniDonem = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      let yeni = 0;
+      for (const o of odemeler) {
+        if (o.id == null || o.payoutDate == null) continue;
+        const veri = { tutar: new Prisma.Decimal(Number(o.amount ?? 0)), odemeTarihi: new Date(Number(o.payoutDate)), durum: o.status ? String(o.status) : null, hamVeri: o as Prisma.InputJsonValue };
+        const once = await tx.pazaryeriOdemeDonemi.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId, hariciId: String(o.id) } }, select: { id: true } });
+        if (once) await tx.pazaryeriOdemeDonemi.update({ where: { id: once.id }, data: veri });
+        else { await tx.pazaryeriOdemeDonemi.create({ data: { tenantId, baglantiId, hariciId: String(o.id), ...veri } }); yeni++; }
+      }
+      return yeni;
+    });
+    const bekleyen = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriOdemeDonemi.findMany({ where: { baglantiId, kalemlerAlindiAt: null, odemeTarihi: { lte: new Date(Date.now() - 86_400_000) } }, orderBy: { odemeTarihi: "asc" }, take: 10, select: { id: true, hariciId: true } }));
+    for (const d of bekleyen) {
+      const k = await adaptor.odemeKalemleriCek(config, d.hariciId);
+      istekSayisi += k.istekSayisi;
+      eklenen += await this.kesintileriTopluAktar(tenantId, baglantiId, k.kesintiler);
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const kesinti = await tx.pazaryeriKesinti.updateMany({ where: { baglantiId, hariciId: { in: k.kesintiler.map((x) => x.hariciId) } }, data: { odemeNo: d.hariciId } });
+        const paketNolari = k.paketler.map((p) => p.paketNo).filter((x): x is string => Boolean(x));
+        const paketsizSiparisler = k.paketler.filter((p) => !p.paketNo).map((p) => p.siparisNo);
+        const siparis = await tx.pazaryeriSiparis.updateMany({ where: { baglantiId, OR: [{ hariciId: { in: paketNolari } }, { siparisNo: { in: paketsizSiparisler } }] }, data: { odemeNo: d.hariciId } });
+        await tx.pazaryeriOdemeDonemi.update({ where: { id: d.id }, data: { kalemlerAlindiAt: new Date(), kesintiSayisi: kesinti.count, siparisSayisi: siparis.count } });
+      }, { timeout: 60_000 });
+      islenen++;
+    }
+    return { yeniDonem, islenen, eklenen, istekSayisi };
   }
 
   /**
@@ -505,7 +546,13 @@ export class PazaryeriService {
     if (!kesintiler.length) return 0;
     const tekil = [...new Map(kesintiler.map((k) => [k.hariciId, k])).values()];
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcut = new Set((await tx.pazaryeriKesinti.findMany({ where: { baglantiId, hariciId: { in: tekil.map((k) => k.hariciId) } }, select: { hariciId: true } })).map((k) => k.hariciId));
+      const mevcutlar = await tx.pazaryeriKesinti.findMany({ where: { baglantiId, hariciId: { in: tekil.map((k) => k.hariciId) } }, select: { hariciId: true, odemeNo: true } });
+      const mevcut = new Set(mevcutlar.map((k) => k.hariciId));
+      // PZR-16: ödeme numarası sonradan gelen kayıtta eksikse tamamlanır (başka alan değişmez).
+      const odemesiz = new Set(mevcutlar.filter((k) => !k.odemeNo).map((k) => k.hariciId));
+      const tamamla = new Map<string, string[]>();
+      for (const k of tekil) if (k.odemeNo && odemesiz.has(k.hariciId)) tamamla.set(k.odemeNo, [...(tamamla.get(k.odemeNo) ?? []), k.hariciId]);
+      for (const [odemeNo, idler] of tamamla) await tx.pazaryeriKesinti.updateMany({ where: { baglantiId, hariciId: { in: idler }, odemeNo: null }, data: { odemeNo } });
       const yeni = tekil.filter((k) => !mevcut.has(k.hariciId));
       if (!yeni.length) return 0;
       const kurallar = new Map((await tx.pazaryeriKesintiKurali.findMany({ where: { baglantiId, tur: { in: [...new Set(yeni.map((k) => k.tur))] } }, select: { tur: true, sinif: true } })).map((k) => [k.tur, k.sinif]));
@@ -513,7 +560,7 @@ export class PazaryeriService {
         skipDuplicates: true,
         data: yeni.map((k) => {
           const sinif = kurallar.get(k.tur) ?? kesintiSinifiBul(k.tur);
-          return { tenantId, baglantiId, hariciId: k.hariciId, siparisNo: k.siparisNo, tur: k.tur, aciklama: k.aciklama, tarih: new Date(k.tarih), tutar: k.tutar, dovizCinsi: k.dovizCinsi, hamVeri: k.hamVeri as Prisma.InputJsonValue | undefined, sinif, durum: kesintiBaslangicDurumu(sinif) };
+          return { tenantId, baglantiId, hariciId: k.hariciId, siparisNo: k.siparisNo, tur: k.tur, aciklama: k.aciklama, tarih: new Date(k.tarih), tutar: k.tutar, dovizCinsi: k.dovizCinsi, odemeNo: k.odemeNo, hamVeri: k.hamVeri as Prisma.InputJsonValue | undefined, sinif, durum: kesintiBaslangicDurumu(sinif) };
         }),
       });
       return count;

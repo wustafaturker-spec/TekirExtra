@@ -33,7 +33,7 @@ const KESINTI_KOSULU: Prisma.PazaryeriKesintiWhereInput = {
 };
 
 const SIPARIS_SECIMI = {
-  id: true, siparisNo: true, dovizCinsi: true, faturaId: true,
+  id: true, siparisNo: true, dovizCinsi: true, faturaId: true, odemeNo: true,
   fatura: { select: { id: true, no: true, tarih: true, durum: true, genelToplam: true, dovizCinsi: true, kur: true, cariId: true, cari: { select: { unvan: true } }, ...FATURA_ODEME_SECIMI } },
 } satisfies Prisma.PazaryeriSiparisSelect;
 
@@ -51,7 +51,7 @@ export async function hakedisAdaylari(tx: Tx, ekstreSatirId: string, baglantiId:
   const doviz = satir.bankaHesap.dovizCinsi;
   const [siparisler, kesintiler, siniflanmamis, masrafsiz, giderlesmis] = await Promise.all([
     tx.pazaryeriSiparis.findMany({ where: { baglantiId, durum: "faturalandi", hakedisId: null, faturaId: { not: null }, fatura: { durum: "kesin", tarih: { lte: satir.tarih } } }, select: SIPARIS_SECIMI, take: 5_000 }),
-    tx.pazaryeriKesinti.findMany({ where: { baglantiId, tarih: { lte: satir.tarih }, ...KESINTI_KOSULU }, select: { id: true, tur: true, sinif: true, durum: true, tarih: true, tutar: true, dovizCinsi: true, siparisNo: true }, orderBy: { tarih: "asc" }, take: 5_000 }),
+    tx.pazaryeriKesinti.findMany({ where: { baglantiId, tarih: { lte: satir.tarih }, ...KESINTI_KOSULU }, select: { id: true, tur: true, sinif: true, durum: true, tarih: true, tutar: true, dovizCinsi: true, siparisNo: true, odemeNo: true }, orderBy: { tarih: "asc" }, take: 5_000 }),
     tx.pazaryeriKesinti.count({ where: { baglantiId, tarih: { lte: satir.tarih }, hakedisId: null, sinif: "siniflandirilmamis" } }),
     tx.pazaryeriKesinti.count({ where: { baglantiId, tarih: { lte: satir.tarih }, hakedisId: null, sinif: { in: ["ceza", "diger_faturasiz"] }, durum: "faturasiz" } }),
     tx.pazaryeriKesinti.count({ where: { baglantiId, tarih: { lte: satir.tarih }, hakedisId: null, hareketId: { not: null } } }),
@@ -68,18 +68,51 @@ export async function hakedisAdaylari(tx: Tx, ekstreSatirId: string, baglantiId:
   if (giderlesmis) uyarilar.push(`${giderlesmis} kesinti eski kurala göre kasa/bankaya giderleştirilmiş; hakedişe giremez (gerekirse PZR-11 taramasından geri alın).`);
   if (odenmis) uyarilar.push(`${odenmis} siparişin faturası başka bir tahsilatla kapanmış; hakedişe alınmadı.`);
   if (siparisler.length !== dovizUygun.length || kesintiler.length !== uygunKesinti.length) uyarilar.push(`Banka hesabının dövizi (${doviz}) dışındaki sipariş ve kesintiler gösterilmedi.`);
-  const oneri = hakedisOnerisi(
+  const tahmin = () => ({ ...hakedisOnerisi(
     uygunSiparis.map((s) => ({ id: s.id, tarih: s.fatura!.tarih, tutar: faturaOdemeDurumu(s.fatura!).kalan })),
     uygunKesinti.map((k) => ({ id: k.id, tarih: k.tarih, tutar: k.tutar })),
     satir.tutar,
-  );
+  ), kaynak: "tahmin" as const });
+  // PZR-16: pazaryerinin ödeme dönemi (tutar kuruşu kuruşuna, tarih ±3 gün) varsa öneri o dönemin kalemleridir.
+  const donem = await odemeDonemiBul(tx, baglantiId, doviz, satir.tarih, satir.tutar);
+  let oneri: { siparisIds: string[]; kesintiIds: string[]; net: string; fark: string; kaynak: "tahmin" | "odeme_donemi" } = tahmin();
+  let odemeDonemi: { no: string; tarih: Date; tutar: string; siparisSayisi: number; kesintiSayisi: number } | null = null;
+  if (donem.uyan) {
+    const d = donem.uyan;
+    const sIds = uygunSiparis.filter((s) => s.odemeNo === d.hariciId).map((s) => s.id);
+    const kIds = uygunKesinti.filter((k) => k.odemeNo === d.hariciId).map((k) => k.id);
+    const [donemSiparisi, donemKesintisi] = await Promise.all([
+      tx.pazaryeriSiparis.count({ where: { baglantiId, odemeNo: d.hariciId } }),
+      tx.pazaryeriKesinti.count({ where: { baglantiId, odemeNo: d.hariciId } }),
+    ]);
+    odemeDonemi = { no: d.hariciId, tarih: d.odemeTarihi, tutar: d.tutar.toFixed(2), siparisSayisi: donemSiparisi, kesintiSayisi: donemKesintisi };
+    if (sIds.length || kIds.length) {
+      const net = uygunSiparis.filter((s) => sIds.includes(s.id)).reduce((t, s) => t.add(faturaOdemeDurumu(s.fatura!).kalan), D(0))
+        .sub(uygunKesinti.filter((k) => kIds.includes(k.id)).reduce((t, k) => t.add(k.tutar), D(0)));
+      oneri = { siparisIds: sIds, kesintiIds: kIds, net: net.toFixed(2), fark: net.sub(satir.tutar).toFixed(2), kaynak: "odeme_donemi" };
+      if (donemSiparisi > sIds.length) uyarilar.push(`Trendyol ödemesi ${d.hariciId} kapsamındaki ${donemSiparisi - sIds.length} sipariş hakedişe giremiyor (faturalanmamış, faturası ödenmiş ya da başka hakedişte).`);
+      if (donemKesintisi > kIds.length) uyarilar.push(`Trendyol ödemesi ${d.hariciId} kapsamındaki ${donemKesintisi - kIds.length} kesinti hakedişe giremiyor (sınıflandırılmamış, masrafa dönmemiş ya da başka hakedişte).`);
+    } else uyarilar.push(`Trendyol ödemesi ${d.hariciId} bulundu ama kalemleri bu ekrandaki adaylarla eşleşmedi; öneri tahminle yapıldı.`);
+  } else if (donem.yakin) uyarilar.push(`Yakın tarihli Trendyol ödemesi ${donem.yakin.hariciId} (${donem.yakin.tutar.toFixed(2)}) banka tutarıyla uyuşmuyor; öneri tahminle yapıldı.`);
   return {
     satir: { id: satir.id, tarih: satir.tarih, tutar: satir.tutar.toFixed(2), aciklama: satir.aciklama, karsiUnvan: satir.karsiUnvan, dovizCinsi: doviz, bankaHesap: satir.bankaHesap.ad, durum: satir.durum },
     baglanti,
     siparisler: uygunSiparis.map((s) => ({ id: s.id, siparisNo: s.siparisNo, faturaNo: s.fatura!.no, tarih: s.fatura!.tarih, tutar: faturaOdemeDurumu(s.fatura!).kalan.toFixed(2), faturaToplami: s.fatura!.genelToplam.toFixed(2), cari: s.fatura!.cari.unvan })),
     kesintiler: uygunKesinti.map((k) => ({ ...k, tutar: k.tutar.toFixed(2) })),
-    oneri, uyarilar,
+    oneri, odemeDonemi, uyarilar,
   };
+}
+
+/** PZR-16: banka girişine uyan, kalemleri alınmış ödeme dönemi (yoksa tarihçe en yakın uymayan bilgi için). */
+async function odemeDonemiBul(tx: Tx, baglantiId: string, doviz: string, tarih: Date, tutar: Prisma.Decimal) {
+  const gun = 86_400_000;
+  const adaylar = await tx.pazaryeriOdemeDonemi.findMany({
+    where: { baglantiId, dovizCinsi: doviz as never, kalemlerAlindiAt: { not: null }, odemeTarihi: { gte: new Date(tarih.getTime() - 3 * gun), lte: new Date(tarih.getTime() + 3 * gun) } },
+    select: { hariciId: true, tutar: true, odemeTarihi: true },
+  });
+  const uzaklik = (d: { odemeTarihi: Date }) => Math.abs(d.odemeTarihi.getTime() - tarih.getTime());
+  const sirali = adaylar.sort((a, b) => uzaklik(a) - uzaklik(b));
+  return { uyan: sirali.find((d) => d.tutar.sub(tutar).abs().lte("0.01")) ?? null, yakin: sirali[0] ?? null };
 }
 
 /** Hakedişi kaydeder; fark engel değildir (kullanıcı kararı), döner. */

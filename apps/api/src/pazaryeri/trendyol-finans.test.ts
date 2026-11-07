@@ -101,3 +101,44 @@ describe("eşleştirme önerisi eksi kesintiyle (PZR-15)", () => {
     expect(r).toEqual({ kesintiIds: ["a", "b", "c"], toplam: "250.00" });
   });
 });
+
+describe("Trendyol ödeme dönemi (PZR-16)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const config = { kullaniciAdi: "k", parola: "p", saticiId: "123" };
+
+  it("ödeme emirlerini sayfa sayfa alır, sınırdan eski ödemede durur", async () => {
+    const gun = 86_400_000; const simdi = Date.UTC(2026, 10, 7);
+    const sayfalar = [
+      [{ id: 3, amount: 500, payoutDate: simdi - 2 * gun, status: "PAID" }, { id: 2, amount: 400, payoutDate: simdi - 9 * gun, status: "PAID" }],
+      [{ id: 1, amount: 300, payoutDate: simdi - 200 * gun, status: "PAID" }],
+      [{ id: 0, amount: 1, payoutDate: simdi - 300 * gun }],
+    ];
+    const istekler: URL[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (u: URL) => { const url = new URL(u); istekler.push(url); return Response.json({ totalPages: 3, content: sayfalar[Number(url.searchParams.get("page"))] }); }));
+    const r = await new TrendyolAdapter(0).odemeEmirleriCek(config, simdi - 120 * gun);
+    expect(r.odemeler.map((o) => o.id)).toEqual([3, 2]);
+    expect(istekler.map((u) => u.searchParams.get("page"))).toEqual(["0", "1"]);
+    expect(istekler[0].pathname).toBe("/integration/finance/che/sellers/123/payment-order");
+    expect(istekler[0].searchParams.get("size")).toBe("10");
+  });
+
+  it("ödeme kalemleri paymentOrderId ile çekilir; kesintiye ödeme no, paketler siparişe bağlanmak için döner", async () => {
+    const istekler: URL[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (u: URL) => {
+      const url = new URL(u); istekler.push(url);
+      const tur = url.searchParams.get("transactionType");
+      if (tur === "Sale") return Response.json({ totalPages: 1, content: [{ ...satis, paymentOrderId: undefined, shipmentPackageId: 555 }, { ...satis, id: "x2", commissionAmount: 0, orderNumber: "B2", shipmentPackageId: null }] });
+      if (tur === "Stoppage") return Response.json({ totalPages: 1, content: [{ id: "st", transactionDate: satis.transactionDate, debt: 3, credit: 0 }] });
+      return Response.json({ totalPages: 0, content: [] });
+    }));
+    const r = await new TrendyolAdapter(0).odemeKalemleriCek(config, "991");
+    expect(istekler.every((u) => u.searchParams.get("paymentOrderId") === "991" && !u.searchParams.has("startDate"))).toBe(true);
+    expect(r.kesintiler.map((k) => [k.hariciId, k.odemeNo])).toEqual([["ty:s:725041340:komisyon", "991"], ["ty:o:st:stopaj", "991"]]);
+    // Komisyonu sıfır satış da ödemenin paketidir.
+    expect(r.paketler).toEqual([{ siparisNo: "10293847", paketNo: "555" }, { siparisNo: "B2", paketNo: null }]);
+  });
+
+  it("pencere çekiminde kayıttaki paymentOrderId kesintiye taşınır", () => {
+    expect(settlementKesintileri("Sale", satis)[0].odemeNo).toBe("991");
+  });
+});

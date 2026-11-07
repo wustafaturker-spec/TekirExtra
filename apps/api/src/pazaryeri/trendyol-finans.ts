@@ -74,6 +74,7 @@ function ortak(k: TrendyolFinansKaydi, tur: string) {
     aciklama: [k.transactionType, k.description].filter(Boolean).join(" · ").slice(0, 500) || undefined,
     tarih: istanbulGunu(Number(k.transactionDate ?? Date.now())),
     dovizCinsi: doviz,
+    odemeNo: k.paymentOrderId != null && String(k.paymentOrderId) ? String(k.paymentOrderId) : undefined,
     hamVeri: { kaynak: tur, ...k },
   };
 }

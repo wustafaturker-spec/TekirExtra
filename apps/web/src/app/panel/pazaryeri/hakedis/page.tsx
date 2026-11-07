@@ -18,7 +18,9 @@ interface Adaylar {
   baglanti: { id: string; saglayici: string; pazaryeriCariId: string | null };
   siparisler: { id: string; siparisNo: string; faturaNo: string | null; tarih: string; tutar: string; faturaToplami: string; cari: string }[];
   kesintiler: { id: string; tur: string; sinif: string; durum: string; tarih: string; tutar: string; dovizCinsi: string; siparisNo: string | null }[];
-  oneri: { siparisIds: string[]; kesintiIds: string[]; net: string; fark: string };
+  oneri: { siparisIds: string[]; kesintiIds: string[]; net: string; fark: string; kaynak: "tahmin" | "odeme_donemi" };
+  /** PZR-16: banka girişine uyan pazaryeri ödeme dönemi. */
+  odemeDonemi: { no: string; tarih: string; tutar: string; siparisSayisi: number; kesintiSayisi: number } | null;
   uyarilar: string[];
 }
 interface Hakedis { id: string; tarih: string; saglayici: string; pazaryeriCari: string; aciklama: string; dovizCinsi: string; bankaTutari: string; siparisToplami: string; kesintiToplami: string; stopajToplami: string; fark: string; siparisSayisi: number; kesintiSayisi: number }
@@ -186,7 +188,9 @@ export default function PazaryeriHakedis() {
       {adaylar && toplam && (
         <Card title={`Hakediş: ${tarih(adaylar.satir.tarih)} · ${para(adaylar.satir.tutar, d)} · ${adaylar.satir.bankaHesap}`} pad={false}>
           <div style={{ display: "grid", gap: "0.6rem", padding: "0.75rem 1rem" }}>
-            <small className="subtle">Öneri: banka tutarına en yakın kesim tarihine kadarki siparişler ve kesintiler seçildi. Seçimi düzeltebilirsiniz.</small>
+            {adaylar.oneri.kaynak === "odeme_donemi" && adaylar.odemeDonemi
+              ? <Alert tone="success">Öneri pazaryerinin ödeme dökümünden: {saglayiciAdi(adaylar.baglanti.saglayici)} ödemesi #{adaylar.odemeDonemi.no} ({tarih(adaylar.odemeDonemi.tarih)}, {para(adaylar.odemeDonemi.tutar, d)}) — {adaylar.odemeDonemi.siparisSayisi} sipariş, {adaylar.odemeDonemi.kesintiSayisi} kesinti. Seçimi düzeltebilirsiniz.</Alert>
+              : <small className="subtle">Öneri (tahmin): banka tutarına en yakın kesim tarihine kadarki siparişler ve kesintiler seçildi. Seçimi düzeltebilirsiniz.</small>}
             {adaylar.uyarilar.map((u) => <Alert key={u} tone="warning">{u}</Alert>)}
           </div>
           <div style={{ padding: "0 1rem" }}><strong>Siparişler</strong> <small className="subtle">({siparisSecimi.size}/{adaylar.siparisler.length} seçili · tutar faturanın kalanıdır)</small></div>
