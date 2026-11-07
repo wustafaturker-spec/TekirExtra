@@ -144,7 +144,7 @@ export default function PazaryeriHakedis() {
                 <td><Button size="sm" variant={b.pazaryeriCariId ? "ghost" : "primary"} disabled={islem === `cari:${b.id}` || (cariSecimi[b.id] ?? "") === (b.pazaryeriCariId ?? "")} onClick={() => void cariKaydet(b)}>Kaydet</Button></td>
               </tr>
             ))}
-            {!baglantilar.length && <tr><td colSpan={3}>Pazaryeri bağlantısı yok.</td></tr>}
+            {!baglantilar.length && <tr><td colSpan={3}>Pazaryeri bağlantısı yok. Hakediş için önce <a href="/panel/ayarlar/pazaryerleri">Ayarlar › Pazaryerleri</a> ekranından bir bağlantı ekleyin.</td></tr>}
           </tbody>
         </TableWrap>
       </Card>
@@ -162,14 +162,15 @@ export default function PazaryeriHakedis() {
                   <td>{s.aciklama}{s.karsiUnvan && <small> · {s.karsiUnvan}</small>}</td>
                   <td className="num">{para(s.tutar, s.bankaHesap.dovizCinsi)}</td>
                   <td>{oneri ? saglayiciAdi(oneri.saglayici) : "—"}</td>
-                  <td><Button size="sm" variant={s.id === satirId ? "primary" : "ghost"} onClick={() => satirSec(s)}>{s.id === satirId ? "Seçili" : "Hakediş olarak eşleştir"}</Button></td>
+                  <td><Button size="sm" variant={s.id === satirId ? "primary" : "ghost"} disabled={!baglantilar.length} title={baglantilar.length ? undefined : "Önce bir pazaryeri bağlantısı ekleyin"} onClick={() => satirSec(s)}>{s.id === satirId ? "Seçili" : "Hakediş olarak eşleştir"}</Button></td>
                 </tr>
               );
             })}
             {!satirlar.length && <tr><td colSpan={6}>Bekleyen banka girişi yok.</td></tr>}
           </tbody>
         </TableWrap>
-        {satirId && (
+        {!baglantilar.length && satirlar.length > 0 && <div style={{ padding: "0.75rem 1rem" }}><Alert tone="warning">Pazaryeri bağlantısı olmadığı için banka girişleri hakediş olarak eşleştirilemez.</Alert></div>}
+        {satirId && baglantilar.length > 0 && (
           <div style={{ display: "flex", gap: "0.6rem", alignItems: "end", padding: "0.75rem 1rem", flexWrap: "wrap" }}>
             <Field label="Pazaryeri bağlantısı">
               <Select value={baglantiId} onChange={(e) => { setBaglantiId(e.target.value); setAdaylar(null); }}>
