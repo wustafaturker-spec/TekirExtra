@@ -194,6 +194,7 @@ model Tenant {
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
   pazaryeriKesintileri      PazaryeriKesinti[]
+  pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   bankaHesapEslemeleri      BankaBaglantiHesap[]
   bankaOdemeTalimatlari     BankaOdemeTalimati[]
   odemeTalimatiFaturalari   BankaOdemeTalimatiFatura[]
@@ -750,6 +751,23 @@ model PazaryeriKesinti {
   @@map("pazaryeri_kesintileri")
 }
 
+/// PZR-08: bağlantı başına kesinti türü → sınıf kuralı; içe aktarmada ad kalıbından önce uygulanır.
+model PazaryeriKesintiKurali {
+  id         String                 @id @default(uuid()) @db.Uuid
+  tenantId   String                 @map("tenant_id") @db.Uuid
+  baglantiId String                 @map("baglanti_id") @db.Uuid
+  tur        String
+  sinif      PazaryeriKesintiSinifi
+  createdAt  DateTime               @default(now()) @map("created_at")
+  updatedAt  DateTime               @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti Baglanti @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, baglantiId, tur])
+  @@map("pazaryeri_kesinti_kurallari")
+}
+
 /// e-posta → (tenant, user) rehberi. BİLİNÇLİ OLARAK RLS'SİZ: oturum açma
 /// anında kiracı bağlamı henüz yoktur. Parola içermez; e-posta sistem
 /// genelinde tekildir (MIMARI §7).
@@ -1070,6 +1088,7 @@ model Baglanti {
   tenant               Tenant               @relation(fields: [tenantId], references: [id])
   pazaryeriSiparises   PazaryeriSiparis[]
   pazaryeriKesintileri PazaryeriKesinti[]
+  pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   posHesaplari         PosHesap[]
   bankaHesapEslemeleri BankaBaglantiHesap[]
 

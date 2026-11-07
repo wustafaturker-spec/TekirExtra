@@ -80,7 +80,7 @@ describe("PazaryeriService", () => {
 
   it("komisyon kaydini yalnizca bir kez ice aktarir ve tekrarinda bilgileri gunceller", async () => {
     const upsert = vi.fn().mockResolvedValue({ id: "k1" });
-    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert } };
+    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert }, pazaryeriKesintiKurali: { findUnique: vi.fn().mockResolvedValue(null) } };
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
     await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "fee-1", tur: "komisyon", tarih: "2026-08-10", tutar: 24, dovizCinsi: "TRY" });
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -104,13 +104,32 @@ describe("PazaryeriService", () => {
 
   it("PZR-06: içe aktarılan kesinti sınıflanır; ceza doğrudan faturasız durumda başlar", async () => {
     const upsert = vi.fn().mockResolvedValue({ id: "k1" });
-    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert } };
+    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert }, pazaryeriKesintiKurali: { findUnique: vi.fn().mockResolvedValue(null) } };
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
     await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "f-1", tur: "Commission", tarih: "2026-08-10", tutar: 24, dovizCinsi: "TRY" });
     await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "f-2", tur: "Late shipment penalty", tarih: "2026-08-10", tutar: 10, dovizCinsi: "TRY" });
     expect(upsert.mock.calls[0][0].create).toEqual(expect.objectContaining({ sinif: "faturali", durum: "bekliyor" }));
     expect(upsert.mock.calls[1][0].create).toEqual(expect.objectContaining({ sinif: "ceza", durum: "faturasiz" }));
     expect(upsert.mock.calls[0][0].update).not.toHaveProperty("sinif");
+  });
+
+  it("PZR-08: kullanıcı kuralı ad kalıbından önce gelir", async () => {
+    const upsert = vi.fn().mockResolvedValue({ id: "k1" });
+    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert }, pazaryeriKesintiKurali: { findUnique: vi.fn().mockResolvedValue({ sinif: "diger_faturasiz" }) } };
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+    await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "f-3", tur: "Commission", tarih: "2026-08-10", tutar: 5, dovizCinsi: "TRY" });
+    expect(upsert.mock.calls[0][0].create).toEqual(expect.objectContaining({ sinif: "diger_faturasiz", durum: "faturasiz" }));
+  });
+
+  it("PZR-08: sınıf seçimi kural yazar, yalnız işlenmemiş kesintileri günceller; sınıflandırılmamış seçilemez", async () => {
+    const kuralUpsert = vi.fn().mockResolvedValue({});
+    const updateMany = vi.fn().mockResolvedValue({ count: 3 });
+    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesintiKurali: { upsert: kuralUpsert }, pazaryeriKesinti: { updateMany } };
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
+    await expect(servis.kesintiTuruSinifla({ baglantiId: siparis.baglantiId, tur: "Tax", sinif: "stopaj" })).resolves.toEqual({ guncellenen: 3 });
+    expect(kuralUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ tur: "Tax", sinif: "stopaj" }), update: { sinif: "stopaj" } }));
+    expect(updateMany).toHaveBeenCalledWith({ where: { baglantiId: siparis.baglantiId, tur: "Tax", durum: { in: ["bekliyor", "faturasiz"] }, hareketId: null }, data: { sinif: "stopaj", durum: "bekliyor" } });
+    await expect(servis.kesintiTuruSinifla({ baglantiId: siparis.baglantiId, tur: "Tax", sinif: "siniflandirilmamis" as never })).rejects.toThrow(/sınıf seçin/);
   });
 
   it("bekleyen kesintiyi kaynak referansli tediye giderine donusturur", async () => {

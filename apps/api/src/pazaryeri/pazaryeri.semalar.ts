@@ -17,6 +17,12 @@ export const pazaryeriSiparisSemasi = z.object({
   teslimatAdresi: z.record(z.string(), z.unknown()).optional(), satirlar: z.array(satir).min(1),
 });
 
+/** PZR-08: kesinti türünün sınıfı (kullanıcı seçer, kalıcı kural). */
+export const pazaryeriKesintiSinifSemasi = z.object({
+  baglantiId: z.string().uuid(), tur: z.string().min(1).max(80),
+  sinif: z.enum(["faturali", "stopaj", "ceza", "diger_faturasiz"]),
+});
+
 export const pazaryeriFaturalastirSemasi = z.object({
   siparisler: z.array(z.object({ siparisId: z.string().uuid(), cariId: z.string().uuid() })).min(1).max(100),
 });

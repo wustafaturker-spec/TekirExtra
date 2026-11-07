@@ -12,7 +12,7 @@ import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 import { pazaryeriFaturaSatirlari } from "./pazaryeri-fiyat";
-import { kesintiBaslangicDurumu, kesintiSinifiBul } from "./pazaryeri-kesinti-sinifi";
+import { kesintiBaslangicDurumu, kesintiSinifiBul, type KesintiSinifi } from "./pazaryeri-kesinti-sinifi";
 
 @Injectable()
 export class PazaryeriService {
@@ -188,12 +188,73 @@ export class PazaryeriService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const baglanti = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pazaryeri" }, select: { id: true } });
       if (!baglanti) throw new NotFoundException("Pazaryeri bağlantısı bulunamadı");
+      // PZR-08: kullanıcının bu bağlantı ve tür için seçtiği sınıf, ad kalıbından önce gelir.
+      const kural = await tx.pazaryeriKesintiKurali.findUnique({ where: { tenantId_baglantiId_tur: { tenantId, baglantiId: girdi.baglantiId, tur: girdi.tur } }, select: { sinif: true } });
+      const sinif = kural?.sinif ?? kesintiSinifiBul(girdi.tur);
       return tx.pazaryeriKesinti.upsert({
         where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId } },
         // PZR-06/08: sınıf ad kalıbından; faturasız sınıf doğrudan `faturasiz`. Güncellemede sınıf/duruma dokunulmaz (kullanıcı seçimi korunur).
-        create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined, sinif: kesintiSinifiBul(girdi.tur), durum: kesintiBaslangicDurumu(kesintiSinifiBul(girdi.tur)) },
+        create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined, sinif, durum: kesintiBaslangicDurumu(sinif) },
         update: { ...(girdi.siparisNo ? { siparisNo: girdi.siparisNo } : {}), tur: girdi.tur, aciklama: girdi.aciklama, tarih: new Date(girdi.tarih), ...(girdi.hamVeri ? { hamVeri: girdi.hamVeri as Prisma.InputJsonValue } : {}) },
       });
+    });
+  }
+
+  /**
+   * PZR-08: kesinti türleri (bağlantı + tür adı) ve geçerli sınıfları. `kural`:
+   * kullanıcı seçti; değilse ad kalıbından. Adet/tutar işlenmemiş (bekleyen,
+   * faturasız) kesintiler içindir.
+   */
+  async kesintiTurleri() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [gruplar, kurallar, baglantilar] = await Promise.all([
+        tx.pazaryeriKesinti.groupBy({ by: ["baglantiId", "tur", "sinif", "dovizCinsi"], where: { durum: { in: ["bekliyor", "faturasiz"] } }, _count: { _all: true }, _sum: { tutar: true } }),
+        tx.pazaryeriKesintiKurali.findMany({ select: { baglantiId: true, tur: true, sinif: true, updatedAt: true } }),
+        tx.baglanti.findMany({ where: { aile: "pazaryeri" }, select: { id: true, saglayici: true } }),
+      ]);
+      const kuralHaritasi = new Map(kurallar.map((k) => [`${k.baglantiId}|${k.tur}`, k]));
+      const saglayici = new Map(baglantilar.map((b) => [b.id, b.saglayici]));
+      const turler = new Map<string, { baglantiId: string; saglayici: string; tur: string; sinif: KesintiSinifi; kural: boolean; adet: number; tutarlar: Record<string, string> }>();
+      for (const g of gruplar) {
+        const anahtar = `${g.baglantiId}|${g.tur}`;
+        const kural = kuralHaritasi.get(anahtar);
+        const t = turler.get(anahtar) ?? { baglantiId: g.baglantiId, saglayici: saglayici.get(g.baglantiId) ?? "", tur: g.tur, sinif: (kural?.sinif ?? g.sinif) as KesintiSinifi, kural: Boolean(kural), adet: 0, tutarlar: {} };
+        t.adet += g._count._all;
+        t.tutarlar[g.dovizCinsi] = new Prisma.Decimal(t.tutarlar[g.dovizCinsi] ?? 0).add(g._sum.tutar ?? 0).toFixed(2);
+        turler.set(anahtar, t);
+      }
+      // İşlenmemiş kesintisi kalmamış kurallar da görünür (düzeltilebilsin).
+      for (const k of kurallar) {
+        const anahtar = `${k.baglantiId}|${k.tur}`;
+        if (!turler.has(anahtar)) turler.set(anahtar, { baglantiId: k.baglantiId, saglayici: saglayici.get(k.baglantiId) ?? "", tur: k.tur, sinif: k.sinif as KesintiSinifi, kural: true, adet: 0, tutarlar: {} });
+      }
+      return [...turler.values()].sort((a, b) => Number(b.sinif === "siniflandirilmamis") - Number(a.sinif === "siniflandirilmamis") || b.adet - a.adet || a.tur.localeCompare(b.tur, "tr"));
+    });
+  }
+
+  /**
+   * PZR-08: türün sınıfını seçer ve kalıcı kural yapar. O bağlantıdaki aynı
+   * türün işlenmemiş (bekleyen ya da faturasız) kesintileri yeni sınıfa ve
+   * başlangıç durumuna geçer; giderleştirilmiş ya da faturayla eşleşmiş
+   * kayıtlara dokunulmaz.
+   */
+  async kesintiTuruSinifla(girdi: { baglantiId: string; tur: string; sinif: KesintiSinifi }) {
+    const { tenantId } = aktifBaglam();
+    if (girdi.sinif === "siniflandirilmamis") throw new BadRequestException("Bir sınıf seçin");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const baglanti = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pazaryeri" }, select: { id: true } });
+      if (!baglanti) throw new NotFoundException("Pazaryeri bağlantısı bulunamadı");
+      await tx.pazaryeriKesintiKurali.upsert({
+        where: { tenantId_baglantiId_tur: { tenantId, baglantiId: girdi.baglantiId, tur: girdi.tur } },
+        create: { tenantId, baglantiId: girdi.baglantiId, tur: girdi.tur, sinif: girdi.sinif },
+        update: { sinif: girdi.sinif },
+      });
+      const { count } = await tx.pazaryeriKesinti.updateMany({
+        where: { baglantiId: girdi.baglantiId, tur: girdi.tur, durum: { in: ["bekliyor", "faturasiz"] }, hareketId: null },
+        data: { sinif: girdi.sinif, durum: kesintiBaslangicDurumu(girdi.sinif) },
+      });
+      return { guncellenen: count };
     });
   }
 

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi } from "./pazaryeri.semalar";
 import { PazaryeriService } from "./pazaryeri.service";
 
 @Controller("pazaryeri")
@@ -50,6 +50,20 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.kesintiIceAktar(sonuc.data);
   }
+  /** PZR-08: kesinti türleri ve sınıfları. */
+  @Get("kesintiler/turler") @Roller("yonetici", "muhasebe")
+  kesintiTurleri() {
+    return this.service.kesintiTurleri();
+  }
+
+  /** PZR-08: türün sınıfını seç (kalıcı kural; işlenmemiş kesintiler güncellenir). */
+  @Post("kesintiler/turler/sinif") @Roller("yonetici", "muhasebe")
+  kesintiTuruSinifla(@Body() govde: unknown) {
+    const sonuc = pazaryeriKesintiSinifSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.service.kesintiTuruSinifla(sonuc.data);
+  }
+
   @Post("kesintiler/giderlestir") @Roller("yonetici", "muhasebe")
   kesintileriGiderlestir(@Body() govde: unknown) {
     const sonuc = pazaryeriKesintiGiderlestirSemasi.safeParse(govde);
