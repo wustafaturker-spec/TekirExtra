@@ -74,6 +74,8 @@ enum PazaryeriKesintiDurumu {
   faturasiz
   /// PZR-10: faturasız kesinti masraf kaydına dönüştü (masraf iptal edilirse faturasız'a döner).
   masrafa_donustu
+  /// PZR-13: hakedişe giren stopaj, pazaryeri carisinden 193'e mahsupla kaydedildi.
+  hakediste_kaydedildi
 }
 
 /// PZR-06/08: kesinti sınıfı; giderleştirme yalnız stopajda.
@@ -196,6 +198,7 @@ model Tenant {
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
   pazaryeriKesintileri      PazaryeriKesinti[]
+  pazaryeriHakedisleri PazaryeriHakedis[]
   pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   bankaHesapEslemeleri      BankaBaglantiHesap[]
   bankaOdemeTalimatlari     BankaOdemeTalimati[]
@@ -694,6 +697,10 @@ model PazaryeriSiparis {
   fatura   Fatura?                  @relation(fields: [faturaId], references: [id])
   satirlar PazaryeriSiparisSatiri[]
 
+  /// PZR-13: siparişin tahsil edildiği hakediş.
+  hakedisId     String?  @map("hakedis_id") @db.Uuid
+  hakedis       PazaryeriHakedis? @relation(fields: [hakedisId], references: [id], onDelete: SetNull)
+
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, durum, siparisTarihi])
   @@map("pazaryeri_siparisleri")
@@ -744,6 +751,8 @@ model PazaryeriKesinti {
   gelenEbelgeId String?             @map("gelen_ebelge_id") @db.Uuid
   /// PZR-10: faturasız kesintinin dönüştüğü masraf kaydı.
   masrafId   String?                @unique @map("masraf_id") @db.Uuid
+  /// PZR-13: kesintinin netleştiği hakediş.
+  hakedisId  String?                @map("hakedis_id") @db.Uuid
   hamVeri    Json?                  @map("ham_veri")
   createdAt  DateTime               @default(now()) @map("created_at")
   updatedAt  DateTime               @updatedAt @map("updated_at")
@@ -753,11 +762,41 @@ model PazaryeriKesinti {
   hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
   gelenEbelge GelenEbelge?    @relation(fields: [gelenEbelgeId], references: [id], onDelete: SetNull)
   masraf      Masraf?         @relation(fields: [masrafId], references: [id], onDelete: SetNull)
+  hakedis     PazaryeriHakedis? @relation(fields: [hakedisId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, gelenEbelgeId])
   @@index([tenantId, durum, tarih])
   @@map("pazaryeri_kesintileri")
+}
+
+/// PZR-13: pazaryerinin toplu ödemesi (hakediş) ile siparişlerin ve kesintilerin mutabakatı.
+model PazaryeriHakedis {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  baglantiId       String   @map("baglanti_id") @db.Uuid
+  ekstreSatirId    String   @unique @map("ekstre_satir_id") @db.Uuid
+  bankaHareketId   String   @unique @map("banka_hareket_id") @db.Uuid
+  pazaryeriCariId  String   @map("pazaryeri_cari_id") @db.Uuid
+  tarih            DateTime @db.Date
+  dovizCinsi       String   @map("doviz_cinsi") @db.VarChar(3)
+  bankaTutari      Decimal  @map("banka_tutari") @db.Decimal(15, 2)
+  siparisToplami   Decimal  @map("siparis_toplami") @db.Decimal(15, 2)
+  kesintiToplami   Decimal  @map("kesinti_toplami") @db.Decimal(15, 2)
+  stopajToplami    Decimal  @map("stopaj_toplami") @db.Decimal(15, 2)
+  fark             Decimal  @db.Decimal(15, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti     Baglanti            @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  ekstreSatir  BankaEkstreSatir    @relation(fields: [ekstreSatirId], references: [id])
+  bankaHareketi KasaBankaHareket   @relation("HakedisBankaHareketi", fields: [bankaHareketId], references: [id])
+  pazaryeriCari CariHesap          @relation("HakedisPazaryeriCarisi", fields: [pazaryeriCariId], references: [id])
+  siparisler   PazaryeriSiparis[]
+  kesintiler   PazaryeriKesinti[]
+
+  @@index([tenantId, baglantiId, tarih])
+  @@map("pazaryeri_hakedisleri")
 }
 
 /// PZR-08: bağlantı başına kesinti türü → sınıf kuralı; içe aktarmada ad kalıbından önce uygulanır.
@@ -1093,12 +1132,16 @@ model Baglanti {
   otomatikDurduNedeni  String?        @map("otomatik_durdu_nedeni")
   /// PZR-07: pazaryerinin komisyon e-Faturasını kesen VKN (yalnız pazaryeri bağlantısı).
   faturaKesenVkn       String?        @map("fatura_kesen_vkn") @db.VarChar(11)
+  /// PZR-13: hakedişin kapandığı pazaryeri carisi (komisyon faturaları ve kesinti masrafları da burada).
+  pazaryeriCariId      String?        @map("pazaryeri_cari_id") @db.Uuid
+  pazaryeriCari        CariHesap?     @relation("BaglantiPazaryeriCarisi", fields: [pazaryeriCariId], references: [id], onDelete: SetNull)
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
   tenant               Tenant               @relation(fields: [tenantId], references: [id])
   pazaryeriSiparises   PazaryeriSiparis[]
   pazaryeriKesintileri PazaryeriKesinti[]
+  pazaryeriHakedisleri PazaryeriHakedis[]
   pazaryeriKesintiKurallari PazaryeriKesintiKurali[]
   posHesaplari         PosHesap[]
   bankaHesapEslemeleri BankaBaglantiHesap[]
@@ -1769,6 +1812,8 @@ model CariHesap {
   birlestigiCariId      String?        @map("birlestigi_cari_id") @db.Uuid
   kapamalar             FaturaKapama[]
 
+  pazaryeriHakedisleri PazaryeriHakedis[] @relation("HakedisPazaryeriCarisi")
+  pazaryeriBaglantilari Baglanti[] @relation("BaglantiPazaryeriCarisi")
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
   @@index([tenantId, grupId])
@@ -4313,6 +4358,8 @@ enum EkstreEslesmeTuru {
   doviz_islem
   /// KRD-04: banka kredisi kullanımı, taksiti ya da rotatif işlemi.
   kredi
+  /// PZR-13: pazaryerinin toplu ödemesi (hakediş).
+  pazaryeri_hakedis
 }
 
 enum EkstreKuralYonu {
@@ -4404,6 +4451,7 @@ model BankaEkstreSatir {
   /// Bir satır birden çok harekete bağlanabilir (çoklu fatura dağıtımı, virman).
   hareketler KasaBankaHareket[]
 
+  pazaryeriHakedis PazaryeriHakedis?
   @@unique([tenantId, bankaHesapId, satirOzeti])
   @@index([tenantId, durum])
   @@map("banka_ekstre_satirlari")
@@ -4466,6 +4514,7 @@ model KasaBankaHareket {
 
   kapamalar FaturaKapama[]
 
+  pazaryeriHakedis PazaryeriHakedis? @relation("HakedisBankaHareketi")
   @@unique([tenantId, makbuzNo])
   @@index([tenantId, tarih])
   @@index([tenantId, projeId])

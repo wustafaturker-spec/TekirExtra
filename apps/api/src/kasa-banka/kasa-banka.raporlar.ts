@@ -80,6 +80,7 @@ const KAYNAK_ADI: Record<string, string> = {
   faturasiz_gelir: "Faaliyet dışı gelir",
   pazaryeri_kesinti: "Pazaryeri kesintisi",
   pazaryeri_stopaj: "Pazaryeri stopajı (mahsup edilecek)",
+  pazaryeri_hakedis: "Pazaryeri hakedişi",
   personel_maas: "Personel maaşı",
   personel_maas_iptal: "Maaş iptali",
   personel_avans: "Personel avansı",

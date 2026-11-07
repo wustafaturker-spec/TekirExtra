@@ -1091,6 +1091,7 @@ export class KasaBankaService {
     if (h.kaynakTur === "pos_mutabakat") return "POS mutabakatı (Banka Ekstresi ekranı)";
     if (h.krediKartiOdemesi || h.kaynakTur === "kredi_karti_ekstre") return "Kredi Kartları ekranı";
     if (h.gelirKaydi || h.kaynakTur === "faturasiz_gelir") return "Faaliyet Dışı Gelirler ekranı";
+    if (h.kaynakTur === "pazaryeri_hakedis") return "Pazaryeri Hakedişleri ekranı ya da Banka Ekstresi (eşleşmeyi geri alın)";
     if (h.pazaryeriKesinti || h.kaynakTur === "pazaryeri_kesinti" || h.kaynakTur === "pazaryeri_stopaj") return "Pazaryeri Kesintileri ekranı";
     if (h.kaynakTur === "cek_senet") return "Çek & Senetler ekranı";
     if (h.kaynakTur === "odeme_talimati") return "Ödeme Talimatları ekranı (gerçekleşmeyi geri alın)";

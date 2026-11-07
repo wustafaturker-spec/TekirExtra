@@ -23,6 +23,7 @@ export const KAYNAK_ADLARI: Record<string, string> = {
   odeme_talimati: "Ödeme talimatı",
   pazaryeri_kesinti: "Pazaryeri kesintisi",
   pazaryeri_stopaj: "Pazaryeri stopajı (mahsup edilecek)",
+  pazaryeri_hakedis: "Pazaryeri hakedişi",
 };
 
 export function kaynakAdi(kaynakTur: string): string | null {

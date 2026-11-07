@@ -63,6 +63,8 @@ export function hareketTuruEtiketi(h: { kaynakTur: string; tip: "borc" | "alacak
       return "Pazaryeri kesintisi";
     case "pazaryeri_stopaj":
       return "Pazaryeri stopajı";
+    case "pazaryeri_hakedis":
+      return "Pazaryeri hakedişi";
     default:
       if (h.kaynakTur.startsWith("bordro")) return "Bordro";
       if (h.kaynakTur.startsWith("personel")) return "Personel";

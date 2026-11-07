@@ -564,7 +564,7 @@ export class FaturaService {
               cekSenet: { select: { id: true, tur: true, portfoyNo: true, islemTarihi: true } },
               iadeFatura: { select: { id: true, no: true, tarih: true } },
               mahsup: { select: { id: true, tarih: true, otomatik: true } },
-              cariHareket: { select: { id: true, tarih: true } },
+              cariHareket: { select: { id: true, tarih: true, kaynakTur: true } },
             },
           },
           iadeKapamalari: { include: { fatura: { select: { id: true, no: true, tarih: true } } } },
@@ -1174,7 +1174,8 @@ export class FaturaService {
         tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
         // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
         // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
-        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, cariHareketId: null } }),
+        // PZR-13: pazaryeri hakedişinin kapaması da bağlı ödemedir (önce hakediş geri alınır).
+        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, OR: [{ cariHareketId: null }, { cariHareket: { kaynakTur: "pazaryeri_hakedis" } }] } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
         throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura doğrudan iptal edilemez; önce finans hareketini ya da mahsubu geri alın veya iade faturası düzenleyin");
@@ -1279,7 +1280,8 @@ export class FaturaService {
         tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
         // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
         // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
-        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, cariHareketId: null } }),
+        // PZR-13: pazaryeri hakedişinin kapaması da bağlı ödemedir (önce hakediş geri alınır).
+        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, OR: [{ cariHareketId: null }, { cariHareket: { kaynakTur: "pazaryeri_hakedis" } }] } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
         throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura taslağa geri alınamaz; önce finans hareketini ya da mahsubu geri alın");

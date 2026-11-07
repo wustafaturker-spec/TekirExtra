@@ -64,3 +64,11 @@ export const pazaryeriKesintiGiderlestirSemasi = z.object({
   bankaHesapId: z.string().uuid().optional(),
   kur: z.number().positive().optional(),
 }).refine((g) => Boolean(g.kasaId) !== Boolean(g.bankaHesapId), "Kasa veya banka hesabından yalnızca biri seçilmelidir");
+
+/** PZR-13: bağlantının pazaryeri carisi (hakediş alacağı bu cariye aktarılır). */
+export const pazaryeriCariSemasi = z.object({ cariId: z.string().uuid().nullable() });
+/** PZR-13: banka girişini hakediş olarak kaydet. */
+export const pazaryeriHakedisSemasi = z.object({
+  ekstreSatirId: z.string().uuid(), baglantiId: z.string().uuid(),
+  siparisIds: z.array(z.string().uuid()).max(5000), kesintiIds: z.array(z.string().uuid()).max(5000),
+}).refine((g) => g.siparisIds.length > 0, { message: "En az bir sipariş seçin" });

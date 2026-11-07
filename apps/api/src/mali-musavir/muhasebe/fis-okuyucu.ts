@@ -14,8 +14,7 @@ import type {
   HesapBilgi,
   KartGirdisi,
   MasrafGirdisi,
-  UreticiGirdisi,
-} from "./fis-uretici";
+  UreticiGirdisi, HakedisGirdisi } from "./fis-uretici";
 import { kurFarkiKalemleri } from "../../fatura/kur-farki-kalem";
 
 /**
@@ -64,6 +63,19 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   const cariDuzeltmeleri = await tx.cariHareket.findMany({ where: { tarih: aralik, kaynakTur: "manuel" }, orderBy: { tarih: "asc" } });
   // KSB-28: faturası kesilmeden kapatılan kur farkları (yurt dışı ya da önemsiz) 646/656'ya gider.
   const kapatilanKurFarklari = (await kurFarkiKalemleri(tx, tenantId, { durum: "islenen", baslangic, bitis })).filter((k) => k.kapandi);
+  // PZR-13: pazaryeri hakedişleri (aktarım, stopaj mahsubu, kesinti netleştirme); kur banka tahsilatınınki.
+  const hakedisler = await tx.pazaryeriHakedis.findMany({
+    where: { tarih: aralik }, orderBy: { tarih: "asc" },
+    include: {
+      baglanti: { select: { saglayici: true } }, bankaHareketi: { select: { kur: true } },
+      kesintiler: { select: { sinif: true, tutar: true } },
+    },
+  });
+  // Aktarılan tutar faturanın hakediş anındaki kalanıdır; müşteri tarafındaki aktarım hareketinden okunur.
+  const hakedisAktarimlari = hakedisler.length ? await tx.cariHareket.findMany({
+    where: { kaynakTur: "pazaryeri_hakedis", tip: "alacak", kaynakRef: { in: hakedisler.map((h) => h.id) } },
+    select: { cariId: true, kaynakRef: true, tutarTry: true, aciklama: true },
+  }) : [];
   // KSB-25: geri alınmamış alış–satış mahsupları; taraflar fatura kurlarıyla TL'ye çevrilir.
   const mahsuplar = await tx.cariMahsup.findMany({
     where: { tarih: aralik, geriAlindiAt: null }, orderBy: { tarih: "asc" },
@@ -257,6 +269,15 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
       id: k.hareketId, cariId: k.cari.id, taraf: k.fatura.tip === "satis" || k.fatura.tip === "alis_iade" ? "alici" : "satici",
       tarih: k.tarih, tutar: new Prisma.Decimal(k.kurFarkiTry).abs(), lehimize: k.yon === "biz_keseriz", faturaNo: k.fatura.no,
     })),
+    pazaryeriHakedisleri: hakedisler.map((h): HakedisGirdisi => {
+      const tl = (v: Prisma.Decimal) => v.mul(h.bankaHareketi.kur).toDecimalPlaces(2);
+      const toplam = (siniflar: string[]) => tl(h.kesintiler.filter((k) => siniflar.includes(k.sinif)).reduce((t, k) => t.add(k.tutar), new Prisma.Decimal(0)));
+      return {
+        id: h.id, tarih: gun(h.tarih), pazaryeriCariId: h.pazaryeriCariId, saglayici: h.baglanti.saglayici,
+        aktarimlar: hakedisAktarimlari.filter((a) => a.kaynakRef === h.id && a.cariId !== h.pazaryeriCariId).map((a) => ({ cariId: a.cariId, tutar: a.tutarTry, aciklama: a.aciklama ?? "Pazaryeri hakediş aktarımı" })),
+        stopaj: toplam(["stopaj"]), netlesenKesinti: toplam(["faturali", "ceza", "diger_faturasiz"]),
+      };
+    }),
     cariMahsuplari: mahsuplar.map((m): CariMahsupGirdisi => {
       const tl = (tipler: string[]) => m.kapamalar.filter((k) => tipler.includes(k.fatura.tip))
         .reduce((t, k) => t.add(k.tutar.mul(k.fatura.dovizCinsi === "TRY" ? 1 : k.fatura.kur).toDecimalPlaces(2)), new Prisma.Decimal(0));

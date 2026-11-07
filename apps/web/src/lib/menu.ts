@@ -115,7 +115,8 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/crm", ikon: Target, baslik: "CRM Satış Hunisi", eslesme: "tam", esanlamlilar: ["fırsat", "pipeline", "aday"] },
       { href: "/panel/b2b", ikon: Store, baslik: "B2B Bayi Portalı", eslesme: "tam", esanlamlilar: ["bayi", "katalog"] },
       { href: "/panel/pazaryeri", ikon: Package, baslik: "Pazaryeri Siparişleri", eslesme: "tam", esanlamlilar: ["trendyol", "hepsiburada", "n11", "amazon"] },
-      { href: "/panel/pazaryeri/kesintiler", ikon: Percent, baslik: "Pazaryeri Kesintileri", eslesme: "tam", esanlamlilar: ["komisyon", "hakediş"] },
+      { href: "/panel/pazaryeri/kesintiler", ikon: Percent, baslik: "Pazaryeri Kesintileri", eslesme: "tam", esanlamlilar: ["komisyon", "stopaj"] },
+      { href: "/panel/pazaryeri/hakedis", ikon: Landmark, baslik: "Pazaryeri Hakedişi", eslesme: "tam", esanlamlilar: ["hakediş", "pazaryeri ödemesi", "banka mutabakatı"] },
     ],
   },
   {

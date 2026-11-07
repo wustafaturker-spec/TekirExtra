@@ -26,7 +26,7 @@ export interface FisSatiri {
 }
 
 export interface Kaynak {
-  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas" | "cari_mahsup" | "kur_farki";
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro" | "amortisman" | "demirbas" | "cari_mahsup" | "kur_farki" | "pazaryeri_hakedis";
   id: string;
   etiket: string;
 }
@@ -146,6 +146,22 @@ export interface KurFarkiKapamaGirdisi {
   id: string; cariId: string; taraf: "alici" | "satici"; tarih: string; tutar: Prisma.Decimal; lehimize: boolean; faturaNo: string | null;
 }
 
+/**
+ * PZR-13: pazaryeri hakedişinin mahsup fişi (banka tahsilatının fişi hareketten
+ * ayrıca üretilir: 102 / 120-pazaryeri). Tutarlar TL.
+ */
+export interface HakedisGirdisi {
+  id: string;
+  tarih: string;
+  pazaryeriCariId: string;
+  saglayici: string;
+  /** Son müşteriden pazaryeri carisine aktarılan sipariş alacakları. */
+  aktarimlar: { cariId: string; tutar: Prisma.Decimal; aciklama: string }[];
+  stopaj: Prisma.Decimal;
+  /** Pazaryeri carisinde netleşen kesintiler (komisyon faturası, kesinti masrafı): 320 → 120. */
+  netlesenKesinti: Prisma.Decimal;
+}
+
 export interface CariMahsupGirdisi {
   id: string; cariId: string; tarih: string; dovizCinsi: string; tutar: Prisma.Decimal;
   satisTry: Prisma.Decimal; alisTry: Prisma.Decimal; faturaNolari: string[];
@@ -190,6 +206,7 @@ export interface UreticiGirdisi {
   demirbasCikislari?: DemirbasCikisGirdisi[];
   cariMahsuplari?: CariMahsupGirdisi[];
   kurFarkiKapamalari?: KurFarkiKapamaGirdisi[];
+  pazaryeriHakedisleri?: HakedisGirdisi[];
   baslangic: string;
   bitis: string;
 }
@@ -444,6 +461,8 @@ function hareketKarsisi(h: HareketGirdisi, g: UreticiGirdisi, c: HesapCozucu): K
   if (h.kaynakTur === "pazaryeri_kesinti") return { kod: c.kod("pazaryeri_kesinti") };
   // PZR-09: e-ticaret stopajı gider değil, mahsup edilecek peşin vergidir.
   if (h.kaynakTur === "pazaryeri_stopaj") return { kod: c.kod("pesin_vergi") };
+  // PZR-13: hakediş tahsilatı pazaryerinin alıcı (120) hesabını kapatır.
+  if (h.kaynakTur === "pazaryeri_hakedis" && h.cariId) return { kod: c.cari(h.cariId, "alici") };
   // PRS-19: maaş ödemesi 335'i, avans ödemesi 196'yı kapatır; iptalleri aynı hesabın tersidir.
   if (h.kaynakTur === "personel_maas" || h.kaynakTur === "personel_maas_iptal") return { kod: c.personel("personel_borc", h.cariId ? g.personelCarileri?.get(h.cariId) : undefined) };
   if (h.kaynakTur === "personel_avans" || h.kaynakTur === "personel_avans_iptal") return { kod: c.personel("personel_avans", h.cariId ? g.personelCarileri?.get(h.cariId) : undefined) };
@@ -598,6 +617,19 @@ function cariMahsupFisi(m: CariMahsupGirdisi, c: HesapCozucu): Fis {
   return { tarih: m.tarih, tur: "mahsup", aciklama: `Alış–satış mahsubu ${aciklama}`, belgeNo: null, kaynak, satirlar };
 }
 
+function hakedisFisi(h: HakedisGirdisi, c: HesapCozucu): Fis | null {
+  const pazaryeri = c.cariAdi(h.pazaryeriCariId);
+  const kaynak: Kaynak = { tur: "pazaryeri_hakedis", id: h.id, etiket: `Pazaryeri hakedişi ${pazaryeri}`.trim() };
+  const aciklama = `${pazaryeri} · ${h.saglayici} hakedişi`.slice(0, 200);
+  const alici = c.cari(h.pazaryeriCariId, "alici");
+  const satirlar: FisSatiri[] = [];
+  for (const a of h.aktarimlar) if (a.tutar.gt(0)) satirlar.push(borc(alici, a.aciklama.slice(0, 200), a.tutar), alacak(c.cari(a.cariId, "alici"), a.aciklama.slice(0, 200), a.tutar));
+  if (h.stopaj.gt(0)) satirlar.push(borc(c.kod("pesin_vergi"), `${aciklama} e-ticaret stopajı`, h.stopaj), alacak(alici, `${aciklama} e-ticaret stopajı`, h.stopaj));
+  if (h.netlesenKesinti.gt(0)) satirlar.push(borc(c.cari(h.pazaryeriCariId, "satici"), `${aciklama} kesinti netleştirme`, h.netlesenKesinti), alacak(alici, `${aciklama} kesinti netleştirme`, h.netlesenKesinti));
+  if (!satirlar.length) return null;
+  return { tarih: h.tarih, tur: "mahsup", aciklama: `Pazaryeri hakedişi ${aciklama}`, belgeNo: null, kaynak, satirlar };
+}
+
 function kurFarkiKapamaFisi(k: KurFarkiKapamaGirdisi, c: HesapCozucu): Fis {
   const cariAd = c.cariAdi(k.cariId);
   const kaynak: Kaynak = { tur: "kur_farki", id: k.id, etiket: `Kur farkı ${k.faturaNo ?? ""} ${cariAd}`.trim() };
@@ -699,8 +731,9 @@ export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kon
   for (const a of g.amortismanlar ?? []) ekle(amortismanFisi(a, c));
   for (const d of g.demirbasCikislari ?? []) ekle(demirbasCikisFisi(d, c));
   for (const m of g.cariMahsuplari ?? []) ekle(cariMahsupFisi(m, c));
+  for (const h of g.pazaryeriHakedisleri ?? []) { const f = hakedisFisi(h, c); if (f) ekle(f); }
   for (const k of g.kurFarkiKapamalari ?? []) ekle(kurFarkiKapamaFisi(k, c));
-  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, cari_mahsup: 7, kur_farki: 8, bordro: 9, hareket: 10, demirbas: 11, amortisman: 12 };
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, cari_mahsup: 7, kur_farki: 8, pazaryeri_hakedis: 9, bordro: 10, hareket: 11, demirbas: 12, amortisman: 13 };
   fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
   return { fisler, kontroller };
 }

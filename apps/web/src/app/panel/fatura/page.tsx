@@ -237,7 +237,7 @@ interface FaturaDetay extends Fatura {
       id: string;
       tutar: string;
       otomatik: boolean;
-      kaynakTur: "kasa_banka" | "kredi_karti" | "cek_senet" | "iade_fatura" | "kapatilan_fatura" | "mahsup" | "kur_farki_karsiligi" | "bilinmiyor";
+      kaynakTur: "kasa_banka" | "kredi_karti" | "cek_senet" | "iade_fatura" | "kapatilan_fatura" | "mahsup" | "kur_farki_karsiligi" | "pazaryeri_hakedis" | "bilinmiyor";
       kaynakId: string | null;
       tarih: string | null;
       etiket: string;

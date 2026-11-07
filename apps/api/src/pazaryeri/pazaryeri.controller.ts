@@ -1,13 +1,14 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi, pazaryeriGiderGeriAlSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi, pazaryeriGiderGeriAlSemasi, pazaryeriCariSemasi, pazaryeriHakedisSemasi } from "./pazaryeri.semalar";
+import { PazaryeriHakedisService } from "./pazaryeri-hakedis.service";
 import { PazaryeriEslestirmeService } from "./pazaryeri-eslestirme.service";
 import { PazaryeriService } from "./pazaryeri.service";
 
 @Controller("pazaryeri")
 export class PazaryeriController {
-  constructor(private readonly service: PazaryeriService, private readonly eslestirme: PazaryeriEslestirmeService) {}
+  constructor(private readonly service: PazaryeriService, private readonly eslestirme: PazaryeriEslestirmeService, private readonly hakedis: PazaryeriHakedisService) {}
   // Müşterinin adı, telefonu, TCKN/VKN'si ve adresi döner; ekran yalnız muhasebede.
   @Get("siparisler") @Roller("muhasebe") listele(@Query("durum") durum?: string) { return this.service.listele(durum); }
   @Post("siparisler/ice-aktar") @Roller("yonetici")
@@ -136,5 +137,43 @@ export class PazaryeriController {
     const sonuc = z.object({ baglantiId: z.string().uuid().optional() }).safeParse(govde ?? {});
     if (!sonuc.success) throw new BadRequestException("Geçersiz bağlantı");
     return this.service.kesintileriSenkronizeEt(sonuc.data.baglantiId);
+  }
+
+  /** PZR-13: bağlantılar ve pazaryeri carileri. */
+  @Get("hakedis/baglantilar") @Roller("yonetici", "muhasebe")
+  hakedisBaglantilari() { return this.hakedis.baglantilar(); }
+
+  @Post("baglantilar/:id/pazaryeri-cari") @Roller("yonetici", "muhasebe")
+  pazaryeriCarisiAyarla(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = pazaryeriCariSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.hakedis.pazaryeriCarisiAyarla(id, sonuc.data.cariId);
+  }
+
+  /** PZR-13: hakediş olabilecek bekleyen banka girişleri. */
+  @Get("hakedis/ekstre-satirlari") @Roller("yonetici", "muhasebe")
+  hakedisEkstreSatirlari() { return this.hakedis.ekstreSatirlari(); }
+
+  @Get("hakedis/adaylar") @Roller("yonetici", "muhasebe")
+  hakedisAdaylari(@Query("ekstreSatirId") ekstreSatirId: string, @Query("baglantiId") baglantiId: string) {
+    if (!z.string().uuid().safeParse(ekstreSatirId).success || !z.string().uuid().safeParse(baglantiId).success) throw new BadRequestException("Ekstre satırı ve bağlantı seçin");
+    return this.hakedis.adaylar(ekstreSatirId, baglantiId);
+  }
+
+  @Post("hakedis") @Roller("yonetici", "muhasebe")
+  hakedisKaydet(@Body() govde: unknown) {
+    const sonuc = pazaryeriHakedisSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.hakedis.kaydet(sonuc.data);
+  }
+
+  @Get("hakedis") @Roller("yonetici", "muhasebe")
+  hakedisListesi() { return this.hakedis.liste(); }
+
+  @Post("hakedis/:id/geri-al") @Roller("yonetici", "muhasebe")
+  hakedisGeriAl(@Param("id") id: string) {
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz hakediş");
+    return this.hakedis.geriAl(id);
   }
 }

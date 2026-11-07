@@ -35,6 +35,7 @@ import { KrediService } from "./kredi.service";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { z as zod } from "zod";
 import { kiraciSaglayicisi } from "../ai/saglayici/kiraci-saglayici";
+import { hakedisGeriAlTx } from "../pazaryeri/hakedis-kayit";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const GUN = 86_400_000;
@@ -457,6 +458,10 @@ export class EkstreEslestirmeService {
         await this.posMutabakatiniSil(tx, tenantId, idler);
       } else if (tur === "kredi") {
         for (const hareketId of idler) await this.kredi.islemSilTx(tx, hareketId);
+      } else if (tur === "pazaryeri_hakedis") {
+        // PZR-13: hakedişin banka tahsilatı, cari aktarımları, stopaj mahsubu ve kapamaları birlikte geri alınır.
+        const hakedis = await tx.pazaryeriHakedis.findUnique({ where: { ekstreSatirId: id }, select: { id: true } });
+        if (hakedis) await hakedisGeriAlTx(tx, tenantId, hakedis.id);
       } else if (tur !== "cek" && tur !== "kredi_karti") {
         let silinecek = idler;
         if (tur === "virman") {

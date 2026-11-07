@@ -27,7 +27,7 @@ export async function kurFarkiKarsiligiYaz(tx: Tx, tenantId: string, faturaId: s
   const f = await tx.fatura.findUnique({ where: { id: faturaId }, select: { id: true, no: true, tip: true, durum: true, dovizCinsi: true, cariId: true, tarih: true, genelToplam: true } });
   if (!f || f.durum !== "kesin" || f.dovizCinsi !== "TRY" || !["satis", "alis"].includes(f.tip) || !f.genelToplam.gt(0)) return false;
   if (!(await kurFarkiFaturasiMi(tx, faturaId))) return false;
-  if (await tx.faturaKapama.count({ where: { faturaId, cariHareketId: { not: null } } })) return false;
+  if (await tx.faturaKapama.count({ where: { faturaId, cariHareket: { kaynakTur: KUR_FARKI_KARSILIGI } } })) return false;
   // Satış faturası cariyi borçlandırır; karşılığı alacak. Alış tersi.
   const hareket = await tx.cariHareket.create({
     data: {
@@ -42,7 +42,8 @@ export async function kurFarkiKarsiligiYaz(tx: Tx, tenantId: string, faturaId: s
 
 /** Fatura iptal/taslağa geri alınırken ya da eşleşme çözülürken: kapama silinir, karşılık hareketi ters kayıtla kapanır. */
 export async function kurFarkiKarsiliginiCoz(tx: Tx, tenantId: string, faturaId: string): Promise<void> {
-  const kapamalar = await tx.faturaKapama.findMany({ where: { faturaId, cariHareketId: { not: null } }, include: { cariHareket: true } });
+  // PZR-13: hakediş aktarımı da cari harekete bağlı kapamadır; yalnız kur farkı karşılığı çözülür.
+  const kapamalar = await tx.faturaKapama.findMany({ where: { faturaId, cariHareket: { kaynakTur: KUR_FARKI_KARSILIGI } }, include: { cariHareket: true } });
   for (const k of kapamalar) {
     const h = k.cariHareket!;
     await tx.faturaKapama.delete({ where: { id: k.id } });

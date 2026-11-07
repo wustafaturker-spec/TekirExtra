@@ -323,3 +323,35 @@ describe("POS iadesi (KSB-41)", () => {
     expect(fisler.flatMap((f) => f.satirlar).filter((s) => s.hesapKodu.startsWith("653") && s.alacak.gt(0))).toEqual([]);
   });
 });
+
+describe("pazaryeri hakediş fişi (PZR-13)", () => {
+  const ek = () => {
+    const g = girdi();
+    g.cariler.set("p", { id: "p", kod: "P001", unvan: "Pazaryeri A.Ş.", tip: "her_ikisi", muhasebeKodu: null });
+    return g;
+  };
+
+  it("sipariş alacakları pazaryerine aktarılır, stopaj 193'e ve kesintiler 320'den netleşir", () => {
+    const g = ek();
+    g.pazaryeriHakedisleri = [{ id: "hk", tarih: "2026-09-20", pazaryeriCariId: "p", saglayici: "trendyol", aktarimlar: [{ cariId: "m", tutar: D(1200), aciklama: "SNC1 sipariş alacağı" }], stopaj: D(10), netlesenKesinti: D(150) }];
+    const { fisler, kontroller } = fisleriUret(g);
+    expect(kontroller).toEqual([]);
+    const f = fisler.find((x) => x.kaynak.tur === "pazaryeri_hakedis")!;
+    expect(f.tur).toBe("mahsup");
+    expect(ozet(f)).toEqual(["120.01.P001 B 1200.00", "120.01.M001 A 1200.00", "193 B 10.00", "120.01.P001 A 10.00", "320.01.P001 B 150.00", "120.01.P001 A 150.00"]);
+    expect(dengeli(f)).toBe(true);
+  });
+
+  it("banka tahsilatı pazaryerinin 120 hesabını kapatır", () => {
+    const g = ek();
+    g.hareketler = [hareket({ id: "bh", hesap: { tur: "banka", id: "b" }, kaynakTur: "pazaryeri_hakedis", kaynakRef: "hk", cariId: "p", tutar: D(1040), tutarTry: D(1040) })];
+    const { fisler } = fisleriUret(g);
+    expect(ozet(fisler[0])).toEqual(["102.01.010 B 1040.00", "120.01.P001 A 1040.00"]);
+  });
+
+  it("boş hakediş fiş üretmez", () => {
+    const g = ek();
+    g.pazaryeriHakedisleri = [{ id: "hk", tarih: "2026-09-20", pazaryeriCariId: "p", saglayici: "trendyol", aktarimlar: [], stopaj: D(0), netlesenKesinti: D(0) }];
+    expect(fisleriUret(g).fisler).toEqual([]);
+  });
+});
