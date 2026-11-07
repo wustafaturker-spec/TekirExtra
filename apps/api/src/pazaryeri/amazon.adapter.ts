@@ -96,7 +96,10 @@ export class AmazonAdapter {
     const siparisler = hamSiparisler.map((p: any): NormalizeSiparis => {
       const satirlar = (Array.isArray(p.orderItems) ? p.orderItems : Array.isArray(p.OrderItems) ? p.OrderItems : []).map((s: any) => {
         const miktar = Number(s.quantityOrdered ?? s.QuantityOrdered ?? 1);
-        const toplam = para(s.itemPrice ?? s.ItemPrice) || para(s.proceeds?.itemCharge ?? s.Proceeds?.ItemCharge);
+        // PZR-05: ItemPrice satır toplamıdır (birim × miktar, SP-API modeli); promosyon ayrı alandır ve düşülür.
+        // proceeds.itemCharge yolunda promosyonun durumu belgelenemedi, dokunulmaz (tutar kilidi korur).
+        const fiyat = para(s.itemPrice ?? s.ItemPrice);
+        const toplam = fiyat ? fiyat - para(s.promotionDiscount ?? s.PromotionDiscount) : para(s.proceeds?.itemCharge ?? s.Proceeds?.ItemCharge);
         return {
           hariciSatirId: String(s.orderItemId ?? s.OrderItemId), sku: String(s.product?.sellerSku ?? s.SellerSKU ?? ""),
           barkod: s.product?.asin ?? s.ASIN ?? undefined, urunAdi: String(s.product?.title ?? s.Title ?? "Amazon ürünü"),

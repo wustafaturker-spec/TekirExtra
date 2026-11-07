@@ -48,4 +48,13 @@ describe("AmazonAdapter", () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain("/finances/2024-06-19/transactions");
     expect(String(fetchMock.mock.calls[1][0])).toContain("transactionStatus=RELEASED");
   });
+
+  it("PZR-05: v0 ItemPrice satır toplamından PromotionDiscount düşülür", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: "t" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ payload: { Orders: [{ AmazonOrderId: "AMZ-2", PurchaseDate: "2026-08-10T09:00:00Z", OrderStatus: "Unshipped", OrderTotal: { Amount: "540", CurrencyCode: "TRY" },
+        OrderItems: [{ OrderItemId: "i-2", SellerSKU: "SKU-2", Title: "Ürün", QuantityOrdered: 2, ItemPrice: { Amount: "600", CurrencyCode: "TRY" }, PromotionDiscount: { Amount: "60", CurrencyCode: "TRY" } }] }] } }) }));
+    const sonuc = await new AmazonAdapter().siparisleriCek({ kullaniciAdi: "c", parola: "s", apiAnahtari: "r", magazaId: "A33AVAJ2PDY3EV" });
+    expect(sonuc.siparisler[0].satirlar[0]).toEqual(expect.objectContaining({ miktar: 2, birimFiyat: 270 }));
+  });
 });

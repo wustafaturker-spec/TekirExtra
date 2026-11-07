@@ -28,7 +28,8 @@ export class N11Adapter {
     const veri = await yanit.json() as any; const content: any[] = Array.isArray(veri.content) ? veri.content : [];
     const siparisler: NormalizeSiparis[] = content.map((p: any): NormalizeSiparis => {
       const satirlar: NormalizeSiparis["satirlar"] = (Array.isArray(p.lines) ? p.lines : []).map((s: any, i: number) => {
-        const miktar = Number(s.quantity ?? 0); const faturaTutari = Number(s.sellerInvoiceAmount ?? (Number(s.price ?? 0) * miktar));
+        const miktar = Number(s.quantity ?? 0); // PZR-05: sellerInvoiceAmount "Mağaza fatura tutarı"dır; yoksa mağaza indirimi düşülür (n11 indirimi n11'in karşıladığıdır).
+        const faturaTutari = s.sellerInvoiceAmount != null ? Number(s.sellerInvoiceAmount) : Number(s.price ?? 0) * miktar - Number(s.sellerDiscount ?? 0);
         return { hariciSatirId: String(s.orderLineId ?? `${p.orderNumber}-${i}`), sku: String(s.stockCode ?? ""), barkod: s.barcode ? String(s.barcode) : undefined, urunAdi: String(s.productName ?? "N11 ürünü"), miktar, birimFiyat: miktar ? faturaTutari / miktar : 0, kdvOrani: s.vatRate != null ? Number(s.vatRate) : null };
       });
       const olusma = (Array.isArray(p.packageHistories) ? p.packageHistories : []).find((h: any) => String(h.status).trim().toLowerCase() === "created")?.createdDate ?? p.lastModifiedDate;

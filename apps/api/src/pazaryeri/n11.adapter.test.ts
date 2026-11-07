@@ -20,4 +20,11 @@ describe("N11Adapter", () => {
     expect(sonuc.siparisler[0].satirlar[0]).toEqual(expect.objectContaining({ sku: "SKU-1", birimFiyat: 290 }));
     const istek = fetchMock.mock.calls[0]; expect(String(istek[0])).toContain("page=0&size=100"); expect(istek[1].headers).toEqual(expect.objectContaining({ appkey: "app-key", appsecret: "secret" }));
   });
+
+  it("PZR-05: sellerInvoiceAmount yoksa price × miktar − sellerDiscount", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ totalPages: 1, content: [{ id: 9, orderNumber: "N-9", shipmentPackageStatus: "Created", lastModifiedDate: 1786363200000, customerfullName: "Ada",
+      lines: [{ orderLineId: 1, stockCode: "SKU-9", productName: "Ürün", quantity: 2, price: 100, sellerDiscount: 30 }] }] }) }));
+    const s = (await new N11Adapter().siparisleriCek({ kullaniciAdi: "k", parola: "p" })).siparisler[0].satirlar[0];
+    expect(s).toEqual(expect.objectContaining({ miktar: 2, birimFiyat: 85 }));
+  });
 });
