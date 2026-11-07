@@ -201,6 +201,32 @@ export class PazaryeriService {
   }
 
   /**
+   * PZR-09: yıllık e-ticaret stopajı özeti (beyannamede mahsup için). Aylara
+   * göre kesilen stopaj (pazaryerinin dövizinde), kasa/banka hareketine
+   * kaydedilen (TRY karşılığı) ve kaydedilmeyi bekleyen kesintiler.
+   */
+  async stopajOzeti(yil: number) {
+    const { tenantId } = aktifBaglam();
+    const bas = new Date(Date.UTC(yil, 0, 1)); const son = new Date(Date.UTC(yil + 1, 0, 1));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kesintiler = await tx.pazaryeriKesinti.findMany({
+        where: { sinif: "stopaj", tarih: { gte: bas, lt: son } },
+        select: { tarih: true, tutar: true, dovizCinsi: true, durum: true, hareket: { select: { tutarTry: true } } },
+      });
+      const aylar = Array.from({ length: 12 }, (_, i) => ({ ay: i + 1, kesilen: {} as Record<string, string>, kaydedilenAdet: 0, kaydedilenTry: "0.00", bekleyenAdet: 0 }));
+      let yilKaydedilenTry = new Prisma.Decimal(0); const yilKesilen: Record<string, string> = {};
+      for (const k of kesintiler) {
+        const a = aylar[k.tarih.getUTCMonth()];
+        a.kesilen[k.dovizCinsi] = new Prisma.Decimal(a.kesilen[k.dovizCinsi] ?? 0).add(k.tutar).toFixed(2);
+        yilKesilen[k.dovizCinsi] = new Prisma.Decimal(yilKesilen[k.dovizCinsi] ?? 0).add(k.tutar).toFixed(2);
+        if (k.hareket) { a.kaydedilenAdet++; a.kaydedilenTry = new Prisma.Decimal(a.kaydedilenTry).add(k.hareket.tutarTry).toFixed(2); yilKaydedilenTry = yilKaydedilenTry.add(k.hareket.tutarTry); }
+        else if (k.durum === "bekliyor") a.bekleyenAdet++;
+      }
+      return { yil, aylar, toplam: { kesilen: yilKesilen, kaydedilenTry: yilKaydedilenTry.toFixed(2), kaydedilenAdet: aylar.reduce((t, a) => t + a.kaydedilenAdet, 0), bekleyenAdet: aylar.reduce((t, a) => t + a.bekleyenAdet, 0) } };
+    });
+  }
+
+  /**
    * PZR-08: kesinti türleri (bağlantı + tür adı) ve geçerli sınıfları. `kural`:
    * kullanıcı seçti; değilse ad kalıbından. Adet/tutar işlenmemiş (bekleyen,
    * faturasız) kesintiler içindir.
@@ -274,7 +300,7 @@ export class PazaryeriService {
         const faturali = stopajDisi.some((k) => k.sinif === "faturali");
         throw new BadRequestException(faturali
           ? "Faturalı kesinti (komisyon, kargo, hizmet, reklam) giderleştirilmez: gider, pazaryerinin kestiği e-Faturadan alış olarak yazılır; kesinti o faturayla eşleştirilir."
-          : "Yalnız stopaj kesintisi giderleştirilebilir. Sınıflandırılmamış kesintinin önce türünü belirleyin; ceza ve diğer faturasız kesintiler masraf kaydına dönüştürülür.");
+          : "Yalnız stopaj kesintisi kasa/banka hareketine (mahsup edilecek stopaj, 193) kaydedilebilir. Sınıflandırılmamış kesintinin önce türünü belirleyin; ceza ve diğer faturasız kesintiler masraf kaydına dönüştürülür.");
       }
       if (kesintiler.some((k) => k.durum !== "bekliyor")) throw new BadRequestException("Yalnız bekleyen kesinti giderleştirilebilir");
       if (kesintiler.some((k) => k.dovizCinsi !== hesap.dovizCinsi)) throw new BadRequestException("Kesinti dövizi ile hesap dövizi aynı olmalıdır");
@@ -286,8 +312,9 @@ export class PazaryeriService {
           tenantId, kasaId: girdi.kasaId, bankaHesapId: girdi.bankaHesapId, tip: "tediye",
           tutar: kesinti.tutar, dovizCinsi: kesinti.dovizCinsi, kur,
           tutarTry: kesinti.tutar.mul(kur).toDecimalPlaces(2), tarih: kesinti.tarih,
-          aciklama: `Pazaryeri ${kesinti.tur}${kesinti.siparisNo ? ` · ${kesinti.siparisNo}` : ""}${kesinti.aciklama ? ` · ${kesinti.aciklama}` : ""}`,
-          kaynakTur: "pazaryeri_kesinti", kaynakRef: kesinti.id,
+          // PZR-09: stopaj gider değil, gelir/kurumlar vergisinden mahsup edilecek peşin vergidir (muhasebede 193).
+          aciklama: `Pazaryeri stopajı (mahsup edilecek) · ${kesinti.tur}${kesinti.siparisNo ? ` · ${kesinti.siparisNo}` : ""}${kesinti.aciklama ? ` · ${kesinti.aciklama}` : ""}`,
+          kaynakTur: "pazaryeri_stopaj", kaynakRef: kesinti.id,
         } });
         await tx.pazaryeriKesinti.update({ where: { id: kesinti.id }, data: { hareketId: hareket.id } });
       }

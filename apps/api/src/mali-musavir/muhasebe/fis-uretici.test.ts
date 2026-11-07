@@ -118,6 +118,15 @@ describe("muhasebe fiş üretici (MUH-04)", () => {
     expect(ozet(odemeFisi)).toEqual(["329 B 8000.00", "100.01.001 A 8000.00"]);
   });
 
+  it("PZR-09: pazaryeri stopajı 193'e, eski pazaryeri kesintisi 760'a", () => {
+    const stopaj = hareket({ id: "s", tip: "tediye", tutar: D(12.5), tutarTry: D(12.5), kaynakTur: "pazaryeri_stopaj", kaynakRef: "k1" });
+    const kesinti = hareket({ id: "k", tip: "tediye", tutar: D(30), tutarTry: D(30), kaynakTur: "pazaryeri_kesinti", kaynakRef: "k2" });
+    const { fisler, kontroller } = fisleriUret(girdi({ hareketler: [stopaj, kesinti] }));
+    expect(kontroller).toEqual([]);
+    expect(ozet(fisler.find((f) => f.kaynak.id === "s")!)[0]).toBe("193 B 12.50");
+    expect(ozet(fisler.find((f) => f.kaynak.id === "k")!)[0]).toBe("760 B 30.00");
+  });
+
   it("virman tek fiş; ters kayıt asıl fişin aynasıdır", () => {
     const gidis = hareket({ id: "v1", tip: "virman_gidis", tutar: D(500), tutarTry: D(500), karsiHareketId: "v2", makbuzNo: null });
     const gelis = hareket({ id: "v2", tip: "virman_gelis", tutar: D(500), tutarTry: D(500), hesap: { tur: "banka", id: "b" }, karsiHareketId: "v1", makbuzNo: null });

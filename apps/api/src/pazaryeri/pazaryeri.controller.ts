@@ -51,6 +51,14 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.kesintiIceAktar(sonuc.data);
   }
+  /** PZR-09: yıllık stopaj özeti. */
+  @Get("kesintiler/stopaj-ozeti") @Roller("yonetici", "muhasebe")
+  stopajOzeti(@Query("yil") yil?: string) {
+    const y = yil ? Number(yil) : new Date().getFullYear();
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) throw new BadRequestException("Geçersiz yıl");
+    return this.service.stopajOzeti(y);
+  }
+
   /** PZR-07: komisyon faturası eşleştirme durumu (bağlantı başına VKN, faturalar, öneriler, faturası gelmeyenler). */
   @Get("kesintiler/eslestirme") @Roller("yonetici", "muhasebe")
   eslestirmeDurumu() {

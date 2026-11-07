@@ -113,6 +113,19 @@ describe("PazaryeriService", () => {
     expect(upsert.mock.calls[0][0].update).not.toHaveProperty("sinif");
   });
 
+  it("PZR-09: yıllık stopaj özeti aylara göre kesilen, kaydedilen ve bekleyeni verir", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { tarih: new Date("2026-03-10"), tutar: new Prisma.Decimal(10), dovizCinsi: "TRY", durum: "giderlesti", hareket: { tutarTry: new Prisma.Decimal(10) } },
+      { tarih: new Date("2026-03-20"), tutar: new Prisma.Decimal(5), dovizCinsi: "TRY", durum: "bekliyor", hareket: null },
+      { tarih: new Date("2026-11-02"), tutar: new Prisma.Decimal(2), dovizCinsi: "USD", durum: "giderlesti", hareket: { tutarTry: new Prisma.Decimal("68.40") } },
+    ]);
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn({ pazaryeriKesinti: { findMany } })) } as any, {} as any);
+    const r = await servis.stopajOzeti(2026);
+    expect(findMany.mock.calls[0][0].where).toEqual({ sinif: "stopaj", tarih: { gte: new Date(Date.UTC(2026, 0, 1)), lt: new Date(Date.UTC(2027, 0, 1)) } });
+    expect(r.aylar[2]).toEqual({ ay: 3, kesilen: { TRY: "15.00" }, kaydedilenAdet: 1, kaydedilenTry: "10.00", bekleyenAdet: 1 });
+    expect(r.toplam).toEqual({ kesilen: { TRY: "15.00", USD: "2.00" }, kaydedilenTry: "78.40", kaydedilenAdet: 2, bekleyenAdet: 1 });
+  });
+
   it("PZR-08: kullanıcı kuralı ad kalıbından önce gelir", async () => {
     const upsert = vi.fn().mockResolvedValue({ id: "k1" });
     const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert }, pazaryeriKesintiKurali: { findUnique: vi.fn().mockResolvedValue({ sinif: "diger_faturasiz" }) } };
@@ -145,7 +158,8 @@ describe("PazaryeriService", () => {
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
     const sonuc = await servis.kesintileriGiderlestir({ kesintiIds: ["11111111-1111-4111-8111-111111111111"], kasaId: "22222222-2222-4222-8222-222222222222", kur: 1 });
     expect(sonuc).toEqual({ giderlestirilen: 1 });
-    expect(hareketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ tip: "tediye", kaynakTur: "pazaryeri_kesinti", kaynakRef: "k1", tutarTry: new Prisma.Decimal(24) }) });
+    // PZR-09: stopaj "mahsup edilecek stopaj" türünde yazılır (muhasebede 193).
+    expect(hareketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ tip: "tediye", kaynakTur: "pazaryeri_stopaj", kaynakRef: "k1", tutarTry: new Prisma.Decimal(24), aciklama: expect.stringContaining("mahsup edilecek") }) });
     expect(kesintiUpdateMany).toHaveBeenCalledWith({ where: { id: "k1", durum: "bekliyor", hareketId: null }, data: { durum: "giderlesti" } });
     expect(kesintiUpdate).toHaveBeenCalledWith({ where: { id: "k1" }, data: { hareketId: "h1" } });
   });

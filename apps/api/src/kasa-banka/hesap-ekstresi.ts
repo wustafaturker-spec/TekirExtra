@@ -22,6 +22,7 @@ export const KAYNAK_ADLARI: Record<string, string> = {
   kredi_karti_ekstre: "Kredi kartı",
   odeme_talimati: "Ödeme talimatı",
   pazaryeri_kesinti: "Pazaryeri kesintisi",
+  pazaryeri_stopaj: "Pazaryeri stopajı (mahsup edilecek)",
 };
 
 export function kaynakAdi(kaynakTur: string): string | null {

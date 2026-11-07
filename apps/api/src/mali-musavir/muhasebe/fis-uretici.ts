@@ -442,6 +442,8 @@ function hareketKarsisi(h: HareketGirdisi, g: UreticiGirdisi, c: HesapCozucu): K
   if (cek) return { kod: cekHesapKodu(cek, c) };
   if (h.kaynakTur === "kredi_karti_ekstre" && h.kartId) return { kod: c.hesap("kart", h.kartId) };
   if (h.kaynakTur === "pazaryeri_kesinti") return { kod: c.kod("pazaryeri_kesinti") };
+  // PZR-09: e-ticaret stopajı gider değil, mahsup edilecek peşin vergidir.
+  if (h.kaynakTur === "pazaryeri_stopaj") return { kod: c.kod("pesin_vergi") };
   // PRS-19: maaş ödemesi 335'i, avans ödemesi 196'yı kapatır; iptalleri aynı hesabın tersidir.
   if (h.kaynakTur === "personel_maas" || h.kaynakTur === "personel_maas_iptal") return { kod: c.personel("personel_borc", h.cariId ? g.personelCarileri?.get(h.cariId) : undefined) };
   if (h.kaynakTur === "personel_avans" || h.kaynakTur === "personel_avans_iptal") return { kod: c.personel("personel_avans", h.cariId ? g.personelCarileri?.get(h.cariId) : undefined) };
