@@ -2139,6 +2139,8 @@ model StokKart {
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
+  // BLD-15: artımlı stok tutarlılık denetimi
+  @@index([tenantId, updatedAt])
   @@map("stok_kartlari")
 }
 
@@ -2396,6 +2398,8 @@ model StokHareket {
 
   @@index([tenantId, stokId, tarih])
   @@index([tenantId, depoId, tarih])
+  // BLD-15: artımlı stok tutarlılık denetimi
+  @@index([tenantId, createdAt])
   @@map("stok_hareketleri")
 }
 

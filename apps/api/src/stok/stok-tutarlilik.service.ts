@@ -22,20 +22,24 @@ export interface TutarlilikSatiri {
  * STK-24/39: kart, depo, varyant, varyant-depo ve parti bakiyelerinin hareket
  * toplamıyla uyumu. Düzeltme Merkezi taraması da bunu kullanır (açık işlemle).
  */
-export async function stokTutarlilikHesapla(tx: Tx) {
+export async function stokTutarlilikHesapla(tx: Tx, stokIdler?: readonly string[]) {
+  // BLD-15: kart listesi verilirse yalnız o kartlar karşılaştırılır (artımlı denetim).
+  if (stokIdler && !stokIdler.length) return { farklar: [] as TutarlilikSatiri[], dagitilmamis: [] as { stokId: string; kod: string; ad: string; miktar: string }[], kartSayisi: 0 };
+  const kartK = stokIdler ? { id: { in: [...stokIdler] } } : {};
+  const stokK = stokIdler ? { stokId: { in: [...stokIdler] } } : {};
   const [kartlar, depolar, depoBakiyeleri, varyantlar, varyantDepoBakiyeleri, partiler, hKart, hDepo, hVaryant, hVaryantDepo, hDagitilmamis, hParti] = [
-    await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, select: { id: true, kod: true, ad: true, mevcutMiktar: true, _count: { select: { varyantlar: true } } } }),
+    await tx.stokKart.findMany({ where: { tip: { not: "hizmet" }, ...kartK }, select: { id: true, kod: true, ad: true, mevcutMiktar: true, _count: { select: { varyantlar: true } } } }),
     await tx.depo.findMany({ select: { id: true, ad: true } }),
-    await tx.stokDepoBakiye.findMany({ where: { stok: { tip: { not: "hizmet" } } }, select: { stokId: true, depoId: true, mevcutMiktar: true } }),
-    await tx.stokVaryant.findMany({ select: { id: true, stokId: true, kod: true, mevcutMiktar: true } }),
-    await tx.stokVaryantDepoBakiye.findMany({ select: { varyantId: true, depoId: true, mevcutMiktar: true } }),
-    await tx.stokParti.findMany({ select: { id: true, stokId: true, varyantId: true, depoId: true, lotNo: true, seriNo: true, kalanMiktar: true } }),
-    await tx.stokHareket.groupBy({ by: ["stokId"], where: HIZMET_DISI, _sum: { miktar: true } }),
-    await tx.stokHareket.groupBy({ by: ["stokId", "depoId"], where: HIZMET_DISI, _sum: { miktar: true } }),
-    await tx.stokHareket.groupBy({ by: ["varyantId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
-    await tx.stokHareket.groupBy({ by: ["varyantId", "depoId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
-    await tx.stokHareket.groupBy({ by: ["stokId"], where: { varyantId: null }, _sum: { miktar: true } }),
-    await tx.stokHareketParti.groupBy({ by: ["partiId"], _sum: { miktar: true } }),
+    await tx.stokDepoBakiye.findMany({ where: { stok: { tip: { not: "hizmet" } }, ...stokK }, select: { stokId: true, depoId: true, mevcutMiktar: true } }),
+    await tx.stokVaryant.findMany({ where: stokK, select: { id: true, stokId: true, kod: true, mevcutMiktar: true } }),
+    await tx.stokVaryantDepoBakiye.findMany({ where: stokIdler ? { varyant: stokK } : {}, select: { varyantId: true, depoId: true, mevcutMiktar: true } }),
+    await tx.stokParti.findMany({ where: stokK, select: { id: true, stokId: true, varyantId: true, depoId: true, lotNo: true, seriNo: true, kalanMiktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["stokId"], where: { ...HIZMET_DISI, ...stokK }, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["stokId", "depoId"], where: { ...HIZMET_DISI, ...stokK }, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["varyantId"], where: { varyantId: { not: null }, ...stokK }, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["varyantId", "depoId"], where: { varyantId: { not: null }, ...stokK }, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["stokId"], where: { varyantId: null, ...stokK }, _sum: { miktar: true } }),
+    await tx.stokHareketParti.groupBy({ by: ["partiId"], where: stokIdler ? { parti: stokK } : {}, _sum: { miktar: true } }),
   ];
   const kart = new Map(kartlar.map((k) => [k.id, k]));
   const depoAdi = new Map(depolar.map((d) => [d.id, d.ad]));
@@ -68,6 +72,21 @@ export async function stokTutarlilikHesapla(tx: Tx) {
     .filter((h) => (kart.get(h.stokId)?._count.varyantlar ?? 0) > 0 && !D(h._sum.miktar).isZero())
     .map((h) => ({ stokId: h.stokId, kod: kart.get(h.stokId)!.kod, ad: kart.get(h.stokId)!.ad, miktar: D(h._sum.miktar).toFixed(3) }));
   return { farklar, dagitilmamis, kartSayisi: kartlar.length };
+}
+
+/**
+ * BLD-15: `sonra` anından beri stok durumu değişmiş olabilecek kartlar: yeni
+ * hareket, kart ya da varyant güncellemesi (merkezi hareket yazımı kartı da
+ * günceller). Bunun dışındaki doğrudan bakiye düzeltmeleri gecelik tam
+ * denetimde yakalanır.
+ */
+export async function degisenStokKartlari(tx: Tx, sonra: Date): Promise<string[]> {
+  const [hareketler, kartlar, varyantlar] = [
+    await tx.stokHareket.findMany({ where: { createdAt: { gte: sonra } }, select: { stokId: true }, distinct: ["stokId"] }),
+    await tx.stokKart.findMany({ where: { updatedAt: { gte: sonra } }, select: { id: true } }),
+    await tx.stokVaryant.findMany({ where: { updatedAt: { gte: sonra } }, select: { stokId: true }, distinct: ["stokId"] }),
+  ];
+  return [...new Set([...hareketler.map((h) => h.stokId), ...kartlar.map((k) => k.id), ...varyantlar.map((v) => v.stokId)])];
 }
 
 /**

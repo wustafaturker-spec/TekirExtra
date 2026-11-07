@@ -14,12 +14,36 @@ const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
  * Worker içinde düzeltme dedektörlerini çalıştırır: aktif firmalarda en geç 15
  * dakikada bir, pasif firmalarda saatte bir (BLD-11 kuralı, `core/aktif-firmalar`).
  */
+/** BLD-15: tam stok tutarlılık denetimi her gün bu saatten (İstanbul) sonraki ilk taramada yapılır. */
+export const STOK_TAM_DENETIM_SAATI = 3;
+const ISTANBUL_MS = 3 * 3_600_000;
+/** BLD-15: artımlı denetimde son taramadan bu kadar önceye bakılır (saat/kesinleşme farkı payı). */
+export const STOK_DEGISIM_PAYI_MS = 5 * 60_000;
+
+/** Bugünün (İstanbul) tam denetim anı geçtiyse o an, geçmediyse dünkü. */
+export function sonTamDenetimSiniri(simdiMs: number): number {
+  const yerel = new Date(simdiMs + ISTANBUL_MS);
+  const sinir = Date.UTC(yerel.getUTCFullYear(), yerel.getUTCMonth(), yerel.getUTCDate(), STOK_TAM_DENETIM_SAATI) - ISTANBUL_MS;
+  return sinir <= simdiMs ? sinir : sinir - 86_400_000;
+}
+
+/**
+ * BLD-15: artımlı denetimin başlangıcı; tam denetim gerekiyorsa undefined.
+ * Tam: firma bu süreçte hiç taranmadıysa ya da son tam denetim son 03:00'ten önceyse.
+ */
+export function stokDenetimBaslangici(sonTarama: number | undefined, sonTam: number | undefined, simdiMs: number): Date | undefined {
+  if (sonTarama === undefined || sonTam === undefined || sonTam < sonTamDenetimSiniri(simdiMs)) return undefined;
+  return new Date(sonTarama - STOK_DEGISIM_PAYI_MS);
+}
+
 @Injectable()
 export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DuzeltmeTaramaZamanlayiciService.name);
   private zamanlayici?: NodeJS.Timeout;
   /** BLD-14: firmanın son başarılı taramasının başlangıcı (bu süreçte). */
   private readonly sonTaramalar = new Map<string, number>();
+  /** BLD-15: firmanın son tam stok tutarlılık denetiminin başlangıcı (bu süreçte). */
+  private readonly sonStokTam = new Map<string, number>();
   private calisiyor = false;
   private aralikMs = ON_BES_DAKIKA_MS;
 
@@ -46,7 +70,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     this.calisiyor = true;
     const baslangic = Date.now();
     try {
-      let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0;
+      let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0; let tamStok = 0; let artimliStok = 0;
       const firmalar = await this.tenantIdleriAl();
       const secim = taranacakFirmalar(firmalar.tumu, firmalar.aktifler, this.aralikMs);
       // BLD-14: son taramadan beri yazmayan firma (saatte bir zorunlu tarama dışında) atlanır.
@@ -57,8 +81,11 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
         if (await this.erisim?.otomasyonDurdu(tenantId, "donem_kapatma")) continue;
         try {
           const taramaBasi = Date.now();
-          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => taramaYazimiyla(() => this.duzeltmeler.tara()));
+          const stokDegisimSonrasi = stokDenetimBaslangici(this.sonTaramalar.get(tenantId), this.sonStokTam.get(tenantId), taramaBasi);
+          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => taramaYazimiyla(() => this.duzeltmeler.tara({ stokDegisimSonrasi })));
           this.sonTaramalar.set(tenantId, taramaBasi);
+          if (!stokDegisimSonrasi) this.sonStokTam.set(tenantId, taramaBasi);
+          if (sonuc.stokDenetimi?.tur === "tam") tamStok++; else artimliStok++;
           bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;
           // BLD-13: sınıra ulaşan kaynak; o kaynağın kayıtları bu turda otomatik çözülmedi.
           for (const kaynak of sonuc.kesikKaynaklar ?? []) this.metrics.increment("correction_scan_truncated_total", { kaynak });
@@ -79,7 +106,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
       this.metrics.set("correction_scan_unchanged_tenants", degisim.degismeyen);
       this.metrics.set("correction_scan_failed_tenants", basarisizTenant);
       if (!basarisizTenant) this.metrics.set("correction_scan_last_success_timestamp_seconds", Math.floor(Date.now() / 1000));
-      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, degismeyen: degisim.degismeyen, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
+      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, aktif: secim.aktif, pasifTaranan: secim.pasifTaranan, atlanan: secim.atlanan, degismeyen: degisim.degismeyen, stokTam: tamStok, stokArtimli: artimliStok, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
     } catch (hata) {
       this.metrics.increment("correction_scan_runs_total", { result: "failed" });
       this.logger.error(JSON.stringify({ event: "correction_scan_failed", durationMs: Date.now() - baslangic, error: hata instanceof Error ? hata.message : String(hata) }), hata instanceof Error ? hata.stack : undefined);

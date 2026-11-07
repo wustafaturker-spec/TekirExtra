@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DuzeltmeTaramaZamanlayiciService } from "./duzeltme-tarama-zamanlayici.service";
+import { DuzeltmeTaramaZamanlayiciService, STOK_DEGISIM_PAYI_MS, sonTamDenetimSiniri, stokDenetimBaslangici } from "./duzeltme-tarama-zamanlayici.service";
 
 describe("DuzeltmeTaramaZamanlayiciService", () => {
   const oncekiWorker = process.env.TEKIR_WORKER;
@@ -75,5 +75,22 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
     const toplam = [...sayac.values()].reduce((a, b) => a + b, 0);
     // Aktif firma 4 kez, 39 pasif firma birer kez: toplam 43 tarama.
     expect(toplam).toBe(4 + 39);
+  });
+});
+
+describe("BLD-15 stok tutarlılık denetimi: gecede bir tam, arada artımlı", () => {
+  const saat = (iso: string) => Date.parse(iso);
+
+  it("son tam denetim sınırı İstanbul 03:00'tür; 03:00'ten önce dünkü sınır geçerlidir", () => {
+    expect(new Date(sonTamDenetimSiniri(saat("2026-11-07T06:00:00Z"))).toISOString()).toBe("2026-11-07T00:00:00.000Z");
+    expect(new Date(sonTamDenetimSiniri(saat("2026-11-06T23:59:00Z"))).toISOString()).toBe("2026-11-06T00:00:00.000Z");
+    expect(new Date(sonTamDenetimSiniri(saat("2026-11-07T00:00:00Z"))).toISOString()).toBe("2026-11-07T00:00:00.000Z");
+  });
+
+  it("ilk tarama ve 03:00'ü geçen ilk tarama tam; arada son taramadan 5 dk payla artımlı", () => {
+    const simdi = saat("2026-11-07T10:00:00Z");
+    expect(stokDenetimBaslangici(undefined, undefined, simdi)).toBeUndefined();
+    expect(stokDenetimBaslangici(saat("2026-11-07T09:45:00Z"), saat("2026-11-06T22:00:00Z"), simdi)).toBeUndefined();
+    expect(stokDenetimBaslangici(saat("2026-11-07T09:45:00Z"), saat("2026-11-07T00:30:00Z"), simdi)?.toISOString()).toBe(new Date(saat("2026-11-07T09:45:00Z") - STOK_DEGISIM_PAYI_MS).toISOString());
   });
 });

@@ -9,7 +9,7 @@ import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_TOLERANS_YUZDE, farkAciklamasi, ucluEslestir } from "../satin-alma/uclu-eslestirme";
 import type { duzeltmeListeSemasi } from "./duzeltmeler.semalar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
-import { stokTutarlilikHesapla } from "../stok/stok-tutarlilik.service";
+import { degisenStokKartlari, stokTutarlilikHesapla } from "../stok/stok-tutarlilik.service";
 import { kartBazinda, tutarlilikOzeti } from "../stok/stok-tutarlilik";
 import { kurFarkiKalemleri } from "../fatura/kur-farki-kalem";
 import { degisimKaydet } from "../core/degisim-izi";
@@ -116,7 +116,13 @@ export class DuzeltmelerService {
     return kayit;
   }
 
-  async tara() {
+  /**
+   * BLD-15: `stokDegisimSonrasi` verilirse stok tutarlılığı yalnız o andan beri
+   * değişen kartlarda ve açık tutarlılık kaydı olan kartlarda denetlenir
+   * (artımlı); verilmezse bütün kartlar (tam). Açık kayıtlı kartlar her zaman
+   * denetlendiği için otomatik çözüm kuralı değişmez.
+   */
+  async tara(secenek: { stokDegisimSonrasi?: Date } = {}) {
     const { tenantId } = aktifBaglam();
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
@@ -153,7 +159,15 @@ export class DuzeltmelerService {
       const kesikKaynaklar = KAYNAK_KODLARI.filter((_, i) => [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar, alisFaturalari][i].length >= TARAMA_SINIRI);
       const kesikKodlar = new Set(kesikKaynaklar.flatMap((k) => k.kodlar));
       // STK-39: bakiye–hareket uyumu (tutarlılık denetiminin otomatik hâli), kart başına tek kayıt.
-      const tutarlilik = await stokTutarlilikHesapla(tx);
+      let stokKartlari: string[] | undefined;
+      if (secenek.stokDegisimSonrasi) {
+        const acikTutarlilik = await tx.duzeltmeKaydi.findMany({
+          where: { nedenKodu: { in: ["STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } },
+          select: { kaynakRef: true },
+        });
+        stokKartlari = [...new Set([...(await degisenStokKartlari(tx, secenek.stokDegisimSonrasi)), ...acikTutarlilik.map((k) => k.kaynakRef)])];
+      }
+      const tutarlilik = await stokTutarlilikHesapla(tx, stokKartlari);
       const farkliKartlar = kartBazinda(tutarlilik.farklar);
       const tolerans = await this.ayarlar.getir("satin_alma", tx);
       const eslesmeFarklari = alisFaturalari.flatMap((fatura) => {
@@ -234,7 +248,7 @@ export class DuzeltmelerService {
         await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: kayit.id, oncekiDurum: kayit.durum, yeniDurum: "cozuldu", olayTuru: "otomatik_cozum", aciklama: "Kaynak sorun yeniden taramada bulunamadı." } });
         otomatikCozulen++;
       }
-      return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen, yeniKayit, kesikKaynaklar: kesikKaynaklar.map((k) => k.kaynak) };
+      return { taranan: ekstreler.length + masraflar.length + kartHarcamalari.length + posTahsilatlari.length + ebelgeler.length + negatifStoklar.length + sayimlar.length + vadesiGecenEvraklar.length + faturalar.length + alisFaturalari.length, bulunan: tespitler.length, otomatikCozulen, yeniKayit, kesikKaynaklar: kesikKaynaklar.map((k) => k.kaynak), stokDenetimi: stokKartlari ? { tur: "artimli" as const, kart: stokKartlari.length } : { tur: "tam" as const, kart: tutarlilik.kartSayisi } };
       // BLD-11: ~12 dedektör tek işlemde; soğuk açılışta/yük altında 5 sn varsayılanı aşılıyordu.
     }, { timeout: 30_000 });
     // BLD-14: tarama yazımı iz bırakmaz; yeni açılan ya da çözülen kayıt bildirim taraması için gerçek değişimdir.

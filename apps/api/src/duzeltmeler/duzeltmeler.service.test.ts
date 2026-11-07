@@ -5,7 +5,8 @@ import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 import { DuzeltmelerService, TARAMA_SINIRI } from "./duzeltmeler.service";
 
 const tutarlilik = vi.hoisted(() => vi.fn());
-vi.mock("../stok/stok-tutarlilik.service", () => ({ stokTutarlilikHesapla: tutarlilik }));
+const degisenKartlar = vi.hoisted(() => vi.fn());
+vi.mock("../stok/stok-tutarlilik.service", () => ({ stokTutarlilikHesapla: tutarlilik, degisenStokKartlari: degisenKartlar }));
 
 describe("DuzeltmelerService", () => {
   const tx = {
@@ -93,6 +94,20 @@ describe("DuzeltmelerService", () => {
     expect(tx.duzeltmeKaydi.update).toHaveBeenCalledTimes(1);
     expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "biten-masraf" } }));
     expect(tx.bankaEkstreSatir.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: TARAMA_SINIRI }));
+  });
+
+  it("BLD-15: stok değişim anı verilmezse tam, verilirse değişen + açık kayıtlı kartlarla artımlı denetler", async () => {
+    await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara());
+    expect(tutarlilik).toHaveBeenLastCalledWith(tx, undefined);
+
+    const sonra = new Date("2026-11-07T08:00:00Z");
+    degisenKartlar.mockResolvedValue(["kart-1", "kart-2"]);
+    tx.duzeltmeKaydi.findMany.mockImplementation(async (a: { where: { nedenKodu?: { in?: string[] } } }) =>
+      a.where.nedenKodu?.in?.length === 2 ? [{ kaynakRef: "kart-2" }, { kaynakRef: "kart-acik" }] : []);
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara({ stokDegisimSonrasi: sonra }));
+    expect(degisenKartlar).toHaveBeenCalledWith(tx, sonra);
+    expect(tutarlilik).toHaveBeenLastCalledWith(tx, ["kart-1", "kart-2", "kart-acik"]);
+    expect(sonuc.stokDenetimi).toEqual({ tur: "artimli", kart: 3 });
   });
 
   it("fark içeren taslak sayımı onaysız sayım bulgusu olarak açar", async () => {
