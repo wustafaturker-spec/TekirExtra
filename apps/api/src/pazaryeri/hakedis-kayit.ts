@@ -108,6 +108,7 @@ export async function hakedisKaydet(tx: Tx, tenantId: string, girdi: { ekstreSat
   const kesintiToplami = kesintiler.reduce((t, k) => t.add(k.tutar), D(0));
   const stopajlar = kesintiler.filter((k) => k.sinif === "stopaj");
   const stopajToplami = stopajlar.reduce((t, k) => t.add(k.tutar), D(0));
+  if (stopajToplami.lt(0)) throw new BadRequestException("Seçilen stopaj kesintilerinin toplamı eksi (yalnız iptal seçilmiş); iptal edilen stopajı da seçin");
   const fark = siparisToplami.sub(kesintiToplami).sub(satir.tutar);
   const hakedisId = randomUUID();
   const etiket = `${baglanti.saglayici} hakedişi ${satir.tarih.toISOString().slice(0, 10)}`;

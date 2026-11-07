@@ -6,7 +6,8 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { coz } from "../core/kripto";
-import { TrendyolAdapter, type PazaryeriConfig } from "./trendyol.adapter";
+import { TrendyolAdapter, type NormalizeKesinti, type PazaryeriConfig } from "./trendyol.adapter";
+import { cekimPencereleri } from "./trendyol-finans";
 import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
@@ -300,6 +301,7 @@ export class PazaryeriService {
       if (!cari) throw new BadRequestException("Aktif cari hesap bulunamadı");
       if (kesintiler.length !== girdi.kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
       if (kesintiler.some((k) => k.sinif !== "ceza" && k.sinif !== "diger_faturasiz")) throw new BadRequestException("Yalnız ceza ve diğer faturasız kesintiler masrafa dönüştürülür; faturalı kesintinin gideri e-Faturadan, stopaj 193'e yazılır");
+      if (kesintiler.some((k) => !k.tutar.gt(0))) throw new BadRequestException("Eksi tutarlı (satıcı lehine) kesinti masrafa dönüştürülemez");
       if (kesintiler.some((k) => k.durum !== "faturasiz" || k.masrafId || k.hareketId)) throw new BadRequestException("Seçilen kesintilerden biri faturasız durumda değil ya da zaten işlenmiş");
       const masrafIdleri: string[] = [];
       for (const k of kesintiler) {
@@ -418,6 +420,7 @@ export class PazaryeriService {
       const kesintiler = await tx.pazaryeriKesinti.findMany({ where: { id: { in: girdi.kesintiIds } } });
       if (kesintiler.length !== girdi.kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
       if (kesintiler.some((k) => k.durum === "giderlesti")) throw new BadRequestException("Seçilen kayıtlardan biri daha önce giderleştirilmiş");
+      if (kesintiler.some((k) => !k.tutar.gt(0))) throw new BadRequestException("Eksi tutarlı (iptal/iade) kesinti tek başına kaydedilemez; hakedişte ilgili kesintiyle birlikte netleşir");
       // PZR-06: gider pazaryerinin e-Faturasından yazılır; kesinti yalnız mutabakat kaydıdır. Yalnız stopaj kasa/banka hareketine döner (PZR-09).
       const stopajDisi = kesintiler.filter((k) => k.sinif !== "stopaj");
       if (stopajDisi.length) {
@@ -448,12 +451,13 @@ export class PazaryeriService {
 
   async kesintileriSenkronizeEt(baglantiId?: string) {
     const { tenantId } = aktifBaglam();
-    const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({ where: { aile: "pazaryeri", durum: "aktif", saglayici: "amazon_tr", ...(baglantiId ? { id: baglantiId } : {}) } }));
-    if (baglantiId && !baglantilar.length) throw new NotFoundException("Aktif Amazon TR bağlantısı bulunamadı");
+    const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({ where: { aile: "pazaryeri", durum: "aktif", saglayici: { in: ["amazon_tr", "trendyol"] }, ...(baglantiId ? { id: baglantiId } : {}) } }));
+    if (baglantiId && !baglantilar.length) throw new NotFoundException("Finans hareketi çekilebilen aktif pazaryeri bağlantısı bulunamadı (Amazon TR, Trendyol)");
     const sonuclar = [];
     for (const baglanti of baglantilar) {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+        if (baglanti.saglayici === "trendyol") { sonuclar.push(await this.trendyolKesintileriCek(tenantId, baglanti, config)); continue; }
         let imlec = baglanti.kesintiSenkronImleci; let eklenen = 0; let alinan = 0; let sayfaSayisi = 0;
         do {
           const sayfa = await new AmazonAdapter().komisyonKayitlariCek(config, imlec); sayfaSayisi += 1; alinan += sayfa.kesintiler.length;
@@ -474,5 +478,45 @@ export class PazaryeriService {
       }
     }
     return { sonuclar };
+  }
+
+  /** PZR-15: Trendyol cari hesap ekstresinden kesintiler; 15 günlük pencereler, imleç son bitiş. */
+  private async trendyolKesintileriCek(tenantId: string, baglanti: { id: string; saglayici: string; kesintiSenkronImleci: string | null }, config: PazaryeriConfig) {
+    let sonBitis: number | null = null;
+    try { sonBitis = baglanti.kesintiSenkronImleci ? Number((JSON.parse(baglanti.kesintiSenkronImleci) as { sonBitis?: number }).sonBitis) || null : null; } catch { sonBitis = null; }
+    const pencereler = cekimPencereleri(sonBitis, Date.now() - 60_000);
+    let alinan = 0; let eklenen = 0; let sayfaSayisi = 0;
+    for (const p of pencereler) {
+      const { kesintiler, istekSayisi } = await new TrendyolAdapter().finansKesintileriCek(config, p.baslangic, p.bitis);
+      alinan += kesintiler.length; sayfaSayisi += istekSayisi;
+      eklenen += await this.kesintileriTopluAktar(tenantId, baglanti.id, kesintiler);
+      // Pencere bitince imleç ilerler; yarıda kalan çekim kaldığı pencereden sürer.
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { kesintiSenkronImleci: JSON.stringify({ sonBitis: p.bitis }) } }));
+    }
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
+    return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi };
+  }
+
+  /**
+   * PZR-15: kesintileri tek işlemde aktarır; var olan (`hariciId`) değişmez.
+   * Sınıf PZR-08 kuralından, yoksa ad kalıbından. Eklenen sayısını döner.
+   */
+  async kesintileriTopluAktar(tenantId: string, baglantiId: string, kesintiler: NormalizeKesinti[]): Promise<number> {
+    if (!kesintiler.length) return 0;
+    const tekil = [...new Map(kesintiler.map((k) => [k.hariciId, k])).values()];
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = new Set((await tx.pazaryeriKesinti.findMany({ where: { baglantiId, hariciId: { in: tekil.map((k) => k.hariciId) } }, select: { hariciId: true } })).map((k) => k.hariciId));
+      const yeni = tekil.filter((k) => !mevcut.has(k.hariciId));
+      if (!yeni.length) return 0;
+      const kurallar = new Map((await tx.pazaryeriKesintiKurali.findMany({ where: { baglantiId, tur: { in: [...new Set(yeni.map((k) => k.tur))] } }, select: { tur: true, sinif: true } })).map((k) => [k.tur, k.sinif]));
+      const { count } = await tx.pazaryeriKesinti.createMany({
+        skipDuplicates: true,
+        data: yeni.map((k) => {
+          const sinif = kurallar.get(k.tur) ?? kesintiSinifiBul(k.tur);
+          return { tenantId, baglantiId, hariciId: k.hariciId, siparisNo: k.siparisNo, tur: k.tur, aciklama: k.aciklama, tarih: new Date(k.tarih), tutar: k.tutar, dovizCinsi: k.dovizCinsi, hamVeri: k.hamVeri as Prisma.InputJsonValue | undefined, sinif, durum: kesintiBaslangicDurumu(sinif) };
+        }),
+      });
+      return count;
+    }, { timeout: 60_000 });
   }
 }

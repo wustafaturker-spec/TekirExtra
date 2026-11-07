@@ -18,12 +18,14 @@ export function eslesmeOnerisi(fatura: { tarih: Date; toplam: Prisma.Decimal.Val
   const hedef = new Prisma.Decimal(fatura.toplam);
   if (hedef.lte(0)) return null;
   const sirali = adaylar.filter((k) => k.tarih.getTime() <= fatura.tarih.getTime()).sort((a, b) => a.tarih.getTime() - b.tarih.getTime() || a.id.localeCompare(b.id));
+  // PZR-15: eksi (iade) kesinti varsa dilim toplamı aşıldıktan sonra yeniden düşebilir; erken kesme yalnız hepsi artıyken.
+  const hepsiArti = sirali.every((k) => new Prisma.Decimal(k.tutar).gt(0));
   for (let son = sirali.length - 1; son >= 0; son--) {
     let toplam = new Prisma.Decimal(0);
     for (let bas = son; bas >= 0; bas--) {
       toplam = toplam.add(sirali[bas].tutar);
       if (toplam.sub(hedef).abs().lte(ESLESME_TOLERANSI)) return { kesintiIds: sirali.slice(bas, son + 1).map((k) => k.id), toplam: toplam.toFixed(2) };
-      if (toplam.gt(hedef.add(ESLESME_TOLERANSI))) break;
+      if (hepsiArti && toplam.gt(hedef.add(ESLESME_TOLERANSI))) break;
     }
   }
   return null;

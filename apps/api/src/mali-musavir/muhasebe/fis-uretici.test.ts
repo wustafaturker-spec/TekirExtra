@@ -349,6 +349,13 @@ describe("pazaryeri hakediş fişi (PZR-13)", () => {
     expect(ozet(fisler[0])).toEqual(["102.01.010 B 1040.00", "120.01.P001 A 1040.00"]);
   });
 
+  it("iadeler ağır basarsa kesinti netleştirmesi ters yöndedir (PZR-15)", () => {
+    const g = ek();
+    g.pazaryeriHakedisleri = [{ id: "hk", tarih: "2026-09-20", pazaryeriCariId: "p", saglayici: "trendyol", aktarimlar: [], stopaj: D(0), netlesenKesinti: D(-25) }];
+    const f = fisleriUret(g).fisler[0];
+    expect(ozet(f)).toEqual(["120.01.P001 B 25.00", "320.01.P001 A 25.00"]);
+  });
+
   it("boş hakediş fiş üretmez", () => {
     const g = ek();
     g.pazaryeriHakedisleri = [{ id: "hk", tarih: "2026-09-20", pazaryeriCariId: "p", saglayici: "trendyol", aktarimlar: [], stopaj: D(0), netlesenKesinti: D(0) }];

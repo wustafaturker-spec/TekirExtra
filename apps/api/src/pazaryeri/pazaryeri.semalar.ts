@@ -53,7 +53,8 @@ export const pazaryeriKesintiSemasi = z.object({
   tur: z.string().min(1).max(80),
   aciklama: z.string().max(500).optional(),
   tarih: z.string().date(),
-  tutar: z.number().positive(),
+  // PZR-15: iade/iptal kesintisi eksi tutarlıdır; sıfır olamaz.
+  tutar: z.number().refine((v) => v !== 0, "Kesinti tutarı sıfır olamaz"),
   dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   hamVeri: z.record(z.string(), z.unknown()).optional(),
 });

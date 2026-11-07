@@ -626,6 +626,8 @@ function hakedisFisi(h: HakedisGirdisi, c: HesapCozucu): Fis | null {
   for (const a of h.aktarimlar) if (a.tutar.gt(0)) satirlar.push(borc(alici, a.aciklama.slice(0, 200), a.tutar), alacak(c.cari(a.cariId, "alici"), a.aciklama.slice(0, 200), a.tutar));
   if (h.stopaj.gt(0)) satirlar.push(borc(c.kod("pesin_vergi"), `${aciklama} e-ticaret stopajı`, h.stopaj), alacak(alici, `${aciklama} e-ticaret stopajı`, h.stopaj));
   if (h.netlesenKesinti.gt(0)) satirlar.push(borc(c.cari(h.pazaryeriCariId, "satici"), `${aciklama} kesinti netleştirme`, h.netlesenKesinti), alacak(alici, `${aciklama} kesinti netleştirme`, h.netlesenKesinti));
+  // PZR-15: iadeler ağır basarsa (eksi net) netleştirme ters yöndedir.
+  else if (h.netlesenKesinti.lt(0)) { const t = h.netlesenKesinti.abs(); satirlar.push(borc(alici, `${aciklama} kesinti iadesi netleştirme`, t), alacak(c.cari(h.pazaryeriCariId, "satici"), `${aciklama} kesinti iadesi netleştirme`, t)); }
   if (!satirlar.length) return null;
   return { tarih: h.tarih, tur: "mahsup", aciklama: `Pazaryeri hakedişi ${aciklama}`, belgeNo: null, kaynak, satirlar };
 }
