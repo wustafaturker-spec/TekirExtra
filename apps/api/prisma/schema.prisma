@@ -123,6 +123,7 @@ enum DuzeltmeTuru {
 }
 
 model Tenant {
+  pesinVergiMahsuplari PesinVergiMahsup[]
   duyuruAlicilari PlatformDuyuruAlicisi[]
   ihtiyacPlanlari         IhtiyacPlani[]
   tahsilatSozBaglari      TahsilatSozBaglantisi[]
@@ -805,6 +806,33 @@ model PazaryeriHakedis {
 
   @@index([tenantId, baglantiId, tarih])
   @@map("pazaryeri_hakedisleri")
+}
+
+/// GLR-06: bizden kesilen stopajın beyannamede mahsup edildi işareti; kayıt üretmez, fişi değiştirmez.
+/// Tutar, tarih ve etiket işaret anının kopyasıdır: kaynak sonradan iptal edilir ya da değişirse ekran uyarır.
+model PesinVergiMahsup {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  /// gelir | fatura | pazaryeri
+  kaynakTur     String   @map("kaynak_tur") @db.VarChar(20)
+  kaynakId      String   @map("kaynak_id") @db.Uuid
+  /// gecici_vergi | yillik
+  beyannameTuru String   @map("beyanname_turu") @db.VarChar(20)
+  yil           Int
+  /// Geçici vergi dönemi (1-4); yıllık beyannamede boş.
+  donem         Int?
+  not           String?
+  tutarTry      Decimal  @map("tutar_try") @db.Decimal(15, 2)
+  belgeTarihi   DateTime @map("belge_tarihi") @db.Date
+  etiket        String
+  isaretleyenId String?  @map("isaretleyen_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kaynakTur, kaynakId])
+  @@index([tenantId, yil])
+  @@map("pesin_vergi_mahsuplari")
 }
 
 /// PZR-08: bağlantı başına kesinti türü → sınıf kuralı; içe aktarmada ad kalıbından önce uygulanır.

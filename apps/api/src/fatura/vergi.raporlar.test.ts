@@ -26,11 +26,42 @@ const SATIRLAR = [
   satir("a2", "alis", "2026-10-08", [maktu], { cari: { id: "c2", unvan: "Tedarikçi B" } }),
 ];
 
-function calistir(kod: string, girdi: { filtreler?: Record<string, string>; gruplama?: string } = {}) {
+function calistir(kod: string, girdi: { filtreler?: Record<string, string>; gruplama?: string } = {}, ek: { gelirler?: unknown[]; kesintiler?: unknown[] } = {}) {
   const findMany = vi.fn().mockResolvedValue(SATIRLAR);
+  const gelirKaydi = { findMany: vi.fn().mockResolvedValue(ek.gelirler ?? []) };
+  const pazaryeriKesinti = { findMany: vi.fn().mockResolvedValue(ek.kesintiler ?? []) };
   const tanim = raporTanimiAl(kod)!;
-  return { sonuc: tanim.calistir({ filtreler: { baslangic: "2026-09-01", bitis: "2026-10-31", ...girdi.filtreler }, gruplama: girdi.gruplama }, { tenantId: "t1", tx: { faturaSatir: { findMany } } as never }), findMany };
+  return { sonuc: tanim.calistir({ filtreler: { baslangic: "2026-09-01", bitis: "2026-10-31", ...girdi.filtreler }, gruplama: girdi.gruplama }, { tenantId: "t1", tx: { faturaSatir: { findMany }, gelirKaydi, pazaryeriKesinti } as never }), findMany, gelirKaydi, pazaryeriKesinti };
 }
+
+const GELIR = { id: "g1", tarih: new Date("2026-10-02T00:00:00Z"), belgeNo: "DK-1", brutTutar: D(1000), stopajOrani: D(10), stopajTutari: D(100), dovizCinsi: "USD", kur: D(40), kategori: { ad: "Temettü" }, cari: null };
+const KESINTI = { id: "k1", tarih: new Date("2026-10-03T00:00:00Z"), tutar: D(12.5), dovizCinsi: "TRY", siparisNo: "S-1", baglanti: { saglayici: "trendyol", pazaryeriCari: { id: "c9", unvan: "Trendyol" } }, hareket: { kur: D(1) }, hakedis: null };
+
+describe("Bizden kesilen stopaj: fatura dışı kaynaklar (GLR-06)", () => {
+  it("gelir ve pazaryeri stopajını kovaya ekler, TL'yi belge kuruyla hesaplar, bilinmeyen matrahı boş bırakır", async () => {
+    const satirlar = await calistir("vergi.kdv-disi-ozet", { gruplama: "vergi" }, { gelirler: [GELIR], kesintiler: [KESINTI] }).sonuc;
+    const bul = (vergi: string) => satirlar.find((s) => s.kova === "Bizden kesilen stopaj" && String(s.vergi).startsWith(vergi));
+    expect(bul("GELIR")).toMatchObject({ tutar: "4000.00", matrah: "40000.00" });
+    expect(bul("ETICARET")).toMatchObject({ tutar: "12.50", matrah: null });
+  });
+
+  it("ayrıntıda kaynak ekranına bağlanır, ürün kimliği boş kalır", async () => {
+    const satirlar = await calistir("vergi.kdv-disi-ayrinti", {}, { gelirler: [GELIR] }).sonuc;
+    expect(satirlar.find((s) => s.faturaNo === "DK-1")).toMatchObject({ faturaYolu: "/panel/gelirler", stokId: null, cari: "—", oran: "%10" });
+  });
+
+  it("başka kova seçilince fatura dışı kaynaklar sorulmaz", async () => {
+    const { sonuc, gelirKaydi } = calistir("vergi.kdv-disi-ayrinti", { filtreler: { kova: "tahsil" } }, { gelirler: [GELIR] });
+    await sonuc;
+    expect(gelirKaydi.findMany).not.toHaveBeenCalled();
+  });
+
+  it("pazaryerinde yalnız kaydedilmiş kesintiyi okur", async () => {
+    const { sonuc, pazaryeriKesinti } = calistir("vergi.kdv-disi-ayrinti");
+    await sonuc;
+    expect(pazaryeriKesinti.findMany.mock.calls[0][0].where).toMatchObject({ sinif: "stopaj", durum: { in: ["giderlesti", "hakediste_kaydedildi"] } });
+  });
+});
 
 describe("KDV dışı vergiler raporu (RPR-09)", () => {
   it("yalnız kesin satış/alış faturalarının vergili satırlarını dönemle sorar", async () => {

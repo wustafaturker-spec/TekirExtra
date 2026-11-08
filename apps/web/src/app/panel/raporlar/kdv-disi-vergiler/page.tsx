@@ -9,7 +9,7 @@ export default function KdvDisiVergilerSayfasi() {
     <div>
       <PageHeader
         title="KDV Dışı Vergiler"
-        subtitle="Kesin satış ve alış faturalarındaki ÖTV, ÖİV, konaklama, stopaj vb. Tahsil edilen vergi beyan edilip ödenir; ödenen vergi maliyete girmiştir; kestiğimiz stopaj muhtasarla beyan edilir; bizden kesilen stopaj mahsup edilir."
+        subtitle="Kesin satış ve alış faturalarındaki ÖTV, ÖİV, konaklama, stopaj vb. Tahsil edilen vergi beyan edilip ödenir; ödenen vergi maliyete girmiştir; kestiğimiz stopaj muhtasarla beyan edilir; bizden kesilen stopaj (faaliyet dışı gelir ve pazaryeri dahil) mahsup edilir."
         actions={<ButtonLabel as="a" href="/panel/mali-musavir">KDV ön analizi →</ButtonLabel>}
       />
       <RaporPaneli modul="vergi" />

@@ -62,6 +62,8 @@ interface GelirGiderRaporYaniti {
   bitisTarihi: string;
   ozet: GelirGiderOzet;
   karZarar: KarZarar;
+  /** GLR-06: gider değil, yalnız bilgi. */
+  kesilenStopajTry?: string;
   uyarilar?: string[];
   gelirKategorileri: KategoriKirilim[];
   giderKategorileri: KategoriKirilim[];
@@ -273,6 +275,7 @@ export default function GelirGiderRaporuSayfasi() {
               {Boolean(veri.karZarar.amortisman) && <div className="invoice-summary__line is-discount"><span>Amortisman</span><span>-{tl(veri.karZarar.amortisman ?? 0)}</span></div>}
               {Boolean(veri.karZarar.digerGiderler) && <div className="invoice-summary__line is-discount"><span>Demirbaş satış/hurda zararı</span><span>-{tl(veri.karZarar.digerGiderler ?? 0)}</span></div>}
               <div className="invoice-summary__line is-grand"><span>Net kâr / zarar</span><span>{tl(veri.karZarar.netKar)}</span></div>
+              {Number(veri.kesilenStopajTry ?? 0) !== 0 && <div className="invoice-summary__line"><Link href={`/panel/raporlar/pesin-vergiler?${new URLSearchParams({ tur: "yil", yil: veri.baslangicTarihi.slice(0, 4) })}`}>Dönemde bizden kesilen stopaj (mahsup edilecek)</Link><span>{tl(veri.kesilenStopajTry ?? 0)}</span></div>}
               <small className="muted">Mal alışı gider sayılmaz: stoğa girer, satıldığında maliyet olarak düşer. Demirbaş alışı da gider sayılmaz; gideri yıl sonu amortismanıdır. Ödemeler kâra girmez. Aşağıdaki gelir/gider tabloları alışları gider olarak gösterir (bütçe karşılaştırması için).</small>
             </div>
           </Card>

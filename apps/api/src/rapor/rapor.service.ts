@@ -5,6 +5,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { kategoriOzeti, toplam } from "./tahakkuk";
 import { karZararHesapla, karZararVerisi } from "./kar-zarar";
+import { pesinVergiSatirlari } from "../pesin-vergi/pesin-vergi-kaynaklari";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { cariBakiyeToplamlari, envanterDegerlemesi } from "./varlik-ozeti";
 import { faturaPivotDetayi, faturaPivotu, pivotSorgusuCoz } from "./fatura-pivot";
@@ -329,6 +330,8 @@ export class RaporService {
       const { kalemler, satirlar, uyarilar } = await karZararVerisi(tx, tenantId, baslangic, bitis);
       // RPR-12: net kâr SMM bazlı (tek tanım); netFark alış bazlı gelir − gider farkıdır.
       const karZarar = karZararHesapla(kalemler, satirlar);
+      // GLR-06: stopaj gider değildir; gelir brüt kalır, tutar yalnız bilgi satırıdır.
+      const kesilenStopaj = await pesinVergiSatirlari(tx, { baslangic: baslangic.toISOString().slice(0, 10), bitis: bitis.toISOString().slice(0, 10) });
 
       // Yalnız bilgi: stok bir varlıktır, dönem geliri değildir (BUT-04).
       const envanter = await envanterDegerlemesi(tx, tenantId);
@@ -358,6 +361,7 @@ export class RaporService {
           eksiStokSayisi: envanter.eksiStokSayisi,
         },
         karZarar,
+        kesilenStopajTry: kesilenStopaj.reduce((t, k) => t.add(k.tutarTry), new Prisma.Decimal(0)).toFixed(2),
         gelirKategorileri: kategoriOzeti(kalemler, "gelir"),
         giderKategorileri: kategoriOzeti(kalemler, "gider"),
         kalemler: kalemler.map((k) => ({ ...k, tutarTry: k.tutarTry.toFixed(2), tutar: k.tutar.toFixed(2) })),

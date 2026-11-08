@@ -306,7 +306,7 @@ export default function GelirlerPage() {
               <th>Kategori</th>
               <th>Muhatap (Cari) / Belge</th>
               <th className="num">Brüt Tutar</th>
-              <th className="num">Stopaj</th>
+              <th className="num">Peşin ödenen vergi</th>
               <th className="num">Net Tahsilat</th>
               <th>Hesap (Kasa/Banka)</th>
               <th>Açıklama</th>
@@ -472,7 +472,7 @@ export default function GelirlerPage() {
                 <div className="income-preview">
                   <div>
                     <span>Brüt Tutar: <strong>{para(brut, dovizCinsi)}</strong></span>
-                    {Number(stopajTutari) > 0 && <span className="money neg">Stopaj Kesintisi (%{stopajOrani}): -{para(stopajTutari, dovizCinsi)}</span>}
+                    {Number(stopajTutari) > 0 && <span className="money neg">Peşin ödenen vergi (stopaj %{stopajOrani}): -{para(stopajTutari, dovizCinsi)}</span>}
                   </div>
                   <div className="income-preview__total">
                     <span>Net Hesaba Yatan Tutar:</span>

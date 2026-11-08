@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { Rol } from "@tekirextra/shared";
 import { registerRapor, type RaporFiltreDegerleri, type RaporSatiri } from "../core/raporlar/rapor-kayit";
+import { gelirStopajlari, pazaryeriStopajlari, type PesinVergiSatiri } from "../pesin-vergi/pesin-vergi-kaynaklari";
 import type { EkVergi } from "./ek-vergi";
 
 /**
@@ -13,6 +14,9 @@ import type { EkVergi } from "./ek-vergi";
  * edilir ve beyan edilip ödenir; alışta ödenen vergi maliyete girmiştir
  * (bilgi); alışta kestiğimiz stopaj muhtasarla beyan edilir; satışta
  * müşterinin kestiği stopaj geçici/yıllık vergiden mahsup edilir.
+ *
+ * GLR-06: "bizden kesilen" kovasına faaliyet dışı gelir ve kaydedilmiş
+ * pazaryeri stopajı da girer; bunların fatura ve ürünü yoktur.
  */
 
 export type VergiKovasi = "tahsil" | "odenen" | "kestigimiz_stopaj" | "kesilen_stopaj";
@@ -51,8 +55,8 @@ export interface VergiKalemi {
   faturaId: string;
   faturaNo: string;
   tarih: string;
-  cariId: string;
-  stokId: string;
+  cariId: string | null;
+  stokId: string | null;
   cari: string;
   urun: string;
   kova: VergiKovasi;
@@ -64,8 +68,50 @@ export interface VergiKalemi {
   birim: string;
   dovizCinsi: string;
   kur: Prisma.Decimal;
-  matrah: Prisma.Decimal;
+  /** Pazaryeri stopajının matrahı kayıtlarda yoktur. */
+  matrah: Prisma.Decimal | null;
   tutar: Prisma.Decimal;
+  /** Fatura dışı kaynağın ekranı. */
+  yol?: string;
+}
+
+/** GLR-06: fatura dışı kaynaklar sabit kodla süzülür (vergi türü kodu alanı). */
+const GELIR_STOPAJ_KODU = "GELIR";
+const PAZARYERI_STOPAJ_KODU = "ETICARET";
+
+function faturaDisiKalem(s: PesinVergiSatiri, kod: string, ad: string): VergiKalemi {
+  return {
+    faturaId: s.kaynakId,
+    faturaNo: s.belgeNo ?? (s.kaynakTur === "gelir" ? "Gelir kaydı" : "Pazaryeri kesintisi"),
+    tarih: s.tarih,
+    cariId: s.cariId,
+    stokId: null,
+    cari: s.cari ?? "—",
+    urun: s.tur,
+    kova: "kesilen_stopaj",
+    kod,
+    ad,
+    hesap: s.oran ? "oran" : null,
+    oran: s.oran,
+    birimTutar: null,
+    birim: "",
+    dovizCinsi: s.dovizCinsi,
+    kur: s.kur,
+    matrah: s.matrah,
+    tutar: s.tutar,
+    yol: s.yol,
+  };
+}
+
+async function faturaDisiKalemler(f: RaporFiltreDegerleri, tx: Prisma.TransactionClient): Promise<VergiKalemi[]> {
+  if (f.kova && f.kova !== "kesilen_stopaj") return [];
+  const aralik = { baslangic: String(f.baslangic), bitis: String(f.bitis) };
+  const cariId = f.cariId ? String(f.cariId) : undefined;
+  const [gelirler, pazaryeri] = await Promise.all([gelirStopajlari(tx, aralik, cariId), pazaryeriStopajlari(tx, aralik, cariId)]);
+  return [
+    ...gelirler.map((s) => faturaDisiKalem(s, GELIR_STOPAJ_KODU, "Faaliyet dışı gelir stopajı")),
+    ...pazaryeri.map((s) => faturaDisiKalem(s, PAZARYERI_STOPAJ_KODU, "E-ticaret stopajı")),
+  ];
 }
 
 /** Filtredeki dönemin kesin faturalarındaki vergi kalemleri (vergi başına bir kalem). */
@@ -91,7 +137,7 @@ export async function vergiKalemleri(f: RaporFiltreDegerleri, tx: Prisma.Transac
     orderBy: [{ fatura: { tarih: "asc" } }, { fatura: { no: "asc" } }],
   });
   const kodFiltresi = typeof f.vergiKodu === "string" ? f.vergiKodu.trim() : "";
-  return satirlar.flatMap((s) => (Array.isArray(s.ekVergiler) ? (s.ekVergiler as unknown as EkVergi[]) : []).map((v): VergiKalemi => ({
+  const faturaKalemleri = satirlar.flatMap((s) => (Array.isArray(s.ekVergiler) ? (s.ekVergiler as unknown as EkVergi[]) : []).map((v): VergiKalemi => ({
     faturaId: s.fatura.id,
     // Kesin ama e-Belge gönderilmemiş fatura numarayı gönderimde alır.
     faturaNo: s.fatura.no ?? "Numarasız",
@@ -113,8 +159,10 @@ export async function vergiKalemleri(f: RaporFiltreDegerleri, tx: Prisma.Transac
     // Oranlı vergide saklı matrah satır matrahıdır; maktu ve belgedeki tutarda satır matrahı gösterilir.
     matrah: D(v.matrah ?? s.matrah),
     tutar: D(v.tutar),
-  })))
-    .filter((k) => (!f.kova || k.kova === f.kova) && (!kodFiltresi || k.kod === kodFiltresi));
+  })));
+  return [...faturaKalemleri, ...await faturaDisiKalemler(f, tx)]
+    .filter((k) => (!f.kova || k.kova === f.kova) && (!kodFiltresi || k.kod === kodFiltresi))
+    .sort((a, b) => a.tarih.localeCompare(b.tarih));
 }
 
 const vergiEtiketi = (k: { kod: string; ad: string }) => `${k.kod} · ${k.ad}`;
@@ -132,7 +180,7 @@ registerRapor({
   modul: "vergi",
   ad: "KDV Dışı Vergiler — Özet",
   aciklama:
-    "Kesin satış ve alış faturalarındaki ÖTV, ÖİV, konaklama, stopaj vb.; tahsil edilen, ödenen, kestiğimiz ve bizden kesilen stopaj ayrı. Tutarlar fatura kuruyla TL.",
+    "Kesin satış ve alış faturalarındaki ÖTV, ÖİV, konaklama, stopaj vb.; tahsil edilen, ödenen, kestiğimiz ve bizden kesilen stopaj ayrı. Bizden kesilen stopaja faaliyet dışı gelir ve kaydedilmiş pazaryeri stopajı da dahildir. Tutarlar belge kuruyla TL.",
   roller: ROLLER,
   filtreler: FILTRELER,
   gruplamalar: [
@@ -152,12 +200,12 @@ registerRapor({
     const gruplama = girdi.gruplama ?? "ay";
     const kalemler = await vergiKalemleri(girdi.filtreler ?? {}, tx);
     const kovaSirasi = Object.keys(KOVA_ADLARI);
-    type Grup = { grup: string; kova: VergiKovasi; vergi: string; faturalar: Set<string>; matrah: Prisma.Decimal; tutar: Prisma.Decimal };
+    type Grup = { grup: string; kova: VergiKovasi; vergi: string; faturalar: Set<string>; matrah: Prisma.Decimal; matrahVar: boolean; tutar: Prisma.Decimal };
     const ekle = (harita: Map<string, Grup>, grup: string, k: VergiKalemi) => {
       const anahtar = `${grup}|${k.kova}|${k.kod}`;
-      const g = harita.get(anahtar) ?? { grup, kova: k.kova, vergi: vergiEtiketi(k), faturalar: new Set<string>(), matrah: D(0), tutar: D(0) };
+      const g = harita.get(anahtar) ?? { grup, kova: k.kova, vergi: vergiEtiketi(k), faturalar: new Set<string>(), matrah: D(0), matrahVar: false, tutar: D(0) };
       g.faturalar.add(k.faturaId);
-      g.matrah = g.matrah.add(k.matrah.mul(k.kur));
+      if (k.matrah) { g.matrah = g.matrah.add(k.matrah.mul(k.kur)); g.matrahVar = true; }
       g.tutar = g.tutar.add(k.tutar.mul(k.kur));
       harita.set(anahtar, g);
     };
@@ -172,7 +220,7 @@ registerRapor({
       kova: KOVA_ADLARI[g.kova],
       vergi: g.vergi,
       faturaSayisi: g.faturalar.size,
-      matrah: g.matrah.toFixed(2),
+      matrah: g.matrahVar ? g.matrah.toFixed(2) : null,
       tutar: g.tutar.toFixed(2),
     });
     const sirala = (a: Grup, b: Grup) =>
@@ -205,7 +253,7 @@ registerRapor({
     return (await vergiKalemleri(girdi.filtreler ?? {}, tx)).map((k) => ({
       tarih: k.tarih,
       faturaNo: k.faturaNo,
-      faturaYolu: `/panel/fatura/yeni?ac=${k.faturaId}`,
+      faturaYolu: k.yol ?? `/panel/fatura/yeni?ac=${k.faturaId}`,
       cariId: k.cariId,
       cari: k.cari,
       stokId: k.stokId,
@@ -213,7 +261,7 @@ registerRapor({
       kova: KOVA_ADLARI[k.kova],
       vergi: vergiEtiketi(k),
       oran: oranMetni(k),
-      matrah: k.matrah.toFixed(2),
+      matrah: k.matrah?.toFixed(2) ?? null,
       tutar: k.tutar.toFixed(2),
       dovizCinsi: k.dovizCinsi,
       tutarTl: k.tutar.mul(k.kur).toFixed(2),
