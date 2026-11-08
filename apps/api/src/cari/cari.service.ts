@@ -33,7 +33,7 @@ import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MU
 import { bugunTR, metinNormalize, YURT_DISI_ALICI_VKN } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
-import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { geriAlinanHareketler, iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { yenidenDenklestir } from "../fatura/denklestirme";
 import { ekstreAyrintilari, hedefDovizTutari, kurCozucu } from "./cari-ekstre";
 import { ekstrePdfHtml } from "./cari-ekstre-pdf";
@@ -1144,15 +1144,18 @@ export class CariService {
         },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
       }),
-      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { id: true, tip: true, tutarTry: true, dovizCinsi: true, tutar: true, kur: true, tarih: true, kaynakTur: true, kaynakRef: true } }) : Promise.resolve([]),
+      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { id: true, tip: true, tutarTry: true, dovizCinsi: true, tutar: true, kur: true, tarih: true, kaynakTur: true, kaynakRef: true, createdAt: true } }) : Promise.resolve([]),
     ]));
     // CARI-22: iptal edilmiş faturanın hareketi ile ters hareketi birbirini
     // sıfırlar ve varsayılan olarak gösterilmez. Devirden de düşülür; yoksa
     // tarih aralığı iptali ikiye böldüğünde (satış önce, iptal aralıkta) devir
     // ile dönem sonu arasında gizlenen satır kadar fark kalırdı.
     const iptaller = await this.prisma.tenantIslem(tenantId, (tx) => iptalEdilmisFaturalar(tx, [...tumHareketler, ...tumOncekiHareketler]));
-    const gorunur = <T extends { kaynakTur: string; kaynakRef: string | null }>(liste: T[]) =>
-      iptalleriGosterilsin ? liste : liste.filter((h) => !iptalCiftiMi(h, iptaller));
+    // CARI-63: taslağa geri alınan kesinleştirme ve ters kaydı da aynı kuralla gizlenir.
+    const geriAlinan = geriAlinanHareketler([...tumHareketler, ...tumOncekiHareketler]);
+    const iptalSatiri = (h: { id: string; kaynakTur: string; kaynakRef: string | null }) => iptalCiftiMi(h, iptaller) || geriAlinan.has(h.id);
+    const gorunur = <T extends { id: string; kaynakTur: string; kaynakRef: string | null }>(liste: T[]) =>
+      iptalleriGosterilsin ? liste : liste.filter((h) => !iptalSatiri(h));
     const hareketler = gorunur(tumHareketler);
     const oncekiHareketler = gorunur(tumOncekiHareketler);
     const krediKartiKaynaklari = hareketler.filter((h) => h.kaynakTur === "kredi_karti" && h.kaynakRef).map((h) => h.kaynakRef!);
@@ -1199,7 +1202,7 @@ export class CariService {
         // Faturanın otomatik açıklaması belge no'yu tekrarlar, gösterilmez.
         aciklama: ekstreAciklamasi(h.aciklama, h.kaynakTur) || null,
         kaynakTur: h.kaynakTur,
-        iptal: iptalCiftiMi(h, iptaller),
+        iptal: iptalSatiri(h),
         makbuzYolu: h.kaynakTur === "pos_tahsilat" && h.kaynakRef ? posMakbuzHaritasi.get(h.kaynakRef) ?? null : null,
         odemeYontemi: kartHareketi ? {
           tur: "kredi_karti",

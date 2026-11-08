@@ -38,7 +38,7 @@ import type {
 } from "./stok.semalar";
 
 import { stokExcelOku } from "../core/excel-yardimci";
-import { IPTAL_CIFTI_KAYNAKLARI, iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { geriAlinanHareketler, IPTAL_CIFTI_KAYNAKLARI, iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { birimKatsayisiBul } from "./birim-cevrim";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 
@@ -784,6 +784,12 @@ export class StokService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const temel: Prisma.StokHareketWhereInput = { stokId, ...(s.depoId ? { depoId: s.depoId } : {}) };
       const iptalKosulu: Prisma.StokHareketWhereInput = {};
+      // STK-42: taslağa geri alınan kesinleştirme ve ters kaydı; tarih süzgecinden bağımsız bulunur ki çift bütün kalsın.
+      const geriAlmaRefleri = (await tx.stokHareket.findMany({ where: { ...temel, kaynakTur: "fatura_geri_alma", kaynakRef: { not: null } }, distinct: ["kaynakRef"], select: { kaynakRef: true } })).map((r) => r.kaynakRef!);
+      const geriAlinan = geriAlmaRefleri.length
+        ? geriAlinanHareketler(await tx.stokHareket.findMany({ where: { ...temel, kaynakTur: { in: ["fatura", "fatura_geri_alma"] }, kaynakRef: { in: geriAlmaRefleri } }, select: { id: true, kaynakTur: true, kaynakRef: true, createdAt: true } }))
+        : new Set<string>();
+      if (!s.iptaller && geriAlinan.size) iptalKosulu.id = { notIn: [...geriAlinan] };
       if (!s.iptaller) {
         const refler = await tx.stokHareket.findMany({
           where: { ...temel, kaynakTur: { in: [...IPTAL_CIFTI_KAYNAKLARI] }, kaynakRef: { not: null } },
@@ -809,7 +815,7 @@ export class StokService {
       const sayfa = kayitlar.slice(0, s.adet);
       const iptaller = s.iptaller ? await iptalEdilmisFaturalar(tx, sayfa) : new Set<string>();
       const sonuc = {
-        kayitlar: sayfa.map((h) => ({ ...h, iptal: iptalCiftiMi(h, iptaller) })),
+        kayitlar: sayfa.map((h) => ({ ...h, iptal: iptalCiftiMi(h, iptaller) || geriAlinan.has(h.id) })),
         sonrakiImlec: kayitlar.length > s.adet ? sayfa[sayfa.length - 1].id : null,
       };
       if (s.imlec) return sonuc;

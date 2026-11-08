@@ -3,7 +3,7 @@ import { BadRequestException } from "@nestjs/common";
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
 import { bilinenMarj, satisSatirlari, urunBazinda } from "./satis-ozeti";
 import { tarihliBakiyeler, type TarihliBakiye } from "./tarihli-envanter";
-import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
+import { geriAlinanHareketler, iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
 /** Stok modülü raporları (STK-13) — RPR-06 araç seti tanımları. */
 
@@ -261,6 +261,8 @@ registerRapor({
         ...(f.depo ? { depoId: String(f.depo) } : {}),
       },
       select: {
+        id: true,
+        createdAt: true,
         stokId: true,
         tip: true,
         miktar: true,
@@ -272,6 +274,7 @@ registerRapor({
     // STK-22: iptal edilmiş faturanın hareketleri net değişimi etkilemez ama
     // giriş ve çıkış sütunlarını şişirir; seçenek işaretlenmedikçe sayılmaz.
     const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
+    const geriAlinan = geriAlinanHareketler(hareketler, (h) => `${h.kaynakRef}|${h.stokId}`); // STK-42
     const iptalleriSay = iptalleriGoster(f.iptaller);
     const gruplar = new Map<
       string,
@@ -286,7 +289,7 @@ registerRapor({
       }
     >();
     for (const h of hareketler) {
-      if (!iptalleriSay && iptalCiftiMi(h, iptaller)) continue;
+      if (!iptalleriSay && (iptalCiftiMi(h, iptaller) || geriAlinan.has(h.id))) continue;
       const g = gruplar.get(h.stokId) ?? {
         stokId: h.stokId,
         kod: h.stok.kod,

@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
-import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
+import { geriAlinanHareketler, iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 import { bilinenMarj, maliyetBilinmiyor, satisSatirlari } from "./satis-ozeti";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
@@ -68,8 +68,10 @@ registerRapor({
     const hareketler = await tx.stokHareket.findMany({ where: kosul, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, varyant: { select: { kod: true, ad: true } }, depo: { select: { kod: true, ad: true } } } });
     // STK-22: iptal edilmiş faturanın hareketleri seçenek işaretlenmedikçe gösterilmez.
     const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
+    const geriAlinan = geriAlinanHareketler(hareketler, (h) => `${h.kaynakRef}|${h.stokId}`); // STK-42
+    const gizli = (h: (typeof hareketler)[number]) => iptalCiftiMi(h, iptaller) || geriAlinan.has(h.id);
     const belgeler = await kaynakBelgeleri(tx, hareketler);
-    return hareketler.filter((h) => (iptalleriGoster(f.iptaller) || !iptalCiftiMi(h, iptaller)) && (!f.grup || hareketGrubu(h) === f.grup)).map((h) => { const m = D(h.miktar); return { tarih: h.tarih.toISOString().slice(0, 10), stokId: h.stokId, kod: h.stok.kod, urun: `${h.stok.ad}${h.varyant ? ` / ${h.varyant.kod} — ${h.varyant.ad}` : ""}`, depo: `${h.depo.kod} — ${h.depo.ad}`, hareket: h.kaynakTur === "uretim_sarf" ? "Üretim sarfı" : h.kaynakTur === "uretim_giris" ? "Üretim girişi" : HAREKET_ADI[h.tip] ?? h.tip, ...kaynakEtiketi(h, belgeler), giris: m.gt(0) ? m.toFixed(3) : "0", cikis: m.lt(0) ? m.abs().toFixed(3) : "0", ...maliyetHucreleri(m, h.maliyet), aciklama: `${h.aciklama ?? ""}${iptalCiftiMi(h, iptaller) ? " (iptal)" : ""}` }; });
+    return hareketler.filter((h) => (iptalleriGoster(f.iptaller) || !gizli(h)) && (!f.grup || hareketGrubu(h) === f.grup)).map((h) => { const m = D(h.miktar); return { tarih: h.tarih.toISOString().slice(0, 10), stokId: h.stokId, kod: h.stok.kod, urun: `${h.stok.ad}${h.varyant ? ` / ${h.varyant.kod} — ${h.varyant.ad}` : ""}`, depo: `${h.depo.kod} — ${h.depo.ad}`, hareket: h.kaynakTur === "uretim_sarf" ? "Üretim sarfı" : h.kaynakTur === "uretim_giris" ? "Üretim girişi" : HAREKET_ADI[h.tip] ?? h.tip, ...kaynakEtiketi(h, belgeler), giris: m.gt(0) ? m.toFixed(3) : "0", cikis: m.lt(0) ? m.abs().toFixed(3) : "0", ...maliyetHucreleri(m, h.maliyet), aciklama: `${h.aciklama ?? ""}${gizli(h) ? " (iptal)" : ""}` }; });
   },
 });
 

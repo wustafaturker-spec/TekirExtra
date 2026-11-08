@@ -29,6 +29,32 @@ export function iptalCiftiMi(h: KaynakliHareket, iptaller: Set<string>): boolean
   return faturaKaynakli(h) && iptaller.has(h.kaynakRef!);
 }
 
+export interface GeriAlmaHareketi extends KaynakliHareket { id: string; createdAt: Date }
+
+/**
+ * CARI-63/STK-42: taslağa geri alınmış kesinleştirmenin hareketi ile ters
+ * hareketi. Her geri alma o andaki son kesinleştirmeyi çevirir; yani bir
+ * faturada N geri alma varsa ilk N kesinleştirme hareketi çevrilmiştir, son
+ * kesinleştirme açık kalır. Çift aynı tarihte olduğundan tarih penceresi
+ * bölemez. `anahtar`: stokta fatura + ürün (eski hizmet hareketleri çevrilmez).
+ */
+export function geriAlinanHareketler<T extends GeriAlmaHareketi>(hareketler: T[], anahtar: (h: T) => string = (h) => h.kaynakRef!): Set<string> {
+  const gruplar = new Map<string, { kesin: T[]; ters: T[] }>();
+  for (const h of hareketler) {
+    if (!h.kaynakRef || (h.kaynakTur !== "fatura" && h.kaynakTur !== "fatura_geri_alma")) continue;
+    const g = gruplar.get(anahtar(h)) ?? { kesin: [], ters: [] };
+    (h.kaynakTur === "fatura" ? g.kesin : g.ters).push(h);
+    gruplar.set(anahtar(h), g);
+  }
+  const sonuc = new Set<string>();
+  for (const { kesin, ters } of gruplar.values()) {
+    if (!ters.length) continue;
+    for (const h of ters) sonuc.add(h.id);
+    for (const h of [...kesin].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).slice(0, ters.length)) sonuc.add(h.id);
+  }
+  return sonuc;
+}
+
 /** Sorgu parametresi (`iptaller=1`) iptallerin gösterilmesini istiyor mu? */
 export function iptalleriGoster(deger: unknown): boolean {
   return deger === true || deger === "1" || deger === "true";
