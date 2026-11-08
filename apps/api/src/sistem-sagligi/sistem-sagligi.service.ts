@@ -6,6 +6,8 @@ import { PrismaService } from "../core/prisma.service";
 import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { yedekSorunlari } from "../yedekleme/yedek-kurallari";
+import { YedeklemeService } from "../yedekleme/yedekleme.service";
 import { ESIK, saatlikAtlama, sorunlariBul, type Sorun } from "./sistem-alarm-kurallari";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
@@ -29,6 +31,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly platform: PlatformPrismaService,
     private readonly kuyruk: EbelgeKuyrukService,
+    private readonly yedekleme: YedeklemeService,
   ) {}
 
   onModuleInit(): void {
@@ -119,12 +122,12 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
     this.calisiyor = true;
     try {
       const v = await this.topla(simdi);
-      const sorunlar = sorunlariBul({
+      const sorunlar = [...sorunlariBul({
         simdi, workerSurecleri: v.workerSurecleri, oncekiWorkerVar: v.oncekiWorkerVar,
         oluIsler: v.kuyruk.oluIsler.map((o) => ({ ...o, unvan: v.adlar.get(o.tenantId) })),
         kursorler: v.kursorler.map((k) => ({ tenantId: k.tenant_id, unvan: k.unvan, sonCekimAt: k.son_cekim_at })),
         isler: v.isler,
-      });
+      }), ...yedekSorunlari(await this.yedekleme.durum(simdi))];
       const mevcut = new Map((await this.prisma.sistemAlarmi.findMany()).map((a) => [a.anahtar, a]));
       const bildirilecek: Sorun[] = [];
       for (const s of sorunlar) {

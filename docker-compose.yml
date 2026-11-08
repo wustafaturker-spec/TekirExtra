@@ -146,6 +146,23 @@ services:
         condition: service_healthy
     profiles: ["app"]
 
+  # PLT-110: yedek servisi. API'ye Docker erişimi verilmez; bu servis talepleri veritabanından alır.
+  yedekleme:
+    image: postgres:16-alpine
+    entrypoint: ["sh", "/ops/yedek-ajani.sh"]
+    init: true
+    env_file: .env.docker
+    environment:
+      YEDEK_SAHIP: "${YEDEK_SAHIP:-}"
+    volumes:
+      - ./scripts/yedekleme/yedek-ajani.sh:/ops/yedek-ajani.sh:ro
+      - ./backups/platform:/yedekler
+      - minio-data:/minio:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["app"]
+
   web:
     build:
       context: .

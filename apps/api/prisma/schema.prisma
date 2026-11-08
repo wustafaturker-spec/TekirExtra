@@ -6550,6 +6550,7 @@ enum PlatformRol {
 
 /// MVZ-04: platform ekibi kullanıcısı; kiracı kullanıcılarından ayrıdır, hiçbir kiracı verisine erişmez.
 model PlatformKullanici {
+  yedekler PlatformYedek[] @relation("PlatformYedekBaslatan")
   id                 String      @id @default(uuid()) @db.Uuid
   eposta             String      @unique
   adSoyad            String      @map("ad_soyad")
@@ -8091,4 +8092,54 @@ model BaglantiOtomatikIsi {
 
   @@unique([tenantId, baglantiId, is])
   @@map("baglanti_otomatik_isleri")
+}
+
+/// PLT-109…117: yedek talebi ve sonucu. Yedeği ayrı `yedekleme` servisi alır;
+/// platform rolü yalnız talep, koruma, silme işareti ve deneme talebi yazar.
+model PlatformYedek {
+  id             String    @id @default(uuid()) @db.Uuid
+  /// otomatik | elle
+  tur            String    @db.VarChar(10)
+  /// bekliyor | calisiyor | basarili | hatali | silindi
+  durum          String    @default("bekliyor") @db.VarChar(12)
+  /// Otomatik yedeğin İstanbul günü.
+  gun            DateTime? @db.Date
+  neden          String?   @db.VarChar(500)
+  baslatanId     String?   @map("baslatan_id") @db.Uuid
+  talepAt        DateTime  @default(now()) @map("talep_at")
+  baslangicAt    DateTime? @map("baslangic_at")
+  bitisAt        DateTime? @map("bitis_at")
+  klasor         String?   @unique @db.VarChar(80)
+  boyutBayt      BigInt?   @map("boyut_bayt")
+  veritabaniBayt BigInt?   @map("veritabani_bayt")
+  dosyaBayt      BigInt?   @map("dosya_bayt")
+  ozet           String?   @db.VarChar(64)
+  sonMigration   String?   @map("son_migration")
+  uygulamaSurumu String?   @map("uygulama_surumu")
+  kunye          Json?
+  hata           String?
+  korunuyor      Boolean   @default(false)
+  silinecek      Boolean   @default(false)
+  silindiAt      DateTime? @map("silindi_at")
+  /// bekliyor | calisiyor | basarili | hatali
+  denemeDurum    String?   @map("deneme_durum") @db.VarChar(12)
+  denemeTalepAt  DateTime? @map("deneme_talep_at")
+  denemeAt       DateTime? @map("deneme_at")
+  denemeDetay    String?   @map("deneme_detay")
+
+  baslatan PlatformKullanici? @relation("PlatformYedekBaslatan", fields: [baslatanId], references: [id], onDelete: SetNull)
+
+  @@index([talepAt(sort: Desc)], map: "platform_yedekler_talep_idx")
+  @@map("platform_yedekler")
+}
+
+/// PLT-110: yedek servisinin nabzı ve disk durumu (tek satır).
+model PlatformYedekAjan {
+  id             Int      @id @default(1) @db.SmallInt
+  sonNabizAt     DateTime @map("son_nabiz_at")
+  diskToplamBayt BigInt   @map("disk_toplam_bayt")
+  diskBosBayt    BigInt   @map("disk_bos_bayt")
+  surum          String?
+
+  @@map("platform_yedek_ajan")
 }

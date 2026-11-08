@@ -33,6 +33,7 @@ import { B2bModule } from "./b2b/b2b.module";
 import { AiModule } from "./ai/ai.module";
 
 import { GelirlerModule } from "./gelirler/gelirler.module";
+import { YedeklemeModule } from "./yedekleme/yedekleme.module";
 import { PesinVergiModule } from "./pesin-vergi/pesin-vergi.module";
 import { ProjelerModule } from "./projeler/projeler.module";
 import { DemirbasModule } from "./demirbas/demirbas.module";
@@ -57,6 +58,7 @@ import { SistemSagligiModule } from "./sistem-sagligi/sistem-sagligi.module";
     MevzuatModule,
     AbonelikOdemeModule,
     SistemSagligiModule,
+    YedeklemeModule,
     TenantModule,
     BelgelerModule,
     CariModule,
