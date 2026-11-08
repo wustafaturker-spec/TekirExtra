@@ -4,6 +4,29 @@
  * bilinmiyorsa marj denetimi ve taban fiyat üretilmez.
  */
 
+/** AI-21: Ayarlar > Modüller'den kiracıca değiştirilebilen değerler. */
+export interface FiyatOnerisiAyari {
+  bayiIskontoYuzde: number;
+  toptanIskontoYuzde: number;
+  vipIskontoYuzde: number;
+  hacimEsik1: number;
+  hacimIskonto1Yuzde: number;
+  hacimEsik2: number;
+  hacimIskonto2Yuzde: number;
+  aylikFinansmanYuzde: number;
+}
+
+export const FIYAT_ONERISI_VARSAYILAN: FiyatOnerisiAyari = {
+  bayiIskontoYuzde: 15,
+  toptanIskontoYuzde: 10,
+  vipIskontoYuzde: 8,
+  hacimEsik1: 250,
+  hacimIskonto1Yuzde: 2.5,
+  hacimEsik2: 1000,
+  hacimIskonto2Yuzde: 5,
+  aylikFinansmanYuzde: 4.5,
+};
+
 export interface FiyatlandirmaGirdisi {
   stokId: string;
   bazFiyat: number;
@@ -21,8 +44,6 @@ export interface FiyatlandirmaGirdisi {
   musteriGrubu?: string | null;
   /** Carinin geçmişteki ağırlıklı ortalama tahsilat gecikmesi (gün) */
   cariOrtalamaGecikmeGun?: number | null;
-  /** Aylık piyasa finansman / faiz oranı (Yüzde olarak, varsayılan %4.5) */
-  aylikFinansmanOrani?: number;
   /** İstenen sipariş miktarı (Hacim indirimi için) */
   miktar?: number;
 }
@@ -50,10 +71,10 @@ export interface FiyatlandirmaSonucu {
   guvenSkoru: number;
 }
 
-export function fiyatOnerisiHesapla(girdi: FiyatlandirmaGirdisi): FiyatlandirmaSonucu {
+export function fiyatOnerisiHesapla(girdi: FiyatlandirmaGirdisi, ayar: FiyatOnerisiAyari = FIYAT_ONERISI_VARSAYILAN): FiyatlandirmaSonucu {
   const gerekceler: string[] = [];
   const uyarilar: string[] = [];
-  const aylikFaiz = girdi.aylikFinansmanOrani ?? 4.5; // Aylık %4.5 finansman maliyeti
+  const aylikFaiz = ayar.aylikFinansmanYuzde;
   const bazFiyat = Math.max(0, girdi.bazFiyat);
   const maliyet = girdi.maliyet && girdi.maliyet > 0 ? girdi.maliyet : null;
 
@@ -85,23 +106,23 @@ export function fiyatOnerisiHesapla(girdi: FiyatlandirmaGirdisi): FiyatlandirmaS
     // 2. DİNAMİK MÜŞTERİ GRUBU VE HACİM HESAPLAMASI
     const grup = (girdi.musteriGrubu || "").toLocaleLowerCase("tr-TR");
     if (grup.includes("bayi") || grup.includes("distribütör")) {
-      grupIskontosuYuzde = 15;
-      gerekceler.push(`Bayi müşteri grubu için %${grupIskontosuYuzde} taban iskonto uygulandı.`);
+      grupIskontosuYuzde = ayar.bayiIskontoYuzde;
+      if (grupIskontosuYuzde > 0) gerekceler.push(`Bayi müşteri grubu için %${grupIskontosuYuzde} taban iskonto uygulandı.`);
     } else if (grup.includes("toptan")) {
-      grupIskontosuYuzde = 10;
-      gerekceler.push(`Toptan müşteri grubu için %${grupIskontosuYuzde} taban iskonto uygulandı.`);
+      grupIskontosuYuzde = ayar.toptanIskontoYuzde;
+      if (grupIskontosuYuzde > 0) gerekceler.push(`Toptan müşteri grubu için %${grupIskontosuYuzde} taban iskonto uygulandı.`);
     } else if (grup.includes("vip") || grup.includes("ozel")) {
-      grupIskontosuYuzde = 8;
-      gerekceler.push(`VIP müşteri grubu için %${grupIskontosuYuzde} iskonto uygulandı.`);
+      grupIskontosuYuzde = ayar.vipIskontoYuzde;
+      if (grupIskontosuYuzde > 0) gerekceler.push(`VIP müşteri grubu için %${grupIskontosuYuzde} iskonto uygulandı.`);
     }
 
     const miktar = girdi.miktar ?? 1;
-    if (miktar >= 1000) {
-      miktarIskontosuYuzde = 5;
-      gerekceler.push(`1.000+ adetlik yüksek hacim için ek %${miktarIskontosuYuzde} iskonto uygulandı.`);
-    } else if (miktar >= 250) {
-      miktarIskontosuYuzde = 2.5;
-      gerekceler.push(`250+ adetlik sipariş hacmi için ek %${miktarIskontosuYuzde} iskonto uygulandı.`);
+    if (miktar >= ayar.hacimEsik2) {
+      miktarIskontosuYuzde = ayar.hacimIskonto2Yuzde;
+      if (miktarIskontosuYuzde > 0) gerekceler.push(`${ayar.hacimEsik2.toLocaleString("tr-TR")}+ adetlik yüksek hacim için ek %${miktarIskontosuYuzde} iskonto uygulandı.`);
+    } else if (miktar >= ayar.hacimEsik1) {
+      miktarIskontosuYuzde = ayar.hacimIskonto1Yuzde;
+      if (miktarIskontosuYuzde > 0) gerekceler.push(`${ayar.hacimEsik1.toLocaleString("tr-TR")}+ adetlik sipariş hacmi için ek %${miktarIskontosuYuzde} iskonto uygulandı.`);
     }
 
     const gecikme = Math.max(0, girdi.cariOrtalamaGecikmeGun ?? 0);

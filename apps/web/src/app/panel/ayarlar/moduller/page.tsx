@@ -117,6 +117,20 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "ihtarMetni", etiket: "Ödeme ihtarı — metin", tip: "uzunMetin", ipucu: HATIRLATMA_ALANLARI },
     ],
   },
+  fiyat_onerisi: {
+    baslik: "Fiyat Önerisi",
+    ikon: "🏷️",
+    alanlar: [
+      { ad: "bayiIskontoYuzde", etiket: "Bayi grubu iskontosu (%)", tip: "sayi", min: 0, max: 100, ipucu: "Cari grubunun adında bayi ya da distribütör geçiyorsa uygulanır. Grup ve hacim iskontolarının toplamı en çok %35 olur." },
+      { ad: "toptanIskontoYuzde", etiket: "Toptan grubu iskontosu (%)", tip: "sayi", min: 0, max: 100, ipucu: "Cari grubunun adında toptan geçiyorsa uygulanır." },
+      { ad: "vipIskontoYuzde", etiket: "VIP grubu iskontosu (%)", tip: "sayi", min: 0, max: 100, ipucu: "Cari grubunun adında VIP ya da özel geçiyorsa uygulanır." },
+      { ad: "hacimEsik1", etiket: "Hacim iskontosu: 1. eşik (adet)", tip: "sayi", min: 1, max: 100_000_000 },
+      { ad: "hacimIskonto1Yuzde", etiket: "1. eşikte ek iskonto (%)", tip: "sayi", min: 0, max: 100 },
+      { ad: "hacimEsik2", etiket: "Hacim iskontosu: 2. eşik (adet)", tip: "sayi", min: 1, max: 100_000_000, ipucu: "1. eşikten büyük olmalıdır." },
+      { ad: "hacimIskonto2Yuzde", etiket: "2. eşikte ek iskonto (%)", tip: "sayi", min: 0, max: 100 },
+      { ad: "aylikFinansmanYuzde", etiket: "Aylık finansman oranı (%)", tip: "sayi", min: 0, max: 100, ipucu: "Vadeli satışta fiyata eklenen finansman farkının aylık oranı." },
+    ],
+  },
   stok: {
     baslik: "Stok",
     ikon: "📦",
@@ -159,7 +173,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "ebelge", "stok", "stok_ihtiyac_plani", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "ebelge", "stok", "fiyat_onerisi", "stok_ihtiyac_plani", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;
@@ -268,7 +282,7 @@ export default function ModulAyarlariSayfasi() {
       );
     }
     if (a.tip === "sayi") {
-      return <Input type="number" min={a.min} max={a.max} value={v === null || v === undefined ? "" : String(v)} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)} />;
+      return <Input type="number" step="any" min={a.min} max={a.max} value={v === null || v === undefined ? "" : String(v)} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)} />;
     }
     if (a.tip === "onay") {
       return (

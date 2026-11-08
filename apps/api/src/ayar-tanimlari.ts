@@ -1,3 +1,4 @@
+import { FIYAT_ONERISI_VARSAYILAN } from "./stok/fiyat-onerisi";
 import {IHTIYAC_MODULU,ihtiyacAyariSemasi} from './stok/ihtiyac-erisim';
 import { CRM_BELGE_MODULU, crmBelgeAyariSemasi } from "./crm/crm-belge.semalar";
 import { z } from "zod";
@@ -47,6 +48,23 @@ registerModulAyar(
     ihtarMetni: z.string().max(5000),
   }),
   { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar", ...VARSAYILAN_SABLONLAR },
+);
+
+/// AI-21: fiyat önerisinin firma bazlı oranları; varsayılanlar eski sabit değerlerdir.
+const yuzdeAyari = z.number().min(0).max(100);
+registerModulAyar(
+  "fiyat_onerisi",
+  z.object({
+    bayiIskontoYuzde: yuzdeAyari,
+    toptanIskontoYuzde: yuzdeAyari,
+    vipIskontoYuzde: yuzdeAyari,
+    hacimEsik1: z.number().min(1).max(100_000_000),
+    hacimIskonto1Yuzde: yuzdeAyari,
+    hacimEsik2: z.number().min(1).max(100_000_000),
+    hacimIskonto2Yuzde: yuzdeAyari,
+    aylikFinansmanYuzde: yuzdeAyari,
+  }).refine((a) => a.hacimEsik2 > a.hacimEsik1, { path: ["hacimEsik2"], message: "İkinci hacim eşiği birinciden büyük olmalı" }),
+  { ...FIYAT_ONERISI_VARSAYILAN },
 );
 
 registerModulAyar(

@@ -13,7 +13,8 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
-import { fiyatOnerisiHesapla } from "./fiyat-onerisi";
+import { FIYAT_ONERISI_VARSAYILAN, fiyatOnerisiHesapla, type FiyatOnerisiAyari } from "./fiyat-onerisi";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { bugunTR, metinNormalize, vergiTuruBul, yabanciAdlarNormalize, type DovizKodu } from "@tekirextra/shared";
@@ -87,6 +88,7 @@ export class StokService {
     private readonly depoService: DepoService,
     private readonly donemKilidi: DonemKilidiService,
     @Optional() private readonly mevzuat?: MevzuatService,
+    @Optional() private readonly ayarlar?: AyarlarService,
   ) {}
 
   // ─── STOK KART YÖNETİMİ (STK-01) ───────────────────────────────────────────
@@ -432,6 +434,8 @@ export class StokService {
         : null;
 
       // Taban: carinin iskontosu düşülmüş fiyat; öneri uygulanınca satıra ayrıca iskonto yazılmaz.
+      // AI-21: firmanın oranları; ayar yoksa eski sabit değerler.
+      const oneriAyari = this.ayarlar ? ((await this.ayarlar.getir("fiyat_onerisi")) as unknown as FiyatOnerisiAyari) : FIYAT_ONERISI_VARSAYILAN;
       fiyatOnerisi = fiyatOnerisiHesapla({
         stokId,
         bazFiyat: cevrilmisFiyat * (1 - iskontoOrani / 100),
@@ -444,7 +448,7 @@ export class StokService {
         miktar: Number(miktar || 1),
         musteriGrubu: cariGrupAdi,
         cariOrtalamaGecikmeGun: null,
-      });
+      }, oneriAyari);
       if (iskontoOrani > 0) fiyatOnerisi.gerekceler.unshift(`Carinin %${iskontoOrani} iskontosu tabana yansıtıldı.`);
     }
 
