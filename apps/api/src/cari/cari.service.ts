@@ -573,6 +573,7 @@ export class CariService {
           mersisNo: cari.mersisNo,
           ticaretSicilNo: cari.ticaretSicilNo,
           kvkkOnayTarihi: cari.kvkkOnayTarihi,
+          smsHatirlatma: cari.smsHatirlatma,
           eposta: cari.eposta,
           telefon: cari.telefon,
           webSitesi: cari.webSitesi,
@@ -1382,6 +1383,7 @@ export class CariService {
     mersisNo: string | null;
     ticaretSicilNo: string | null;
     kvkkOnayTarihi: Date | null;
+    smsHatirlatma: boolean;
     eposta: string | null;
     telefon: string | null;
     webSitesi: string | null;
@@ -1422,6 +1424,7 @@ export class CariService {
       mersisNo: k.mersisNo,
       ticaretSicilNo: k.ticaretSicilNo,
       kvkkOnayTarihi: k.kvkkOnayTarihi?.toISOString().slice(0, 10) ?? null,
+      smsHatirlatma: k.smsHatirlatma,
       eposta: k.eposta,
       telefon: k.telefon,
       webSitesi: k.webSitesi,

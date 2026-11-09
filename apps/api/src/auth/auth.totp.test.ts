@@ -111,3 +111,44 @@ describe("2FA kurulum karekodu (KLN-23)", () => {
     expect(Buffer.from(s.karekod.split(",")[1], "base64").toString("utf8")).toContain("<svg");
   });
 });
+
+describe("SMS ile ikinci adım (ILT-12)", () => {
+  const smsliKur = async (ek: Record<string, unknown> = {}) => {
+    const t = kur();
+    t.k.parolaHash = await argon2.hash(PAROLA);
+    Object.assign(t.k, { smsIkinciAdim: true, telefon: "+905321112233", telefonDogrulandiAt: new Date(), oturumSurumu: 0, ...ek });
+    const smsKod = { gonder: vi.fn(async () => true), dogrula: vi.fn(async (g: { kod: string }) => (g.kod === "123456" ? { telefon: "+905321112233" } : null)) };
+    Object.assign(t.service, { smsKod });
+    return { ...t, smsKod };
+  };
+  it("parola doğruysa kod gönderir ve ister", async () => {
+    const t = await smsliKur();
+    await expect(t.service.giris("k@ornek.com", PAROLA)).rejects.toThrow("SMS kodu gerekli");
+    expect(t.smsKod.gonder).toHaveBeenCalledWith(expect.objectContaining({ amac: "giris", telefon: "+905321112233" }));
+  });
+  it("yanlış parolada SMS çıkmaz", async () => {
+    const t = await smsliKur();
+    await expect(t.service.giris("k@ornek.com", "yanlis-parola-1")).rejects.toThrow("hatalı");
+    expect(t.smsKod.gonder).not.toHaveBeenCalled();
+  });
+  it("yanlış kod reddedilir, doğru kodla oturum açılır", async () => {
+    const t = await smsliKur();
+    await expect(t.service.giris("k@ornek.com", PAROLA, "000000")).rejects.toThrow("SMS kodu geçersiz");
+    expect((await t.service.giris("k@ornek.com", PAROLA, "123456")).accessToken).toBe("erisim-token");
+  });
+  it("gönderilemezse giriş açılmaz, yönlendirme verilir", async () => {
+    const t = await smsliKur();
+    t.smsKod.gonder.mockRejectedValueOnce(new Error("kredi yok"));
+    await expect(t.service.giris("k@ornek.com", PAROLA)).rejects.toThrow("yöneticinizden");
+  });
+  it("TOTP açıksa SMS kullanılmaz", async () => {
+    const t = await smsliKur({ totpAktif: true, totpSecretSifreli: "x" });
+    await expect(t.service.giris("k@ornek.com", PAROLA)).rejects.toThrow("TOTP kodu gerekli");
+    expect(t.smsKod.gonder).not.toHaveBeenCalled();
+  });
+  it("doğrulanmamış numara ikinci adım istemez", async () => {
+    const t = await smsliKur({ telefonDogrulandiAt: null });
+    expect((await t.service.giris("k@ornek.com", PAROLA)).accessToken).toBe("erisim-token");
+    expect(t.smsKod.gonder).not.toHaveBeenCalled();
+  });
+});

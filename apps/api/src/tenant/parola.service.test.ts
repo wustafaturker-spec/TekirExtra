@@ -203,6 +203,12 @@ describe("yönetici 2FA sıfırlaması (yönetim P1-1)", () => {
     expect(k.denetim.at(-1)).toMatchObject({ islem: "kullanici_2fa_sifirlandi", userId: YONETICI, varlikId: HEDEF });
   });
 
+  it("yalnız SMS ikinci adımı açık kullanıcı da sıfırlanır (ILT-12)", async () => {
+    Object.assign(iki(HEDEF), { totpAktif: false, smsIkinciAdim: true });
+    await k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(HEDEF));
+    expect(iki(HEDEF)).toMatchObject({ smsIkinciAdim: false });
+  });
+
   it("kendine uygulanamaz; 2FA'sı kapalı kullanıcıda anlamlı hata verir", async () => {
     await expect(k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(YONETICI))).rejects.toThrow(/Hesap Güvenliği/);
     await expect(k.olarak(YONETICI, () => k.service.yoneticiIkiAdimSifirla(HEDEF))).rejects.toThrow(/zaten kapalı/);

@@ -17,6 +17,7 @@ interface Tercih {
   tur: string;
   uygulamaIci: boolean;
   eposta: boolean;
+  sms?: boolean;
 }
 
 export default function BildirimTercihleriSayfasi() {
@@ -44,13 +45,13 @@ export default function BildirimTercihleriSayfasi() {
   // Kayıt yoksa iki kanal da açıktır; ekran bu varsayılanı gösterir.
   const secim = (tur: string): Tercih => tercihler[tur] ?? { tur, uygulamaIci: true, eposta: true };
 
-  async function kanalDegistir(tur: string, alan: "uygulamaIci" | "eposta", deger: boolean) {
+  async function kanalDegistir(tur: string, alan: "uygulamaIci" | "eposta" | "sms", deger: boolean) {
     const yeni = { ...secim(tur), [alan]: deger };
     setTercihler((mevcut) => ({ ...mevcut, [tur]: yeni }));
     setHata("");
     setBilgi("");
     try {
-      await api("/bildirimler/tercihler", { method: "PUT", body: JSON.stringify({ tur, uygulamaIci: yeni.uygulamaIci, eposta: yeni.eposta }) });
+      await api("/bildirimler/tercihler", { method: "PUT", body: JSON.stringify({ tur, uygulamaIci: yeni.uygulamaIci, eposta: yeni.eposta, sms: Boolean(yeni.sms) }) });
       setBilgi("Tercih kaydedildi.");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Tercih kaydedilemedi");
@@ -86,7 +87,7 @@ export default function BildirimTercihleriSayfasi() {
             <tr>
               <th>Olay</th>
               <th>Uygulama içi</th>
-              <th>E-posta</th>
+              <th>E-posta</th><th>SMS</th>
             </tr>
           </thead>
           <tbody>
@@ -116,6 +117,17 @@ export default function BildirimTercihleriSayfasi() {
                       onChange={(e) => void kanalDegistir(tur.deger, "eposta", e.target.checked)}
                     />
                     <span>Açık</span>
+                  </label>
+                </td>
+                <td>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                    <input
+                      type="checkbox"
+                      aria-label={`${tur.ad} — kritik bildirim SMS'i`}
+                      checked={Boolean(secim(tur.deger).sms)}
+                      onChange={(e) => void kanalDegistir(tur.deger, "sms", e.target.checked)}
+                    />
+                    <span>Kritikse</span>
                   </label>
                 </td>
               </tr>

@@ -12,6 +12,7 @@ const gonderimSemasi = z.object({
   kademe,
   not: z.string().max(1000).optional().nullable(),
   siklikSiniriniAs: z.boolean().optional(),
+  smsDeGonder: z.boolean().optional(),
   /** KSB-23: faturaya bağlanmamış tahsilatı olan cariye de gönder. */
   baglanmamisOnayi: z.boolean().optional(),
 });

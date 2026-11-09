@@ -33,6 +33,7 @@ interface Kullanici {
   aktif: boolean;
   epostaDogrulandi: boolean;
   totpAktif: boolean;
+  smsIkinciAdim?: boolean;
   /** KLN-21: rolü için firma 2FA'yı zorunlu tutuyor. */
   ikiAdimZorunlu: boolean;
   sonGirisAt: string | null;
@@ -376,7 +377,7 @@ export default function KullanicilarSayfasi() {
                   </td>
                   <td><Status tone={k.aktif ? "ok" : "danger"}>{k.aktif ? "Aktif" : "Pasif"}</Status></td>
                   <td>
-                    {k.totpAktif ? (
+                    {k.totpAktif || k.smsIkinciAdim ? (
                       <div className="row-tight" style={{ flexWrap: "nowrap" }}>
                         <Badge variant="success">Etkin</Badge>
                         {k.id !== benId && <Button size="sm" variant="ghost" onClick={() => setIkiAdimSifirlanan(k)}>Sıfırla</Button>}

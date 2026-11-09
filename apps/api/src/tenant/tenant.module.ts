@@ -9,6 +9,7 @@ import { GuvenlikPolitikasiController } from "./guvenlik-politikasi.controller";
 import { BelgeTasarimlariService } from "./belge-tasarimlari.service";
 import { DenetimController } from "./denetim.controller";
 import { EpostaService } from "./eposta.service";
+import { SmsService } from "../ileti/sms.service";
 import { ImapService } from "./imap.service";
 import { KayitService } from "./kayit.service";
 import { KullanicilarController } from "./kullanicilar.controller";
@@ -43,6 +44,7 @@ import { EpostaZamanlayiciService } from "./eposta-zamanlayici.service";
   providers: [
     KayitService,
     EpostaService,
+    SmsService,
     ImapService,
     EpostaZamanlayiciService,
     BaglantilarService,
@@ -52,6 +54,6 @@ import { EpostaZamanlayiciService } from "./eposta-zamanlayici.service";
     EpostaDegisimiService,
     SablonMatrisiService,
   ],
-  exports: [BaglantilarService, EpostaService, ImapService, AbonelikService],
+  exports: [BaglantilarService, EpostaService, SmsService, ImapService, AbonelikService],
 })
 export class TenantModule {}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText, BarChart3, Package, MapPinned, DatabaseBackup, CalendarDays } from "lucide-react";
+import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText, BarChart3, Package, MapPinned, DatabaseBackup, CalendarDays, Mail } from "lucide-react";
 import { Alert, Button, Modal, ModalEylem } from "@/components/ui";
 import { platformApi, platformCikis, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
 
@@ -26,6 +26,7 @@ const MENU = [
   { href: "/platform/odeme-raporu", ikon: ReceiptText, baslik: "Ödeme raporu", yalnizYonetici: true },
   { href: "/platform/odeme", ikon: CreditCard, baslik: "Abonelik ödemesi", yalnizYonetici: true },
   { href: "/platform/sistem-sagligi", ikon: Activity, baslik: "Sistem sağlığı", yalnizYonetici: true },
+  { href: "/platform/ileti", ikon: Mail, baslik: "E-posta ve SMS", yalnizYonetici: true },
   { href: "/platform/yedekler", ikon: DatabaseBackup, baslik: "Yedekler", yalnizYonetici: true },
   { href: "/platform/yapay-zeka", ikon: Sparkles, baslik: "Yapay zekâ tavanı", yalnizYonetici: true },
   { href: "/platform/kullanicilar", ikon: Users, baslik: "Kullanıcılar", yalnizYonetici: true },

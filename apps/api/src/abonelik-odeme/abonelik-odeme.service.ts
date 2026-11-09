@@ -1,6 +1,6 @@
 import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AbonelikDurumu, Prisma } from "@prisma/client";
-import { createTransport } from "nodemailer";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { coz, sifrele } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -55,6 +55,7 @@ export class AbonelikOdemeService {
     private readonly ayarlar: SaglayiciAyarlariService,
     private readonly platform: PlatformPrismaService,
     private readonly erisim: AbonelikErisimService,
+    private readonly ileti: PlatformIletiService,
   ) {}
 
   private async fiyatliAbonelik(tx: Tx, tenantId: string) {
@@ -460,8 +461,8 @@ export class AbonelikOdemeService {
   }
 
   private async posta(alicilar: string[], konu: string, satirlar: string[]) {
-    const transport = createTransport({ host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false });
-    await transport.sendMail({ from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>", to: alicilar.join(", "), subject: konu, text: satirlar.join("\n") });
+    // Ödeme tamamlanmıştır; makbuz iletisi kendi tekrarı olmadığı için kuyruğa gider.
+    await this.ileti.kuyruga({ tur: "abonelik_odeme", alicilar, konu, metin: satirlar.join("\n") });
   }
 
   /** Platform olay kaydı + makbuz e-postası (fatura e-postası ve aktif yöneticiler). */

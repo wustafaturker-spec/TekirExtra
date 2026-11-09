@@ -1,11 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import { createTransport } from "nodemailer";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { iletiSorunlari } from "../ileti/ileti-kurallari";
 import { yedekSorunlari } from "../yedekleme/yedek-kurallari";
 import { YedeklemeService } from "../yedekleme/yedekleme.service";
 import { ESIK, saatlikAtlama, sorunlariBul, type Sorun } from "./sistem-alarm-kurallari";
@@ -32,6 +33,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
     private readonly platform: PlatformPrismaService,
     private readonly kuyruk: EbelgeKuyrukService,
     private readonly yedekleme: YedeklemeService,
+    private readonly ileti: PlatformIletiService,
   ) {}
 
   onModuleInit(): void {
@@ -127,7 +129,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
         oluIsler: v.kuyruk.oluIsler.map((o) => ({ ...o, unvan: v.adlar.get(o.tenantId) })),
         kursorler: v.kursorler.map((k) => ({ tenantId: k.tenant_id, unvan: k.unvan, sonCekimAt: k.son_cekim_at })),
         isler: v.isler,
-      }), ...yedekSorunlari(await this.yedekleme.durum(simdi))];
+      }), ...yedekSorunlari(await this.yedekleme.durum(simdi)), ...iletiSorunlari(await this.ileti.ozet(simdi))];
       const mevcut = new Map((await this.prisma.sistemAlarmi.findMany()).map((a) => [a.anahtar, a]));
       const bildirilecek: Sorun[] = [];
       for (const s of sorunlar) {
@@ -176,8 +178,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
       duzelen.length ? `Düzelenler:\n${duzelen.map((o) => `• ${o}`).join("\n")}` : "",
       "Ayrıntı: Platform › Sistem sağlığı",
     ].filter(Boolean);
-    const transport = createTransport({ host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false });
-    await transport.sendMail({ from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>", to: alicilar.join(", "), subject: konu, text: bolumler.join("\n\n") });
+    await this.ileti.gonder({ tur: "sistem_alarmi", alicilar, konu, metin: bolumler.join("\n\n") });
     await this.platform.db.mevzuatOlay.create({ data: { olay: "sistem_alarmi", detay: { yeni: yeni.map((s) => s.anahtar), duzelen: duzelen.length } as Prisma.InputJsonValue } });
   }
 }

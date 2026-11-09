@@ -78,6 +78,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     krediKarti: { findMany: vi.fn().mockResolvedValue(secenek.kartlar ?? []) },
+    epostaGonderim: { findMany: vi.fn().mockResolvedValue((secenek as { gonderimler?: unknown[] }).gonderimler ?? []) },
     baglantiOtomatikIsi: { findMany: vi.fn().mockResolvedValue((secenek as { pazaryeriIsleri?: unknown[] }).pazaryeriIsleri ?? []) },
     baglanti: { findMany: vi.fn(async ({ where }: { where: { aile: string } }) => (where.aile === "ebelge"
       ? (secenek.ebelgeAyarlari ?? []).map((ayar, i) => ({ id: `e${i + 1}`, sifreliConfig: JSON.stringify(ayar) }))
@@ -653,5 +654,18 @@ describe("BildirimUreticiService — vergi takvimi (VTK-12)", () => {
     expect((await tara("2026-12-03", { sonTarih: "2026-12-05" }))[0]?.birlesimAnahtari).toContain(":2026-12-05:2");
     expect(await tara("2026-11-27", { kalan: 0, durum: "odendi" })).toHaveLength(0);
     expect(await tara("2026-11-27", { sonTarih: null })).toHaveLength(0);
+  });
+});
+
+describe("BildirimUreticiService — firma SMTP uyarısı (ILT-15)", () => {
+  const tara = (gonderimler: unknown[]) => (servisKur({ gonderimler } as never) as unknown as { servis: { epostaSmtpHatalari(): Promise<{ birlesimAnahtari: string; aciklama: string }[]> } }).servis.epostaSmtpHatalari();
+  const kotu = { durum: "basarisiz", hataMesaji: "Invalid login" };
+  it("son üç gönderim de başarısızsa uyarır", async () => {
+    expect((await tara([kotu, kotu, kotu]))[0]).toMatchObject({ birlesimAnahtari: "eposta-smtp:firma" });
+    expect((await tara([kotu, kotu, kotu]))[0]?.aciklama).toContain("Invalid login");
+  });
+  it("üçten azsa ya da arada başarılı varsa uyarmaz", async () => {
+    expect(await tara([kotu, kotu])).toHaveLength(0);
+    expect(await tara([{ durum: "gonderildi", hataMesaji: null }, kotu, kotu])).toHaveLength(0);
   });
 });

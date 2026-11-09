@@ -8,6 +8,9 @@ export interface NetgsmConfig {
 
 export interface NetgsmGonderimSonucu { gorevId: string; }
 
+/** Sağlayıcı isteği açıkça reddetti: SMS çıkmadı. Diğer hatalarda sonuç belirsizdir. */
+export class SmsReddedildi extends Error {}
+
 export function netgsmTelefonuDuzenle(telefon: string): string {
   let rakamlar = telefon.replace(/\D/g, "");
   if (rakamlar.startsWith("90") && rakamlar.length === 12) rakamlar = rakamlar.slice(2);
@@ -29,7 +32,7 @@ export class NetgsmAdapter {
       body: JSON.stringify({ msgheader: config.gondericiAdi, encoding: "TR", messages: [{ msg: mesaj, no: netgsmTelefonuDuzenle(telefon) }] }),
     });
     const govde = await yanit.json().catch(() => ({})) as { code?: string; jobid?: string; description?: string };
-    if (!yanit.ok || govde.code !== "00" || !govde.jobid) throw new Error(`Netgsm SMS gönderilemedi${govde.code ? ` (${govde.code})` : ""}: ${govde.description ?? yanit.statusText}`);
+    if (!yanit.ok || govde.code !== "00" || !govde.jobid) throw new SmsReddedildi(`Netgsm SMS gönderilemedi${govde.code ? ` (${govde.code})` : ""}: ${govde.description ?? yanit.statusText}`);
     return { gorevId: govde.jobid };
   }
 }

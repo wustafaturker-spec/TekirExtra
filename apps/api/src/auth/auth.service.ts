@@ -4,6 +4,7 @@ import {
   HttpStatus,
   Injectable,
   UnauthorizedException,
+  Optional,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { createHash, randomBytes } from "node:crypto";
@@ -15,6 +16,7 @@ import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
 import { kurtarmaKodlariUret, kurtarmaKoduBicimindeMi, kurtarmaKoduOzeti } from "./kurtarma-kodlari";
 import { sahteParolaDogrula } from "./sabit-maliyet";
 import { totpDogrula } from "./totp-dogrula";
+import { SmsKodService } from "../ileti/sms-kod.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ikiAdimEksikMi, type GuvenlikPolitikasi } from "../core/guvenlik-politikasi";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
@@ -59,6 +61,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly denemeler: GirisDenemeSayaci,
     private readonly durum: KullaniciDurumService,
+    @Optional() private readonly smsKod?: SmsKodService,
   ) {}
 
   async giris(eposta: string, parola: string, totpKodu?: string, istemci: Istemci = {}): Promise<GirisSonucu> {
@@ -106,6 +109,18 @@ export class AuthService {
       if (!totpGecerli && !(await this.kurtarmaKoduKullan(kullanici.tenantId, kullanici.id, totpKodu))) {
         if (await this.denemeler.hataKaydet("totp", eposta)) await this.kilitKaydet(kullanici.tenantId, kullanici.id, "totp");
         throw new UnauthorizedException("TOTP kodu geçersiz");
+      }
+    } else if (kullanici.smsIkinciAdim && kullanici.telefon && kullanici.telefonDogrulandiAt) {
+      // ILT-12: yalnız parola doğrulandıktan sonra SMS çıkar; TOTP varsa önceliklidir (yukarıda).
+      if (!this.smsKod) throw new UnauthorizedException("SMS doğrulaması şu an kullanılamıyor");
+      if (!totpKodu) {
+        try { await this.smsKod.gonder({ tenantId: kullanici.tenantId, userId: kullanici.id, amac: "giris", telefon: kullanici.telefon }); }
+        catch { throw new UnauthorizedException("SMS kodu gönderilemedi; yöneticinizden iki adımlı doğrulamanızı sıfırlamasını isteyin"); }
+        throw new UnauthorizedException("SMS kodu gerekli; telefonunuza gönderildi");
+      }
+      if (!(await this.smsKod.dogrula({ userId: kullanici.id, amac: "giris", kod: totpKodu }))) {
+        if (await this.denemeler.hataKaydet("totp", eposta)) await this.kilitKaydet(kullanici.tenantId, kullanici.id, "totp");
+        throw new UnauthorizedException("SMS kodu geçersiz ya da süresi dolmuş");
       }
     }
 

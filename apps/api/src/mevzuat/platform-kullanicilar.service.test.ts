@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // Gönderim her zaman düşer (bağlantı yöneticiye döner); gönderilmek istenen ileti incelenir.
 const gonderilen = vi.hoisted(() => [] as { html: string; text: string }[]);
-vi.mock("nodemailer", () => ({ createTransport: () => ({ sendMail: async (m: { html: string; text: string }) => { gonderilen.push(m); throw new Error("connect ECONNREFUSED"); } }) }));
+const ileti = { gonder: async (m: { html: string; metin: string }) => { gonderilen.push({ html: m.html, text: m.metin }); throw new Error("connect ECONNREFUSED"); } };
 import { platformBaglamiylaCalistir } from "../core/istek-baglami";
 import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
 import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
@@ -58,7 +58,7 @@ function kur() {
     $queryRaw: async () => [],
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
   };
-  const servis = new PlatformKullanicilarService({ db } as never);
+  const servis = new PlatformKullanicilarService({ db } as never, ileti as never);
   const ekle = (k: Partial<Kayit>) => { const y = { id: `p${kayitlar.length + 1}`, eposta: `${kayitlar.length}@x.io`, adSoyad: "Kişi", rol: "yonetici", aktif: true, davetTuru: null, davetAnahtarOzeti: null, parolaHash: hash, totpSecretSifreli: "", ...k } as Kayit; kayitlar.push(y); return y; };
   const olarak = <T>(id: string, is: () => Promise<T>) => platformBaglamiylaCalistir({ kullaniciId: id, eposta: "ben@x.io", rol: "yonetici" }, is);
   const gorevEkle = (sorumluId: string, kapsam = "platform", durum = "acik") => { const g = { id: `g${gorevler.length + 1}`, baslik: `Görev ${gorevler.length + 1}`, kapsam, durum, sorumluId, surum: 1 }; gorevler.push(g); return g; };

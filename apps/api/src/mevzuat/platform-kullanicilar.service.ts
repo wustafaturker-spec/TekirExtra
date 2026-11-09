@@ -4,7 +4,7 @@ import type { PlatformRol, Prisma } from "@prisma/client";
 import * as argon2 from "argon2";
 import * as bwipjs from "bwip-js";
 import { createHash, randomBytes } from "node:crypto";
-import { createTransport } from "nodemailer";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
 import { generateSecret, generateURI } from "otplib";
 import { parolaSemasi } from "../auth/parola-kurali";
 import { coz, sifrele } from "../core/kripto";
@@ -43,6 +43,7 @@ export class PlatformKullanicilarService {
 
   constructor(
     private readonly platform: PlatformPrismaService,
+    private readonly ileti: PlatformIletiService,
     @Optional() private readonly oturumDurum?: PlatformOturumDurumService,
     @Optional() denemeler?: GirisDenemeSayaci,
   ) {
@@ -263,12 +264,11 @@ export class PlatformKullanicilarService {
       ? `Sizin için TekirExtra platform panelinde ${ROL_ADI[k.rol]} hesabı açıldı. Parolanızı belirleyip iki adımlı doğrulamayı kurmak için:`
       : "Platform hesabınızın iki adımlı doğrulaması sıfırlandı. Mevcut parolanızla yeniden kurmak için:";
     try {
-      const transport = createTransport({ host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false });
-      await transport.sendMail({
-        from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>",
-        to: k.eposta,
-        subject: konu,
-        text: `Merhaba ${k.adSoyad},\n\n${giris}\n${baglanti}\n\nBağlantı ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerlidir ve bir kez kullanılabilir.`,
+      await this.ileti.gonder({
+        tur: "platform_davet",
+        alicilar: [k.eposta],
+        konu,
+        metin: `Merhaba ${k.adSoyad},\n\n${giris}\n${baglanti}\n\nBağlantı ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerlidir ve bir kez kullanılabilir.`,
         html: `<p>Merhaba ${html(k.adSoyad)},</p><p>${html(giris)}</p><p><a href="${html(baglanti)}">Kurulumu başlat</a></p><p>Bağlantı ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerlidir ve bir kez kullanılabilir.</p>`,
       });
       return { gonderildi: true, mesaj: `${k.eposta} adresine bağlantı gönderildi; ${PLATFORM_DAVET_GECERLILIK_SAAT} saat geçerli.` };

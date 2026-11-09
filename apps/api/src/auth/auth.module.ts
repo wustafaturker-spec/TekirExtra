@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
 import { AbonelikGuard } from "./abonelik.guard";
 import { AuthController } from "./auth.controller";
+import { TelefonController } from "./telefon.controller";
 import { AuthGuard } from "./auth.guard";
 import { AuthService } from "./auth.service";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
@@ -18,7 +19,7 @@ import { RollerGuard } from "./roller.guard";
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, TelefonController],
   providers: [
     AuthService,
     GirisDenemeSayaci,

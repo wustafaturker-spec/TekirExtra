@@ -28,7 +28,7 @@ function kur(tx: Record<string, unknown>) {
   const prisma = { tenantIslem: vi.fn((_t: string, cb: (tx: unknown) => unknown) => cb(tx)) } as any;
   const bildirimler = { uret: vi.fn().mockResolvedValue({}) };
   const donemKilidi = { tarihDogrula: vi.fn().mockResolvedValue(undefined) };
-  return { service: new PosService(prisma, {} as any, {} as any, bildirimler as any, donemKilidi as any), bildirimler };
+  return { service: new PosService(prisma, {} as any, {} as any, bildirimler as any, donemKilidi as any, {} as any), bildirimler };
 }
 
 describe("PosService (P1-6)", () => {

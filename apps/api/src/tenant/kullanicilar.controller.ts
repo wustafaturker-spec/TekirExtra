@@ -56,6 +56,7 @@ const KULLANICI_SECIMI = {
   aktif: true,
   epostaDogrulandi: true,
   totpAktif: true,
+  smsIkinciAdim: true,
   sonGirisAt: true,
   maksIskontoYuzdesi: true,
   bayiCariId: true,

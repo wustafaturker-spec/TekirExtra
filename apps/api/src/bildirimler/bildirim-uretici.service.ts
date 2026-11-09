@@ -85,7 +85,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   // VTK-12: kalem ödenince ya da eşik değişince önceki uyarı kapanır.
   donem: ["duzeltme:", "donem:", "vergi-takvimi:"],
   // KSB-31: fark kapanınca bakiye uyarısı da kapanır.
-  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:", "banka-bakiye-farki:"],
+  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:", "banka-bakiye-farki:", "eposta-smtp:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
   personel: ["personel:"],
   // MVZ-07: duyurular ("mevzuat:") taramada kapatılmaz; MVZ-17 yayın eksiği uyarısı ("mevzuat-eksik:") yayınlanınca kapanır.
@@ -168,6 +168,7 @@ export class BildirimUreticiService {
       ...(await this.bankaEntegrasyonu()),
       ...(await this.pazaryeriOtomatik()),
       ...(await this.vergiTakvimi()),
+      ...(await this.epostaSmtpHatalari()),
       ...(await this.personelBildirimleri()),
       ...(await this.mevzuatDegisiklikleri()),
       ...(await this.mevzuatYayinEksikleri()),
@@ -664,6 +665,24 @@ export class BildirimUreticiService {
         roller: ["yonetici", "muhasebe"],
       }];
     });
+  }
+
+  /** ILT-15: firma SMTP'siyle yapılan son 3 gönderim de başarısızsa yöneticiye uyarı; başarılı gönderimle kapanır. */
+  private async epostaSmtpHatalari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const son = await this.oku(tenantId, (tx) => tx.epostaGonderim.findMany({ where: { gonderen: "firma", createdAt: { gte: gunEkle(new Date(), -7) } }, orderBy: { createdAt: "desc" }, take: 3, select: { durum: true, hataMesaji: true } }));
+    if (son.length < 3 || son.some((g) => g.durum !== "basarisiz")) return [];
+    return [{
+      tur: "entegrasyon",
+      onem: "uyari",
+      baslik: "Firma e-posta hesabı gönderim yapamıyor",
+      aciklama: `Son 3 e-posta gönderilemedi: ${son[0]?.hataMesaji ?? "bilinmeyen hata"}. E-posta Ayarları'ndaki SMTP bilgilerini kontrol edin.`,
+      birlesimAnahtari: "eposta-smtp:firma",
+      kaynakTur: "eposta_ayari",
+      kaynakRef: tenantId,
+      hedefYol: "/panel/ayarlar/gonderimler",
+      roller: ["yonetici"],
+    }];
   }
 
   private async pazaryeriOtomatik(): Promise<BildirimGirdisi[]> {

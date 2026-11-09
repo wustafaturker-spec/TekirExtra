@@ -7,8 +7,17 @@ import { PrismaService } from "../core/prisma.service";
 import { coz, sifrele } from "../core/kripto";
 import { degisiklikleriBul } from "../core/denetim-farki";
 import { anaMakineHatasi, guvenliAdresCoz } from "../core/guvenlik/dis-istek";
+import { hataMetni, smtpHataSinifi } from "../ileti/ileti-kurallari";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
 
 /** SEC-03: kiracının sunucusuna yalnız posta portlarından bağlanılır (iç ağ port taraması olmasın). */
+/** ILT-02: bu türler firmanın değil platformun hesabından çıkar; kullanıcı henüz firmaya bağlı olmayabilir. */
+export const SISTEM_ILETI_TURLERI: ReadonlySet<string> = new Set(["dogrulama", "kullanici_davet", "parola_sifirlama", "eposta_degisimi"]);
+/** Kısa süreli ağ hatasında aynı istek içinde yeniden deneme; ödeme sözü iletisi kendi tek gönderim kuralına tabidir. */
+const TEKRAR_BEKLEMELERI_MS = [1_000, 3_000];
+const TEKRARSIZ_TURLER: ReadonlySet<string> = new Set(["odeme_sozu_hatirlatma"]);
+const bekle = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export const SMTP_PORTLARI = [25, 465, 587, 2525] as const;
 export const IMAP_PORTLARI = [143, 993] as const;
 const sunucuAdi = (v: string) => anaMakineHatasi(v) === null;
@@ -33,31 +42,61 @@ export type SaklananAyar = Omit<EpostaAyari, "parola" | "imapParola"> & { sifrel
 @Injectable()
 export class EpostaService {
   private readonly logger = new Logger(EpostaService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly ileti: PlatformIletiService) {}
 
   private baglam(): { tenantId: string } | null { try { return aktifBaglam(); } catch { return null; } }
   async saklananAyar(tenantId: string): Promise<SaklananAyar | null> {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: "eposta" } } }));
     return kayit?.ayarlar as SaklananAyar | null;
   }
-  private async transporter(zamanAsimiMs?: number): Promise<{ transport: Transporter; from: string; replyTo?: string }> {
+  private async transporter(zamanAsimiMs?: number): Promise<{ transport: Transporter; from: string; replyTo?: string; gonderen: "firma" | "platform" }> {
     const sureler = zamanAsimiMs ? { connectionTimeout: zamanAsimiMs, greetingTimeout: zamanAsimiMs, socketTimeout: zamanAsimiMs } : {};
     const baglam = this.baglam(); const ayar = baglam ? await this.saklananAyar(baglam.tenantId) : null;
-    if (!ayar) return { transport: createTransport({ ...sureler, host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false }), from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>" };
+    if (!ayar) {
+      // ILT-02: SMTP'si olmayan firma platform hesabından gönderir; yanıtlar firmanın e-postasına döner.
+      const tasiyici = await this.ileti.tasiyici(zamanAsimiMs);
+      const firmaEpostasi = baglam ? (await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.tenant.findUnique({ where: { id: baglam.tenantId }, select: { eposta: true } })))?.eposta : null;
+      return { ...tasiyici, replyTo: firmaEpostasi ?? tasiyici.replyTo, gonderen: "platform" };
+    }
     const parola = ayar.sifreliParola ? coz(ayar.sifreliParola) : undefined;
     // SEC-03: ad bağlantıdan önce çözülür, özel IP reddedilir ve bağlantı o IP'ye sabitlenir; sertifika asıl adla doğrulanır.
     const { ip, servername } = await guvenliAdresCoz(ayar.host);
-    return { transport: createTransport({ ...sureler, host: ip, tls: { servername }, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
+    return { gonderen: "firma", transport: createTransport({ ...sureler, host: ip, tls: { servername }, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
   }
-  private async kaydet(alici: string, konu: string, tur: string, durum: string, ekSayisi: number, hata?: unknown) {
+  private async kaydet(alici: string, konu: string, tur: string, durum: string, ekSayisi: number, ek: { hata?: unknown; gonderen?: "firma" | "platform"; deneme?: number; saglayiciNo?: string | null } = {}) {
     const baglam = this.baglam(); if (!baglam) return;
-    const hataMesaji = hata instanceof Error ? hata.message.slice(0, 1000) : hata ? String(hata).slice(0, 1000) : null;
-    await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, alici, konu, tur, durum, ekSayisi, hataMesaji } })).catch(() => undefined);
+    const hataMesaji = ek.hata ? hataMetni(ek.hata).slice(0, 1000) : null;
+    await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, alici, konu, tur, durum, ekSayisi, hataMesaji, gonderen: ek.gonderen ?? "firma", deneme: ek.deneme ?? 1, saglayiciNo: ek.saglayiciNo ?? null } })).catch(() => undefined);
   }
   /** AI-38: dönen `messageId` gelen yanıtı (In-Reply-To) gönderilen belgeye bağlar. */
   private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[]; inReplyTo?: string; references?: string[]; messageId?: string }): Promise<{ messageId: string | null }> {
-    try { const { transport, from, replyTo } = await this.transporter(girdi.tur === "odeme_sozu_hatirlatma" ? 60_000 : undefined); const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, messageId: girdi.messageId, inReplyTo: girdi.inReplyTo, references: girdi.references, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) }); await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "gonderildi", girdi.ekler?.length ?? 0); this.logger.log(`E-posta gönderildi: ${girdi.alici} (${girdi.konu})`); return { messageId: typeof bilgi?.messageId === "string" ? bilgi.messageId : null }; }
-    catch (hata) { await this.kaydet(girdi.alici, girdi.konu, girdi.tur ?? "genel", "basarisiz", girdi.ekler?.length ?? 0, hata); throw hata; }
+    const tur = girdi.tur ?? "genel", ekSayisi = girdi.ekler?.length ?? 0;
+    if (SISTEM_ILETI_TURLERI.has(tur)) {
+      await this.ileti.gonder({ tur, alicilar: [girdi.alici], konu: girdi.konu, metin: girdi.metin, html: girdi.html, tenantId: this.baglam()?.tenantId ?? null });
+      return { messageId: null };
+    }
+    let gonderen: "firma" | "platform" = "firma", deneme = 0;
+    try {
+      const { transport, from, replyTo, gonderen: kaynak } = await this.transporter(tur === "odeme_sozu_hatirlatma" ? 60_000 : undefined);
+      gonderen = kaynak;
+      for (;;) {
+        deneme += 1;
+        try {
+          const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, messageId: girdi.messageId, inReplyTo: girdi.inReplyTo, references: girdi.references, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) });
+          const messageId = (bilgi as { messageId?: string }).messageId ?? null;
+          await this.kaydet(girdi.alici, girdi.konu, tur, "gonderildi", ekSayisi, { gonderen, deneme, saglayiciNo: messageId });
+          return { messageId };
+        } catch (hata) {
+          const bekleme = TEKRAR_BEKLEMELERI_MS[deneme - 1];
+          if (bekleme === undefined || TEKRARSIZ_TURLER.has(tur) || smtpHataSinifi(hata) !== "gecici") throw hata;
+          await bekle(bekleme);
+        }
+      }
+    } catch (hata) {
+      // ILT-02: firma SMTP'si hata verirse ileti sessizce platforma aktarılmaz.
+      await this.kaydet(girdi.alici, girdi.konu, tur, smtpHataSinifi(hata) === "belirsiz" ? "belirsiz" : "basarisiz", ekSayisi, { hata, gonderen, deneme: Math.max(1, deneme) });
+      throw hata;
+    }
   }
   async ayarlariGetir() {
     const { tenantId } = aktifBaglam();
@@ -121,7 +160,7 @@ export class EpostaService {
     });
     return this.ayarlariGetir();
   }
-  async baglantiTest(alici: string) { const { transport, from, replyTo } = await this.transporter(); try { await transport.verify(); await transport.sendMail({ from, replyTo, to: alici, subject: "TekirExtra e-posta bağlantı testi", text: "SMTP bağlantınız başarıyla yapılandırıldı. Bu ileti TekirExtra test ekranından gönderilmiştir." }); await this.kaydet(alici, "TekirExtra e-posta bağlantı testi", "test", "gonderildi", 0); return { basarili: true, mesaj: `Test e-postası ${alici} adresine gönderildi` }; } catch (hata) { await this.kaydet(alici, "TekirExtra e-posta bağlantı testi", "test", "basarisiz", 0, hata); throw new BadRequestException(hata instanceof Error ? `SMTP bağlantısı başarısız: ${hata.message}` : "SMTP bağlantısı başarısız"); } }
+  async baglantiTest(alici: string) { const { transport, from, replyTo } = await this.transporter(); try { await transport.verify(); await transport.sendMail({ from, replyTo, to: alici, subject: "TekirExtra e-posta bağlantı testi", text: "SMTP bağlantınız başarıyla yapılandırıldı. Bu ileti TekirExtra test ekranından gönderilmiştir." }); await this.kaydet(alici, "TekirExtra e-posta bağlantı testi", "test", "gonderildi", 0); return { basarili: true, mesaj: `Test e-postası ${alici} adresine gönderildi` }; } catch (hata) { await this.kaydet(alici, "TekirExtra e-posta bağlantı testi", "test", "basarisiz", 0, { hata }); throw new BadRequestException(hata instanceof Error ? `SMTP bağlantısı başarısız: ${hata.message}` : "SMTP bağlantısı başarısız"); } }
   async imapBaglantiTest() {
     const { tenantId } = aktifBaglam();
     const ayar = await this.saklananAyar(tenantId);
@@ -153,6 +192,20 @@ export class EpostaService {
     } catch (hata) {
       throw new BadRequestException(hata instanceof Error ? `IMAP bağlantısı başarısız: ${hata.message}` : "IMAP bağlantısı başarısız");
     }
+  }
+  /** ILT-07: firmanın gönderimleri; ileti gövdesi kayıtlı değildir. */
+  async gonderimler(g: { durum?: string; tur?: string; baslangic?: string; bitis?: string; sayfa?: number }) {
+    const { tenantId } = aktifBaglam();
+    const take = 50, sayfa = Math.max(1, g.sayfa ?? 1);
+    const where: Prisma.EpostaGonderimWhereInput = { ...(g.durum ? { durum: g.durum } : {}), ...(g.tur ? { tur: g.tur } : {}), ...(g.baslangic || g.bitis ? { createdAt: { ...(g.baslangic ? { gte: new Date(`${g.baslangic}T00:00:00+03:00`) } : {}), ...(g.bitis ? { lte: new Date(`${g.bitis}T23:59:59.999+03:00`) } : {}) } } : {}) };
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [satirlar, toplam, turler] = await Promise.all([
+        tx.epostaGonderim.findMany({ where, orderBy: { createdAt: "desc" }, skip: (sayfa - 1) * take, take }),
+        tx.epostaGonderim.count({ where }),
+        tx.epostaGonderim.findMany({ distinct: ["tur"], select: { tur: true }, orderBy: { tur: "asc" } }),
+      ]);
+      return { satirlar, toplam, sayfa, sayfaBoyutu: take, turler: turler.map((t) => t.tur) };
+    });
   }
   async gecmis(adet = 50) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.epostaGonderim.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(adet, 100) })); }
   dogrulamaGonder(eposta: string, adSoyad: string, link: string) { return this.gonder({ alici: eposta, konu: "TekirExtra — e-posta adresinizi doğrulayın", tur: "dogrulama", metin: `Merhaba ${adSoyad},\n\nTekirExtra kaydınızı tamamlamak için e-posta adresinizi doğrulayın:\n${link}\n\nBu link 24 saat geçerlidir.`, html: `<p>Merhaba ${adSoyad},</p><p><a href="${link}">E-postamı doğrula</a></p>` }); }

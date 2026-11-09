@@ -13,6 +13,7 @@ export default function GirisSayfasi() {
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
   const [totpGerekli, setTotpGerekli] = useState(false);
+  const [smsKodu, setSmsKodu] = useState(false);
   const [parolaGoster, setParolaGoster] = useState(false);
   const [eposta, setEposta] = useState("");
   const [parola, setParola] = useState("");
@@ -69,7 +70,8 @@ export default function GirisSayfasi() {
       yonlendir.push(guvenliDonus(new URLSearchParams(window.location.search).get("donus")));
     } catch (h) {
       const mesaj = h instanceof ApiHata ? h.message : "Giriş başarısız. Lütfen bilgilerinizi kontrol edin.";
-      if (mesaj.includes("TOTP")) setTotpGerekli(true);
+      if (mesaj.includes("TOTP") || mesaj.includes("SMS kodu")) setTotpGerekli(true);
+      setSmsKodu(mesaj.includes("SMS kodu"));
       setHata(mesaj);
     } finally {
       setYukleniyor(false);
@@ -183,12 +185,12 @@ export default function GirisSayfasi() {
               </Field>
 
               {totpGerekli && (
-                <Field label="2FA kodu ya da kurtarma kodu">
+                <Field label={smsKodu ? "Telefonunuza gelen 6 haneli kod" : "2FA kodu ya da kurtarma kodu"}>
                   <Input
                     name="totpKodu"
                     autoComplete="one-time-code"
                     maxLength={11}
-                    placeholder="6 haneli kod ya da XXXXX-XXXXX"
+                    placeholder={smsKodu ? "6 haneli kod" : "6 haneli kod ya da XXXXX-XXXXX"}
                     autoFocus
                     required
                   />

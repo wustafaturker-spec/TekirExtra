@@ -11,7 +11,7 @@ const ASIL = { mesajId: "<asil@musteri.com>", yanitlananMesajIdleri: ["<ilk@teki
 function kur(asil: typeof ASIL | null = ASIL, kendi = ["satis@tekir.com"]) {
   const tx = { gelenEposta: { findFirst: vi.fn().mockResolvedValue(asil) } };
   const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
-  const eposta = new EpostaService({} as never);
+  const eposta = new EpostaService({} as never, { tasiyici: async () => ({ transport: { sendMail }, from: "TekirExtra <p@t.co>" }) } as never);
   vi.spyOn(eposta, "kendiAdresleri").mockResolvedValue(kendi);
   const service = new ImapService(prisma as never, {} as never, eposta, {} as never);
   sendMail.mockClear();
@@ -47,7 +47,7 @@ describe("e-posta ekranından ileti gönderimi", () => {
 
   it("SMTP hatası kullanıcıya iletilir", async () => {
     const k = kur();
-    sendMail.mockRejectedValueOnce(new Error("535 Authentication failed"));
+    sendMail.mockRejectedValueOnce(Object.assign(new Error("535 Authentication failed"), { code: "EAUTH", responseCode: 535 }));
     await expect(k.service.iletiGonder("t1", { kime: ["a@b.com"], konu: "K", metin: "x" })).rejects.toThrow("İleti gönderilemedi: 535 Authentication failed");
   });
 });

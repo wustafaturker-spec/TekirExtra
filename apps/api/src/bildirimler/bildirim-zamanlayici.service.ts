@@ -82,6 +82,7 @@ export class BildirimZamanlayiciService implements OnModuleInit, OnModuleDestroy
       const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => taramaYazimiyla(async () => {
         const tarama = tara ? await this.uretici.tara() : BOS_TARAMA;
         const posta = await this.eposta.bekleyenleriGonder();
+        await this.eposta.kritikSmsleriGonder();
         return { tarama, posta };
       }));
       if (tara) await this.sonTaramalar.yaz(tenantId, taramaBasi);

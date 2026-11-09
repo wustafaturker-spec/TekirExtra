@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PAKET_MODUL_KODLARI } from "@tekirextra/shared";
 
 const posta = vi.hoisted(() => ({ gonderilen: [] as { to: string; subject: string; text: string }[] }));
-vi.mock("nodemailer", () => ({ createTransport: () => ({ sendMail: async (m: { to: string; subject: string; text: string }) => { posta.gonderilen.push(m); } }) }));
+const ileti = { gonder: async (m: { alicilar: string[]; konu: string; metin: string }) => { posta.gonderilen.push({ to: m.alicilar.join(", "), subject: m.konu, text: m.metin }); return { gonderildi: true }; } };
 
 import { baglantiAnahtariDogrula } from "../abonelik-odeme/baglanti-anahtari";
 import { firmaAlicilari, odemeBaglantisi, tahsilatDurumu, TahsilatHatirlatmaService, type TahsilatAdayi } from "./tahsilat-hatirlatma.service";
@@ -35,7 +35,7 @@ describe("elle tahsilat hatırlatması (PLT-09)", () => {
         create: async ({ data }: { data: { olay: string; detay: { anahtar: string } } }) => { olaylar.push(data); },
       },
       platformKullanici: { findMany: async ({ where }: { where: { rol: string } }) => (where.rol === "yonetici" ? [{ eposta: "ekip@tekirextra.com" }] : []) },
-    } } as never);
+    } } as never, ileti as never);
     beforeEach(() => { posta.gonderilen.length = 0; olaylar = []; adaylar = [aday("a", gun(3)), aday("d", gun(-20))]; });
 
     it("firmaya ve platform yöneticisine bir kez gider; gün içinde ikinci tur sessizdir", async () => {

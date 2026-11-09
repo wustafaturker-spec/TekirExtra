@@ -125,6 +125,7 @@ enum DuzeltmeTuru {
 model Tenant {
   pesinVergiMahsuplari PesinVergiMahsup[]
   vergiTakvimiAyari    VergiTakvimiAyari?
+  smsGonderimleri      SmsGonderim[]
   vergiYukumlulukKayitlari VergiYukumlulukKaydi[]
   vergiOdemeleri       VergiOdemesi[]
   duyuruAlicilari PlatformDuyuruAlicisi[]
@@ -620,6 +621,10 @@ model User {
   totpAktif              Boolean          @default(false) @map("totp_aktif")
   /// Yönetim P1-1: tek kullanımlık 2FA kurtarma kodlarının sha256 özetleri.
   totpKurtarmaOzetleri   String[]         @default([]) @map("totp_kurtarma_ozetleri")
+  /// ILT-12: yalnız SMS koduyla doğrulanan numara (E.164).
+  telefon                String?          @map("telefon") @db.VarChar(16)
+  telefonDogrulandiAt    DateTime?        @map("telefon_dogrulandi_at")
+  smsIkinciAdim          Boolean          @default(false) @map("sms_ikinci_adim")
   /// Yönetim P1-2: parola/2FA değişince artar; eski erişim token'ları reddedilir.
   oturumSurumu           Int              @default(0) @map("oturum_surumu")
   /// Yönetim P2-4: son başarılı giriş (oturum yenileme sayılmaz).
@@ -875,6 +880,62 @@ model VergiOdemesi {
   @@map("vergi_odemeleri")
 }
 
+/// ILT-06/10: firmanın SMS kaydı; metin saklanmaz.
+model SmsGonderim {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// ILT-05: aynı anahtarla ikinci SMS çıkmaz.
+  anahtar   String?  @db.VarChar(128)
+  tur       String   @db.VarChar(40)
+  /// E.164
+  telefon   String   @db.VarChar(16)
+  /// gonderiliyor | gonderildi | basarisiz | belirsiz
+  durum     String   @db.VarChar(14)
+  parca     Int      @default(1)
+  hata      String?
+  gorevNo   String?  @map("gorev_no")
+  cariId    String?  @map("cari_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cari   CariHesap?  @relation(fields: [cariId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, anahtar])
+  @@index([tenantId, createdAt])
+  @@map("sms_gonderimleri")
+}
+
+/// ILT-12: tek kullanımlık SMS kodu; yalnız özet saklanır. Giriş öncesi kullanıldığı için RLS'siz (parola_sifirlamalar gibi).
+model SmsDogrulamaKodu {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  /// telefon_dogrula | parola_sifirla | giris
+  amac          String   @db.VarChar(20)
+  telefon       String   @db.VarChar(16)
+  kodOzeti      String   @map("kod_ozeti") @db.VarChar(64)
+  deneme        Int      @default(0)
+  sonGecerlilik DateTime @map("son_gecerlilik")
+  kullanildi    Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, amac, createdAt])
+  @@index([telefon, createdAt])
+  @@map("sms_dogrulama_kodlari")
+}
+
+/// ILT-03: sistem SMS'i için platformun Netgsm hesabı; tek satır.
+model PlatformSmsAyari {
+  id            Int      @id @default(1)
+  kullaniciAdi  String   @map("kullanici_adi") @db.VarChar(100)
+  sifreliParola String   @map("sifreli_parola")
+  gondericiAdi  String   @map("gonderici_adi") @db.VarChar(20)
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_sms_ayari")
+}
+
 model PesinVergiMahsup {
   id            String   @id @default(uuid()) @db.Uuid
   tenantId      String   @map("tenant_id") @db.Uuid
@@ -1002,11 +1063,16 @@ model EpostaGonderim {
   durum      String
   ekSayisi   Int      @default(0) @map("ek_sayisi")
   hataMesaji String?  @map("hata_mesaji")
+  /// ILT-02: firma | platform (firmanın SMTP'si yoksa).
+  gonderen    String  @default("firma") @db.VarChar(10)
+  deneme      Int     @default(1)
+  saglayiciNo String? @map("saglayici_no")
   createdAt  DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, gonderen, createdAt])
   @@map("eposta_gonderimleri")
 }
 
@@ -1837,6 +1903,9 @@ model CariHesap {
   mersisNo                String?                @map("mersis_no")
   ticaretSicilNo          String?                @map("ticaret_sicil_no")
   kvkkOnayTarihi          DateTime?              @map("kvkk_onay_tarihi") @db.Date
+  /// ILT-13: vade ve ödeme sözü hatırlatması SMS ile gidebilir; varsayılan kapalı.
+  smsHatirlatma           Boolean                @default(false) @map("sms_hatirlatma")
+  smsGonderimleri         SmsGonderim[]
   eposta                  String?
   telefon                 String?
   webSitesi               String?                @map("web_sitesi")
@@ -6392,6 +6461,8 @@ model BildirimTeslimati {
   epostaGonderildiAt DateTime?              @map("eposta_gonderildi_at")
   epostaDenemeSayisi Int                    @default(0) @map("eposta_deneme_sayisi")
   epostaHatasi       String?                @map("eposta_hatasi")
+  /// ILT-11: kritik bildirim SMS'i denendiyse dolu; en çok bir kez gider.
+  smsGonderildiAt    DateTime?              @map("sms_gonderildi_at")
   createdAt          DateTime               @default(now()) @map("created_at")
   updatedAt          DateTime               @updatedAt @map("updated_at")
 
@@ -6413,6 +6484,8 @@ model BildirimTercihi {
   tur         BildirimTuru
   uygulamaIci Boolean      @default(true) @map("uygulama_ici")
   eposta      Boolean      @default(true)
+  /// ILT-11: yalnız kritik bildirim; varsayılan kapalı.
+  sms         Boolean      @default(false)
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @updatedAt @map("updated_at")
 
@@ -6615,6 +6688,47 @@ enum PlatformRol {
 }
 
 /// MVZ-04: platform ekibi kullanıcısı; kiracı kullanıcılarından ayrıdır, hiçbir kiracı verisine erişmez.
+/// ILT-03: platformun merkezi e-posta ayarı; tek satır. Girilmemişse ortam değişkeni geçerlidir.
+model PlatformIletiAyari {
+  id              Int      @id @default(1)
+  host            String   @db.VarChar(255)
+  port            Int
+  /// yok | starttls | ssl
+  guvenlik        String   @db.VarChar(10)
+  kullaniciAdi    String?  @map("kullanici_adi") @db.VarChar(255)
+  sifreliParola   String?  @map("sifreli_parola")
+  gondericiAdi    String   @map("gonderici_adi") @db.VarChar(120)
+  gondericiEposta String   @map("gonderici_eposta") @db.VarChar(255)
+  yanitAdresi     String?  @map("yanit_adresi") @db.VarChar(255)
+  guncelleyenId   String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_ileti_ayari")
+}
+
+/// ILT-06: platform iletilerinin gönderim kaydı; ileti gövdesi saklanmaz.
+model PlatformIletiKaydi {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// ILT-05: aynı anahtarla ikinci ileti çıkmaz.
+  anahtar      String?   @unique @db.VarChar(128)
+  kanal        String    @default("eposta") @db.VarChar(10)
+  tur          String    @db.VarChar(40)
+  tenantId     String?   @map("tenant_id") @db.Uuid
+  alicilar     String
+  konu         String
+  /// kuyrukta | gonderildi | basarisiz | belirsiz
+  durum        String    @db.VarChar(12)
+  deneme       Int       @default(0)
+  hata         String?
+  saglayiciNo  String?   @map("saglayici_no")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  gonderildiAt DateTime? @map("gonderildi_at")
+
+  @@index([durum, createdAt])
+  @@index([createdAt])
+  @@map("platform_ileti_kayitlari")
+}
+
 model PlatformKullanici {
   yedekler PlatformYedek[] @relation("PlatformYedekBaslatan")
   id                 String      @id @default(uuid()) @db.Uuid

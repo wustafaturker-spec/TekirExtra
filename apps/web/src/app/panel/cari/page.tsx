@@ -171,6 +171,7 @@ interface CariDetay extends Omit<Cari, "grup"> {
   mersisNo: string | null;
   ticaretSicilNo: string | null;
   kvkkOnayTarihi: string | null;
+  smsHatirlatma?: boolean;
   iban: string | null;
   notlar: string | null;
   webSitesi: string | null;
@@ -802,6 +803,7 @@ export default function CariSayfasi() {
       vknTckn: String(f.get("vknTckn") || "").trim(), vergiDairesi: String(f.get("vergiDairesi") || "").trim(),
       mersisNo: String(f.get("mersisNo") || "").trim(), ticaretSicilNo: String(f.get("ticaretSicilNo") || "").trim(),
       kvkkOnayTarihi: String(f.get("kvkkOnayTarihi") || "").trim(),
+      smsHatirlatma: f.get("smsHatirlatma") === "on",
     };
     // Gerçek kişide unvan ad ve soyaddan türer (CARI-21); tüzelde ad/soyad tutulmaz.
     if (degerler.kisiTipi === "gercek") {
@@ -1275,6 +1277,7 @@ export default function CariSayfasi() {
                   <Field label="MERSİS no"><Input name="mersisNo" defaultValue={detay.mersisNo ?? ""} inputMode="numeric" maxLength={16} pattern="[0-9]{16}" title="MERSİS numarası 16 rakam olmalıdır" placeholder="16 hane" /></Field>
                   <Field label="Ticaret sicil no"><Input name="ticaretSicilNo" defaultValue={detay.ticaretSicilNo ?? ""} /></Field>
                   <Field label="KVKK onay tarihi"><Input name="kvkkOnayTarihi" type="date" defaultValue={detay.kvkkOnayTarihi ?? ""} /></Field>
+                  <label className="check-row"><input type="checkbox" name="smsHatirlatma" defaultChecked={Boolean(detay.smsHatirlatma)} /> Vade ve ödeme sözü hatırlatması SMS ile de gidebilir</label>
                   <div className="cari-kart-form__alt"><span className="muted">Cari kodu <b>{detay.kod}</b></span><Button type="submit" size="sm" variant="primary">Kimlik bilgilerini güncelle</Button></div>
                 </form>
               </div>

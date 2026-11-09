@@ -22,6 +22,9 @@ export default function ParolaSifirlaSayfasi() {
   const [basari, setBasari] = useState("");
   const [tamamlandi, setTamamlandi] = useState(false);
   const [isleniyor, setIsleniyor] = useState(false);
+  // ILT-12: e-postaya erişemeyen, numarası doğrulanmış kullanıcı için.
+  const [smsAdimi, setSmsAdimi] = useState(false);
+  const [kod, setKod] = useState("");
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
@@ -56,6 +59,25 @@ export default function ParolaSifirlaSayfasi() {
     });
   }
 
+  function smsIste() {
+    if (!eposta) { setHata("Önce e-posta adresinizi girin"); return; }
+    void calistir(async () => {
+      const s = await api<{ mesaj: string }>("/auth/parola/sifirlama-iste", { method: "POST", body: JSON.stringify({ eposta, yontem: "sms" }) });
+      setBasari(s.mesaj);
+      setSmsAdimi(true);
+    });
+  }
+
+  function smsIleBelirle(e: FormEvent) {
+    e.preventDefault();
+    if (parola !== parolaTekrar) { setHata("Parolalar birbirini tutmuyor"); return; }
+    void calistir(async () => {
+      const s = await api<{ mesaj: string }>("/auth/parola/sms-sifirla", { method: "POST", body: JSON.stringify({ eposta, kod, parola }) });
+      setBasari(s.mesaj);
+      setTamamlandi(true);
+    });
+  }
+
   function parolaBelirle(e: FormEvent) {
     e.preventDefault();
     if (parola !== parolaTekrar) {
@@ -76,13 +98,22 @@ export default function ParolaSifirlaSayfasi() {
         <p className="auth-title">{token ? (davet ? "Hesabınız için parola belirleyin" : "Yeni parola belirleyin") : "Parolanızı mı unuttunuz?"}</p>
         <Alert tone="error">{hata}</Alert>
         <Alert tone="success">{basari}</Alert>
-        {hazir && !tamamlandi && !token && (
+        {hazir && !tamamlandi && !token && smsAdimi && (
+          <form className="stack" onSubmit={smsIleBelirle}>
+            <Field label="Telefonunuza gelen kod"><Input inputMode="numeric" pattern="\d{6}" maxLength={6} required autoFocus autoComplete="one-time-code" value={kod} onChange={(e) => setKod(e.target.value)} /></Field>
+            <Field label="Yeni parola (en az 10 karakter, harf ve rakam)"><Input type="password" autoComplete="new-password" required minLength={10} value={parola} onChange={(e) => setParola(e.target.value)} /></Field>
+            <Field label="Yeni parola (tekrar)"><Input type="password" autoComplete="new-password" required minLength={10} value={parolaTekrar} onChange={(e) => setParolaTekrar(e.target.value)} /></Field>
+            <Button variant="primary" block type="submit" disabled={isleniyor}>{isleniyor ? "Kaydediliyor…" : "Parolamı güncelle"}</Button>
+          </form>
+        )}
+        {hazir && !tamamlandi && !token && !smsAdimi && (
           <form className="stack" onSubmit={istekGonder}>
             <p className="muted" style={{ margin: 0 }}>Hesabınızın e-posta adresini girin; parola sıfırlama bağlantısı gönderelim. Bağlantı 1 saat geçerlidir.</p>
             <Field label="E-posta adresi">
               <Input type="email" autoComplete="email" required autoFocus value={eposta} onChange={(e) => setEposta(e.target.value)} placeholder="ornek@sirket.com" />
             </Field>
             <Button variant="primary" block type="submit" disabled={isleniyor}>{isleniyor ? "Gönderiliyor…" : "Sıfırlama bağlantısı gönder"}</Button>
+            <Button block type="button" disabled={isleniyor} onClick={smsIste}>Kayıtlı telefonuma kod gönder</Button>
           </form>
         )}
         {hazir && !tamamlandi && token && (

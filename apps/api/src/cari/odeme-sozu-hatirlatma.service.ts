@@ -5,6 +5,8 @@ import { z } from "zod";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EpostaService } from "../tenant/eposta.service";
+import { sozSmsMetni } from "../ileti/sms-kurallari";
+import { SmsService } from "../ileti/sms.service";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { odemeSozuKaynaklariniOku } from "./odeme-sozu-kaynak";
 import { itirazliCariler } from "./tahsilat-iletisim";
@@ -33,7 +35,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   private calisiyor = false;
   private kapandi = false;
   private sonBasariliTarama: number | null = null;
-  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly erisim?: AbonelikErisimService) {}
+  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly erisim?: AbonelikErisimService, @Optional() private readonly sms?: SmsService) {}
   onModuleInit() {
     if (process.env.TEKIR_ODEME_SOZU_WORKER !== "1") return;
     z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
@@ -66,7 +68,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
       const kaynak = await odemeSozuKaynaklariniOku(tx, tenantId, ilk.cariId);
       const soz = kaynak.sozler.find(s => s.id === sozId);
       if (!soz || soz.kayitDurumu !== "aktif" || soz.sozTarihi !== gun || !soz.gerceklesme || !["aktif", "kismen_gerceklesti"].includes(soz.gerceklesme.durum)) return null;
-      const cari = await tx.cariHesap.findFirst({ where: { tenantId, id: ilk.cariId, aktif: true, karaListe: false }, select: { unvan: true, eposta: true } });
+      const cari = await tx.cariHesap.findFirst({ where: { tenantId, id: ilk.cariId, aktif: true, karaListe: false }, select: { unvan: true, eposta: true, telefon: true, smsHatirlatma: true } });
       const adres = z.email().max(255).safeParse(cari?.eposta?.trim());
       if (!cari || !adres.success || (await itirazliCariler(tx, tenantId, [ilk.cariId])).size) return null;
       const fatura = await tx.fatura.findFirst({ where: { tenantId, id: soz.faturaId, cariId: ilk.cariId, durum: "kesin", tip: "satis" }, select: { no: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI } });
@@ -80,7 +82,9 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
       const metin = `Sayın ${cari.unvan},\n\n${firma.unvan} ile paylaştığınız ödeme sözünün tarihi bugün (${gun.split("-").reverse().join(".")}).\n\nFatura: ${fatura.no ?? "Numarasız fatura"}\nSöz tutarı: ${soz.tutar} ${soz.dovizCinsi}\nHatırlatılan kalan tutar: ${kalan.toFixed(2)} ${soz.dovizCinsi}\n\nÖdemenizi bugün gerçekleştirmenizi rica ederiz. Ödemenizi yaptıysanız bu hatırlatmayı dikkate almayabilir, ödeme bilginizi bizimle paylaşabilirsiniz.\n\nTeşekkür ederiz.\n${firma.unvan}`;
       const data = { durum: "gonderiliyor", deneme: (eski?.deneme ?? 0) + 1, alici: adres.data, konu, messageId, baslangicAt: simdi, sonrakiDenemeAt: null, hataMesaji: null };
       await tx.odemeSozuHatirlatma.upsert({ where: { tenantId_sozId: { tenantId, sozId } }, create: { tenantId, sozId, ...data }, update: data });
-      return { alici: adres.data, konu, metin, messageId };
+      // ILT-11/13: izinli cariye e-postadan sonra tek SMS; anahtar söz başına birdir.
+      const sms = cari.smsHatirlatma && cari.telefon ? { telefon: cari.telefon, cariId: ilk.cariId, mesaj: sozSmsMetni({ firma: firma.unvan, unvan: cari.unvan, tutar: `${soz.tutar} ${soz.dovizCinsi}` }) } : null;
+      return { alici: adres.data, konu, metin, messageId, sms };
     }, { timeout: 15000 });
   }
   async taraTenant(tenantId: string) {
@@ -106,7 +110,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
             const ileti = await this.ayir(tenantId, id);
             if (!ileti) { sonuc.atlanan++; continue; }
             try {
-              await this.eposta.odemeSozuHatirlat(ileti);
+              await this.eposta.odemeSozuHatirlat({ alici: ileti.alici, konu: ileti.konu, metin: ileti.metin, messageId: ileti.messageId });
             } catch (hata) {
               await this.prisma.tenantIslem(tenantId, tx => tx.odemeSozuHatirlatma.update({ where: { tenantId_sozId: { tenantId, sozId: id } }, data: { durum: guvenliTekrar(hata) ? "basarisiz" : "belirsiz", sonrakiDenemeAt: guvenliTekrar(hata) ? new Date(Date.now() + ARALIK) : null, hataMesaji: (hata instanceof Error ? hata.message : "SMTP gönderim sonucu belirsiz").slice(0, 1000) } }));
               throw hata;
@@ -114,6 +118,8 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
             // Buradaki DB hatası, SMTP başarısını yeniden gönderime dönüştürmez.
             await this.prisma.tenantIslem(tenantId, tx => tx.odemeSozuHatirlatma.update({ where: { tenantId_sozId: { tenantId, sozId: id } }, data: { durum: "gonderildi", gonderildiAt: new Date(), sonrakiDenemeAt: null } }));
             sonuc.gonderilen++;
+            // SMS'in hatası e-postayı geri almaz; yalnız kaydı ve log'u kalır.
+            if (ileti.sms && this.sms) await this.sms.gonder({ tur: "odeme_sozu_hatirlatma", anahtar: `soz:${id}`, ...ileti.sms }).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "promise_sms_failed", tenantId, sozId: id, error: hata instanceof Error ? hata.message : String(hata) })));
           } catch (hata) {
             sonuc.hatali++;
             this.logger.error(JSON.stringify({ event: "promise_email_failed", tenantId, sozId: id, error: hata instanceof Error ? hata.message : String(hata) }));

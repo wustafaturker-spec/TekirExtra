@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import { z } from "zod";
@@ -6,6 +6,7 @@ import { parolaSemasi } from "../auth/parola-kurali";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
+import { SmsKodService } from "../ileti/sms-kod.service";
 import { EpostaService } from "./eposta.service";
 
 /** KLN-12: sıfırlama bağlantısı bir saat geçerlidir. */
@@ -20,7 +21,9 @@ export const SIFIRLAMA_ISTEK_YANITI =
 
 const yoneticiSifirlamaSemasi = z.object({ parola: parolaSemasi });
 const degistirmeSemasi = z.object({ mevcutParola: z.string().min(1).max(200), yeniParola: parolaSemasi });
-const istekSemasi = z.object({ eposta: z.email() });
+const SIFIRLAMA_SMS_YANITI = "Numaranız doğrulanmış bir hesapla eşleşiyorsa telefonunuza kod gönderildi.";
+const istekSemasi = z.object({ eposta: z.email(), yontem: z.enum(["eposta", "sms"]).optional() });
+const smsSifirlamaSemasi = z.object({ eposta: z.email(), kod: z.string().regex(/^\d{6}$/), parola: parolaSemasi });
 const sifirlamaSemasi = z.object({ token: z.string().min(20).max(200), parola: parolaSemasi });
 
 function tokenHashle(token: string): string {
@@ -46,6 +49,7 @@ export class ParolaService {
     private readonly prisma: PrismaService,
     private readonly eposta: EpostaService,
     private readonly durum: KullaniciDurumService,
+    @Optional() private readonly smsKod?: SmsKodService,
   ) {}
 
   /** KLN-10: yönetici başka bir kullanıcıya geçici parola verir. */
@@ -72,10 +76,11 @@ export class ParolaService {
     const { tenantId, userId } = aktifBaglam();
     if (hedefId === userId) throw new BadRequestException("Kendi iki adımlı doğrulamanızı Hesap Güvenliği ekranından yönetin");
     const hedef = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kullanici = await tx.user.findUnique({ where: { id: hedefId }, select: { adSoyad: true, eposta: true, totpAktif: true } });
+      const kullanici = await tx.user.findUnique({ where: { id: hedefId }, select: { adSoyad: true, eposta: true, totpAktif: true, smsIkinciAdim: true } });
       if (!kullanici) throw new NotFoundException("Kullanıcı bulunamadı");
-      if (!kullanici.totpAktif) throw new BadRequestException("Bu kullanıcıda iki adımlı doğrulama zaten kapalı");
-      await tx.user.update({ where: { id: hedefId }, data: { totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [] } });
+      // ILT-12: SMS kodu gelmeyen kullanıcının tek çıkışı bu sıfırlamadır.
+      if (!kullanici.totpAktif && !kullanici.smsIkinciAdim) throw new BadRequestException("Bu kullanıcıda iki adımlı doğrulama zaten kapalı");
+      await tx.user.update({ where: { id: hedefId }, data: { totpAktif: false, totpSecretSifreli: null, totpKurtarmaOzetleri: [], smsIkinciAdim: false } });
       await tx.auditLog.create({
         data: { tenantId, userId, islem: "kullanici_2fa_sifirlandi", varlik: "user", varlikId: hedefId, detay: { eposta: kullanici.eposta } },
       });
@@ -156,13 +161,20 @@ export class ParolaService {
    * bağlantı kiracının e-posta ayarıyla (yoksa sistem SMTP'siyle) gider.
    */
   async sifirlamaIste(govde: unknown): Promise<{ mesaj: string }> {
-    const { eposta } = ayristir(istekSemasi, govde);
+    const { eposta, yontem } = ayristir(istekSemasi, govde);
     const kimlik = await this.prisma.authKimlik.findFirst({ where: { eposta: { equals: eposta.trim(), mode: "insensitive" } } });
     if (!kimlik) return { mesaj: SIFIRLAMA_ISTEK_YANITI };
     const kullanici = await this.prisma.tenantIslem(kimlik.tenantId, (tx) =>
-      tx.user.findUnique({ where: { id: kimlik.userId }, select: { aktif: true, adSoyad: true, eposta: true, rol: true } }),
+      tx.user.findUnique({ where: { id: kimlik.userId }, select: { aktif: true, adSoyad: true, eposta: true, rol: true, telefon: true, telefonDogrulandiAt: true } }),
     );
     if (!kullanici?.aktif) return { mesaj: SIFIRLAMA_ISTEK_YANITI };
+    if (yontem === "sms") {
+      // ILT-12: yalnız doğrulanmış numaraya; yanıt her durumda aynıdır (hesap ve numara varlığı sızmaz).
+      if (kullanici.telefon && kullanici.telefonDogrulandiAt && this.smsKod) {
+        await this.smsKod.gonder({ tenantId: kimlik.tenantId, userId: kimlik.userId, amac: "parola_sifirla", telefon: kullanici.telefon }).catch((h: unknown) => this.logger.warn(`Parola sıfırlama SMS'i gönderilemedi: ${String(h)}`));
+      }
+      return { mesaj: SIFIRLAMA_SMS_YANITI };
+    }
 
     const simdi = Date.now();
     const yakin = await this.prisma.parolaSifirlama.findFirst({
@@ -191,6 +203,23 @@ export class ParolaService {
       this.logger.warn(`Parola sıfırlama e-postası gönderilemedi: ${String(hata)}`);
     }
     return { mesaj: SIFIRLAMA_ISTEK_YANITI };
+  }
+
+  /** ILT-12: SMS koduyla yeni parola. Hesapta TOTP açıksa girişte yine istenir. */
+  async smsIleSifirla(govde: unknown): Promise<{ mesaj: string }> {
+    const { eposta, kod, parola } = ayristir(smsSifirlamaSemasi, govde);
+    const gecersiz = new BadRequestException("Kod geçersiz ya da süresi dolmuş; yeni kod isteyin");
+    const kimlik = await this.prisma.authKimlik.findFirst({ where: { eposta: { equals: eposta.trim(), mode: "insensitive" } } });
+    if (!kimlik || !this.smsKod || !(await this.smsKod.dogrula({ userId: kimlik.userId, amac: "parola_sifirla", kod }))) throw gecersiz;
+    const parolaHash = await argon2.hash(parola);
+    await this.prisma.tenantIslem(kimlik.tenantId, async (tx) => {
+      const k = await tx.user.findUnique({ where: { id: kimlik.userId }, select: { aktif: true } });
+      if (!k?.aktif) throw gecersiz;
+      await tx.user.update({ where: { id: kimlik.userId }, data: { parolaHash } });
+      await tx.auditLog.create({ data: { tenantId: kimlik.tenantId, userId: kimlik.userId, islem: "parola_sms_ile_sifirlandi", varlik: "user", varlikId: kimlik.userId } });
+    });
+    await this.kimlikTemizle(kimlik.tenantId, kimlik.userId);
+    return { mesaj: "Parolanız güncellendi; yeni parolanızla giriş yapabilirsiniz." };
   }
 
   /** KLN-12: bağlantıdaki tek kullanımlık anahtarla yeni parola belirlenir. */

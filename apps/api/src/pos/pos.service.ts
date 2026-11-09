@@ -19,7 +19,8 @@ import { PrismaService } from "../core/prisma.service";
 import { coz } from "../core/kripto";
 import { IyzicoAdapter, iyzicoTelefonuDuzenle, type IyzicoConfig, type IyzicoKesintisi } from "./iyzico.adapter";
 import { EpostaService } from "../tenant/eposta.service";
-import { NetgsmAdapter, type NetgsmConfig } from "./netgsm.adapter";
+import { odemeBaglantisiSmsMetni } from "../ileti/sms-kurallari";
+import { SmsService } from "../ileti/sms.service";
 import { PaytrAdapter, type PaytrCallback, type PaytrConfig } from "./paytr.adapter";
 import { randomBytes } from "node:crypto";
 import { adSoyadCoz } from "../cari/ad-soyad";
@@ -63,14 +64,11 @@ export class PosService {
     private readonly pdf: PdfService,
     private readonly bildirimler: BildirimService,
     private readonly donemKilidi: DonemKilidiService,
+    private readonly sms: SmsService,
   ) {}
   private config(sifreli: string): IyzicoConfig {
     const c = JSON.parse(coz(sifreli)) as any;
     return { apiKey: c.kullaniciAdi, secretKey: c.parola, baseUrl: c.servisAdresi ?? "https://sandbox-api.iyzipay.com" };
-  }
-  private netgsmConfig(sifreli: string): NetgsmConfig {
-    const c = JSON.parse(coz(sifreli)) as any;
-    return { kullaniciAdi: c.kullaniciAdi, parola: c.parola, gondericiAdi: c.gondericiAdi, servisAdresi: c.servisAdresi };
   }
   private paytrConfig(sifreli: string): PaytrConfig {
     const c = JSON.parse(coz(sifreli)) as any;
@@ -969,14 +967,9 @@ export class PosService {
 
   private async odemeLinkiSmsGonder(tenantId: string, id: string, telefon: string, unvan: string, link: string, faturaId?: string | null) {
     try {
-      const baglanti = await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.baglanti.findFirst({ where: { aile: "sms", saglayici: "netgsm", durum: "aktif" }, orderBy: { updatedAt: "desc" } }),
-      );
-      if (!baglanti) throw new Error("Aktif Netgsm SMS bağlantısı bulunamadı");
-      const mesaj = `Sayin ${unvan}, ${faturaId ? "fatura" : "cari hesap"} odeme baglantiniz: ${link}`;
-      const sonuc = await new NetgsmAdapter().smsGonder(this.netgsmConfig(baglanti.sifreliConfig), telefon, mesaj);
+      const { gorevId } = await this.sms.gonder({ tur: "odeme_baglantisi", telefon, mesaj: odemeBaglantisiSmsMetni({ unvan, link, faturaIcin: Boolean(faturaId) }) });
       await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.posTahsilat.update({ where: { id }, data: { smsGonderimTarihi: new Date(), smsGorevId: sonuc.gorevId, smsHatasi: null } }),
+        tx.posTahsilat.update({ where: { id }, data: { smsGonderimTarihi: new Date(), smsGorevId: gorevId, smsHatasi: null } }),
       );
     } catch (hata) {
       const mesaj = hata instanceof Error ? hata.message : "SMS gönderilemedi";

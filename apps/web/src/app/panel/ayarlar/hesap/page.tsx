@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { TelefonDogrulama } from "@/components/telefon-dogrulama";
 import { api, IKI_ADIM_KURULDU_OLAYI } from "@/lib/api";
 import { tarayiciAdi } from "@/lib/tarayici-adi";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/components/ui";
@@ -318,6 +319,7 @@ export default function HesapGuvenligiSayfasi() {
           </div>
         )}
       </Card>
+      <TelefonDogrulama />
     </div>
   );
 }

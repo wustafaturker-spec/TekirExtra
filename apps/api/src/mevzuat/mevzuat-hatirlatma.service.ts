@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { bugunTR, DONEMSEL_DEGERLER, HATIRLATMA_GUNLERI, VERGI_TAKVIMI_TURU, vergiTakvimBeklenenAnahtarlar, vergiTakvimEksikleri, yayinTakvimi, type TakvimSatiri } from "@tekirextra/shared";
-import { createTransport } from "nodemailer";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { nabizla } from "../core/nabiz/nabiz";
 
@@ -28,7 +28,7 @@ export class MevzuatHatirlatmaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MevzuatHatirlatmaService.name);
   private zamanlayici?: NodeJS.Timeout;
 
-  constructor(private readonly platform: PlatformPrismaService) {}
+  constructor(private readonly platform: PlatformPrismaService, private readonly ileti: PlatformIletiService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
@@ -56,12 +56,11 @@ export class MevzuatHatirlatmaService implements OnModuleInit, OnModuleDestroy {
       const satir = (g: (typeof yeni)[number]) => g.esik === 0
         ? `• ${g.s.ad} — ${g.s.donem} dönemi ${g.s.baslangic} tarihinde başladı, kayıt YOK; kiracılarda ${g.s.etki}.`
         : `• ${g.s.ad} — ${g.s.donem} dönemi ${g.s.baslangic} tarihinde başlıyor (${g.s.kalanGun} gün); kayıt henüz yayınlanmadı.`;
-      const transport = createTransport({ host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false });
-      await transport.sendMail({
-        from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>",
-        to: alicilar.join(", "),
-        subject: yeni.some((g) => g.esik === 0) ? "Mevzuat Merkezi: dönemi başlamış değer yayınlanmadı" : "Mevzuat Merkezi: yaklaşan dönem değerleri",
-        text: `Aşağıdaki dönemsel değerlerin yeni dönem kaydı Mevzuat Merkezi'nde yayınlanmadı:\n\n${yeni.map(satir).join("\n")}\n\nPlatform panelinden (Değişiklikler) dayanağıyla hazırlayıp dört göz ilkesiyle yayınlayın.`,
+      await this.ileti.gonder({
+        tur: "mevzuat_hatirlatma",
+        alicilar,
+        konu: yeni.some((g) => g.esik === 0) ? "Mevzuat Merkezi: dönemi başlamış değer yayınlanmadı" : "Mevzuat Merkezi: yaklaşan dönem değerleri",
+        metin: `Aşağıdaki dönemsel değerlerin yeni dönem kaydı Mevzuat Merkezi'nde yayınlanmadı:\n\n${yeni.map(satir).join("\n")}\n\nPlatform panelinden (Değişiklikler) dayanağıyla hazırlayıp dört göz ilkesiyle yayınlayın.`,
       });
       await db.mevzuatOlay.createMany({ data: yeni.map((g) => ({ olay: "hatirlatma", detay: { anahtar: g.anahtar, kalanGun: g.s.kalanGun, alici: alicilar.length } as Prisma.InputJsonValue })) });
       this.logger.log(JSON.stringify({ event: "mevzuat_reminder_sent", items: yeni.map((g) => g.anahtar) }));

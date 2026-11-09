@@ -6,9 +6,13 @@ import { createServer } from "node:http";
 import { AbonelikErisimService } from "./core/abonelik-erisim.service";
 import { PrismaService } from "./core/prisma.service";
 import { EpostaService } from "./tenant/eposta.service";
+import { SmsService } from "./ileti/sms.service";
+import { PlatformIletiService } from "./ileti/platform-ileti.service";
+import { PlatformPrismaService } from "./mevzuat/platform-prisma.service";
 import { OdemeSozuHatirlatmaService } from "./cari/odeme-sozu-hatirlatma.service";
 
-@Module({ providers: [PrismaService, EpostaService, OdemeSozuHatirlatmaService, AbonelikErisimService] })
+// ILT-02: EpostaService platform hesabını kullanır; bu süreç AppModule'ü yüklemediği için sağlayıcılar burada verilir.
+@Module({ providers: [PrismaService, PlatformPrismaService, PlatformIletiService, EpostaService, SmsService, OdemeSozuHatirlatmaService, AbonelikErisimService] })
 class OdemeSozuWorkerModule {}
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();

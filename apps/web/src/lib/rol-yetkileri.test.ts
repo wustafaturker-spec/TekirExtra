@@ -46,6 +46,9 @@ describe("panel rol erişim matrisi", () => {
 
   it("dar rollü rapor sayfalarını ayırır; finansal özet yalnız finans rollerinde (RPR-11)", () => {
     expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/raporlar")).toBe(true);
+    // ILT-07: gönderim kaydı yalnız yönetici ve muhasebe.
+    expect(rolMenuYoluGorebilir("muhasebe", "/panel/ayarlar/gonderimler")).toBe(true);
+    expect(rolMenuYoluGorebilir("mali_musavir", "/panel/ayarlar/gonderimler")).toBe(false);
     expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/raporlar/gelir-gider")).toBe(false);
     expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/stok/smm")).toBe(true);
     expect(rolMenuYoluGorebilir("depo", "/panel/stok")).toBe(true);

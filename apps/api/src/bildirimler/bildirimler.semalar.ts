@@ -22,6 +22,7 @@ export const bildirimTercihSemasi = z.object({
   tur: z.enum(BILDIRIM_TURLERI),
   uygulamaIci: z.boolean(),
   eposta: z.boolean(),
+  sms: z.boolean().optional(),
 });
 
 /** "HH:mm" — sessiz saat gece yarısını aşabilir (22:00–07:00). */

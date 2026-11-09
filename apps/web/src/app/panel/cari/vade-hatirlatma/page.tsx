@@ -46,6 +46,7 @@ export default function VadeHatirlatmaSayfasi() {
   const [not, setNot] = useState("");
   const [siklikSiniriniAs, setSiklikSiniriniAs] = useState(false);
   const [baglanmamisOnayi, setBaglanmamisOnayi] = useState(false);
+  const [smsDeGonder, setSmsDeGonder] = useState(false);
   const [onizleme, setOnizleme] = useState<Onizleme | null>(null);
   const [sonuclar, setSonuclar] = useState<Sonuc[] | null>(null);
   const [hata, setHata] = useState("");
@@ -92,7 +93,7 @@ export default function VadeHatirlatmaSayfasi() {
     try {
       const sonuc = await api<Sonuc[]>("/cari/vade-hatirlatma/gonder", {
         method: "POST",
-        body: JSON.stringify({ cariIdler: seciliAdaylar.map((a) => a.cariId), kademe, not: not || null, siklikSiniriniAs, baglanmamisOnayi }),
+        body: JSON.stringify({ cariIdler: seciliAdaylar.map((a) => a.cariId), kademe, not: not || null, siklikSiniriniAs, baglanmamisOnayi, smsDeGonder }),
       });
       setSonuclar(sonuc);
       await yukle();
@@ -148,6 +149,7 @@ export default function VadeHatirlatmaSayfasi() {
             <Button size="sm" disabled={!seciliAdaylar.length || notYaziliyor} onClick={() => void notYazdir()}>{notYaziliyor ? "Yazılıyor…" : "✨ Yapay zekâ ile not yaz"}</Button>
             <small className="muted">{seciliAdaylar.length === 1 ? "Seçili cariye göre kişisel taslak; gönderim öncesi düzenleyebilirsiniz." : "Birden çok cari seçili: genel bir taslak yazılır."}</small>
           </div>
+          <label className="check-row"><input type="checkbox" checked={smsDeGonder} onChange={(e) => setSmsDeGonder(e.target.checked)} /> SMS ile de gönder (yalnız kartında SMS izni açık carilere, firmanın SMS hesabından)</label>
           <label className="check-row"><input type="checkbox" checked={siklikSiniriniAs} onChange={(e) => setSiklikSiniriniAs(e.target.checked)} /> Son 7 günde hatırlatma almış carilere de gönder</label>
           {seciliAdaylar.some((a) => a.baglanmamisTahsilatTry) && (
             <label className="check-row"><input type="checkbox" checked={baglanmamisOnayi} onChange={(e) => setBaglanmamisOnayi(e.target.checked)} /> Faturaya bağlanmamış tahsilatı olan carilere de gönder (ödenmiş faturaya hatırlatma gidebilir)</label>

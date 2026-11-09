@@ -28,6 +28,13 @@ export class ParolaController {
   }
 
   @Public()
+  @Post("sms-sifirla")
+  @HttpCode(200)
+  smsSifirla(@Body() govde: unknown) {
+    return this.parola.smsIleSifirla(govde);
+  }
+
+  @Public()
   @Post("sifirla")
   @HttpCode(200)
   sifirla(@Body() govde: unknown) {

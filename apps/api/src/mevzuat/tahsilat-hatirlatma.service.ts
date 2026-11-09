@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import { createTransport } from "nodemailer";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
 import { abonelikTutari } from "../abonelik-odeme/abonelik-tutari";
 import { bagliAbonelikTutari } from "../tenant/abonelik-kosullari";
 import { baglantiAnahtariUret } from "../abonelik-odeme/baglanti-anahtari";
@@ -79,7 +79,7 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly platform: PlatformPrismaService) {}
+  constructor(private readonly platform: PlatformPrismaService, private readonly ileti: PlatformIletiService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !process.env.DATABASE_URL_PLATFORM) return;
@@ -102,8 +102,6 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
         select: { detay: true },
       })).map((o) => (o.detay as { anahtar?: string } | null)?.anahtar).filter(Boolean));
       const platformAlicilari = (await db.platformKullanici.findMany({ where: { aktif: true, rol: "yonetici" }, select: { eposta: true } })).map((k) => k.eposta);
-      const transport = createTransport({ host: process.env.SMTP_HOST ?? "localhost", port: Number(process.env.SMTP_PORT ?? 1025), secure: false });
-      const from = process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>";
 
       const yeniYaklasan = yaklasan.filter((a) => !gonderilmis.has(yaklasanAnahtari(a)));
       const saglayiciEtkin = yeniYaklasan.length > 0 && Boolean(await new SaglayiciAyarlariService(this.platform).etkin());
@@ -113,10 +111,10 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
         const baglanti = odemeBaglantisi(a, saglayiciEtkin, simdi);
         try {
           if (alicilar.length) {
-            await transport.sendMail({
-              from, to: alicilar.join(", "),
-              subject: "TekirExtra aboneliğinizin dönemi bitiyor",
-              text: baglanti
+            await this.ileti.gonder({
+              tur: "abonelik_hatirlatma", tenantId: a.tenant_id, alicilar,
+              konu: "TekirExtra aboneliğinizin dönemi bitiyor",
+              metin: baglanti
                 ? `Merhaba,\n\n${a.unvan.trim()} firmasının TekirExtra abonelik dönemi ${tarih(a.donem_sonu)} tarihinde bitiyor. Kesintisiz kullanım için ödemenizi dönem sonundan önce aşağıdaki bağlantıdan kartla yapabilirsiniz:\n\n${baglanti}\n\nÖdemeyi panelde Ayarlar › Abonelik sayfasından da yapabilirsiniz. Ödeme alındığında dönem hemen uzar ve makbuz e-postanıza gelir.`
                 : `Merhaba,\n\n${a.unvan.trim()} firmasının TekirExtra abonelik dönemi ${tarih(a.donem_sonu)} tarihinde bitiyor. Kesintisiz kullanım için ödemenizi dönem sonundan önce yapın; ödeme bilgileri için bu e-postayı yanıtlayabilirsiniz.\n\nÖdeme alındığında dönem uzatılır ve size ayrıca bilgi verilir.`,
             });
@@ -136,7 +134,7 @@ export class TahsilatHatirlatmaService implements OnModuleInit, OnModuleDestroy 
           hatirlatilan.length ? `Dönemi ${HATIRLATMA_GUN_ONCE} gün içinde bitecek firmalar (firmaya hatırlatma gitti):\n${hatirlatilan.map((a) => `• ${a.unvan.trim()} — ${tarih(a.donem_sonu)}`).join("\n")}` : "",
           ozetGerekli ? `Askıya alınacaklar — dönem sonundan ${ASKI_ESIGI_GUN} günden fazla geçti, ödeme işaretlenmedi:\n${geciken.map((a) => `• ${a.unvan.trim()} — dönem sonu ${tarih(a.donem_sonu)}`).join("\n")}\n\nOtomatik askı yoktur; Firmalar ekranından ödemeyi işaretleyin ya da askıya alın.` : "",
         ].filter(Boolean);
-        await transport.sendMail({ from, to: platformAlicilari.join(", "), subject: ozetGerekli ? "TekirExtra tahsilat özeti: askıya alınacak firmalar" : "TekirExtra tahsilat: dönemi yaklaşan firmalar", text: bolumler.join("\n\n") });
+        await this.ileti.gonder({ tur: "abonelik_ozeti", alicilar: platformAlicilari, konu: ozetGerekli ? "TekirExtra tahsilat özeti: askıya alınacak firmalar" : "TekirExtra tahsilat: dönemi yaklaşan firmalar", metin: bolumler.join("\n\n") });
         if (ozetGerekli) await db.mevzuatOlay.create({ data: { olay: "tahsilat_ozeti", detay: { anahtar: ozetAnahtari(gun), geciken: geciken.map((a) => a.tenant_id) } as Prisma.InputJsonValue } });
       } else if (!platformAlicilari.length) {
         this.logger.warn("Tahsilat hatırlatması: aktif platform yöneticisi yok");

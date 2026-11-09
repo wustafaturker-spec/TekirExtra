@@ -241,13 +241,13 @@ export class BildirimService {
     });
   }
 
-  async tercihKaydet(girdi: { tur: BildirimTuru; uygulamaIci: boolean; eposta: boolean }) {
+  async tercihKaydet(girdi: { tur: BildirimTuru; uygulamaIci: boolean; eposta: boolean; sms?: boolean }) {
     const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.bildirimTercihi.upsert({
         where: { tenantId_userId_tur: { tenantId, userId, tur: girdi.tur } },
-        create: { tenantId, userId, tur: girdi.tur, uygulamaIci: girdi.uygulamaIci, eposta: girdi.eposta },
-        update: { uygulamaIci: girdi.uygulamaIci, eposta: girdi.eposta },
+        create: { tenantId, userId, tur: girdi.tur, uygulamaIci: girdi.uygulamaIci, eposta: girdi.eposta, sms: girdi.sms ?? false },
+        update: { uygulamaIci: girdi.uygulamaIci, eposta: girdi.eposta, ...(girdi.sms === undefined ? {} : { sms: girdi.sms }) },
       }),
     );
   }

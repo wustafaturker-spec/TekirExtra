@@ -16,8 +16,11 @@ import { afterAll, describe, expect, it } from "vitest";
  * `mevzuat_talepleri` (MVZ-09/10) platform tablosudur: `tenant_id` yalnız
  * bildirimi gönderen kiracıyı not eder; uygulama rolünün bu tabloda yalnız
  * INSERT yetkisi vardır, okuyamaz (yetki migration 20261009120000'de).
+ * `platform_ileti_kayitlari` (ILT-06) de platform tablosudur: `tenant_id` yalnız ilgili
+ * firmayı not eder; uygulama rolünün hiçbir yetkisi yoktur (migration 20261109121000).
+ * `sms_dogrulama_kodlari` (ILT-12) giriş öncesi doğrulanır; parola_sifirlamalar gibi yalnız özet tutar.
  */
-const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "eposta_degisimleri", "mevzuat_talepleri"]);
+const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "eposta_degisimleri", "mevzuat_talepleri", "platform_ileti_kayitlari", "sms_dogrulama_kodlari"]);
 
 const prisma = new PrismaClient({
   datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL,

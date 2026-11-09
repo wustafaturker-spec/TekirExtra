@@ -76,7 +76,7 @@ export async function sonHatirlatmalar(tx: Prisma.TransactionClient, cariIdler: 
   if (cariIdler.length === 0) return new Map();
   const kayitlar = await tx.crmEtkilesim.groupBy({
     by: ["cariId"],
-    where: { cariId: { in: cariIdler }, tip: "eposta", OR: Object.values(KADEME_ADI).map((ad) => ({ konu: { startsWith: ad } })) },
+    where: { cariId: { in: cariIdler }, tip: { in: ["eposta", "telefon"] }, OR: Object.values(KADEME_ADI).map((ad) => ({ konu: { startsWith: ad } })) },
     _max: { tarih: true },
   });
   return new Map(kayitlar.filter((k) => k._max.tarih).map((k) => [k.cariId, k._max.tarih!]));

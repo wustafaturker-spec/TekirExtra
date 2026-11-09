@@ -1,7 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EpostaService } from "../tenant/eposta.service";
+import { SmsService } from "../ileti/sms.service";
 
 const AZAMI_DENEME = 5;
 const PARTI_BOYU = 50;
@@ -35,7 +36,35 @@ export function sessizSaatte(simdiDakika: number, baslangic?: string | null, bit
 export class BildirimEpostaService {
   private readonly logger = new Logger(BildirimEpostaService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly sms?: SmsService) {}
+
+  /**
+   * ILT-11: SMS tercihi açık, numarası doğrulanmış kullanıcıya kritik bildirim; firmanın SMS hesabından.
+   * En çok bir kez denenir (işaret gönderimden önce yazılır); sessiz saatte beklenir, 24 saatten eskisi gitmez.
+   */
+  async kritikSmsleriGonder(): Promise<number> {
+    if (!this.sms) return 0;
+    const { tenantId } = aktifBaglam();
+    const tercihler = await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimTercihi.findMany({ where: { sms: true }, select: { userId: true, tur: true } }));
+    if (!tercihler.length) return 0;
+    const acik = new Set(tercihler.map((t) => `${t.userId}:${t.tur}`));
+    const adaylar = await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimTeslimati.findMany({
+      where: { userId: { in: [...new Set(tercihler.map((t) => t.userId))] }, smsGonderildiAt: null, bildirim: { onem: "kritik", kapandiAt: null, createdAt: { gt: new Date(Date.now() - 86_400_000) } }, kullanici: { telefonDogrulandiAt: { not: null }, telefon: { not: null } } },
+      select: { id: true, userId: true, bildirim: { select: { tur: true, baslik: true } }, kullanici: { select: { telefon: true, bildirimAyari: { select: { sessizBaslangic: true, sessizBitis: true } } } } },
+      take: PARTI_BOYU,
+    }));
+    const simdi = new Date(), simdiDakika = simdi.getHours() * 60 + simdi.getMinutes();
+    let gonderilen = 0;
+    for (const t of adaylar) {
+      if (!acik.has(`${t.userId}:${t.bildirim.tur}`) || sessizSaatte(simdiDakika, t.kullanici.bildirimAyari?.sessizBaslangic, t.kullanici.bildirimAyari?.sessizBitis)) continue;
+      const { count } = await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimTeslimati.updateMany({ where: { id: t.id, smsGonderildiAt: null }, data: { smsGonderildiAt: new Date() } }));
+      if (count !== 1) continue;
+      await this.sms.gonder({ tur: "kritik_bildirim", anahtar: `bld:${t.id}`, telefon: t.kullanici.telefon!, mesaj: `TekirExtra: ${t.bildirim.baslik.slice(0, 120)}` })
+        .then(() => { gonderilen += 1; })
+        .catch((h: unknown) => this.logger.warn(JSON.stringify({ event: "critical_sms_failed", tenantId, error: h instanceof Error ? h.message : String(h) })));
+    }
+    return gonderilen;
+  }
 
   async bekleyenleriGonder(): Promise<{ gonderilen: number; ertelenen: number; basarisiz: number }> {
     const { tenantId } = aktifBaglam();

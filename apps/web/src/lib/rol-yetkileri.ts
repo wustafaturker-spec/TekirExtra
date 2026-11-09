@@ -2,7 +2,7 @@ import { ozelRolPanelYoluKapali, paketPanelYoluKapali } from "@tekirextra/shared
 
 // AI-04/05: asistan ve onay talepleri (/panel/ai) her iç role açık; araçlar rolün yetkisine göre süzülür.
 const ROL_YOLLARI: Record<string, string[]> = {
-  muhasebe: ["/panel", "/panel/bildirimler", "/panel/ai", "/panel/is-kutusu", "/panel/eposta", "/panel/islemler", "/panel/donem-kapatma", "/panel/nakit-akisi", "/panel/butce", "/panel/cari", "/panel/fatura", "/panel/ebelge", "/panel/belgeler", "/panel/satin-alma", "/panel/masraflar", "/panel/gelirler", "/panel/kasa-banka", "/panel/demirbas", "/panel/araclar", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/mali-musavir", "/panel/personel", "/panel/pazaryeri", "/panel/ayarlar/depolar", "/panel/ayarlar/doviz-kurlari", "/panel/ayarlar/araclar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
+  muhasebe: ["/panel", "/panel/ayarlar/gonderimler", "/panel/bildirimler", "/panel/ai", "/panel/is-kutusu", "/panel/eposta", "/panel/islemler", "/panel/donem-kapatma", "/panel/nakit-akisi", "/panel/butce", "/panel/cari", "/panel/fatura", "/panel/ebelge", "/panel/belgeler", "/panel/satin-alma", "/panel/masraflar", "/panel/gelirler", "/panel/kasa-banka", "/panel/demirbas", "/panel/araclar", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/mali-musavir", "/panel/personel", "/panel/pazaryeri", "/panel/ayarlar/depolar", "/panel/ayarlar/doviz-kurlari", "/panel/ayarlar/araclar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   satis: ["/panel", "/panel/bildirimler", "/panel/ai", "/panel/is-kutusu", "/panel/eposta", "/panel/satin-alma/talepler", "/panel/ebelge/irsaliye-giden", "/panel/satis", "/panel/crm", "/panel/fatura", "/panel/belgeler", "/panel/cari", "/panel/projeler", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   salt_okunur: ["/panel", "/panel/bildirimler", "/panel/ai", "/panel/islemler", "/panel/cari", "/panel/fatura", "/panel/belgeler", "/panel/kasa-banka", "/panel/demirbas", "/panel/araclar", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   mali_musavir: ["/panel", "/panel/bildirimler", "/panel/ai", "/panel/islemler", "/panel/mali-musavir", "/panel/raporlar", "/panel/fatura", "/panel/cari", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
@@ -36,6 +36,7 @@ const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
   { yol: "/panel/raporlar/kdv-disi-vergiler", roller: ["muhasebe", "mali_musavir"] },
   { yol: "/panel/raporlar/pesin-vergiler", roller: ["muhasebe", "mali_musavir"] },
   { yol: "/panel/raporlar/vergi-takvimi", roller: ["muhasebe", "mali_musavir"] },
+  { yol: "/panel/ayarlar/gonderimler", roller: ["muhasebe"] },
   { yol: "/panel/stok/smm", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },
   // RPR-21: API /rapor/fatura-pivot ile aynı roller.
   { yol: "/panel/fatura/pivot", roller: [...FINANS_ROLLERI, "satis"] },
