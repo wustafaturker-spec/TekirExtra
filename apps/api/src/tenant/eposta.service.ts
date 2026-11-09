@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { createTransport, type Transporter } from "nodemailer";
 import { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -63,18 +64,35 @@ export class EpostaService {
     const { ip, servername } = await guvenliAdresCoz(ayar.host);
     return { gonderen: "firma", transport: createTransport({ ...sureler, host: ip, tls: { servername }, port: ayar.port, secure: ayar.guvenlik === "ssl", requireTLS: ayar.guvenlik === "starttls", auth: ayar.kullaniciAdi ? { user: ayar.kullaniciAdi, pass: parola ?? "" } : undefined }), from: `"${ayar.gondericiAdi.replaceAll('"', "")}" <${ayar.gondericiEposta}>`, replyTo: ayar.yanitAdresi || undefined };
   }
-  private async kaydet(alici: string, konu: string, tur: string, durum: string, ekSayisi: number, ek: { hata?: unknown; gonderen?: "firma" | "platform"; deneme?: number; saglayiciNo?: string | null } = {}) {
+  private async kaydet(alici: string, konu: string, tur: string, durum: string, ekSayisi: number, ek: { hata?: unknown; gonderen?: "firma" | "platform"; deneme?: number; saglayiciNo?: string | null; kayitId?: string } = {}) {
     const baglam = this.baglam(); if (!baglam) return;
     const hataMesaji = ek.hata ? hataMetni(ek.hata).slice(0, 1000) : null;
-    await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, alici, konu, tur, durum, ekSayisi, hataMesaji, gonderen: ek.gonderen ?? "firma", deneme: ek.deneme ?? 1, saglayiciNo: ek.saglayiciNo ?? null } })).catch(() => undefined);
+    const sonuc = { durum, hataMesaji, gonderen: ek.gonderen ?? "firma", deneme: ek.deneme ?? 1, saglayiciNo: ek.saglayiciNo ?? null };
+    // ILT-05: kesin başarısızlıkta anahtar bırakılır ki çağıran yeniden deneyebilsin; belirsiz sonuçta kalır, tekrar çıkmaz.
+    await this.prisma.tenantIslem(baglam.tenantId, (tx) => ek.kayitId
+      ? tx.epostaGonderim.update({ where: { id: ek.kayitId }, data: { ...sonuc, ...(durum === "basarisiz" ? { anahtar: null } : {}) } })
+      : tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, alici, konu, tur, ekSayisi, ...sonuc } })).catch(() => undefined);
+  }
+  /** ILT-05: gönderimden önce anahtarı ayırır; anahtar kullanılmışsa null döner. Yarıda kalan süreç de tekrar göndermez. */
+  private async anahtarAyir(anahtar: string, g: { alici: string; konu: string; tur: string; ekSayisi: number }): Promise<string | null | undefined> {
+    const baglam = this.baglam(); if (!baglam) return undefined;
+    try {
+      const kayit = await this.prisma.tenantIslem(baglam.tenantId, (tx) => tx.epostaGonderim.create({ data: { tenantId: baglam.tenantId, ...g, anahtar: createHash("sha256").update(anahtar).digest("hex"), durum: "gonderiliyor", deneme: 0 }, select: { id: true } }));
+      return kayit.id;
+    } catch (hata) {
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") return null;
+      throw hata;
+    }
   }
   /** AI-38: dönen `messageId` gelen yanıtı (In-Reply-To) gönderilen belgeye bağlar. */
-  private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[]; inReplyTo?: string; references?: string[]; messageId?: string }): Promise<{ messageId: string | null }> {
+  private async gonder(girdi: { alici: string; konu: string; metin: string; html?: string; tur?: string; ekler?: { dosyaAdi: string; icerik: Buffer; mime: string }[]; inReplyTo?: string; references?: string[]; messageId?: string; anahtar?: string }): Promise<{ messageId: string | null }> {
     const tur = girdi.tur ?? "genel", ekSayisi = girdi.ekler?.length ?? 0;
     if (SISTEM_ILETI_TURLERI.has(tur)) {
       await this.ileti.gonder({ tur, alicilar: [girdi.alici], konu: girdi.konu, metin: girdi.metin, html: girdi.html, tenantId: this.baglam()?.tenantId ?? null });
       return { messageId: null };
     }
+    const kayitId = girdi.anahtar ? await this.anahtarAyir(girdi.anahtar, { alici: girdi.alici, konu: girdi.konu, tur, ekSayisi }) : undefined;
+    if (kayitId === null) return { messageId: null };
     let gonderen: "firma" | "platform" = "firma", deneme = 0;
     try {
       const { transport, from, replyTo, gonderen: kaynak } = await this.transporter(tur === "odeme_sozu_hatirlatma" ? 60_000 : undefined);
@@ -84,7 +102,7 @@ export class EpostaService {
         try {
           const bilgi = await transport.sendMail({ from, replyTo, to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html, messageId: girdi.messageId, inReplyTo: girdi.inReplyTo, references: girdi.references, attachments: girdi.ekler?.map((e) => ({ filename: e.dosyaAdi, content: e.icerik, contentType: e.mime })) });
           const messageId = (bilgi as { messageId?: string }).messageId ?? null;
-          await this.kaydet(girdi.alici, girdi.konu, tur, "gonderildi", ekSayisi, { gonderen, deneme, saglayiciNo: messageId });
+          await this.kaydet(girdi.alici, girdi.konu, tur, "gonderildi", ekSayisi, { gonderen, deneme, saglayiciNo: messageId, kayitId });
           return { messageId };
         } catch (hata) {
           const bekleme = TEKRAR_BEKLEMELERI_MS[deneme - 1];
@@ -94,7 +112,7 @@ export class EpostaService {
       }
     } catch (hata) {
       // ILT-02: firma SMTP'si hata verirse ileti sessizce platforma aktarılmaz.
-      await this.kaydet(girdi.alici, girdi.konu, tur, smtpHataSinifi(hata) === "belirsiz" ? "belirsiz" : "basarisiz", ekSayisi, { hata, gonderen, deneme: Math.max(1, deneme) });
+      await this.kaydet(girdi.alici, girdi.konu, tur, smtpHataSinifi(hata) === "belirsiz" ? "belirsiz" : "basarisiz", ekSayisi, { hata, gonderen, deneme: Math.max(1, deneme), kayitId });
       throw hata;
     }
   }
@@ -219,12 +237,12 @@ export class EpostaService {
   epostaDegisimiBilgilendir(eskiEposta: string, adSoyad: string, yeniEposta: string) { return this.gonder({ alici: eskiEposta, konu: "TekirExtra — giriş e-postanız değiştiriliyor", tur: "eposta_degisimi", metin: `Merhaba ${adSoyad},\n\nTekirExtra hesabınızın giriş e-postasının ${yeniEposta} olarak değiştirilmesi istendi. Yeni adresteki bağlantı onaylanınca bu adresle giriş yapılamaz.\n\nBu isteği siz ya da firma yöneticiniz yapmadıysanız hemen yöneticinize haber verin.`, html: `<p>Merhaba ${adSoyad},</p><p>TekirExtra hesabınızın giriş e-postasının <strong>${yeniEposta}</strong> olarak değiştirilmesi istendi. Yeni adresteki bağlantı onaylanınca bu adresle giriş yapılamaz.</p><p>Bu isteği siz ya da firma yöneticiniz yapmadıysanız hemen yöneticinize haber verin.</p>` }); }
   /** Ödeme sözü günü gönderimi: sabit Message-ID, ayrı geçmiş türü. */
   odemeSozuHatirlat(girdi: { alici: string; konu: string; metin: string; messageId: string }) { return this.gonder({ ...girdi, tur: "odeme_sozu_hatirlatma" }); }
-  iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string }) { return this.gonder(girdi); }
+  iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string; anahtar?: string }) { return this.gonder(girdi); }
   /** E-posta ekranından yazılan ileti; yanıtta In-Reply-To/References zinciri korur. */
   serbestIletiGonder(girdi: { alici: string; konu: string; metin: string; inReplyTo?: string; references?: string[] }) { return this.gonder({ ...girdi, tur: "ileti" }); }
   /** Kiracının kendi adresleri (gönderici + IMAP kullanıcısı); "Tümünü Yanıtla"da alıcılardan düşülür. */
   async kendiAdresleri(tenantId: string): Promise<string[]> { const a = await this.saklananAyar(tenantId); return [a?.gondericiEposta, a?.imapKullaniciAdi].filter((x): x is string => Boolean(x && x.includes("@"))).map((x) => x.toLowerCase()); }
   ekliIletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[] }) { return this.gonder({ ...girdi, tur: "belge" }); }
   /** RPR-24: zamanlanmış rapor; gönderim geçmişinde "rapor" türüyle ayrılır. */
-  raporGonder(girdi: { alici: string; konu: string; metin: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[] }) { return this.gonder({ ...girdi, tur: "rapor" }); }
+  raporGonder(girdi: { alici: string; konu: string; metin: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[]; anahtar?: string }) { return this.gonder({ ...girdi, tur: "rapor" }); }
 }

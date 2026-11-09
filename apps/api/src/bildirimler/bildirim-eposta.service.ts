@@ -105,7 +105,7 @@ export class BildirimEpostaService {
       ].join("\n");
 
       try {
-        await this.eposta.iletiGonder({ alici: teslimat.kullanici.eposta, konu, metin: govde });
+        await this.eposta.iletiGonder({ alici: teslimat.kullanici.eposta, konu, metin: govde, anahtar: `bildirim:${teslimat.id}` });
         await this.prisma.tenantIslem(tenantId, (tx) =>
           tx.bildirimTeslimati.update({
             where: { id: teslimat.id },

@@ -1067,10 +1067,13 @@ model EpostaGonderim {
   gonderen    String  @default("firma") @db.VarChar(10)
   deneme      Int     @default(1)
   saglayiciNo String? @map("saglayici_no")
+  /// ILT-05: aynı anahtarla ikinci ileti çıkmaz (özet).
+  anahtar    String?  @db.VarChar(128)
   createdAt  DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, anahtar])
   @@index([tenantId, createdAt])
   @@index([tenantId, gonderen, createdAt])
   @@map("eposta_gonderimleri")

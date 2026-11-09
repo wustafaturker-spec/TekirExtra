@@ -115,13 +115,45 @@ describe("firma e-posta servisi (ILT-02)", () => {
   const kur2 = (firmaAyari: unknown) => {
     gidenFirma.length = 0; kayitlar.length = 0;
     const transport = { sendMail: async (m: Record<string, unknown>) => { const h = sira.shift(); if (h) throw h; gidenFirma.push(m); return { messageId: "mid" }; } };
-    const tx = { modulAyar: { findUnique: async () => (firmaAyari ? { ayarlar: firmaAyari } : null) }, tenant: { findUnique: async () => ({ eposta: "firma@ornek.co" }) }, epostaGonderim: { create: async ({ data }: { data: Record<string, unknown> }) => { kayitlar.push(data); } } };
+    const tx = { modulAyar: { findUnique: async () => (firmaAyari ? { ayarlar: firmaAyari } : null) }, tenant: { findUnique: async () => ({ eposta: "firma@ornek.co" }) }, epostaGonderim: { create: async ({ data }: { data: Record<string, unknown> }) => { if (data.anahtar && kayitlar.some((k) => k.anahtar === data.anahtar)) { const { Prisma } = await import("@prisma/client"); throw new Prisma.PrismaClientKnownRequestError("yinelenen", { code: "P2002", clientVersion: "x" }); } const k = { id: `e${kayitlar.length + 1}`, ...data }; kayitlar.push(k); return k; }, update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => Object.assign(kayitlar.find((k) => k.id === where.id)!, data) } };
     const prisma = { tenantIslem: async (_t: string, f: (t: typeof tx) => unknown) => f(tx) };
     const ileti = { tasiyici: vi.fn(async () => ({ transport, from: "TekirExtra <p@t.co>", replyTo: undefined })), gonder: vi.fn(async () => ({ gonderildi: true })) };
     return { servis: new EpostaService(prisma as never, ileti as never), ileti };
   };
   beforeEach(() => { sira = []; });
   afterEach(() => { vi.useRealTimers(); });
+  it("aynı anahtarla ikinci ileti çıkmaz (ILT-05)", async () => {
+    const { servis } = kur2({ host: "smtp.ornek.co", port: 587, guvenlik: "starttls", gondericiAdi: "F", gondericiEposta: "f@o.co" });
+    vi.spyOn(servis as never, "transporter" as never).mockResolvedValue({ transport: { sendMail: async (m: Record<string, unknown>) => { const h = sira.shift(); if (h) throw h; gidenFirma.push(m); return { messageId: "mid" }; } }, from: "f@o.co", gonderen: "firma" } as never);
+    const g = { alici: "a@b.co", konu: "K", metin: "M", anahtar: "bildirim:1" };
+    await baglamla(() => servis.iletiGonder(g));
+    await baglamla(() => servis.iletiGonder(g));
+    expect(gidenFirma).toHaveLength(1);
+    expect(kayitlar).toHaveLength(1);
+    expect(kayitlar[0]).toMatchObject({ durum: "gonderildi", deneme: 1 });
+    expect(String(kayitlar[0].anahtar)).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it("kesin başarısızlık anahtarı bırakır, sonraki tur yeniden dener", async () => {
+    const { servis } = kur2({ host: "smtp.ornek.co", port: 587, guvenlik: "starttls", gondericiAdi: "F", gondericiEposta: "f@o.co" });
+    vi.spyOn(servis as never, "transporter" as never).mockResolvedValue({ transport: { sendMail: async (m: Record<string, unknown>) => { const h = sira.shift(); if (h) throw h; gidenFirma.push(m); return { messageId: "mid" }; } }, from: "f@o.co", gonderen: "firma" } as never);
+    const g = { alici: "a@b.co", konu: "K", metin: "M", anahtar: "bildirim:2" };
+    sira = [Object.assign(new Error("reddedildi"), { responseCode: 550 })];
+    await expect(baglamla(() => servis.iletiGonder(g))).rejects.toThrow();
+    expect(kayitlar[0]).toMatchObject({ durum: "basarisiz", anahtar: null });
+    await baglamla(() => servis.iletiGonder(g));
+    expect(gidenFirma).toHaveLength(1);
+  });
+  it("belirsiz sonuçta anahtar kalır, tekrar gönderilmez", async () => {
+    const { servis } = kur2({ host: "smtp.ornek.co", port: 587, guvenlik: "starttls", gondericiAdi: "F", gondericiEposta: "f@o.co" });
+    vi.spyOn(servis as never, "transporter" as never).mockResolvedValue({ transport: { sendMail: async (m: Record<string, unknown>) => { const h = sira.shift(); if (h) throw h; gidenFirma.push(m); return { messageId: "mid" }; } }, from: "f@o.co", gonderen: "firma" } as never);
+    const g = { alici: "a@b.co", konu: "K", metin: "M", anahtar: "bildirim:3" };
+    sira = [Object.assign(new Error("kesildi"), { code: "ECONNRESET", command: "DATA" })];
+    await expect(baglamla(() => servis.iletiGonder(g))).rejects.toThrow();
+    expect(kayitlar[0].durum).toBe("belirsiz");
+    expect(kayitlar[0].anahtar).toBeTruthy();
+    await baglamla(() => servis.iletiGonder(g));
+    expect(gidenFirma).toHaveLength(0);
+  });
   it("sistem iletisi firma bağlamı olsa da platformdan çıkar", async () => {
     const { servis, ileti } = kur2({ host: "smtp.firma.co" });
     await baglamla(() => servis.parolaSifirlamaGonder("u@x.co", "Ali", "http://l", 30));

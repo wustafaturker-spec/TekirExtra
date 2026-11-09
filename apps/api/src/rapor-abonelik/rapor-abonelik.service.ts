@@ -220,7 +220,8 @@ export class RaporAbonelikService {
         ];
         const metin = gonderimMetni(tanim, [`${DONEM_ADI[kayit.donem as GoreliDonem]}`, ...paket.bilgi.bilgiler], paket.satirSayisi, paket.toplamlar, kayit.gorunum.ad);
         const konu = `${paket.bilgi.firma ? `${paket.bilgi.firma} — ` : ""}${tanim.ad}: ${kayit.gorunum.ad}`;
-        for (const a of alicilar) await this.eposta.raporGonder({ alici: a.eposta, konu, metin, ekler });
+        // ILT-05: yeniden denemede daha önce alan kişiye ikinci kez gitmez; son başarılı gönderim dönemi ayırır.
+        for (const a of alicilar) await this.eposta.raporGonder({ alici: a.eposta, konu, metin, ekler, anahtar: secenek.elle ? undefined : `rapor:${id}:${kayit.sonGonderim?.toISOString() ?? "ilk"}:${a.eposta}` });
         return { durum: "gonderildi", alici: alicilar.length };
       });
       await yaz({ sonGonderim: simdi, sonDurum: sonuc.durum, sonHata: null, denemeSayisi: 0, ...(secenek.elle ? {} : { sonrakiGonderim: siradaki }) });
