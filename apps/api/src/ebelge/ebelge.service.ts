@@ -58,6 +58,8 @@ export const ON_DENETIM_BASLANGIC = "2026-10-20";
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 /** EBLG-144: her çekimde denetimi tamamlanan eski bekleyen belge sayısı. */
 const GELEN_DENETIM_TAMAMLAMA = 50;
+/** Büyük XML gövdesi yoğun diskte varsayılan 5 sn'yi aşıp çekimi düşürüyordu. */
+const GELEN_BELGE_ISLEM_SURESI_MS = 30_000;
 
 /** EBLG-141/150: ön denetim kararının bağlandığı kayıt — giden fatura ya da gelen belge. */
 export type OnDenetimHedefi = { faturaId: string } | { gelenEbelgeId: string };
@@ -1594,7 +1596,7 @@ export class EbelgeService {
         // yanıtı olmayan kayda yazılır; yerel kararın üzerine yazılmaz.
         if (b.yanit) await this.yanitBenimse(tx, tenantId, b.uuid, b.yanit);
         return k;
-      });
+      }, { timeout: GELEN_BELGE_ISLEM_SURESI_MS });
 
       if (!oncesi) {
         yeniBelgeSayisi += 1;
