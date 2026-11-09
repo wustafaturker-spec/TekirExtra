@@ -8,6 +8,7 @@ import { platformApi } from "@/lib/platform-api";
 type Durum = "kuyrukta" | "gonderildi" | "basarisiz" | "belirsiz";
 interface Ayar { yapilandirildi: boolean; parolaKayitli: boolean; host: string; port: number; guvenlik: "yok" | "starttls" | "ssl"; kullaniciAdi: string; gondericiAdi: string; gondericiEposta: string; yanitAdresi: string }
 interface Kayit { id: string; tur: string; alicilar: string; konu: string; durum: Durum; deneme: number; hata: string | null; createdAt: string; gonderildiAt: string | null }
+interface FirmaSayisi { tenantId: string; firma: string; sistemToplam: number; sistemHata: number; epostaToplam: number; epostaHata: number; smsToplam: number; smsHata: number }
 interface Kayitlar { satirlar: Kayit[]; toplam: number; sayfa: number; sayfaBoyutu: number }
 
 const DURUM: Record<Durum, { ad: string; rozet: "info" | "success" | "danger" | "warning" }> = {
@@ -25,6 +26,7 @@ export default function PlatformIletiSayfasi() {
   const [liste, setListe] = useState<Kayitlar | null>(null);
   const [durum, setDurum] = useState<"" | Durum>("");
   const [sayfa, setSayfa] = useState(1);
+  const [firmalar, setFirmalar] = useState<FirmaSayisi[] | null>(null);
   const [hata, setHata] = useState(""); const [bilgi, setBilgi] = useState(""); const [islem, setIslem] = useState(false);
 
   const kayitlariYukle = useCallback(async () => {
@@ -34,6 +36,8 @@ export default function PlatformIletiSayfasi() {
   useEffect(() => { void platformApi<Ayar>("/platform/ileti/ayar").then(setAyar).catch((e: unknown) => setHata(e instanceof Error ? e.message : "Ayar yüklenemedi.")); }, []);
   useEffect(() => { void kayitlariYukle(); }, [kayitlariYukle]);
   useEffect(() => { void platformApi<NonNullable<typeof sms>>("/platform/ileti/sms-ayar").then(setSms).catch(() => undefined); }, []);
+
+  useEffect(() => { void platformApi<FirmaSayisi[]>("/platform/ileti/firma-sayilari").then(setFirmalar).catch(() => undefined); }, []);
 
   const alan = <K extends keyof Ayar>(k: K, v: Ayar[K]) => setAyar((o) => (o ? { ...o, [k]: v } : o));
   async function calis(is: () => Promise<void>) {
@@ -109,6 +113,25 @@ export default function PlatformIletiSayfasi() {
         <Field label="Test numarası"><Input type="tel" value={testTelefon} onChange={(e) => setTestTelefon(e.target.value)} placeholder="05XX XXX XX XX" /></Field>
         <Button disabled={islem || !testTelefon || !sms?.yapilandirildi} onClick={smsTest}>Test SMS'i gönder</Button>
       </div>
+    </Card>
+
+    <Card title="Firma başına gönderim (son 30 gün)" pad={false}>
+      <p className="muted" style={{ padding: "0.8rem 1.25rem 0" }}>Yalnız sayılar gösterilir; firmaların müşterilerine gönderdiği iletilerin alıcısı ve konusu burada görünmez. Hata sayısı başarısız ve belirsiz gönderimleri kapsar.</p>
+      <TableWrap className="platform-responsive-table"><table className="table">
+        <thead><tr><th>Firma</th><th>Sistem iletisi</th><th>Sistem hatası</th><th>Firma e-postası</th><th>E-posta hatası</th><th>SMS</th><th>SMS hatası</th></tr></thead>
+        <tbody>
+          {firmalar?.map((f) => <tr key={f.tenantId}>
+            <td data-label="Firma">{f.firma}</td>
+            <td data-label="Sistem iletisi">{f.sistemToplam}</td>
+            <td data-label="Sistem hatası">{f.sistemHata}</td>
+            <td data-label="Firma e-postası">{f.epostaToplam}</td>
+            <td data-label="E-posta hatası">{f.epostaHata}</td>
+            <td data-label="SMS">{f.smsToplam}</td>
+            <td data-label="SMS hatası">{f.smsHata}</td>
+          </tr>)}
+          {firmalar && !firmalar.length && <tr><td colSpan={7} className="muted">Son 30 günde gönderim yok.</td></tr>}
+        </tbody>
+      </table></TableWrap>
     </Card>
 
     <Card title="Gönderim kaydı" pad={false} actions={<Select aria-label="Durum" value={durum} onChange={(e) => { setDurum(e.target.value as "" | Durum); setSayfa(1); }}><option value="">Tümü</option>{(Object.keys(DURUM) as Durum[]).map((d) => <option key={d} value={d}>{DURUM[d].ad}</option>)}</Select>}>

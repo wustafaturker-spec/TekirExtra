@@ -35,6 +35,9 @@ export class PlatformIletiController {
   @Get("kayitlar")
   kayitlar(@Query() sorgu: unknown) { const q = durumSemasi.parse(sorgu); return this.servis.kayitlar(q.durum, q.sayfa); }
 
+  @Get("firma-sayilari")
+  firmaSayilari(@Query() sorgu: unknown) { return this.servis.firmaSayilari(z.object({ gun: z.coerce.number().int().min(1).max(90).optional() }).parse(sorgu).gun); }
+
   @Post("kayitlar/:id/yeniden")
   @HttpCode(200)
   yeniden(@Param("id", ParseUUIDPipe) id: string) { return this.servis.yenidenGonder(id); }

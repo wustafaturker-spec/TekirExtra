@@ -51,6 +51,7 @@ export interface IletiGirdisi {
   tenantId?: string | null;
 }
 
+export interface FirmaIletiSayisi { tenantId: string; firma: string; sistemToplam: number; sistemHata: number; epostaToplam: number; epostaHata: number; smsToplam: number; smsHata: number }
 interface IsVerisi extends Omit<IletiGirdisi, "anahtar"> { kayitId: string }
 export class IletiGonderilemedi extends Error {}
 
@@ -245,6 +246,11 @@ export class PlatformIletiService implements OnModuleInit, OnModuleDestroy {
       this.platform.db.platformIletiKaydi.count({ where }),
     ]);
     return { satirlar: satirlar.map(({ anahtar: _a, ...s }) => s), toplam, sayfa, sayfaBoyutu: take };
+  }
+
+  /** ILT-08: firma başına sayılar; firmanın cari iletilerinin alıcısı ve konusu bu yoldan okunamaz. */
+  firmaSayilari(gun = 30) {
+    return this.platform.db.$queryRaw<FirmaIletiSayisi[]>`SELECT tenant_id AS "tenantId", firma, sistem_toplam AS "sistemToplam", sistem_hata AS "sistemHata", eposta_toplam AS "epostaToplam", eposta_hata AS "epostaHata", sms_toplam AS "smsToplam", sms_hata AS "smsHata" FROM platform_ileti_firma_sayilari(${gun}::integer)`;
   }
 
   /** Yalnız kuyruktan geçip başarısız kalan ve hâlâ saklı olan iş yeniden gönderilebilir. */

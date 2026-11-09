@@ -96,6 +96,19 @@ describe("gönderim", () => {
   });
 });
 
+describe("firma başına sayılar (ILT-08)", () => {
+  it("yalnız sayı alanlarını döner, kapalı işlevden okur", async () => {
+    const satir = { tenantId: "t1", firma: "A", sistemToplam: 2, sistemHata: 1, epostaToplam: 5, epostaHata: 0, smsToplam: 1, smsHata: 0 };
+    const queryRaw = vi.fn(async () => [satir]);
+    const servis = new PlatformIletiService({ db: { $queryRaw: queryRaw } } as never);
+    await expect(servis.firmaSayilari(7)).resolves.toEqual([satir]);
+    const [parcalar, gun] = queryRaw.mock.calls[0] as unknown as [string[], number];
+    expect(parcalar.join("")).toContain("platform_ileti_firma_sayilari");
+    expect(parcalar.join("")).not.toMatch(/alici|konu/);
+    expect(gun).toBe(7);
+  });
+});
+
 describe("firma e-posta servisi (ILT-02)", () => {
   const gidenFirma: Record<string, unknown>[] = [], kayitlar: Record<string, unknown>[] = [];
   let sira: unknown[] = [];
