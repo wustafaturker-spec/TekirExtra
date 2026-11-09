@@ -88,8 +88,8 @@ export default function PlatformYerlesimi({ children }: { children: ReactNode })
   const aktif = (href: string) => href === "/platform" ? yol === href || yol.startsWith("/platform/degisiklik") : yol === href || yol.startsWith(`${href}/`);
   const bolumler = [
     { ad: "Genel bakış", yollar: ["/platform/ozet", "/platform/gorevler"] },
-    { ad: "Mevzuat yönetimi", yollar: ["/platform", "/platform/tablolar", "/platform/talepler", "/platform/denetim"] },
-    { ad: "Platform yönetimi", yollar: ["/platform/duyurular", "/platform/paketler", "/platform/firmalar", "/platform/vergi-daireleri", "/platform/istatistikler", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/yedekler", "/platform/yapay-zeka", "/platform/kullanicilar"] },
+    { ad: "Mevzuat yönetimi", yollar: ["/platform", "/platform/tablolar", "/platform/vergi-takvimi", "/platform/talepler", "/platform/denetim"] },
+    { ad: "Platform yönetimi", yollar: ["/platform/duyurular", "/platform/paketler", "/platform/firmalar", "/platform/vergi-daireleri", "/platform/istatistikler", "/platform/odeme-raporu", "/platform/odeme", "/platform/sistem-sagligi", "/platform/ileti", "/platform/yedekler", "/platform/yapay-zeka", "/platform/kullanicilar"] },
   ];
   return (
     <div className="platform-shell">

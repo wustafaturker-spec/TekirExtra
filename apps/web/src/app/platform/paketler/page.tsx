@@ -33,7 +33,7 @@ function Paketler() {
   return <div className="stack">
     <PageHeader title="Paket kataloğu" subtitle="Paket tanımları, taslaklar ve değiştirilemez yayın sürümleri." actions={<div className="platform-row-actions"><Button disabled={mesgul} onClick={yenile}>Yenile</Button><Button disabled={mesgul} aria-expanded={yeni} onClick={() => { setYeni(!yeni); setIslemHatasi(""); }}>Yeni paket</Button></div>} />
     <p className="subtle">{KATALOG_KAPSAMI}</p>
-    <Link href="/platform/paketler/gecis">Abonelik geçiş karşılaştırması</Link>
+    <div className="row-tight" style={{ flexWrap: "wrap" }}><Link href="/platform/paketler/gecis">Abonelik geçiş karşılaştırması</Link><Link href="/platform/paketler/planli-atamalar">Planlı atamalar</Link></div>
     <Alert tone="error">{islemHatasi}</Alert>
     {yeni && <Card title="Yeni paket taslağı"><PlatformPaketFormu ilk={{ ad: "", aciklama: "", ozellikler: [], siralama: 100 }} kodGerekli mesgul={mesgul} onKaydet={olustur} onVazgec={() => { setYeni(false); setIslemHatasi(""); }} /></Card>}
     <Card><form onSubmit={ara} className="platform-row-actions" key={arama}><Field label="Kod veya son sürüm adı"><Input name="arama" maxLength={100} defaultValue={arama} placeholder="Paket ara" /></Field><Button type="submit">Ara</Button>{arama && <Button type="button" onClick={() => sayfaYaz(1, "")}>Aramayı temizle</Button>}</form></Card>
