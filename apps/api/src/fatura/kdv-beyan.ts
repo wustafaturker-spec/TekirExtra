@@ -111,7 +111,7 @@ export function kdvBeyanFaturalari(tx: Prisma.TransactionClient, tarih: Prisma.D
   return tx.fatura.findMany({
     where: { durum: "kesin", tip: { in: ["satis", "alis", "satis_iade", "alis_iade"] }, tarih },
     select: {
-      tip: true, kur: true, ihracKayitliKodu: true, ozelMatrahKodu: true, ozelMatrahTutari: true, ozelMatrahOrani: true, toplamNetKdv: true,
+      tarih: true, tip: true, kur: true, ihracKayitliKodu: true, ozelMatrahKodu: true, ozelMatrahTutari: true, ozelMatrahOrani: true, toplamNetKdv: true,
       satirlar: { select: { kdvOrani: true, matrah: true, kdvTutari: true, tevkifatTutari: true, netKdvTutari: true, ekVergiler: true } },
     },
   });

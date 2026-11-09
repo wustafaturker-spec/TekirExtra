@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { MevzuatDegisiklikDurum, MevzuatTalepDurumu, Prisma } from "@prisma/client";
-import { bugunTR, DONEMSEL_DEGERLER, MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu, yayinTakvimi } from "@tekirextra/shared";
+import { bugunTR, DONEMSEL_DEGERLER, MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu, VERGI_TAKVIMI_TURU, vergiTakvimBeklenenAnahtarlar, vergiTakvimEksikleri, yayinTakvimi } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { MevzuatService } from "./mevzuat.service";
 import { editorGorebilirMi, MEVZUAT_EDITOR_OLAYLARI, olayDetayiniMaskele } from "./olay-gorunurlugu";
@@ -308,7 +308,7 @@ export class PlatformMevzuatService {
    * Eklenen kod mevcut taslağı etkilemez; değişen ve kaldırılan kodlar sayılır.
    */
   private async etki(satirlar: { tur: string; anahtar: string; islem: string }[], yururluk: string) {
-    const turler = [...new Set(satirlar.filter((s) => s.islem !== "ekle" && s.tur !== "kanuni_deger" && s.tur !== "bordro_parametreleri").map((s) => s.tur))];
+    const turler = [...new Set(satirlar.filter((s) => s.islem !== "ekle" && s.tur !== "kanuni_deger" && s.tur !== "bordro_parametreleri" && s.tur !== "vergi_takvimi").map((s) => s.tur))];
     const kalemler: { ad: string; taslakFatura: number; taslakBelge: number; taslakBordro: number; firma: number }[] = [];
     for (const tur of turler) {
       const anahtarlar = satirlar.filter((s) => s.tur === tur && s.islem !== "ekle").map((s) => s.anahtar);
@@ -322,7 +322,7 @@ export class PlatformMevzuatService {
       kalemler.push({ ad: MEVZUAT_TUR_TANIMLARI.bordro_parametreleri.ad, taslakFatura: 0, taslakBelge: 0, taslakBordro: Number(r?.taslak_bordro ?? 0), firma: Number(r?.firma ?? 0) });
     }
     // Kanuni süre/eşikler belge satırında saklanmaz; sayılacak taslak yoktur, yeni değer sonraki hesaplarda kullanılır.
-    const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur === "kanuni_deger").map((s) => s.tur))];
+    const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur === "kanuni_deger" || s.tur === "vergi_takvimi").map((s) => s.tur))];
     return { kalemler, hesaplanmayan };
   }
 
@@ -391,7 +391,10 @@ export class PlatformMevzuatService {
       where: { OR: DONEMSEL_DEGERLER.map((d) => ({ tur: d.tur, anahtar: d.anahtar })) },
       select: { tur: true, anahtar: true, yururlukBaslangic: true },
     });
-    return yayinTakvimi(kayitlar.map((k) => ({ ...k, yururlukBaslangic: k.yururlukBaslangic.toISOString().slice(0, 10) })), bugunTR());
+    const bugun = bugunTR();
+    const beklenen = vergiTakvimBeklenenAnahtarlar(bugun);
+    const vergi = await this.db.mevzuatKayit.findMany({ where: { tur: VERGI_TAKVIMI_TURU, anahtar: { in: beklenen }, yururlukBitis: null }, select: { anahtar: true } });
+    return [...yayinTakvimi(kayitlar.map((k) => ({ ...k, yururlukBaslangic: k.yururlukBaslangic.toISOString().slice(0, 10) })), bugun), ...vergiTakvimEksikleri(vergi.map((k) => k.anahtar), bugun)];
   }
 }
 

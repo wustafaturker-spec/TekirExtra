@@ -18,6 +18,8 @@ import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
 import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
 import { iseGirisSonTarihi, istenCikisSonTarihi } from "../personel/sgk-kodlari";
+import { donemAnahtari, donemCoz } from "../vergi-takvimi/vergi-takvimi.hesap";
+import { vergiTakvimiOku } from "../vergi-takvimi/vergi-takvimi.okuma";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { coz } from "../core/kripto";
@@ -80,7 +82,8 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   vade: ["duzeltme:", "vade:"],
   cek_senet: ["duzeltme:", "cek_senet:"],
   stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
-  donem: ["duzeltme:", "donem:"],
+  // VTK-12: kalem ödenince ya da eşik değişince önceki uyarı kapanır.
+  donem: ["duzeltme:", "donem:", "vergi-takvimi:"],
   // KSB-31: fark kapanınca bakiye uyarısı da kapanır.
   entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:", "banka-bakiye-farki:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
@@ -164,6 +167,7 @@ export class BildirimUreticiService {
       ...(await this.satinAlmaOnaylari()),
       ...(await this.bankaEntegrasyonu()),
       ...(await this.pazaryeriOtomatik()),
+      ...(await this.vergiTakvimi()),
       ...(await this.personelBildirimleri()),
       ...(await this.mevzuatDegisiklikleri()),
       ...(await this.mevzuatYayinEksikleri()),
@@ -631,6 +635,37 @@ export class BildirimUreticiService {
    * PZR-18: pazaryeri otomatik çekim işi 3 kez üst üste başarısız (uyarı) ya da
    * kimlik reddiyle durmuş (kritik). İş başına; başarılı çekimde kendiliğinden kapanır.
    */
+  /**
+   * VTK-12: yayınlanmış son tarihe 7 ve 2 gün kala uyarı, gecikince kritik. Anahtar son
+   * tarihi taşır: uzatmada bildirim yeni tarihe göre kurulur. Kalanı olmayan kalem üretmez.
+   */
+  private async vergiTakvimi(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const donem = donemAnahtari(Number(bugun.slice(0, 4)), Number(bugun.slice(5, 7)));
+    const { satirlar } = await this.oku(tenantId, (tx) => vergiTakvimiOku(tx, tenantId, { ilk: donemCoz(donem - 3), son: donemCoz(donem), bugun }));
+    return satirlar.flatMap((s): BildirimGirdisi[] => {
+      if (!s.sonTarih || s.kalan <= 0) return [];
+      const kalanGun = Math.round((Date.parse(`${s.sonTarih}T00:00:00Z`) - Date.parse(`${bugun}T00:00:00Z`)) / 86_400_000);
+      const esik = s.durum === "gecikti" ? "gecikti" : kalanGun < 0 ? null : kalanGun <= 2 ? "2" : kalanGun <= 7 ? "7" : null;
+      if (!esik) return [];
+      const adi = `${s.ad} ${String(s.ay).padStart(2, "0")}.${s.yil}`;
+      const tarih = s.sonTarih.split("-").reverse().join(".");
+      const tutar = s.kalan.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return [{
+        tur: "donem",
+        onem: esik === "gecikti" ? "kritik" : "uyari",
+        baslik: esik === "gecikti" ? `${adi} ödemesi gecikti` : `${adi} son tarihi yaklaşıyor`,
+        aciklama: `Son tarih ${tarih}, kalan ön hesap ${tutar} TL.${s.donemSuruyor ? " Dönem henüz bitmedi." : ""} Ödediyseniz Vergi ve SGK Takvimi'nden işaretleyin.`,
+        birlesimAnahtari: `vergi-takvimi:${s.yukumluluk}:${s.yil}-${s.ay}:${s.sonTarih}:${esik}`,
+        kaynakTur: "vergi_takvimi",
+        kaynakRef: `${s.yukumluluk}:${s.yil}-${s.ay}`,
+        hedefYol: `/panel/raporlar/vergi-takvimi?yil=${s.yil}`,
+        roller: ["yonetici", "muhasebe"],
+      }];
+    });
+  }
+
   private async pazaryeriOtomatik(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const isler = await this.oku(tenantId, (tx) => tx.baglantiOtomatikIsi.findMany({

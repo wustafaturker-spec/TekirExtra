@@ -22,6 +22,7 @@ export type KalemKaynak =
   | "bordro"
   /** PRS-05: bordronun SGK primi ve muhtasar (gelir + damga vergisi) ödemesi, ertesi ayın 26'sı. */
   | "bordro_yasal"
+  | "vergi_takvimi"
   | "tekrarlayan_fatura"
   | "odeme_talimati";
 

@@ -6,6 +6,9 @@ import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }) }));
 // EBLG-133: bağlantı ayarı testte düz JSON tutulur.
 vi.mock("../core/kripto", () => ({ coz: (metin: string) => metin }));
+const vergiOku = vi.hoisted(() => ({ fn: vi.fn(async () => ({ ayar: null, satirlar: [] as unknown[] })) }));
+vi.mock("../vergi-takvimi/vergi-takvimi.okuma", () => ({ vergiTakvimiOku: (...a: unknown[]) => vergiOku.fn(...a) }));
+const vergiSatiri = (ek: Record<string, unknown>) => ({ yukumluluk: "kdv1", ad: "KDV-1", yil: 2026, ay: 8, sonTarih: "2026-11-28", oncekiSonTarih: null, hesaplanan: 1000, beyanTutari: null, beyanDevreden: null, beyanNotu: null, tutar: 1000, odenen: 0, kalan: 1000, durum: "bekliyor", donemSuruyor: false, uyarilar: [], devredenGiren: null, devredenCikan: null, odemeler: [], ...ek });
 // Vade sayısı raporla aynı fonksiyondan gelir (vadesiGecenleriHesapla); testler onu rapor.vadesiGecenler üzerinden ayarlar.
 const vadeHesap = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock("../rapor/rapor.service", () => ({ RaporService: class {}, vadesiGecenleriHesapla: (...a: unknown[]) => vadeHesap.fn(...a) }));
@@ -626,5 +629,29 @@ describe("BLD-11 tarama tek işlemde", () => {
     // 1: dedektörlerin ortak işlemi, 1: yükseltme (yazma).
     expect(prisma.tenantIslem).toHaveBeenCalledTimes(2);
     expect(prisma.tenantIslem.mock.calls[0][2]).toEqual({ timeout: 60_000 });
+  });
+});
+
+describe("BildirimUreticiService — vergi takvimi (VTK-12)", () => {
+  afterEach(() => { vi.useRealTimers(); vergiOku.fn.mockReset(); vergiOku.fn.mockResolvedValue({ ayar: null, satirlar: [] }); });
+  const tara = async (bugun: string, satir: Record<string, unknown>) => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date(`${bugun}T09:00:00Z`));
+    vergiOku.fn.mockResolvedValue({ ayar: {}, satirlar: [vergiSatiri(satir)] });
+    const { servis } = servisKur() as unknown as { servis: { vergiTakvimi(): Promise<{ onem: string; birlesimAnahtari: string; tur: string }[]> } };
+    return servis.vergiTakvimi();
+  };
+  it("yediden uzakta uyarmaz; 7 ve 2 gün eşikleri ayrı anahtardır", async () => {
+    expect(await tara("2026-11-20", {})).toHaveLength(0);
+    expect((await tara("2026-11-21", {}))[0]).toMatchObject({ tur: "donem", onem: "uyari", birlesimAnahtari: "vergi-takvimi:kdv1:2026-8:2026-11-28:7" });
+    expect((await tara("2026-11-26", {}))[0]?.birlesimAnahtari).toBe("vergi-takvimi:kdv1:2026-8:2026-11-28:2");
+  });
+  it("gecikince kritik; takip başlamamış geçmiş kalem bildirim üretmez", async () => {
+    expect((await tara("2026-12-01", { durum: "gecikti" }))[0]).toMatchObject({ onem: "kritik", birlesimAnahtari: "vergi-takvimi:kdv1:2026-8:2026-11-28:gecikti" });
+    expect(await tara("2026-12-01", { durum: "bekliyor" })).toHaveLength(0);
+  });
+  it("uzatmada anahtar yeni tarihe kurulur; kalanı olmayan ve tarihsiz kalem üretmez", async () => {
+    expect((await tara("2026-12-03", { sonTarih: "2026-12-05" }))[0]?.birlesimAnahtari).toContain(":2026-12-05:2");
+    expect(await tara("2026-11-27", { kalan: 0, durum: "odendi" })).toHaveLength(0);
+    expect(await tara("2026-11-27", { sonTarih: null })).toHaveLength(0);
   });
 });

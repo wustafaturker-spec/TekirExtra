@@ -124,6 +124,9 @@ enum DuzeltmeTuru {
 
 model Tenant {
   pesinVergiMahsuplari PesinVergiMahsup[]
+  vergiTakvimiAyari    VergiTakvimiAyari?
+  vergiYukumlulukKayitlari VergiYukumlulukKaydi[]
+  vergiOdemeleri       VergiOdemesi[]
   duyuruAlicilari PlatformDuyuruAlicisi[]
   ihtiyacPlanlari         IhtiyacPlani[]
   tahsilatSozBaglari      TahsilatSozBaglantisi[]
@@ -810,6 +813,68 @@ model PazaryeriHakedis {
 
 /// GLR-06: bizden kesilen stopajın beyannamede mahsup edildi işareti; kayıt üretmez, fişi değiştirmez.
 /// Tutar, tarih ve etiket işaret anının kopyasıdır: kaynak sonradan iptal edilir ya da değişirse ekran uyarır.
+/// VTK-05/13: firmanın vergi takvimi başlangıcı; tek satır.
+model VergiTakvimiAyari {
+  tenantId       String   @id @map("tenant_id") @db.Uuid
+  /// Devreden KDV zincirinin ilk dönemi; öncesi hesaplanmaz.
+  baslangicYil   Int      @map("baslangic_yil")
+  baslangicAy    Int      @map("baslangic_ay")
+  /// Başlangıç dönemine girerken devreden KDV.
+  devredenKdv    Decimal  @default(0) @map("devreden_kdv") @db.Decimal(15, 2)
+  /// aylik | uc_aylik
+  muhtasarDonemi String   @default("aylik") @map("muhtasar_donemi") @db.VarChar(10)
+  guncelleyenId  String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("vergi_takvimi_ayarlari")
+}
+
+/// VTK-09: yükümlülük + dönem için firmanın girdiği bilgi. Hesaplanan tutar saklanmaz, her okumada üretilir.
+model VergiYukumlulukKaydi {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  /// kdv1 | kdv2 | muhtasar | sgk | muhtasar3
+  yukumluluk    String   @db.VarChar(12)
+  yil           Int
+  ay            Int
+  beyanTutari   Decimal? @map("beyan_tutari") @db.Decimal(15, 2)
+  /// Yalnız KDV-1: beyannamede sonraki döneme devreden.
+  beyanDevreden Decimal? @map("beyan_devreden") @db.Decimal(15, 2)
+  beyanNotu     String?  @map("beyan_notu")
+  beyanGirenId  String?  @map("beyan_giren_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  odemeler VergiOdemesi[]
+
+  @@unique([tenantId, yukumluluk, yil, ay])
+  @@index([tenantId, yil, ay])
+  @@map("vergi_yukumluluk_kayitlari")
+}
+
+/// VTK-10: ödeme işareti; para hareketi ya da fiş üretmez, hareket bağı isteğe bağlıdır.
+model VergiOdemesi {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  kayitId            String   @map("kayit_id") @db.Uuid
+  tarih              DateTime @db.Date
+  tutar              Decimal  @db.Decimal(15, 2)
+  kasaBankaHareketId String?  @unique @map("kasa_banka_hareket_id") @db.Uuid
+  not                String?
+  kullaniciId        String?  @map("kullanici_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kayit   VergiYukumlulukKaydi @relation(fields: [kayitId], references: [id], onDelete: Cascade)
+  hareket KasaBankaHareket?    @relation(fields: [kasaBankaHareketId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, kayitId])
+  @@map("vergi_odemeleri")
+}
+
 model PesinVergiMahsup {
   id            String   @id @default(uuid()) @db.Uuid
   tenantId      String   @map("tenant_id") @db.Uuid
@@ -4553,6 +4618,7 @@ model KasaBankaHareket {
   kapamalar FaturaKapama[]
 
   pazaryeriHakedis PazaryeriHakedis? @relation("HakedisBankaHareketi")
+  vergiOdemesi     VergiOdemesi?
   @@unique([tenantId, makbuzNo])
   @@index([tenantId, tarih])
   @@index([tenantId, projeId])

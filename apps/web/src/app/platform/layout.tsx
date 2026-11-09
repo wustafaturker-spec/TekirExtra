@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText, BarChart3, Package, MapPinned, DatabaseBackup } from "lucide-react";
+import { Menu, X, LogOut, MonitorX, ShieldCheck, LayoutDashboard, ListTodo, Building2, FilePenLine, Table2, Inbox, History, CreditCard, Activity, Sparkles, Users, ReceiptText, BarChart3, Package, MapPinned, DatabaseBackup, CalendarDays } from "lucide-react";
 import { Alert, Button, Modal, ModalEylem } from "@/components/ui";
 import { platformApi, platformCikis, platformTokenAl, platformTokenYaz } from "@/lib/platform-api";
 
@@ -20,6 +20,7 @@ const MENU = [
   { href: "/platform/vergi-daireleri", ikon: MapPinned, baslik: "Vergi daireleri", yalnizYonetici: true },
   { href: "/platform", ikon: FilePenLine, baslik: "Değişiklikler" },
   { href: "/platform/tablolar", ikon: Table2, baslik: "Yürürlükteki değerler" },
+  { href: "/platform/vergi-takvimi", ikon: CalendarDays, baslik: "Vergi ve SGK takvimi" },
   { href: "/platform/talepler", ikon: Inbox, baslik: "Talepler" },
   { href: "/platform/denetim", ikon: History, baslik: "Denetim izi" },
   { href: "/platform/odeme-raporu", ikon: ReceiptText, baslik: "Ödeme raporu", yalnizYonetici: true },

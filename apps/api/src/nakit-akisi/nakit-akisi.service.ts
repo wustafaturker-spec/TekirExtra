@@ -5,6 +5,8 @@ import { PrismaService } from "../core/prisma.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { DovizService } from "../doviz/doviz.service";
 import { cariDavranisAnalizi } from "../cari/cari-analiz";
+import { donemAnahtari, donemCoz } from "../vergi-takvimi/vergi-takvimi.hesap";
+import { vergiTakvimiOku } from "../vergi-takvimi/vergi-takvimi.okuma";
 import { bordroYasalTutarlari, bordroYasalVade, gunEkle, kurusa, nakitTahmini, type CariTahsilatProfili, type NakitKalemi, type Ufuk } from "./nakit-akisi.hesap";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { Prisma } from "@prisma/client";
@@ -18,7 +20,7 @@ const KAPSAM_DISI = [
 ];
 const KAPSAM_NOTLARI = [
   "Tahsilat operasyonu açıksa aktif ödeme sözünün gerçekleşmeden kalan payı aynı faturanın kalan alacağından ayrılarak söz tarihine alınır; ek alacak yaratmaz. Gecikmiş, iptal, revize ve geçersiz söz kullanılmaz. Söz tarihi tahsilat garantisi değildir; müşteri gecikme senaryosu ayrıca uygulanır. Kötümser senaryodaki 90 günlük sınır asıl fatura vadesinden hesaplanır.",
-  "Bordro hesap özeti bulunan dönemlerin SGK ve muhtasar (gelir + damga vergisi) tutarları, hesaplanan vadesi bugün ile ufuk sonu arasındaysa dahildir. Ayrı ödeme takibi olmadığı için ödenmiş olabilir; kesin ödeme borcu değildir. Geçmiş vadeli yasal kalemler dahil edilmez.",
+  "Bordro hesap özeti bulunan dönemlerin SGK ve muhtasar (gelir + damga vergisi) tutarları, hesaplanan vadesi bugün ile ufuk sonu arasındaysa dahildir. Vergi ve SGK Takviminde tarihi yayınlanmış dönemlerde kalan tutar son tarihte çıkış sayılır, ödenenler düşer. Tarihi yayınlanmamış dönemde ayrı ödeme takibi olmadığı için ödenmiş olabilir; kesin ödeme borcu değildir. Geçmiş vadeli yasal kalemler dahil edilmez.",
   "Onaylanmamış bordrolar ve son dönemin sonraki aylara tekrarı tahmin olarak işaretlenir. Bordro net ödemesi ile yasal ödemeler ayrı kalemlerdir.",
   "Bu bir nakit senaryosudur; tahakkuk bazlı gelir-gider veya kâr hesabı değildir. Faturada kapanışlardan ve planlanan ödeme talimatından sonraki kalan genel toplam kullanılır; satış/alış iadesinin yönü ters çevrilir, taslak ve iptal faturalar alınmaz.",
   "Vade tarihi olmayan faturada belge tarihi kullanılır. Senaryolar müşteri tahsilatını geciktirebilir; vade portföyü tahsilat garantisi değildir. Teminattaki evrak vade tablosunda yer alabilse de burada nakit girişine eklenmez.",
@@ -269,8 +271,26 @@ export class NakitAkisiService {
         }
       }
 
-      // PRS-05: bordronun SGK primi ve muhtasarı ertesi ayın 26'sında. Ödeme takibi
-      // olmadığı için vadesi gelmemiş dönemler sayılır; son dönem sonraki aylara tekrarlanır.
+      // VTK-11: tarihi yayınlanmış vergi ve SGK kalanları son tarihte çıkıştır. Geciken kalem bugüne
+      // alınır; yalnız takibi başlatmış firmada (başlangıç girilmeden geçmiş ödemeler bilinmez).
+      const buAy = { yil: Number(bugun.slice(0, 4)), ay: Number(bugun.slice(5, 7)) };
+      const takvimIlk = donemCoz(donemAnahtari(buAy.yil, buAy.ay) - 12);
+      const takvim = await vergiTakvimiOku(tx, tenantId, { ilk: takvimIlk, son: buAy, bugun });
+      const takvimdeOlan = new Set<string>();
+      for (const s of takvim.satirlar) {
+        if (!s.sonTarih || (s.tutar <= 0 && s.odenen <= 0)) continue;
+        for (const ay of s.yukumluluk === "muhtasar3" ? [s.ay - 2, s.ay - 1, s.ay] : [s.ay]) if (s.yukumluluk !== "kdv1" && s.yukumluluk !== "kdv2") takvimdeOlan.add(`${s.yukumluluk === "sgk" ? "sgk" : "muhtasar"}-${s.yil}-${ay}`);
+        if (s.kalan <= 0.004) continue;
+        const gecikmis = s.sonTarih < bugun;
+        if (gecikmis && s.durum !== "gecikti") continue;
+        const vade = gecikmis ? bugun : s.sonTarih;
+        if (vade > ufukSonu) continue;
+        const donem = `${String(s.ay).padStart(2, "0")}.${s.yil}`;
+        ekle({ kaynak: "vergi_takvimi", kaynakId: `${s.yukumluluk}-${s.yil}-${s.ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: s.kalan, tahmin: s.donemSuruyor, aciklama: `${s.ad} ${donem}${gecikmis ? ` (gecikmiş, son tarih ${s.sonTarih})` : ""}`, baglanti: `/panel/raporlar/vergi-takvimi?yil=${s.yil}` });
+      }
+
+      // PRS-05: tarihi henüz yayınlanmamış dönemde SGK primi ve muhtasar eski kuralla ertesi ayın 26'sında;
+      // vadesi gelmemiş dönemler sayılır, son dönem sonraki aylara tekrarlanır.
       const yasalBordrolar = await tx.personelBordro.findMany({
         where: { tenantId, durum: { notIn: ["reddedildi", "iptal"] }, mevzuatKayitId: { not: null } },
         select: { donemYil: true, donemAy: true, durum: true, hesapOzeti: true },
@@ -289,8 +309,8 @@ export class NakitAkisiService {
         const vade = bordroYasalVade(yil, ay);
         if (vade < bugun || vade > ufukSonu) return;
         const donem = `${String(ay).padStart(2, "0")}.${yil}`;
-        if (sgk > 0.004) ekle({ kaynak: "bordro_yasal", kaynakId: `sgk-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(sgk * 100) / 100, tahmin, aciklama: `SGK primleri ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
-        if (vergi > 0.004) ekle({ kaynak: "bordro_yasal", kaynakId: `muhtasar-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(vergi * 100) / 100, tahmin, aciklama: `Muhtasar (gelir + damga vergisi) ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
+        if (sgk > 0.004 && !takvimdeOlan.has(`sgk-${yil}-${ay}`)) ekle({ kaynak: "bordro_yasal", kaynakId: `sgk-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(sgk * 100) / 100, tahmin, aciklama: `SGK primleri ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
+        if (vergi > 0.004 && !takvimdeOlan.has(`muhtasar-${yil}-${ay}`)) ekle({ kaynak: "bordro_yasal", kaynakId: `muhtasar-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(vergi * 100) / 100, tahmin, aciklama: `Muhtasar (gelir + damga vergisi) ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
       };
       const sirali = [...yasalDonemler.values()].sort((a, b) => a.yil - b.yil || a.ay - b.ay);
       for (const d of sirali) yasalEkle(d.yil, d.ay, d.sgk, d.vergi, !d.kesin, d.kesin ? "" : " (onaylanmamış bordro)");

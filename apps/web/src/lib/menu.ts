@@ -202,6 +202,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/raporlar/gelir-gider", ikon: ChartColumn, baslik: "Gelir - Gider Raporu", eslesme: "tam", esanlamlilar: ["kâr", "zarar"] },
       { href: "/panel/raporlar/kdv-disi-vergiler", ikon: Percent, baslik: "KDV Dışı Vergiler", eslesme: "tam", esanlamlilar: ["ötv", "öiv", "stopaj", "muhtasar", "konaklama vergisi", "bsmv", "vergi raporu"] },
       { href: "/panel/raporlar/pesin-vergiler", ikon: Percent, baslik: "Peşin Ödenen Vergiler", eslesme: "tam", esanlamlilar: ["stopaj", "193", "mahsup", "geçici vergi", "kesilen stopaj"] },
+      { href: "/panel/raporlar/vergi-takvimi", ikon: Percent, baslik: "Vergi ve SGK Takvimi", eslesme: "tam", esanlamlilar: ["beyanname", "kdv", "muhtasar", "sgk", "son ödeme", "vergi takvimi", "tahakkuk"] },
       { href: "/panel/raporlar/tahmin-isabeti", ikon: ChartColumn, baslik: "Tahmin İsabeti", eslesme: "tam", esanlamlilar: ["gecikme tahmini", "ödeme tahmini", "sapma", "isabet"] },
       { href: "/panel/mali-musavir", ikon: BookUser, baslik: "Mali Müşavir Portalı", eslesme: "tam", esanlamlilar: ["luca", "zirve", "kdv", "beyanname"] },
       { href: "/panel/mali-musavir/muhasebe", ikon: BookUser, baslik: "Muhasebe Aktarımı", eslesme: "tam", esanlamlilar: ["yevmiye", "muhasebe fişi", "hesap planı", "tekdüzen", "luca fiş", "mahsup"] },

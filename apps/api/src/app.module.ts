@@ -35,6 +35,7 @@ import { AiModule } from "./ai/ai.module";
 import { GelirlerModule } from "./gelirler/gelirler.module";
 import { YedeklemeModule } from "./yedekleme/yedekleme.module";
 import { PesinVergiModule } from "./pesin-vergi/pesin-vergi.module";
+import { VergiTakvimiModule } from "./vergi-takvimi/vergi-takvimi.module";
 import { ProjelerModule } from "./projeler/projeler.module";
 import { DemirbasModule } from "./demirbas/demirbas.module";
 import { AracTakipModule } from "./arac-takip/arac-takip.module";
@@ -75,6 +76,7 @@ import { SistemSagligiModule } from "./sistem-sagligi/sistem-sagligi.module";
     MasraflarModule,
     GelirlerModule,
     PesinVergiModule,
+    VergiTakvimiModule,
     ProjelerModule,
     DemirbasModule,
     AracTakipModule,

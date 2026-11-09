@@ -240,7 +240,8 @@ function DegisiklikDetayi({ id }: { id: string }) {
             ? <li key={k.ad}>{k.ad}: yürürlükten sonraki aynı yıl dönemlerinde <strong>{k.taslakBordro}</strong> onaylanmamış bordro ({k.firma} firma) yeniden hesaplanınca yeni değerle hesaplanır. Onaylı bordrolar saklı değerleriyle kalır; değer ayın ilk gününden sonra yürürlüğe giriyorsa sonraki aydan uygulanır.</li>
             : <li key={k.ad}>{k.ad}: yürürlük tarihinden sonraki <strong>{k.taslakFatura}</strong> taslak fatura{k.taslakBelge ? <> ve <strong>{k.taslakBelge}</strong> taslak teklif/sipariş/irsaliye</> : null} ({k.firma} firma) bir sonraki kaydedişte yeni değerle denetlenir. Kesinleşmiş belgeler değişmez.</li>)}
           {!d.etki.kalemler.length && !d.etki.hesaplanmayan.length && <li>Yalnız yeni kalem ekleniyor; mevcut belgeler etkilenmez.</li>}
-          {d.etki.hesaplanmayan.map((t) => <li key={t} className="muted">{MEVZUAT_TUR_TANIMLARI[t as MevzuatTuru]?.ad ?? t}: belgede saklanmaz; yeni değer yürürlükten itibaren BA/BS, faturalama süresi, e-Arşiv iptal ve kıdem tazminatı hesaplarında kullanılır. Kıdem tavanı yalnız başladığı yarıyılda (Ocak–Haziran / Temmuz–Aralık) geçerlidir.</li>)}
+          {d.etki.hesaplanmayan.includes("vergi_takvimi") && <li className="muted">Vergi ve SGK son tarihleri: yayınlanınca tüm firmaların takviminde, nakit akışında ve bildirimlerinde görünür.</li>}
+          {d.etki.hesaplanmayan.filter((t) => t !== "vergi_takvimi").map((t) => <li key={t} className="muted">{MEVZUAT_TUR_TANIMLARI[t as MevzuatTuru]?.ad ?? t}: belgede saklanmaz; yeni değer yürürlükten itibaren BA/BS, faturalama süresi, e-Arşiv iptal ve kıdem tazminatı hesaplarında kullanılır. Kıdem tavanı yalnız başladığı yarıyılda (Ocak–Haziran / Temmuz–Aralık) geçerlidir.</li>)}
         </ul>
       </div>}
       <div className="row-tight">

@@ -11,10 +11,12 @@
  * kendi tarihindeki değeri kullanır (MVZ-02).
  */
 
-export const MEVZUAT_TURLERI = ["tevkifat_kodu", "kdv_orani", "kdv_istisna_kodu", "ozel_matrah_kodu", "ihrac_kayitli_kodu", "kanuni_deger", "bordro_parametreleri", "vergi_turu_kodu"] as const;
+import { VERGI_TAKVIM_ANAHTAR_DESENI, gecerliTarihMi, vergiSonTarihHatasi, vergiTakvimAnahtariCoz } from "./vergi-takvimi";
+
+export const MEVZUAT_TURLERI = ["tevkifat_kodu", "kdv_orani", "kdv_istisna_kodu", "ozel_matrah_kodu", "ihrac_kayitli_kodu", "kanuni_deger", "bordro_parametreleri", "vergi_turu_kodu", "vergi_takvimi"] as const;
 export type MevzuatTuru = (typeof MEVZUAT_TURLERI)[number];
 
-export type MevzuatAlanTipi = "metin" | "sayi" | "oranlar" | "secim" | "dilimler";
+export type MevzuatAlanTipi = "metin" | "sayi" | "oranlar" | "secim" | "dilimler" | "tarih";
 
 export interface MevzuatAlan {
   ad: string;
@@ -133,6 +135,14 @@ export const MEVZUAT_TUR_TANIMLARI: Record<MevzuatTuru, MevzuatTurTanimi> = {
       { ad: "kdvMatrahi", etiket: "KDV matrahı", tip: "secim", zorunlu: true, secenekler: [["dahil", "KDV matrahına dahil"], ["haric", "KDV matrahına dahil değil"]] },
     ],
   },
+  vergi_takvimi: {
+    tur: "vergi_takvimi",
+    ad: "Vergi ve SGK son tarihi",
+    anahtarEtiketi: "Yükümlülük ve dönem",
+    anahtarIpucu: "ör. kdv1:2026-10",
+    anahtarDeseni: VERGI_TAKVIM_ANAHTAR_DESENI,
+    alanlar: [{ ad: "sonTarih", etiket: "Son tarih", tip: "tarih", zorunlu: true, ipucu: "YYYY-AA-GG" }],
+  },
   bordro_parametreleri: {
     tur: "bordro_parametreleri",
     ad: "Bordro parametreleri",
@@ -217,6 +227,7 @@ export function mevzuatDegerHatalari(tur: string, anahtar: string, deger: unknow
     if (alan.tip === "sayi" && (typeof v !== "number" || !Number.isFinite(v) || v < 0)) hatalar.push(`${alan.etiket} sıfır ya da pozitif sayı olmalıdır`);
     else if (alan.tip === "sayi" && alan.azami !== undefined && (v as number) > alan.azami) hatalar.push(`${alan.etiket} en çok ${alan.azami} olabilir`);
     if (alan.tip === "dilimler") hatalar.push(...dilimHatalari(v));
+    if (alan.tip === "tarih" && !gecerliTarihMi(v)) hatalar.push(`${alan.etiket} geçerli bir tarih olmalıdır (YYYY-AA-GG)`);
     if (alan.tip === "secim" && !alan.secenekler?.some(([k]) => k === v)) hatalar.push(`${alan.etiket} geçersiz: ${String(v)}`);
     if (alan.tip === "oranlar") {
       const liste = Array.isArray(v) ? v : [];
@@ -230,6 +241,11 @@ export function mevzuatDegerHatalari(tur: string, anahtar: string, deger: unknow
   }
   if (tur === "bordro_parametreleri" && typeof nesne.sgkTavan === "number" && typeof nesne.asgariUcretBrut === "number" && nesne.sgkTavan < nesne.asgariUcretBrut) {
     hatalar.push("SGK tavanı asgari ücretten düşük olamaz");
+  }
+  if (tur === "vergi_takvimi") {
+    const donem = vergiTakvimAnahtariCoz(anahtar);
+    if (donem && donem.yukumluluk === "muhtasar3" && donem.ay % 3 !== 0) hatalar.push("Üç aylık muhtasar dönemi çeyrek sonu olmalıdır (03, 06, 09, 12)");
+    if (donem && gecerliTarihMi(nesne.sonTarih)) { const h = vergiSonTarihHatasi(donem.yil, donem.ay, nesne.sonTarih); if (h) hatalar.push(h); }
   }
   return hatalar;
 }

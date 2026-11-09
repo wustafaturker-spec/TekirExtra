@@ -912,7 +912,8 @@ pakette ayrıca netleştirilir. Tahmin mevcut kayıtlardan üretilir: fatura,
 tahsilat gecikmesine göre kaydırılır. Yalnız yönetici ve muhasebe görür.
 **Kapsam dışı (ilk sürüm):** bütçe, elle girilen tahmin kalemleri ve KDV,
 muhtasar, SGK gibi vergi/prim ödemeleri — sonuncusu tahmine girmez ve ekran
-bunu açıkça belirtir; uydurma oranla tahmin üretilmez.
+bunu açıkça belirtir; uydurma oranla tahmin üretilmez. **2026-11-09:** vergi ve prim
+ödemeleri VTK-11 ile takvimden tahmine girer.
 
 Önceki "AI nakit tahmini" başlangıç bakiyesini kasa/banka kaydında olmayan bir
 `bakiye` alanından okuduğu için `NaN` üretiyor ve her firmaya "düşük risk"
@@ -1383,6 +1384,44 @@ Karar 2026-10-23: taslak önerileriyle onaylandı — e-İrsaliye araç kartı (
 | ARC-09 | ✅ **Trafik cezası:** tarih, tutar, ihlal, yer, o tarihteki sürücü (sorumlu personel), personelden tahsil notu; ceza masrafı bağlanabilir. | Z |
 | ARC-10 | ✅ **Raporlar:** dönem için araç başına maliyet (kategori kırılımı, km başı), tüketim, yaklaşan yükümlülük ve bakımlar, binek KKEG dökümü, cezalar; Excel. | Z |
 | ARC-11 | ✅ **Yetki ve iz:** muhasebe ve yönetici yazar; depo rolü km ve bakım girer; salt okunur görür; asistan/MCP araçları okur. Değişiklikler denetim kaydına yazılır. | Z |
+
+### 3.22 Vergi ve SGK Takvimi (VTK)
+
+**S-01 kapı kararları (2026-11-09, kullanıcı onayı):** vergi ve SGK borçlarını
+okuma işinin birinci aşamasıdır; dış bağlantı yoktur, tutarlar kendi kayıtlarımızdan
+**ön hesap** olarak üretilir ve beyannameye esas değildir. İlk sürüm dört yükümlülüğü
+kapsar: KDV-1, KDV-2, muhtasar (ücret gelir vergisi + damga vergisi + kestiğimiz
+stopaj) ve SGK primi. Ödeme tarih ve tutarla işaretlenir, kasa/banka hareketi
+bağlamak isteğe bağlıdır; takvim para hareketi üretmez. Devreden KDV firma başına
+bir kez girilir, sonraki dönemler zincirlenir. **Son tarihler kodla hesaplanmaz,
+dış kaynaktan da çekilmez:** platform sistem yöneticisi takvimi Mevzuat Merkezi'nde
+oluşturup yayınlar, tüm kiracılar aynı takvimi görür, kiracı değiştiremez
+(MVZ ilkesi; kullanıcı kararı 2026-11-09).
+**Kapsam dışı (ilk sürüm):** geçici vergi, kurumlar/gelir vergisi, ÖTV ve diğer
+beyannameler; gecikme zammı; GİB/SGK'dan gerçek borç okuma; beyanname verme ve
+ödeme yapma. Borç PDF'i yükleme ikinci aşama, DenizBank bağlantısı üçüncü aşamadır.
+
+**Yayın öncesi teyit (2026-11-09):** KDV-2 günü (kaynaklar 25 ve 28 diye çelişiyor)
+ve SGK primi ödeme günü (normal süreyi açıkça yazan kaynak bulunamadı; bugünkü nakit
+akışı 26 kullanıyor) ilk takvim yayınlanmadan resmî kaynak ya da mali müşavirle
+netleştirilir. Bu teyit kodlamayı beklemez, yayını bekletir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| VTK-01 | ✅ **Ekran:** Raporlar altında `/panel/raporlar/vergi-takvimi`, yıl ve dönem seçimli. Yönetici, muhasebe ve mali müşavir görür; yönetici ve muhasebe yazar. Ekranda tutarların ön hesap olduğu ve beyannameye esas olmadığı yazar. | Z |
+| VTK-02 | ✅ **Satır:** dönem, yükümlülük, son tarih, hesaplanan tutar, varsa beyan tutarı, ödenen, kalan, durum ve hesabın kaynak dökümü (KDV dökümü, MUHSGK sekmesi, ilgili rapor bağlantıları). | Z |
+| VTK-03 | ✅ **KDV-1 ve KDV-2:** KDV-1 mevcut KDV beyan hesabından (`kdvBeyanSatirlari`, RPR-13) hesaplanan − indirilecek − devreden; sonuç eksiyse ödenecek 0, fark sonraki döneme devreder. KDV-2 aynı hesabın kestiğimiz tevkifat toplamıdır. | Z |
+| VTK-04 | ✅ **Muhtasar:** onaylı bordroların gelir vergisi + damga vergisi + dönemde kestiğimiz stopaj (kesin alış faturası, onaylı masraf, kira). **SGK:** onaylı bordroların işçi + işveren primi ve işsizlik payı, teşvik sonrası. Tutarlar MUHSGK ön dökümüyle (PRS-26) aynı hesap izinden okunur. | Z |
+| VTK-05 | ✅ **Devreden KDV:** firma başına bir kez başlangıç dönemi ve devreden tutar girilir; sonraki dönemler bir öncekinden zincirlenir. Beyan tutarı girilmiş dönemde beyan edilen sonraki döneme devreden esas alınır. Başlangıçtan önceki dönemler hesaplanmaz. | Z |
+| VTK-06 | ✅ **Takvimi platform oluşturur:** Mevzuat Merkezi'nde yeni tür; yükümlülük + dönem başına kesin son tarih. Sistem yöneticisi yılı oluştururken her yükümlülük için gün (ya da ay sonu) yazar, ekran 12 ayı hafta sonu ve resmî tatilden kaydırarak (`resmiTatiller`) **öneri olarak doldurur**, yönetici her tarihi düzeltebilir. Yayın mevcut dört göz akışıyla yapılır. Kiracı tarihi değiştiremez. Tarihi yayınlanmamış satır "son tarih yayınlanmadı" görünür, bildirim üretmez. | Z |
+| VTK-07 | ✅ **Uzatma ve eksik takvim:** uzatma, yayınlanmış tarihin aynı dört göz akışıyla değiştirilmesidir; satırda eski tarihle "uzatıldı" görünür, bildirimler yeni tarihe göre yeniden kurulur. Yalnız belirli bölge ya da mükellefleri kapsayan uzatmalar ilk sürümde kapsam dışıdır. Önümüzdeki 3 ayın tarihi eksikse platform kullanıcıları MVZ-17 yayın takvimiyle uyarılır. | Z |
+| VTK-08 | ✅ **Eksik veri uyarısı:** dönemde onaylanmamış bordro, taslak fatura ya da onay bekleyen masraf varsa satırda sayıyla uyarı ve ilgili ekrana bağlantı gösterilir; bu kayıtlar tutara girmez. Dönem bitmemişse satır "dönem sürüyor" işareti taşır. | Z |
+| VTK-09 | ✅ **Beyan tutarı:** yönetici ya da muhasebe beyannameden çıkan gerçek tutarı girebilir, bu durumda kalan ve nakit akışı beyan tutarını esas alır; hesaplananla fark ayrıca gösterilir. Girildikten sonra da hesaplanan görünmeye devam eder. | Z |
+| VTK-10 | ✅ **Ödeme:** tarih ve tutarla ödeme işaretlenir, kısmi ödeme olur, istenirse mevcut kasa/banka tediyesi bağlanır. Bir hareket yalnız bir kaleme bağlanır. Takvim para hareketi ve muhasebe fişi üretmez. İşaret geri alınabilir; işlemler denetim kaydına yazılır. Durum: bekliyor, kısmi, ödendi, gecikti. | Z |
+| VTK-11 | ✅ **Nakit akışı:** `bordro_yasal` kaynağının yerini takvim alır; KDV-1, KDV-2, muhtasar ve SGK kalanları son tarihte çıkış olur, ödenen düşer, vadesi geçmiş ödenmemiş kalem bugüne alınıp işaretlenir. Bitmemiş dönem tahmin işaretlidir. Bordrodan gelen sonraki ay tekrarı (mevcut davranış) korunur, KDV için gelecek ay tahmini üretilmez. Tarihi yayınlanmamış kalemde mevcut vade kullanılmaya devam eder. NAK'ın ilk sürüm kapsam dışı notu bununla kalkar. Firma takip başlangıcını girmediyse geçmişi bilinemeyeceğinden vadesi geçmiş kalem nakde alınmaz, gecikmiş sayılmaz ve bildirim üretmez (uygulama kararı 2026-11-09). | Z |
+| VTK-12 | ✅ **Bildirim:** BLD üzerinden yönetici ve muhasebeye son tarihe 7 ve 2 gün kala, gecikince kritik; tekil anahtarla bir kez üretilir, tamamen ödenince kapanır. Kalanı 0 olan kalem bildirim üretmez. | Z |
+| VTK-13 | ✅ **Muhtasar dönemi:** firma ayarı aylık ya da üç aylık (varsayılan aylık); üç aylıkta muhtasar kalemi üç ayı toplar, son tarihi platform takvimindeki "muhtasar (üç aylık)" satırından gelir ve SGK aylık kalır. Platform bu satırı yayınlamadıkça üç aylık seçeneği kapalıdır. | Z |
+| VTK-14 | ✅ **Kolay giriş** (kullanıcı isteği 2026-11-09): platform takvim ekranında üç yol, üçü de yalnız **taslağı** doldurur ve yayın VTK-06'daki dört göz akışından geçer. **(a) Excel:** indirilebilir şablon (yıl, dönem, yükümlülük açılır listesi, son tarih, not; yükümlülükler ve 12 dönem hazır dolu) yüklenir. Yükleme önizleme gösterir (CARI-31 kalıbı): yeni, değişen ve aynı satırlar ayrı işaretli; geçersiz tarih, bilinmeyen yükümlülük, dönemden önceki tarih ve yinelenen satır hatadır, hata varken taslağa alınmaz. Hafta sonu ya da resmî tatile düşen tarih yalnız uyarıdır. Dosya mevcut dosya denetiminden geçer. **(b) Önceki yıldan kopyala:** geçen yılın günlerini yeni yıla taşır, hafta sonu ve tatilden kaydırır. **(c) Günle doldur:** VTK-06'daki öneri. Tarihler ekrandaki tabloda tek tek düzeltilebilir. Yüklenen dosya yayın kaydına not olarak işlenir (dosya adı, kullanıcı, satır sayısı). | Z |
 
 ### 3.20 Platform Yönetimi (PLT)
 

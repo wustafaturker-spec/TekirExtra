@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import { bugunTR, DONEMSEL_DEGERLER, HATIRLATMA_GUNLERI, yayinTakvimi, type TakvimSatiri } from "@tekirextra/shared";
+import { bugunTR, DONEMSEL_DEGERLER, HATIRLATMA_GUNLERI, VERGI_TAKVIMI_TURU, vergiTakvimBeklenenAnahtarlar, vergiTakvimEksikleri, yayinTakvimi, type TakvimSatiri } from "@tekirextra/shared";
 import { createTransport } from "nodemailer";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { nabizla } from "../core/nabiz/nabiz";
@@ -42,7 +42,9 @@ export class MevzuatHatirlatmaService implements OnModuleInit, OnModuleDestroy {
     try {
       const db = this.platform.db;
       const kayitlar = await db.mevzuatKayit.findMany({ where: { OR: DONEMSEL_DEGERLER.map((d) => ({ tur: d.tur, anahtar: d.anahtar })) }, select: { tur: true, anahtar: true, yururlukBaslangic: true } });
-      const takvim = yayinTakvimi(kayitlar.map((k) => ({ ...k, yururlukBaslangic: k.yururlukBaslangic.toISOString().slice(0, 10) })), bugun);
+      // VTK-07: yaklaşan vergi dönemlerinin tarihi yayınlanmamışsa aynı e-postayla uyarılır.
+      const vergi = await db.mevzuatKayit.findMany({ where: { tur: VERGI_TAKVIMI_TURU, anahtar: { in: vergiTakvimBeklenenAnahtarlar(bugun) }, yururlukBitis: null }, select: { anahtar: true } });
+      const takvim = [...yayinTakvimi(kayitlar.map((k) => ({ ...k, yururlukBaslangic: k.yururlukBaslangic.toISOString().slice(0, 10) })), bugun), ...vergiTakvimEksikleri(vergi.map((k) => k.anahtar), bugun)];
       const gonderilecek = takvim.flatMap((s) => { const esik = hatirlatmaEsigi(s); return esik === null ? [] : [{ s, esik, anahtar: hatirlatmaAnahtari(s, esik) }]; });
       if (!gonderilecek.length) return 0;
       const gonderilmis = new Set((await db.mevzuatOlay.findMany({ where: { olay: "hatirlatma" }, select: { detay: true } }))

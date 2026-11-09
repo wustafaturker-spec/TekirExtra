@@ -65,6 +65,7 @@ const KAYNAK_ADLARI: Record<string, string> = {
   kredi_taksit: "Kredi taksiti",
   bordro: "Bordro",
   bordro_yasal: "SGK / muhtasar",
+  vergi_takvimi: "Vergi ve SGK",
   tekrarlayan_fatura: "Tekrarlayan fatura",
   odeme_talimati: "Ödeme talimatı",
 };

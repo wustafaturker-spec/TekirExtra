@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NakitAkisiService } from "./nakit-akisi.service";
 
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", rol: "muhasebe" }) }));
+const vergiOku = vi.hoisted(() => ({ fn: vi.fn() }));
+vi.mock("../vergi-takvimi/vergi-takvimi.okuma", () => ({ vergiTakvimiOku: (...a: unknown[]) => vergiOku.fn(...a) }));
+const vergiSatiri = (ek: Record<string, unknown>) => ({ yukumluluk: "kdv1", ad: "KDV-1", yil: 2026, ay: 8, sonTarih: "2026-09-28", oncekiSonTarih: null, hesaplanan: 1000, beyanTutari: null, beyanDevreden: null, beyanNotu: null, tutar: 1000, odenen: 0, kalan: 1000, durum: "bekliyor", donemSuruyor: false, uyarilar: [], devredenGiren: null, devredenCikan: null, odemeler: [], ...ek });
 
 const g = (tarih: string) => new Date(`${tarih}T00:00:00.000Z`);
 
@@ -96,6 +99,7 @@ function kurulum() {
 describe("NakitAkisiService", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vergiOku.fn.mockReset(); vergiOku.fn.mockResolvedValue({ ayar: null, satirlar: [] });
     vi.setSystemTime(new Date("2026-09-11T09:00:00.000Z"));
   });
   afterEach(() => vi.useRealTimers());
@@ -112,7 +116,7 @@ describe("NakitAkisiService", () => {
   it("kapsam bordro yasal ödemelerinin koşullu dahil edildiğini ve ödeme takibi sınırını açıklar", async () => {
     const sonuc = await kurulum().service.tahmin(30);
     expect(sonuc.kapsamDisi.join(" ")).not.toContain("muhtasar ve SGK ödemeleri tahmine dahil değildir");
-    expect(sonuc.kapsamNotlari.join(" ")).toContain("Ayrı ödeme takibi olmadığı");
+    expect(sonuc.kapsamNotlari.join(" ")).toContain("ayrı ödeme takibi olmadığı");
     expect(sonuc.kapsamNotlari.join(" ")).toContain("SGK ve muhtasar");
     expect(sonuc.hesapEsaslari).toMatchObject({ baz: "nakit_senaryosu", paraBirimi: "TRY", iadeEsasi: "ters_yon" });
   });
@@ -126,6 +130,42 @@ describe("NakitAkisiService", () => {
     ]);
     expect(sonuc.kapsamDisi.join(" ")).toContain("teminata verilmiş");
     expect(sonuc.kapsamNotlari.join(" ")).toContain("nakit girişine eklenmez");
+  });
+
+  it("VTK-11: yayınlanmış kalanı son tarihte çıkış yapar, ödenmiş kalemi almaz, bitmemiş dönem tahmindir", async () => {
+    vergiOku.fn.mockResolvedValue({ ayar: {}, satirlar: [
+      vergiSatiri({}),
+      vergiSatiri({ yukumluluk: "kdv2", ad: "KDV-2", tutar: 500, odenen: 500, kalan: 0, durum: "odendi" }),
+      vergiSatiri({ yukumluluk: "sgk", ad: "SGK primi", ay: 9, sonTarih: "2026-10-05", tutar: 300, kalan: 300, donemSuruyor: true }),
+      vergiSatiri({ yukumluluk: "muhtasar", ad: "Muhtasar", sonTarih: "2026-12-30", tutar: 40, kalan: 40 }),
+    ] });
+    const v = (await kurulum().service.tahmin(30)).kalemler.filter((k) => k.kaynak === "vergi_takvimi");
+    expect(v).toMatchObject([
+      { kaynakId: "kdv1-2026-8", vade: "2026-09-28", tutar: 1000, yon: "cikis", tahmin: false },
+      { kaynakId: "sgk-2026-9", vade: "2026-10-05", tutar: 300, tahmin: true },
+    ]);
+  });
+
+  it("VTK-11: geciken kalem bugüne alınır; takip başlamamışsa geçmiş kalem nakde girmez", async () => {
+    vergiOku.fn.mockResolvedValue({ ayar: {}, satirlar: [
+      vergiSatiri({ sonTarih: "2026-08-28", durum: "gecikti", ay: 7 }),
+      vergiSatiri({ yukumluluk: "kdv2", ad: "KDV-2", sonTarih: "2026-08-28", durum: "bekliyor", ay: 7 }),
+    ] });
+    const v = (await kurulum().service.tahmin(30)).kalemler.filter((k) => k.kaynak === "vergi_takvimi");
+    expect(v).toHaveLength(1);
+    expect(v[0]).toMatchObject({ kaynakId: "kdv1-2026-7", vade: "2026-09-11" });
+    expect(v[0]?.aciklama).toContain("gecikmiş");
+  });
+
+  it("VTK-11: takvimde olan dönemin SGK ve muhtasarı eski kalemle ikinci kez sayılmaz", async () => {
+    vergiOku.fn.mockResolvedValue({ ayar: {}, satirlar: [vergiSatiri({ yukumluluk: "sgk", ad: "SGK primi", tutar: 500, kalan: 500 })] });
+    const { service, tx } = kurulum();
+    tx.personelBordro.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { donemYil: 2026, donemAy: 8, durum: "onaylandi", hesapOzeti: { isverenSgkNet: 300, sgkIsci: 200, gelirVergisi: 10, damgaVergisi: 5 } },
+    ] as never);
+    const { kalemler } = await service.tahmin(30);
+    expect(kalemler.filter((k) => k.kaynak === "bordro_yasal" && !k.tahmin).map((k) => k.kaynakId)).toEqual(["muhtasar-2026-8"]);
+    expect(kalemler.filter((k) => k.kaynak === "vergi_takvimi")).toHaveLength(1);
   });
 
   it("yasal bordro tutarını ufukta dahil eder, geçmiş vadeyi dahil etmez ve tekrarı tahmin işaretler", async () => {
