@@ -21,6 +21,10 @@ import type {
   GelenAliciYaniti,
 } from "./types";
 
+/** EBLG-153: entegratör asılı kalırsa worker yuvası sonsuza kadar tutulmasın. */
+const SOVOS_SURE_MS = 60_000;
+const SOVOS_LISTE_SURE_MS = 300_000;
+
 const EFATURA_NS = "http:/fitcons.com/eInvoice/";
 
 function xmlKacir(deger: string): string {
@@ -133,6 +137,7 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
       method: "POST",
       headers: { "content-type": "text/xml; charset=utf-8", SOAPAction: islem, authorization: `Basic ${kimlik}` },
       body: zarf,
+      signal: AbortSignal.timeout(islem === "getRAWUserList" ? SOVOS_LISTE_SURE_MS : SOVOS_SURE_MS),
     });
     const xml = await yanit.text();
     if (!yanit.ok) throw new Error(`Sovos HTTP ${yanit.status}: ${xmlDegeri(xml, ["faultstring", "Text"]) || yanit.statusText}`);
@@ -145,7 +150,7 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     if (!cfg.kullaniciAdi || !cfg.parola || !cfg.earsivServisAdresi) throw new Error("Sovos e-Arşiv kullanıcı bilgileri ve servis adresi zorunludur");
     const zarf = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:svc="${adAlani}"><soapenv:Header/><soapenv:Body>${govde}</soapenv:Body></soapenv:Envelope>`;
     const kimlik = Buffer.from(`${cfg.kullaniciAdi}:${cfg.parola}`, "utf8").toString("base64");
-    const yanit = await this.istek(cfg.earsivServisAdresi, { method: "POST", headers: { "content-type": "text/xml; charset=utf-8", SOAPAction: islem, authorization: `Basic ${kimlik}` }, body: zarf });
+    const yanit = await this.istek(cfg.earsivServisAdresi, { signal: AbortSignal.timeout(SOVOS_SURE_MS), method: "POST", headers: { "content-type": "text/xml; charset=utf-8", SOAPAction: islem, authorization: `Basic ${kimlik}` }, body: zarf });
     const xml = await yanit.text();
     if (!yanit.ok) throw new Error(`Sovos e-Arşiv HTTP ${yanit.status}: ${xmlDegeri(xml, ["faultstring", "message"]) || yanit.statusText}`);
     const soapHatasi = xmlDegeri(xml, ["faultstring"]);
@@ -157,7 +162,7 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     if (!cfg.kullaniciAdi || !cfg.parola || !cfg.irsaliyeServisAdresi) throw new Error("Sovos e-İrsaliye kullanıcı bilgileri ve servis adresi zorunludur");
     const zarf = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:des="http:/fitcons.com/eDespatch/"><soapenv:Header/><soapenv:Body>${govde}</soapenv:Body></soapenv:Envelope>`;
     const kimlik = Buffer.from(`${cfg.kullaniciAdi}:${cfg.parola}`, "utf8").toString("base64");
-    const yanit = await this.istek(cfg.irsaliyeServisAdresi, { method: "POST", headers: { "content-type": "text/xml; charset=utf-8", SOAPAction: islem, authorization: `Basic ${kimlik}` }, body: zarf });
+    const yanit = await this.istek(cfg.irsaliyeServisAdresi, { signal: AbortSignal.timeout(SOVOS_SURE_MS), method: "POST", headers: { "content-type": "text/xml; charset=utf-8", SOAPAction: islem, authorization: `Basic ${kimlik}` }, body: zarf });
     const xml = await yanit.text(); if (!yanit.ok) throw new Error(`Sovos e-İrsaliye HTTP ${yanit.status}: ${xmlDegeri(xml,["faultstring"]) || yanit.statusText}`); return xml;
   }
 

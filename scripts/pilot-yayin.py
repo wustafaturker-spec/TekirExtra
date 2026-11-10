@@ -130,9 +130,11 @@ def api_hazirla(paket, taban_runtime):
         adim("API derleniyor")
         calistir(["npx", "prisma", "generate"], cwd=KOK / "apps/api", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         calistir(["npx", "tsc", "-p", "tsconfig.json", "--outDir", f"{gecici}/shared", "--sourceMap", "false"], cwd=KOK / "packages/shared", env=ortam)
+        calistir(["npx", "tsc", "-p", "tsconfig.json", "--outDir", f"{gecici}/baglanti", "--sourceMap", "false"], cwd=KOK / "packages/baglanti", env=ortam)
         calistir(["npx", "tsc", "-p", "tsconfig.json", "--outDir", f"{gecici}/api", "--sourceMap", "false"], cwd=KOK / "apps/api", env=ortam)
         api = js_esitle(Path(gecici) / "api", runtime / "apps/api/dist")
         shared = js_esitle(Path(gecici) / "shared", runtime / "packages/shared/dist")
+        baglanti = js_esitle(Path(gecici) / "baglanti", runtime / "packages/baglanti/dist")
     yaz(KOK / "apps/api/prisma/schema.prisma", runtime / "apps/api/prisma/schema.prisma")
     gocler = []
     for g in sorted((KOK / "apps/api/prisma/migrations").iterdir()):
@@ -150,8 +152,8 @@ def api_hazirla(paket, taban_runtime):
         if k.is_file() and not k.name.endswith(".so.node") and (not h.exists() or not filecmp.cmp(k, h, False)):
             yaz(k, h)
             istemci.append(k.name)
-    adim(f"API paketi: {len(api)} dosya, shared {len(shared)}, yeni göç {len(gocler)}, Prisma istemcisi {len(istemci)} dosya")
-    return {"apiDosyalari": api, "sharedDosyalari": shared, "yeniGocler": gocler}
+    adim(f"API paketi: {len(api)} dosya, shared {len(shared)}, baglanti {len(baglanti)}, yeni göç {len(gocler)}, Prisma istemcisi {len(istemci)} dosya")
+    return {"apiDosyalari": api, "sharedDosyalari": shared, "baglantiDosyalari": baglanti, "yeniGocler": gocler}
 
 
 def web_hazirla(paket, ad):

@@ -23,6 +23,8 @@ const MUKELLEF_SENKRON_ISI = "gib-mukellef-senkron";
 const EIRSALIYE_DURUM_TOPLU_ISI = "eirsaliye-durum-toplu";
 /** EBLG-109: gelen e-İrsaliye taraması; eskiden yalnız elle ("Gelenleri kontrol et") yapılırdı. */
 const EIRSALIYE_GELEN_ISI = "eirsaliye-gelen-cek";
+/** EBLG-155: geçici kesintide yaklaşık bir saat denenir (30 sn'den başlar); kalıcı hata zaten yeniden denenmez. */
+const GONDERIM_DENEMESI = { attempts: 8, backoff: { type: "exponential", delay: 30_000 } };
 const DEAD_LETTER_KUYRUGU = `${KUYRUK_ADI}-dead-letter`;
 const SISTEM_KULLANICISI = "00000000-0000-0000-0000-000000000000";
 
@@ -163,7 +165,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       this.metrics.increment("ebelge_queue_jobs_total", { result: "dead_letter_retry", type: GONDERIM_ISI });
     }
     try {
-      const is = await this.kuyruk.add(GONDERIM_ISI, { tenantId: baglam.tenantId, userId: baglam.userId, rol: baglam.rol, isTuru: GONDERIM_ISI, faturaId, correlationId: crypto.randomUUID(), kuyrugaAlinmaZamani: new Date().toISOString() }, { jobId });
+      const is = await this.kuyruk.add(GONDERIM_ISI, { tenantId: baglam.tenantId, userId: baglam.userId, rol: baglam.rol, isTuru: GONDERIM_ISI, faturaId, correlationId: crypto.randomUUID(), kuyrugaAlinmaZamani: new Date().toISOString() }, { jobId, ...GONDERIM_DENEMESI });
       this.metrics.increment("ebelge_queue_jobs_total", { result: "enqueued" });
       return { isId: is.id, durum: "waiting", tekrar: false };
     } catch (hata) {
@@ -517,8 +519,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
           // Gelen belge taraması kursörle ilerler; aralık dolmadan yeni iş
           // açmak aynı tarih penceresini tekrar sorgulamak olurdu (EBLG-11).
           // Gelen kutusu yalnız e-Fatura mükellefinde vardır (EBLG-77).
-          const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true, irsaliyeSonCekimAt: true } });
-          if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "efatura") && (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= gelenTaramaAralikMs())) {
+          const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true, sonTaramaAt: true, irsaliyeSonCekimAt: true } });
+          if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "efatura") && (!kursor || Date.now() - Math.max(kursor.sonCekimAt.getTime(), kursor.sonTaramaAt?.getTime() ?? 0) >= gelenTaramaAralikMs())) {
             await this.gelenBelgeleriKuyrugaEkle();
           }
 

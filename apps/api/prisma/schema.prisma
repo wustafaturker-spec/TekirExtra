@@ -3934,6 +3934,8 @@ model EbelgeGelenKursor {
   tenantId           String    @id @map("tenant_id") @db.Uuid
   sonCekimAt         DateTime  @map("son_cekim_at")
   sonTetiklemeAt     DateTime? @map("son_tetikleme_at")
+  /// EBLG-154: alınamayan belge varken kursör durur; son deneme buradadır, planlayıcı saatlik aralığı buna göre korur.
+  sonTaramaAt        DateTime? @map("son_tarama_at")
   /// EBLG-109: gelen e-İrsaliye taramasının son başarılı çalıştığı an; planlayıcı
   /// taramayı `EBLG_GELEN_ARALIK_MS` dolmadan yeniden açmaz. Pencere bundan değil,
   /// son gelen kayıttan türetilir (`EirsaliyeService.gelenleriCek`).

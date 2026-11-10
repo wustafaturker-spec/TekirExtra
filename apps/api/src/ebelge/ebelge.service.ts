@@ -1306,7 +1306,8 @@ export class EbelgeService {
   async durumSorgula(faturaId: string) {
     const { tenantId } = aktifBaglam();
 
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    // EBLG-155: entegratör çağrısı süresince veritabanı işlemi açık tutulmaz.
+    const { ebelge, baglanti } = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const ebelge = await tx.ebelgeKayit.findUnique({
         where: { faturaId },
       });
@@ -1319,24 +1320,26 @@ export class EbelgeService {
       // Son duruma ulaşmış belge için entegratöre gidilmez; iptal edilmiş belge
       // sorguyla "iletildi"ye geri dönmemeli (EBLG-39).
       if (SON_EBELGE_DURUMLARI.includes(ebelge.durum)) {
-        return ebelge;
+        return { ebelge, baglanti: null };
       }
 
       const baglanti = await tx.baglanti.findFirst({
         where: { tenantId, aile: "ebelge", durum: "aktif" },
       });
       if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
-
-      const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
-      const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
-
-      // Entegratöre ulaşılamazsa kayda dokunulmaz, kullanıcıya söylenir:
-      // geçici kesinti belgeyi hatalı göstermemeli (EBLG-39).
-      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
-      const entegratorRef = ebelge.entegratorRef;
-      const sonuc = await this.entegratordenOku(() => adapter.durumSorgula(cfg, entegratorRef));
-      return this.durumSonucunuYaz(tx, ebelge, sonuc);
+      return { ebelge, baglanti };
     });
+    if (!baglanti) return ebelge;
+
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+
+    // Entegratöre ulaşılamazsa kayda dokunulmaz, kullanıcıya söylenir:
+    // geçici kesinti belgeyi hatalı göstermemeli (EBLG-39).
+    this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
+    const entegratorRef = ebelge.entegratorRef!;
+    const sonuc = await this.entegratordenOku(() => adapter.durumSorgula(cfg, entegratorRef));
+    return this.prisma.tenantIslem(tenantId, (tx) => this.durumSonucunuYaz(tx, ebelge, sonuc));
   }
 
   /**
@@ -1553,11 +1556,12 @@ export class EbelgeService {
     let yeniBelgeSayisi = 0;
     let toplamCekilen = 0;
     const yeniIdler: string[] = [];
+    const alinamayanlar: { uuid: string; belgeNo: string; mesaj: string }[] = [];
 
     // Her belge indirildiği anda yazılır ve bırakılır: gelen XML'ler eklerle
     // MB'larca olabiliyor; uzun pencerede hepsini bellekte toplamak worker'ı
     // düşürüyor, kursör de ilerlemediği için pencere her seferinde büyüyordu.
-    const isle = async (b: GelenBelge) => {
+    const kaydet = async (b: GelenBelge) => {
       toplamCekilen += 1;
       // Profil bilgisi kabul/ret düğmesini belirlediği için çekimde okunur;
       // bozuk XML çekimi düşürmesin — belge yine de kutuya girsin.
@@ -1606,6 +1610,17 @@ export class EbelgeService {
         yeniIdler.push(kaydedilen.id);
       }
     };
+    // EBLG-154: tek belgenin hatası kendinden sonra gelenleri bekletmesin.
+    const belgeHatasi = (h: { uuid: string; belgeNo: string; mesaj: string }) => {
+      alinamayanlar.push(h);
+      this.metrics.increment("ebelge_gelen_belge_hatasi_total", { saglayici: baglanti.saglayici });
+      this.logger.warn(JSON.stringify({ event: "gelen_belge_alinamadi", tenantId, uuid: h.uuid, belgeNo: h.belgeNo, hata: h.mesaj }));
+    };
+    const isle = async (b: GelenBelge) => {
+      try { await kaydet(b); }
+      catch (hata) { belgeHatasi({ uuid: b.uuid, belgeNo: b.belgeNo, mesaj: hata instanceof Error ? hata.message : String(hata) }); }
+    };
+    const bilinen = async (uuid: string) => Boolean(await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEbelge.findUnique({ where: { tenantId_uuid: { tenantId, uuid } }, select: { id: true } })));
 
     let yanitlar: GelenAliciYaniti[] = [];
     if (adapter.gelenZarflariCek) {
@@ -1616,7 +1631,7 @@ export class EbelgeService {
     } else {
       this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenBelgeleriCek", saglayici: baglanti.saglayici });
       // Akış desteklemeyen sağlayıcı belgeleri dizide döndürür.
-      for (const b of await adapter.gelenBelgeleriCek(cfg, baslangic, isle)) await isle(b);
+      for (const b of await adapter.gelenBelgeleriCek(cfg, baslangic, isle, { bilinen, belgeHatasi })) await isle(b);
     }
 
     // EBLG-144: yeni belgelerin kural denetimi (liste rozeti); hata çekimi düşürmez.
@@ -1639,15 +1654,26 @@ export class EbelgeService {
 
     const islenenYanit = await this.aliciYanitlariniIsle(tenantId, yanitlar);
 
-    // Kursör yalnızca çekim bittikten sonra ilerletilir; ortada hata alırsak
-    // aralık yeniden istenir, çünkü kayıp belge tekrar sorgudan daha kötüdür.
-    await this.gelenKursoruYaz(tenantId, bitis);
-    this.metrics.increment("ebelge_gelen_cekim_total", { result: "success" });
+    // Kursör yalnızca eksiksiz çekimde ilerletilir; alınamayan belge varken aralık
+    // yeniden istenir, çünkü kayıp belge tekrar sorgudan daha kötüdür.
+    if (alinamayanlar.length) {
+      await this.gelenTaramasiniIsaretle(tenantId, baslangic);
+      await this.bildirimler.uret({
+        tur: "ebelge", onem: "kritik", baslik: "Gelen e-Fatura alınamadı",
+        aciklama: `${alinamayanlar.length} belge kutuya alınamadı (${alinamayanlar.slice(0, 5).map((a) => a.belgeNo).join(", ")}${alinamayanlar.length > 5 ? "…" : ""}). Son hata: ${alinamayanlar[0].mesaj.slice(0, 200)}. Diğer belgeler işlendi; her taramada yeniden denenir.`,
+        birlesimAnahtari: `ebelge-gelen-hata:${tenantId}`, kaynakTur: "gelen_ebelge", kaynakRef: tenantId, hedefYol: "/panel/fatura/gelen-kutusu", roller: ["yonetici", "muhasebe"],
+      }).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "gelen_hata_bildirimi_yazilamadi", tenantId, hata: String(hata) })));
+    } else {
+      await this.gelenKursoruYaz(tenantId, bitis);
+      await this.bildirimler.kapatEksikleri("ebelge", [], ["ebelge-gelen-hata:"]).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "gelen_hata_bildirimi_kapatilamadi", tenantId, hata: String(hata) })));
+    }
+    this.metrics.increment("ebelge_gelen_cekim_total", { result: alinamayanlar.length ? "partial" : "success" });
     this.metrics.set("ebelge_gelen_kursor_yasi_saniye", (Date.now() - baslangic.getTime()) / 1000);
 
     return {
       toplamCekilen,
       yeniBelgeSayisi,
+      alinamayanBelge: alinamayanlar.length,
       islenenAliciYaniti: islenenYanit,
     };
   }
@@ -1662,6 +1688,12 @@ export class EbelgeService {
       tx.ebelgeGelenKursor.findUnique({ where: { tenantId } }),
     );
     return kayit ? kayit.sonCekimAt : this.ilkGelenPenceresi();
+  }
+
+  /** Kursör yerinde kalır; yalnız denemenin zamanı yazılır ki planlayıcı saatlik aralığı korusun. */
+  private async gelenTaramasiniIsaretle(tenantId: string, baslangic: Date): Promise<void> {
+    const sonTaramaAt = new Date();
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.ebelgeGelenKursor.upsert({ where: { tenantId }, create: { tenantId, sonCekimAt: baslangic, sonTaramaAt }, update: { sonTaramaAt } }));
   }
 
   private async gelenKursoruYaz(tenantId: string, an: Date): Promise<void> {

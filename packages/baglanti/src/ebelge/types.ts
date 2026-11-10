@@ -192,6 +192,14 @@ export interface GelenYanit {
   not?: string;
 }
 
+/** EBLG-154: gelen taramasının tek belgede takılmaması için çağıranın verdiği kancalar. */
+export interface GelenCekimSecenegi {
+  /** Kayıtlı belgenin XML'i yeniden indirilmez. */
+  bilinen?: (uuid: string) => Promise<boolean>;
+  /** İndirilemeyen tek belge bildirilir, tarama sürer. */
+  belgeHatasi?: (hata: { uuid: string; belgeNo: string; mesaj: string }) => void;
+}
+
 export interface GelenBelge {
   uuid: string;
   belgeNo: string;

@@ -54,6 +54,12 @@ import type {
   tekrarlayanFaturaSemasi,
 } from "./fatura.semalar";
 
+/**
+ * EBLG-155: iptal ve geri almada entegratör çağrısı işlemin içindedir; böylece çağrı başarısızsa
+ * işlem geri alınır. Varsayılan 5 sn, entegratör geç yanıt verince işlemi düşürüyordu; iki çağrı (en çok 30'ar sn) ve ters kayıtları karşılar.
+ */
+const ENTEGRATORLU_ISLEM_SURESI_MS = 90_000;
+
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
 @Injectable()
@@ -1246,7 +1252,7 @@ export class FaturaService {
       const iptalEdilen = await tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
       await cariDenklestir(tx, tenantId, fatura.cariId);
       return iptalEdilen;
-    });
+    }, { timeout: ENTEGRATORLU_ISLEM_SURESI_MS });
   }
 
   /**
@@ -1347,7 +1353,7 @@ export class FaturaService {
       const taslak = await tx.fatura.update({ where: { id }, data: { durum: "taslak" } });
       await cariDenklestir(tx, tenantId, fatura.cariId);
       return this.gorunum(taslak);
-    });
+    }, { timeout: ENTEGRATORLU_ISLEM_SURESI_MS });
   }
 
   /**

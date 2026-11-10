@@ -16,6 +16,7 @@ import type {
   EarsivRapor,
   EarsivRaporTutari,
   EirsaliyeBelge, EntegratorGecmisKaydi,
+  GelenCekimSecenegi,
   GelenEirsaliye,
   MukellefKaydi,
   GelenYanit,
@@ -51,6 +52,17 @@ const TASARIM_AILESI: Record<TasarimTuru, Aile> = { efatura: "einvoice", earsiv:
 
 /** Gelen tarama sonsuz döngüye girmesin diye sayfa tavanı (EBLG-11). */
 const SAYFA_TAVANI = 50;
+
+/** EBLG-154: tavana takılan pencere ikiye bölünür; bundan küçüğü bölünmez. */
+const ASGARI_PENCERE_MS = 60_000;
+
+/**
+ * EBLG-153: çağrı süre sınırları. Süresiz çağrı worker yuvasını tutar; yuva sayısı az
+ * olduğu için asılı birkaç çağrı tüm firmaların e-Belge işlerini durdurur.
+ */
+const SURE_MS = { olagan: 30_000, gonderim: 60_000, rapor: 120_000, liste: 300_000 } as const;
+/** Bu kodlar tek belgeye değil hesaba ya da hıza aittir; tarama durmalıdır. */
+const GENEL_HATA_KODLARI = [401, 403, 429];
 
 /** NES'e kendimizi tanıttığımız kaynak uygulama adı; zorunlu alandır. */
 const KAYNAK_UYGULAMA = "TekirExtra";
@@ -471,10 +483,28 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       ikili?: boolean;
       /** Metin yanıtın türü XML değilse (tasarım önizlemesi HTML döner). */
       kabul?: string;
+      sureMs?: number;
     } = {},
+  ): Promise<T> {
+    const sureMs = secenekler.sureMs ?? SURE_MS.olagan;
+    try {
+      return await this.istekYap<T>(cfg, aile, yol, secenekler, AbortSignal.timeout(sureMs));
+    } catch (hata) {
+      if (hata instanceof Error && hata.name === "TimeoutError") throw new Error(`NES ${sureMs / 1000} saniyede yanıt vermedi: ${aile}${yol}`);
+      throw hata;
+    }
+  }
+
+  private async istekYap<T>(
+    cfg: EntegratorConfig,
+    aile: Aile,
+    yol: string,
+    secenekler: { metot?: string; sorgu?: Record<string, string | number | boolean | undefined>; govde?: unknown; metin?: boolean; ikili?: boolean; kabul?: string },
+    signal: AbortSignal,
   ): Promise<T> {
     const form = secenekler.govde instanceof FormData;
     const yanit = await fetch(konum(cfg, aile, yol, secenekler.sorgu), {
+      signal,
       method: secenekler.metot ?? "GET",
       headers: {
         authorization: `Bearer ${cfg.apiAnahtari}`,
@@ -577,7 +607,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
   }
 
   private async mukellefListesiXml(cfg: EntegratorConfig, aile: Aile): Promise<string> {
-    return zipIlkXmlBuffer(await this.cagir<Buffer>(cfg, aile, "/v1/users/zip/Pk", { ikili: true }));
+    return zipIlkXmlBuffer(await this.cagir<Buffer>(cfg, aile, "/v1/users/zip/Pk", { ikili: true, sureMs: SURE_MS.liste }));
   }
 
   /**
@@ -621,6 +651,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     try {
       const sonuc = await this.cagir<{ uuid?: string; documentNumber?: string }>(cfg, aile, "/v1/uploads/document", {
         metot: "POST",
+        sureMs: SURE_MS.gonderim,
         govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu, belge.tur === "earsiv" ? cfg.earsivTasarimi : cfg.efaturaTasarimi),
       });
       if (!sonuc?.uuid) return { basarili: false, hataMesaji: "NES yükleme yanıtında belge UUID'si dönmedi" };
@@ -792,16 +823,28 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
    * girerse sayfalar kayabildiği için UUID bazında tekilleştirme yapılır.
    * `isle` verilirse her belge indirildiği anda işlenir, dizide tutulmaz.
    */
-  async gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date, isle?: (belge: GelenBelge) => Promise<void>): Promise<GelenBelge[]> {
+  async gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date, isle?: (belge: GelenBelge) => Promise<void>, secenek?: GelenCekimSecenegi): Promise<GelenBelge[]> {
     const hata = configDogrula(cfg);
     if (hata) throw new Error(hata);
-    const bitis = new Date();
-    const gorulen = new Set<string>();
     const belgeler: GelenBelge[] = [];
+    await this.gelenPencere(cfg, sonrasi, new Date(), new Set<string>(), belgeler, isle, secenek);
+    return belgeler;
+  }
+
+  /** EBLG-154: pencere sayfa tavanını doldurursa kalan belgeler kaybolmasın diye ikiye bölünür. */
+  private async gelenPencere(
+    cfg: EntegratorConfig,
+    baslangic: Date,
+    bitis: Date,
+    gorulen: Set<string>,
+    belgeler: GelenBelge[],
+    isle?: (belge: GelenBelge) => Promise<void>,
+    secenek?: GelenCekimSecenegi,
+  ): Promise<void> {
     for (let sayfa = 1; sayfa <= SAYFA_TAVANI; sayfa++) {
       const liste = await this.cagir<{ data?: GelenSatir[] }>(cfg, "einvoice", "/v1/incoming/invoices", {
         sorgu: {
-          startCreateDate: sonrasi.toISOString(),
+          startCreateDate: baslangic.toISOString(),
           endCreateDate: bitis.toISOString(),
           page: sayfa,
           pageSize: SAYFA_BOYUTU,
@@ -811,11 +854,19 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       for (const satir of satirlar) {
         if (!satir.id || gorulen.has(satir.id)) continue;
         gorulen.add(satir.id);
-        const xml = await this.cagir<string>(cfg, "einvoice", `/v1/incoming/invoices/${encodeURIComponent(satir.id)}/xml`, {
-          metin: true,
-        });
-        const gonderenVkn = satir.accountingSupplierParty?.partyIdentification ?? "";
         const yanit = nesGelenYanit(satir);
+        // Karar taşıyan satır kayıtlı olsa da işlenir: portaldan verilen karar buradan öğrenilir (EBLG-34).
+        if (!yanit && secenek?.bilinen && (await secenek.bilinen(satir.id))) continue;
+        let xml: string;
+        try {
+          xml = await this.cagir<string>(cfg, "einvoice", `/v1/incoming/invoices/${encodeURIComponent(satir.id)}/xml`, { metin: true });
+        } catch (hata) {
+          // Ağ kesintisi ve yetki hatası tüm taramayı ilgilendirir; yalnız bu belgeye ait yanıt atlanır.
+          if (!secenek?.belgeHatasi || !(hata instanceof NesHatasi) || GENEL_HATA_KODLARI.includes(hata.durum)) throw hata;
+          secenek.belgeHatasi({ uuid: satir.id, belgeNo: satir.documentNumber ?? satir.id, mesaj: hata.message });
+          continue;
+        }
+        const gonderenVkn = satir.accountingSupplierParty?.partyIdentification ?? "";
         const belge: GelenBelge = {
           uuid: satir.id,
           belgeNo: satir.documentNumber ?? satir.id,
@@ -828,9 +879,13 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         if (isle) await isle(belge);
         else belgeler.push(belge);
       }
-      if (satirlar.length < SAYFA_BOYUTU) break;
+      if (satirlar.length < SAYFA_BOYUTU) return;
     }
-    return belgeler;
+    const sureMs = bitis.getTime() - baslangic.getTime();
+    if (sureMs <= ASGARI_PENCERE_MS) throw new Error("NES gelen belge penceresi sayfa tavanını aşıyor; tarama durduruldu");
+    const orta = new Date(baslangic.getTime() + Math.floor(sureMs / 2));
+    await this.gelenPencere(cfg, baslangic, orta, gorulen, belgeler, isle, secenek);
+    await this.gelenPencere(cfg, orta, bitis, gorulen, belgeler, isle, secenek);
   }
 
   /**
@@ -905,7 +960,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       const ay = imlec.getUTCMonth() + 1;
       const bolumler = await this.cagir<
         { id?: string; startDate?: string; endDate?: string; eArchiveInvoiceCount?: number; eArchiveInvoiceCanceledCount?: number; status?: string }[]
-      >(cfg, "general", `/v1/earchivedocumentsreport/${yil}/${ay}`);
+      >(cfg, "general", `/v1/earchivedocumentsreport/${yil}/${ay}`, { sureMs: SURE_MS.rapor });
       for (const bolum of bolumler ?? []) {
         if (!bolum.id) continue;
         raporlar.push({
@@ -933,6 +988,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       cfg,
       "general",
       `/v1/earchivedocumentsreport/${encodeURIComponent(uuid)}/details`,
+      { sureMs: SURE_MS.rapor },
     );
     return earsivRaporTutariOzetle(uuid, satirlar ?? []);
   }
@@ -943,6 +999,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     try {
       const sonuc = await this.cagir<{ uuid?: string }>(cfg, "edespatch", "/v1/uploads/document", {
         metot: "POST",
+        sureMs: SURE_MS.gonderim,
         govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu, cfg.eirsaliyeTasarimi),
       });
       return sonuc?.uuid

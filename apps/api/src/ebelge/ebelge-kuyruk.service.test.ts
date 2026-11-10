@@ -28,7 +28,7 @@ describe("EbelgeKuyrukService", () => {
   it("aynı tenant ve fatura için deterministik, tenant bağlamlı iş oluşturur", async () => {
     const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.kuyrugaEkle("fatura-1"));
     expect(sonuc).toMatchObject({ isId: "ebelge-gonder-tenant-1-fatura-1", durum: "waiting", tekrar: false });
-    expect(bull.add).toHaveBeenCalledWith("ebelge-gonder", expect.objectContaining({ tenantId: "tenant-1", userId: "user-1", faturaId: "fatura-1" }), { jobId: "ebelge-gonder-tenant-1-fatura-1" });
+    expect(bull.add).toHaveBeenCalledWith("ebelge-gonder", expect.objectContaining({ tenantId: "tenant-1", userId: "user-1", faturaId: "fatura-1" }), expect.objectContaining({ jobId: "ebelge-gonder-tenant-1-fatura-1", attempts: 8 }));
     expect(metrics.increment).toHaveBeenCalledWith("ebelge_queue_jobs_total", { result: "enqueued" });
   });
 
@@ -56,7 +56,7 @@ describe("EbelgeKuyrukService", () => {
 
     expect(bull.getJob).toHaveBeenLastCalledWith("dead-ebelge-gonder-tenant-1-fatura-1");
     expect(remove).toHaveBeenCalled();
-    expect(bull.add).toHaveBeenCalledWith("ebelge-gonder", expect.objectContaining({ faturaId: "fatura-1" }), { jobId: "ebelge-gonder-tenant-1-fatura-1" });
+    expect(bull.add).toHaveBeenCalledWith("ebelge-gonder", expect.objectContaining({ faturaId: "fatura-1" }), expect.objectContaining({ jobId: "ebelge-gonder-tenant-1-fatura-1", attempts: 8 }));
     expect(sonuc).toMatchObject({ durum: "waiting", tekrar: false });
   });
 

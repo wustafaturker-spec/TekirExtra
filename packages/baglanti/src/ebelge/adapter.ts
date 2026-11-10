@@ -4,6 +4,7 @@ import type {
   BelgeDurumSonuc,
   EntegratorConfig,
   GelenBelge,
+  GelenCekimSecenegi,
   GonderimSonuc,
   MukellefDurum,
   OnizlemeSonuc,
@@ -71,7 +72,7 @@ export interface EntegratorAdapter {
    * olabildiği için uzun pencerede hepsini bellekte tutmak worker'ı düşürür.
    * Verilmezse ya da sağlayıcı desteklemiyorsa belgeler dizide döner.
    */
-  gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date, isle?: (belge: GelenBelge) => Promise<void>): Promise<GelenBelge[]>;
+  gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date, isle?: (belge: GelenBelge) => Promise<void>, secenek?: GelenCekimSecenegi): Promise<GelenBelge[]>;
   /**
    * Tam GİB mükellef listesini indirir (EBLG-10). Yalnızca toplu liste sunan
    * sağlayıcılar uygular; tekil sorgusu ucuz olan sağlayıcılarda tanımsız

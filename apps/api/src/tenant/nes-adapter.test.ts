@@ -943,6 +943,70 @@ describe("NesEntegratorAdapter.seriTanimlari (EBLG-97)", () => {
 describe("NES gelen fatura çekimi — akış", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("süre aşımı okunur hata olur, gönderimde geçici sayılır (EBLG-153)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(Object.assign(new Error("aborted"), { name: "TimeoutError" })));
+    const sonuc = await new NesEntegratorAdapter().belgeGonder(config, { uuid: "u", belgeNo: "TASLAK", xml: "<x/>", tur: "earsiv" } as never);
+    expect(sonuc).toMatchObject({ basarili: false, kalici: false });
+    expect(sonuc.hataMesaji).toContain("60 saniyede yanıt vermedi");
+  });
+  it("her çağrıya süre sınırı verilir (EBLG-153)", async () => {
+    const f = vi.fn().mockImplementation(async () => yanit({ data: [] }));
+    vi.stubGlobal("fetch", f);
+    await new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-10-29T06:00:00Z"));
+    expect(f.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+  it("bilinen belgenin XML'i indirilmez, karar taşıyan indirilir (EBLG-154)", async () => {
+    const indirilen: string[] = [];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {
+      const yol = String(adres);
+      if (yol.endsWith("/xml")) { indirilen.push(yol.split("/").at(-2)!); return yanit("<Invoice/>"); }
+      return yanit({ data: [{ id: "f1", documentNumber: "A1" }, { id: "f2", documentNumber: "A2" }] });
+    }));
+    await new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-10-29T06:00:00Z"), async () => undefined, { bilinen: async (u) => u === "f1" });
+    expect(indirilen).toEqual(["f2"]);
+  });
+  it("tek belgenin HTTP hatası bildirilir, tarama sürer; yetki hatası taramayı durdurur (EBLG-154)", async () => {
+    const hatali: string[] = [], islenen: string[] = [];
+    const kur = (durum: number) => vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {
+      const yol = String(adres);
+      if (yol.includes("/f1/xml")) return yanit({ message: "yok" }, durum);
+      if (yol.endsWith("/xml")) return yanit("<Invoice/>");
+      return yanit({ data: [{ id: "f1", documentNumber: "A1" }, { id: "f2", documentNumber: "A2" }] });
+    }));
+    const secenek = { belgeHatasi: (h: { belgeNo: string }) => { hatali.push(h.belgeNo); } };
+    kur(500);
+    await new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-10-29T06:00:00Z"), async (b) => { islenen.push(b.belgeNo); }, secenek);
+    expect(hatali).toEqual(["A1"]); expect(islenen).toEqual(["A2"]);
+    kur(401);
+    await expect(new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-10-29T06:00:00Z"), async () => undefined, secenek)).rejects.toThrow("401");
+  });
+  it("ağ kesintisinde tek belge atlanmaz, tarama durur (EBLG-154)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {
+      if (String(adres).endsWith("/xml")) throw new TypeError("fetch failed");
+      return yanit({ data: [{ id: "f1", documentNumber: "A1" }] });
+    }));
+    const belgeHatasi = vi.fn();
+    await expect(new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-10-29T06:00:00Z"), async () => undefined, { belgeHatasi })).rejects.toThrow("fetch failed");
+    expect(belgeHatasi).not.toHaveBeenCalled();
+  });
+  it("sayfa tavanını dolduran pencere bölünür, kalan belge kaybolmaz (EBLG-154)", async () => {
+    const bas = new Date("2026-10-29T00:00:00Z"), pencereler = new Set<string>();
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {
+      const u = new URL(String(adres));
+      if (u.pathname.endsWith("/xml")) return yanit("<Invoice/>");
+      const s = u.searchParams.get("startCreateDate")!, e = u.searchParams.get("endCreateDate")!, sayfa = Number(u.searchParams.get("page"));
+      pencereler.add(`${s}|${e}`);
+      // İlk (tam) pencere tavanı doldurur; yarım pencereler kısa kalır ve yeni belgeler getirir.
+      if (pencereler.size === 1) return yanit({ data: Array.from({ length: 100 }, (_, i) => ({ id: `a${sayfa}-${i}`, documentNumber: "A" })) });
+      return yanit({ data: [{ id: `son-${s}`, documentNumber: "B" }] });
+    }));
+    const islenen: string[] = [];
+    await new NesEntegratorAdapter().gelenBelgeleriCek(config, bas, async (b) => { islenen.push(b.uuid); });
+    expect(pencereler.size).toBe(3);
+    expect(islenen.filter((u) => u.startsWith("a"))).toHaveLength(5000);
+    expect(islenen.filter((u) => u.startsWith("son-"))).toHaveLength(2);
+  });
+
   it("isle verilince her belge indirildiği anda işlenir, dizide biriktirilmez", async () => {
     const sira: string[] = [];
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {

@@ -196,7 +196,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
   } as any;
   const mockMetrics = { increment: vi.fn(), set: vi.fn() } as any;
 
-  const mockBildirimler = { uret: vi.fn() } as any;
+  const mockBildirimler = { uret: vi.fn().mockResolvedValue(undefined), kapatEksikleri: vi.fn().mockResolvedValue(0) } as any;
 
   const service = new EbelgeService(mockPrisma, mockBaglantilar, mockFatura, mockMukellefListesi, mockMetrics, mockBildirimler);
 
@@ -1344,7 +1344,7 @@ describe("EbelgeService — çağrı disiplini", () => {
     const prisma = { tenantIslem } as any;
     const metrics = { increment: vi.fn(), set: vi.fn() } as any;
     const mukellefListesi = { kanalBelirle: vi.fn() } as any;
-    const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }) } as any;
+    const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0) } as any;
     const service = new EbelgeService(
       prisma,
       { adapterCoz: () => adapter } as any,
@@ -1372,6 +1372,50 @@ describe("EbelgeService — çağrı disiplini", () => {
     expect(gelenZarflariCek.mock.calls[0][1].baslangic).toEqual(kursorAn);
     const yeniKursor = kursorUpsert.mock.calls[0][0].update.sonCekimAt as Date;
     expect(yeniKursor.getTime()).toBeGreaterThan(kursorAn.getTime());
+  });
+
+  describe("tek belge hatası (EBLG-154)", () => {
+    const kurHatali = (upsertHata?: (uuid: string) => boolean) => {
+      const kursorUpsert = vi.fn();
+      const tx = {
+        baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: cfg }) },
+        ebelgeGelenKursor: { findUnique: vi.fn().mockResolvedValue({ sonCekimAt: new Date("2026-09-05T08:00:00Z") }), upsert: kursorUpsert },
+        gelenEbelge: { findUnique: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn(async ({ where }: { where: { tenantId_uuid: { uuid: string } } }) => { if (upsertHata?.(where.tenantId_uuid.uuid)) throw new Error("yazilamadi"); return { id: where.tenantId_uuid.uuid }; }) },
+      };
+      const gelenBelgeleriCek = vi.fn(async (_c: unknown, _s: Date, isle: (b: unknown) => Promise<void>) => {
+        for (const uuid of ["a", "b", "c"]) await isle({ uuid, belgeNo: uuid.toUpperCase(), gonderenVkn: "1", gonderenUnvan: "G", tarih: new Date(), xml: "<Invoice/>" });
+        return [];
+      });
+      return { ...kur(tx, { gelenBelgeleriCek }), kursorUpsert };
+    };
+    it("yazılamayan belge sonrakileri durdurmaz, kursör ilerlemez, bildirim düşer", async () => {
+      const { service, kursorUpsert, bildirimler } = kurHatali((u) => u === "a") as never as { service: EbelgeService; kursorUpsert: ReturnType<typeof vi.fn>; bildirimler: { uret: ReturnType<typeof vi.fn> } };
+      const sonuc = await service.gelenBelgeleriCek();
+      expect(sonuc).toMatchObject({ toplamCekilen: 3, yeniBelgeSayisi: 2, alinamayanBelge: 1 });
+      expect(kursorUpsert.mock.calls[0][0].update.sonCekimAt).toBeUndefined();
+      expect(kursorUpsert.mock.calls[0][0].update.sonTaramaAt).toBeInstanceOf(Date);
+      expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ onem: "kritik", birlesimAnahtari: expect.stringContaining("ebelge-gelen-hata:") }));
+    });
+    it("eksiksiz taramada kursör ilerler, eski uyarı kapanır", async () => {
+      const { service, kursorUpsert, bildirimler } = kurHatali() as never as { service: EbelgeService; kursorUpsert: ReturnType<typeof vi.fn>; bildirimler: { kapatEksikleri: ReturnType<typeof vi.fn> } };
+      await service.gelenBelgeleriCek();
+      expect(kursorUpsert.mock.calls[0][0].update.sonCekimAt).toBeInstanceOf(Date);
+      expect(bildirimler.kapatEksikleri).toHaveBeenCalledWith("ebelge", [], ["ebelge-gelen-hata:"]);
+    });
+  });
+
+  it("durum sorgusu sırasında veritabanı işlemi açık kalmaz (EBLG-155)", async () => {
+    let acikIslem = 0, cagrida = -1;
+    const tx = {
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: cfg }) },
+      ebelgeKayit: { findUnique: vi.fn().mockResolvedValue({ id: "e1", faturaId: "f-1", durum: "iletildi", entegratorRef: "r1", aliciYanitNotu: null }), update: vi.fn().mockResolvedValue({ id: "e1", durum: "kabul" }) },
+    };
+    const durumSorgula = vi.fn(async () => { cagrida = acikIslem; return { belgeRef: "r1", durum: "kabul" }; });
+    const { service } = kur(tx, { durumSorgula });
+    (service as unknown as { prisma: { tenantIslem: unknown } }).prisma.tenantIslem = async (_t: string, f: (x: typeof tx) => unknown) => { acikIslem++; try { return await f(tx); } finally { acikIslem--; } };
+    await service.durumSorgula("f-1");
+    expect(cagrida).toBe(0);
+    expect(tx.ebelgeKayit.update).toHaveBeenCalledTimes(1);
   });
 
   it("kursör yokken 30 gün değil dar bir ilk pencere açar", async () => {
