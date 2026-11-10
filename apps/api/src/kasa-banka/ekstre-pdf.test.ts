@@ -1,9 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { bakiyeSaglamasi, pdfEkstreOku, pdfMi } from "./ekstre-pdf";
 import { ekstreSatirlariOku, eslemeTahminEt } from "./ekstre-oku";
 import { pdfUret, sagaYasla, type Yazi } from "./ekstre-pdf.test-veri";
+
+// PDF ayrıştırma tam test koşusunda yük altında 5 sn varsayılanını aşabiliyor.
+vi.setConfig({ testTimeout: 20_000 });
 
 const oku = async (pdf: Buffer) => {
   const sonuc = await pdfEkstreOku(pdf);

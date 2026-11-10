@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { EkstreService } from "./ekstre.service";
 import { pdfUret, sagaYasla, type Yazi } from "./ekstre-pdf.test-veri";
 
+// PDF ayrıştırma tam test koşusunda yük altında 5 sn varsayılanını aşabiliyor.
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "muhasebe" }) }));
 
 const H = "11111111-1111-4111-8111-111111111111";

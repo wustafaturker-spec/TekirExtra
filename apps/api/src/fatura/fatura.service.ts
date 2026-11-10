@@ -53,6 +53,7 @@ import type {
   tekrarlayanFaturaGuncelleSemasi,
   tekrarlayanFaturaSemasi,
 } from "./fatura.semalar";
+import { acikFaturaOzeti } from "./acik-fatura-ozeti";
 
 /**
  * EBLG-155: iptal ve geri almada entegratör çağrısı işlemin içindedir; böylece çağrı başarısızsa
@@ -422,31 +423,16 @@ export class FaturaService {
 
   async isKuyruguOzeti() {
     const { tenantId } = aktifBaglam();
-    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.fatura.findMany({
-        select: {
-          tip: true,
-          durum: true,
-          genelToplam: true,
-          kur: true,
-          ebelge: { select: { durum: true } },
-          ...FATURA_ODEME_SECIMI,
-        },
-      }),
-    );
-    const ozet = { taslakSatis: 0, taslakAlis: 0, ebelgeHata: 0, acikTahsilat: 0, acikOdeme: 0 };
-    for (const fatura of faturalar) {
-      if (fatura.durum === "taslak") {
-        if (["satis", "satis_iade", "proforma"].includes(fatura.tip)) ozet.taslakSatis += 1;
-        if (["alis", "alis_iade"].includes(fatura.tip)) ozet.taslakAlis += 1;
-      }
-      if (["hata", "ret"].includes(fatura.ebelge?.durum ?? "")) ozet.ebelgeHata += 1;
-      if (fatura.durum !== "kesin") continue;
-      if (faturaOdemeDurumu(fatura).kalan.isZero()) continue;
-      if (["satis", "alis_iade"].includes(fatura.tip)) ozet.acikTahsilat += 1;
-      if (["alis", "satis_iade"].includes(fatura.tip)) ozet.acikOdeme += 1;
-    }
-    return ozet;
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [taslakSatis, taslakAlis, ebelgeHata, acik] = await Promise.all([
+        tx.fatura.count({ where: { durum: "taslak", tip: { in: ["satis", "satis_iade", "proforma"] } } }),
+        tx.fatura.count({ where: { durum: "taslak", tip: { in: ["alis", "alis_iade"] } } }),
+        tx.ebelgeKayit.count({ where: { durum: { in: ["hata", "ret"] } } }),
+        acikFaturaOzeti(tx, tenantId, ["satis", "alis_iade", "alis", "satis_iade"]),
+      ]);
+      const adet = (...tipler: string[]) => tipler.reduce((t, tip) => t + (acik.get(tip)?.adet ?? 0), 0);
+      return { taslakSatis, taslakAlis, ebelgeHata, acikTahsilat: adet("satis", "alis_iade"), acikOdeme: adet("alis", "satis_iade") };
+    });
   }
 
   async satisOzeti() {
@@ -460,10 +446,7 @@ export class FaturaService {
         where: { durum: "kesin", tip: { in: ["satis", "satis_iade"] }, tarih: { gte: oncekiAyBaslangic } },
         select: { tip: true, tarih: true, genelToplam: true, toplamNetKdv: true, kur: true },
       }),
-      tx.fatura.findMany({
-        where: { durum: "kesin", tip: "satis" },
-        select: { durum: true, genelToplam: true, kur: true, ...FATURA_ODEME_SECIMI },
-      }),
+      acikFaturaOzeti(tx, tenantId, ["satis"]),
     ]));
 
     let buAyToplam = D(0); let buAyKdv = D(0); let buAyAdet = 0; let oncekiAyToplam = D(0);
@@ -484,9 +467,7 @@ export class FaturaService {
       select: { tip: true, genelToplam: true, kur: true },
     }));
     const yillikToplam = yilFaturalari.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur).mul(fatura.tip === "satis_iade" ? -1 : 1)), D(0));
-    const acikTahsilat = acikFaturalar.reduce((toplam, fatura) => {
-      return toplam.add(faturaOdemeDurumu(fatura).kalan.mul(fatura.kur).toDecimalPlaces(2));
-    }, D(0));
+    const acikTahsilat = acikFaturalar.get("satis")?.kalanTry ?? D(0);
     const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
 
     return { buAyToplam: buAyToplam.toFixed(2), buAyAdet, buAyKdv: buAyKdv.toFixed(2), yillikToplam: yillikToplam.toFixed(2), acikTahsilat: acikTahsilat.toFixed(2), oncekiAyaGoreDegisim: degisimYuzdesi };
@@ -501,7 +482,7 @@ export class FaturaService {
     const [donemFaturalari, yilFaturalari, acikFaturalar] = await this.prisma.tenantIslem(tenantId, async (tx) => Promise.all([
       tx.fatura.findMany({ where: { durum: "kesin", tip: { in: ["alis", "alis_iade"] }, tarih: { gte: oncekiAyBaslangic } }, select: { tip: true, tarih: true, genelToplam: true, toplamNetKdv: true, kur: true } }),
       tx.fatura.findMany({ where: { durum: "kesin", tip: { in: ["alis", "alis_iade"] }, tarih: { gte: yilBaslangic } }, select: { tip: true, genelToplam: true, kur: true } }),
-      tx.fatura.findMany({ where: { durum: "kesin", tip: "alis" }, select: { durum: true, genelToplam: true, kur: true, ...FATURA_ODEME_SECIMI } }),
+      acikFaturaOzeti(tx, tenantId, ["alis"]),
     ]));
 
     let buAyToplam = D(0); let buAyKdv = D(0); let buAyAdet = 0; let oncekiAyToplam = D(0);
@@ -515,9 +496,7 @@ export class FaturaService {
       } else oncekiAyToplam = oncekiAyToplam.add(toplamTry);
     }
     const yillikToplam = yilFaturalari.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur).mul(fatura.tip === "alis_iade" ? -1 : 1)), D(0));
-    const acikOdeme = acikFaturalar.reduce((toplam, fatura) => {
-      return toplam.add(faturaOdemeDurumu(fatura).kalan.mul(fatura.kur).toDecimalPlaces(2));
-    }, D(0));
+    const acikOdeme = acikFaturalar.get("alis")?.kalanTry ?? D(0);
     const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
     return { buAyToplam: buAyToplam.toFixed(2), buAyAdet, buAyKdv: buAyKdv.toFixed(2), yillikToplam: yillikToplam.toFixed(2), acikOdeme: acikOdeme.toFixed(2), oncekiAyaGoreDegisim: degisimYuzdesi };
   }

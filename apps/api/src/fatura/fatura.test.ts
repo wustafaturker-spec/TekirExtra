@@ -112,28 +112,19 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
     }));
   });
 
-  it("iş kuyruğu sayaçlarını fatura dövizindeki mahsupla hesaplar (KSB-07)", async () => {
-    const fatura = (tip: string, durum: string, toplam: string, odemeler: Array<{ mahsup: string }>, ebelgeDurum?: string, kur = "1") => ({
-      tip, durum, genelToplam: new Prisma.Decimal(toplam), kur: new Prisma.Decimal(kur),
-      ebelge: ebelgeDurum ? { durum: ebelgeDurum } : null,
-      kapamalar: odemeler.map(({ mahsup }) => ({ tutar: new Prisma.Decimal(mahsup) })),
-      iadeKapamalari: [],
-    });
-    const findMany = vi.fn().mockResolvedValue([
-      fatura("satis", "taslak", "100", [], "hata"),
-      fatura("alis", "taslak", "100", []),
-      fatura("satis", "kesin", "100", [{ mahsup: "20" }]),
-      fatura("alis", "kesin", "100", [{ mahsup: "100" }]),
-      fatura("satis_iade", "kesin", "100", []),
-      fatura("alis_iade", "kesin", "100", []),
-      fatura("satis", "kesin", "100", [{ mahsup: "100" }], undefined, "2"),
+  it("iş kuyruğu sayaçlarını faturaları belleğe almadan, açık kalanı veritabanında hesaplar (KSB-07)", async () => {
+    const count = vi.fn(async ({ where }: { where: { tip: { in: string[] } } }) => (where.tip.in.includes("proforma") ? 3 : 2));
+    const ebelgeCount = vi.fn().mockResolvedValue(4);
+    const queryRaw = vi.fn().mockResolvedValue([
+      { tip: "satis", adet: 5, kalan_try: "100.00" }, { tip: "alis_iade", adet: 1, kalan_try: "1.00" },
+      { tip: "alis", adet: 2, kalan_try: "50.00" },
     ]);
-    mockTenantIslem.mockImplementation((_tenantId, cb) => cb({ fatura: { findMany } }));
+    const findMany = vi.fn();
+    mockTenantIslem.mockImplementation((_tenantId, cb) => cb({ fatura: { count, findMany }, ebelgeKayit: { count: ebelgeCount }, $queryRaw: queryRaw }));
 
-    await expect(service.isKuyruguOzeti()).resolves.toEqual({
-      taslakSatis: 1, taslakAlis: 1, ebelgeHata: 1, acikTahsilat: 2, acikOdeme: 1,
-    });
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.any(Object) }));
+    await expect(service.isKuyruguOzeti()).resolves.toEqual({ taslakSatis: 3, taslakAlis: 2, ebelgeHata: 4, acikTahsilat: 6, acikOdeme: 2 });
+    expect(findMany).not.toHaveBeenCalled();
+    expect(ebelgeCount).toHaveBeenCalledWith({ where: { durum: { in: ["hata", "ret"] } } });
   });
 });
 
