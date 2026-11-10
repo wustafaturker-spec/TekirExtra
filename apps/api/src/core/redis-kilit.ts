@@ -22,6 +22,35 @@ function redis(): Promise<RedisClientType | null> {
 
 const BIRAK = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
 
+const UZAT = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end";
+/** Redis yanıt vermezse (yeniden bağlanırken komut bekler) çağıran askıda kalmasın. */
+const REDIS_BEKLEME_MS = 3_000;
+function sureli<T>(is: Promise<T>): Promise<T> {
+  let z: NodeJS.Timeout | undefined;
+  return Promise.race([is, new Promise<never>((_, ret) => { z = setTimeout(() => ret(new Error("Redis yanıt vermedi")), REDIS_BEKLEME_MS); })]).finally(() => clearTimeout(z));
+}
+
+/**
+ * BLD-18: uzun sürebilen iş için kilit; iş sürerken süresi tazelenir, süreç ölürse
+ * `sureSn` içinde düşer. Alınamazsa null. Redis erişilemezse hata fırlatır.
+ */
+export async function uzayanKilitle(anahtar: string, sureSn: number): Promise<(() => Promise<void>) | null> {
+  const r = await sureli(redis());
+  if (!r) return kilitle(anahtar, sureSn);
+  const deger = randomUUID();
+  if ((await sureli(r.set(anahtar, deger, { NX: true, EX: sureSn }))) !== "OK") return null;
+  const tazele = setInterval(() => void r.eval(UZAT, { keys: [anahtar], arguments: [deger, String(sureSn)] }).catch(() => undefined), (sureSn * 1000) / 3);
+  tazele.unref();
+  return async () => { clearInterval(tazele); await sureli(r.eval(BIRAK, { keys: [anahtar], arguments: [deger] })).catch(() => undefined); };
+}
+
+/** BLD-18: bu pencerede ilk gelen true alır; işaret süresi dolana kadar kalır, bırakılmaz. Redis yoksa true. */
+export async function pencereIsareti(anahtar: string, sureSn: number): Promise<boolean> {
+  const r = await sureli(redis());
+  if (!r) return true;
+  return (await sureli(r.set(anahtar, "1", { NX: true, EX: sureSn }))) === "OK";
+}
+
 export async function kilitle(anahtar: string, sureSn: number): Promise<(() => Promise<void>) | null> {
   const r = await redis();
   if (!r) {

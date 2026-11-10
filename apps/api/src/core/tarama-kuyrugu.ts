@@ -71,7 +71,7 @@ export class TaramaKuyrugu<T extends { tenantId: string }> {
 
   private async isle(is: Job): Promise<void> {
     if (is.name === PLANLA) {
-      await nabizla(this.ayar.nabizAdi, () => this.planlaVeEkle(true), this.ayar.aralikMs);
+      await nabizla(this.ayar.nabizAdi, () => this.planlaVeEkle(true), this.ayar.aralikMs, { tekSurec: false });
       return;
     }
     await this.ayar.isle(is.data as T);
