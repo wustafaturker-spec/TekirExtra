@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { AbonelikErisimService } from "../core/abonelik-erisim.service";
-import { Prisma } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -17,6 +17,8 @@ import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./tahsilat-erisim";
 import { nabizla } from "../core/nabiz/nabiz";
 
 const ARALIK = 15 * 60 * 1000;
+/** Bir firmanın yavaş e-posta sunucusu diğerlerini bekletmesin. */
+const ESZAMANLI_FIRMA = 4;
 const SISTEM = "00000000-0000-4000-8000-000000000000";
 export const istanbulSaat = (zaman: Date) => ({
   gun: zaman.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }),
@@ -31,7 +33,7 @@ export function guvenliTekrar(hata: unknown): boolean {
     (e.responseCode && e.responseCode >= 400 && e.responseCode <= 599)));
 }
 
-/** Sadece ödeme sözü e-postası için ayrılmış worker; diğer otomasyonları başlatmaz. */
+/** Sadece ödeme sözü e-postası için ayrılmış worker; tahsilat modu açık tüm firmaları tarar, diğer otomasyonları başlatmaz. */
 @Injectable()
 export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OdemeSozuHatirlatmaService.name);
@@ -43,11 +45,24 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly erisim?: AbonelikErisimService, @Optional() private readonly sms?: SmsService, @Optional() private readonly sablonlar?: IletiSablonService) {}
   onModuleInit() {
     if (process.env.TEKIR_ODEME_SOZU_WORKER !== "1") return;
-    z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
+    this.sabitFirma();
     this.ilk = setImmediate(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir()));
     this.zamanlayici = setInterval(() => void nabizla("odeme-sozu-hatirlatma", () => this.calistir(), ARALIK), ARALIK);
   }
   onModuleDestroy() { this.kapandi = true; if (this.ilk) clearImmediate(this.ilk); if (this.zamanlayici) clearInterval(this.zamanlayici); }
+  /** İsteğe bağlı: tanımlıysa yalnız bu firma taranır (kademeli açılış ve deneme için). */
+  private sabitFirma() { const v = process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID?.trim(); return v ? z.uuid().parse(v) : null; }
+  /** Yalnız tahsilat modu pilot ya da açık firmalar; yönetim bağlantısı yalnız kimlik keşfeder, asıl denetim firma işleminde yenilenir. */
+  async firmalar(): Promise<string[]> {
+    const sabit = this.sabitFirma();
+    if (sabit) return [sabit];
+    if (!process.env.DATABASE_URL_MIGRATE) throw new Error("Ödeme sözü firma keşfi için DATABASE_URL_MIGRATE gerekli");
+    const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
+    try {
+      const k = await yonetim.modulAyar.findMany({ where: { modul: TAHSILAT_MODULU, OR: [{ ayarlar: { path: ["mod"], equals: "pilot" } }, { ayarlar: { path: ["mod"], equals: "acik" } }] }, select: { tenantId: true } });
+      return k.map((x) => x.tenantId);
+    } finally { await yonetim.$disconnect(); }
+  }
   saglikli() { return this.sonBasariliTarama !== null && Date.now() - this.sonBasariliTarama < ARALIK * 2; }
   private async zaman(tx: Prisma.TransactionClient) {
     const [r] = await tx.$queryRaw<{ zaman: Date }[]>`SELECT clock_timestamp() AS zaman`;
@@ -140,10 +155,16 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
     if (this.calisiyor || this.kapandi) return;
     this.calisiyor = true;
     try {
-      const tenantId = z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
-      const sonuc = await this.taraTenant(tenantId);
+      const sira = await this.firmalar();
+      await Promise.all(Array.from({ length: Math.min(ESZAMANLI_FIRMA, sira.length) }, async () => {
+        for (let tenantId = sira.shift(); tenantId && !this.kapandi; tenantId = sira.shift()) {
+          // Bir firmanın hatası ötekileri durdurmaz; uzun turda süreç sağlıklı görünmeye devam eder.
+          try { this.logger.log(JSON.stringify({ event: "promise_email_scan", tenantId, ...await this.taraTenant(tenantId) })); }
+          catch (hata) { this.logger.error(JSON.stringify({ event: "promise_email_tenant_failed", tenantId, error: hata instanceof Error ? hata.message : String(hata) })); }
+          this.sonBasariliTarama = Date.now();
+        }
+      }));
       this.sonBasariliTarama = Date.now();
-      this.logger.log(JSON.stringify({ event: "promise_email_scan", tenantId, ...sonuc }));
     } catch (hata) { this.logger.error(hata instanceof Error ? hata.message : String(hata)); }
     finally { this.calisiyor = false; }
   }

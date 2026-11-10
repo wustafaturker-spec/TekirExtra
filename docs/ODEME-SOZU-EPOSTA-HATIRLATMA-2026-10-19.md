@@ -14,7 +14,7 @@ Kullanıcının talebi: ödeme sözü tarihinde cari hesabın e-posta adresine o
 
 ## Ayrı worker
 
-`main.odeme-sozu-worker.ts` yalnız Prisma, şirket e-postası ve bu zamanlayıcıyı açar; genel worker ve diğer otomasyonlar başlatılmaz. Şirket kapsamı `ODEME_SOZU_HATIRLATMA_TENANT_ID` ile belirtilir. `TEKIR_ODEME_SOZU_WORKER=1` sadece bu süreçte ayarlanır. Normal API/genel worker kendiliğinden e-posta taramasını başlatmaz.
+`main.odeme-sozu-worker.ts` yalnız Prisma, şirket e-postası ve bu zamanlayıcıyı açar; genel worker ve diğer otomasyonlar başlatılmaz. **2026-11-10:** tahsilat modu pilot ya da açık olan tüm şirketler taranır (en çok dördü aynı anda; bir şirketin hatası ötekileri durdurmaz). `ODEME_SOZU_HATIRLATMA_TENANT_ID` isteğe bağlıdır, tanımlıysa yalnız o şirket taranır. `TEKIR_ODEME_SOZU_WORKER=1` sadece bu süreçte ayarlanır. Normal API/genel worker kendiliğinden e-posta taramasını başlatmaz.
 
 Odaklı derleme: `pnpm --dir apps/api exec tsc -p tsconfig.odeme-sozu-worker.json`. Üretilen giriş `apps/api/dist-odeme-sozu-worker/main.odeme-sozu-worker.js`. Normal tam API derlemesi de yeni girişi `dist` altında üretir. Yerel sabit runtime içinde giriş `apps/api/dist/main.odeme-sozu-worker.js` olarak paketlenmiştir.
 
