@@ -1548,8 +1548,7 @@ export class BelgelerService {
       : "";
     const ileti = await this.eposta.ekliIletiGonder({
       alici,
-      konu: `${ad} ${no}`,
-      metin: `Sayın ${belge.cari.unvan},\n\n${no} numaralı ${ad.toLocaleLowerCase("tr-TR")} ekte yer almaktadır.${gecerlilik}\n\nİyi çalışmalar dileriz.`,
+      sablon: { tur: "belge_eposta", degiskenler: { cari: belge.cari.unvan, belge_no: no, belge_turu: ad, belge_turu_kucuk: ad.toLocaleLowerCase("tr-TR"), gecerlilik_cumlesi: gecerlilik } },
       ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
     });
     // AI-38: teklifin takibi; ileti gitti, kayıt hatası gönderimi başarısız saydırmaz.

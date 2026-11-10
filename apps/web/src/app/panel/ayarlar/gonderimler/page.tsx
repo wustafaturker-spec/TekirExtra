@@ -15,7 +15,7 @@ interface Yanit { satirlar: (Satir & SmsSatir)[]; toplam: number; sayfa: number;
 const DURUM: Record<Durum, { ad: string; rozet: "success" | "danger" | "warning" }> = {
   gonderiliyor: { ad: "Gönderiliyor", rozet: "warning" }, gonderildi: { ad: "Gönderildi", rozet: "success" }, basarisiz: { ad: "Başarısız", rozet: "danger" }, belirsiz: { ad: "Belirsiz", rozet: "warning" },
 };
-const TUR: Record<string, string> = { belge: "Belge", rapor: "Rapor", ileti: "E-posta ekranı", bilgi: "Bilgilendirme", genel: "Genel", efatura: "e-Fatura", odeme_sozu_hatirlatma: "Ödeme sözü hatırlatması", vade_hatirlatma: "Vade hatırlatması", odeme_baglantisi: "Ödeme bağlantısı" };
+const TUR: Record<string, string> = { bildirim: "Bildirim", kritik_bildirim: "Kritik bildirim", belge: "Belge", rapor: "Rapor", ileti: "E-posta ekranı", bilgi: "Bilgilendirme", genel: "Genel", efatura: "e-Fatura", odeme_sozu_hatirlatma: "Ödeme sözü hatırlatması", vade_hatirlatma: "Vade hatırlatması", odeme_baglantisi: "Ödeme bağlantısı" };
 const turAdi = (t: string) => TUR[t] ?? t;
 
 export default function GonderimlerSayfasi() {

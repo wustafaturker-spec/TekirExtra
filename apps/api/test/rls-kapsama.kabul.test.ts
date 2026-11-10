@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it } from "vitest";
  * firmayı not eder; uygulama rolünün hiçbir yetkisi yoktur (migration 20261109121000).
  * `sms_dogrulama_kodlari` (ILT-12) giriş öncesi doğrulanır; parola_sifirlamalar gibi yalnız özet tutar.
  */
-const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "eposta_degisimleri", "mevzuat_talepleri", "platform_ileti_kayitlari", "sms_dogrulama_kodlari"]);
+const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "parola_sifirlamalar", "eposta_degisimleri", "mevzuat_talepleri", "platform_ileti_kayitlari", "platform_ileti_firma_limitleri", "sms_dogrulama_kodlari"]);
 
 const prisma = new PrismaClient({
   datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL,

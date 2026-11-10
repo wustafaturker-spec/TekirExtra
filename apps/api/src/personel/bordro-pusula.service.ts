@@ -58,8 +58,7 @@ export class BordroPusulaService {
     const donem = donemAdi(veri.donemYil, veri.donemAy);
     await this.eposta.ekliIletiGonder({
       alici: hedef,
-      konu: `${donem} ücret hesap pusulası`,
-      metin: `Sayın ${veri.personel.ad} ${veri.personel.soyad},\n\n${donem} dönemine ait ücret hesap pusulanız ektedir.\n\nSaygılarımızla\n${firma.unvan}`,
+      sablon: { tur: "bordro_pusula_eposta", degiskenler: { personel: `${veri.personel.ad} ${veri.personel.soyad}`, donem, firma: firma.unvan } },
       ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
     });
     await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.create({ data: { tenantId, userId, islem: "personel_pusula_eposta", varlik: "personel_bordro", varlikId: bordroId, detay: { alici: hedef, donem } } }));

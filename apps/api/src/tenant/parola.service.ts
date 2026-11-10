@@ -194,12 +194,12 @@ export class ParolaService {
     });
     const adres = `${process.env.APP_URL ?? "http://localhost:3100"}/parola-sifirla?token=${token}`;
     try {
-      // Kiracı bağlamı: firmanın SMTP ayarı kullanılır ve gönderim geçmişine yazılır.
+      // ILT-04: öncelikli kuyruğa alınır; platform hesabından çıkar, kayıt platform gönderimlerindedir.
       await baglamlaCalistir({ tenantId: kimlik.tenantId, userId: kimlik.userId, rol: kullanici.rol }, () =>
         this.eposta.parolaSifirlamaGonder(kullanici.eposta, kullanici.adSoyad, adres, SIFIRLAMA_GECERLILIK_DK),
       );
     } catch (hata) {
-      // Yanıt aynı kalır (hesap varlığı sızmaz); hata gönderim geçmişinde ve günlükte görünür.
+      // Yanıt aynı kalır (hesap varlığı sızmaz); hata günlükte ve platform gönderim kaydında görünür.
       this.logger.warn(`Parola sıfırlama e-postası gönderilemedi: ${String(hata)}`);
     }
     return { mesaj: SIFIRLAMA_ISTEK_YANITI };

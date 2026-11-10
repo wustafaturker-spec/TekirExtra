@@ -5,7 +5,10 @@ import { z } from "zod";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EpostaService } from "../tenant/eposta.service";
-import { sozSmsMetni } from "../ileti/sms-kurallari";
+import { IletiSiniriAsildi } from "../ileti/ileti-kurallari";
+import { sozSmsSablonu } from "../ileti/sms-kurallari";
+import { IletiSablonService } from "../ileti/ileti-sablon.service";
+import { varsayilanSablon } from "../ileti/ileti-sablonlari";
 import { SmsService } from "../ileti/sms.service";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { odemeSozuKaynaklariniOku } from "./odeme-sozu-kaynak";
@@ -21,6 +24,8 @@ export const istanbulSaat = (zaman: Date) => ({
 });
 /** Yalnız sunucunun kesinlikle kabul etmediği SMTP denemeleri tekrar edilir. */
 export function guvenliTekrar(hata: unknown): boolean {
+  // ILT-14: sınıra takılan ileti hiç çıkmadı.
+  if (hata instanceof IletiSiniriAsildi) return true;
   const e = hata as { code?: string; command?: string; responseCode?: number } | null;
   return Boolean(e && (["EDNS", "ECONNECTION", "EAUTH", "ETLS"].includes(e.code ?? "") ||
     (e.responseCode && e.responseCode >= 400 && e.responseCode <= 599)));
@@ -35,7 +40,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
   private calisiyor = false;
   private kapandi = false;
   private sonBasariliTarama: number | null = null;
-  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly erisim?: AbonelikErisimService, @Optional() private readonly sms?: SmsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService, @Optional() private readonly erisim?: AbonelikErisimService, @Optional() private readonly sms?: SmsService, @Optional() private readonly sablonlar?: IletiSablonService) {}
   onModuleInit() {
     if (process.env.TEKIR_ODEME_SOZU_WORKER !== "1") return;
     z.uuid().parse(process.env.ODEME_SOZU_HATIRLATMA_TENANT_ID);
@@ -77,13 +82,13 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
       const kalan = Prisma.Decimal.min(soz.gerceklesme.kalan, faturaOdemeDurumu(fatura).kalan);
       if (!kalan.gt(0)) return null;
       const firma = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { unvan: true } });
-      const konu = `Ödeme sözü hatırlatması — ${gun.split("-").reverse().join(".")}`;
       const messageId = `<odeme-sozu-${sozId}@tekirextra.local>`;
-      const metin = `Sayın ${cari.unvan},\n\n${firma.unvan} ile paylaştığınız ödeme sözünün tarihi bugün (${gun.split("-").reverse().join(".")}).\n\nFatura: ${fatura.no ?? "Numarasız fatura"}\nSöz tutarı: ${soz.tutar} ${soz.dovizCinsi}\nHatırlatılan kalan tutar: ${kalan.toFixed(2)} ${soz.dovizCinsi}\n\nÖdemenizi bugün gerçekleştirmenizi rica ederiz. Ödemenizi yaptıysanız bu hatırlatmayı dikkate almayabilir, ödeme bilginizi bizimle paylaşabilirsiniz.\n\nTeşekkür ederiz.\n${firma.unvan}`;
+      const sablon = { tur: "odeme_sozu_eposta", degiskenler: { cari: cari.unvan, firma: firma.unvan, tarih: gun.split("-").reverse().join("."), fatura_no: fatura.no ?? "Numarasız fatura", soz_tutari: `${soz.tutar} ${soz.dovizCinsi}`, kalan_tutar: `${kalan.toFixed(2)} ${soz.dovizCinsi}` } };
+      const { konu, metin } = this.sablonlar ? await this.sablonlar.uret(sablon, tenantId, tx) : varsayilanSablon(sablon);
       const data = { durum: "gonderiliyor", deneme: (eski?.deneme ?? 0) + 1, alici: adres.data, konu, messageId, baslangicAt: simdi, sonrakiDenemeAt: null, hataMesaji: null };
       await tx.odemeSozuHatirlatma.upsert({ where: { tenantId_sozId: { tenantId, sozId } }, create: { tenantId, sozId, ...data }, update: data });
       // ILT-11/13: izinli cariye e-postadan sonra tek SMS; anahtar söz başına birdir.
-      const sms = cari.smsHatirlatma && cari.telefon ? { telefon: cari.telefon, cariId: ilk.cariId, mesaj: sozSmsMetni({ firma: firma.unvan, unvan: cari.unvan, tutar: `${soz.tutar} ${soz.dovizCinsi}` }) } : null;
+      const sms = cari.smsHatirlatma && cari.telefon ? { telefon: cari.telefon, cariId: ilk.cariId, sablon: sozSmsSablonu({ firma: firma.unvan, unvan: cari.unvan, tutar: `${soz.tutar} ${soz.dovizCinsi}` }) } : null;
       return { alici: adres.data, konu, metin, messageId, sms };
     }, { timeout: 15000 });
   }
@@ -119,7 +124,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
             await this.prisma.tenantIslem(tenantId, tx => tx.odemeSozuHatirlatma.update({ where: { tenantId_sozId: { tenantId, sozId: id } }, data: { durum: "gonderildi", gonderildiAt: new Date(), sonrakiDenemeAt: null } }));
             sonuc.gonderilen++;
             // SMS'in hatası e-postayı geri almaz; yalnız kaydı ve log'u kalır.
-            if (ileti.sms && this.sms) await this.sms.gonder({ tur: "odeme_sozu_hatirlatma", anahtar: `soz:${id}`, ...ileti.sms }).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "promise_sms_failed", tenantId, sozId: id, error: hata instanceof Error ? hata.message : String(hata) })));
+            if (ileti.sms && this.sms) await this.sms.gonder({ tur: "odeme_sozu_hatirlatma", otomatik: true, anahtar: `soz:${id}`, ...ileti.sms }).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "promise_sms_failed", tenantId, sozId: id, error: hata instanceof Error ? hata.message : String(hata) })));
           } catch (hata) {
             sonuc.hatali++;
             this.logger.error(JSON.stringify({ event: "promise_email_failed", tenantId, sozId: id, error: hata instanceof Error ? hata.message : String(hata) }));

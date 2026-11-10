@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hataMetni, iletiSorunlari, smtpHataSinifi } from "./ileti-kurallari";
-import { odemeBaglantisiSmsMetni, smsParcaSayisi, sozSmsMetni, telefonE164, vadeSmsMetni } from "./sms-kurallari";
+import { UnrecoverableError } from "bullmq";
+import { hataMetni, iletiSorunlari, IletiSiniriAsildi, istanbulAyBasi, smtpHataSinifi, tavanIhlali, VARSAYILAN_TAVANLAR } from "./ileti-kurallari";
+import { odemeBaglantisiSmsSablonu, smsParcaSayisi, sozSmsSablonu, telefonE164, vadeSmsSablonu } from "./sms-kurallari";
+import { sablonDogrula, sablonDoldur, sablonTanimi, SABLONLAR, varsayilanSablon } from "./ileti-sablonlari";
 import { SmsService } from "./sms.service";
 import { BildirimEpostaService } from "../bildirimler/bildirim-eposta.service";
 import { SmsKodService, telefonMaskele } from "./sms-kod.service";
@@ -94,6 +96,76 @@ describe("gönderim", () => {
     await servis.kuyruga(ileti);
     expect(giden).toHaveLength(1);
   });
+  it("ömrü dolan anlık ileti gönderilmez (ILT-04)", async () => {
+    const { servis, kayitlar } = kur();
+    await servis.gonder(ileti);
+    const adet = giden.length;
+    await expect((servis as unknown as { isle(j: unknown): Promise<void> }).isle({ attemptsMade: 2, data: { kayitId: kayitlar[0].id, tur: "parola_sifirlama", alicilar: ["a@b.co"], konu: "K", metin: "M", sonGecerlilik: Date.now() - 1 } })).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(giden).toHaveLength(adet);
+    expect(kayitlar[0].durum).toBe("suresi_doldu");
+  });
+});
+
+describe("ileti şablonları (ILT-09)", () => {
+  const fatura = sablonTanimi("fatura_eposta"), sms = sablonTanimi("odeme_baglantisi_sms");
+  const degerler = { cari: "ACME", belge_no: "F1", belge_adi: "faturanız" };
+  it("varsayılan metin değişmeden üretilir", () => {
+    expect(sablonDoldur(fatura, null, degerler)).toEqual({ konu: "Fatura F1", metin: "Sayın ACME,\n\nF1 numaralı faturanız ekte yer almaktadır.\n\nİyi çalışmalar dileriz.", ozel: false });
+  });
+  it("her varsayılan şablon kendi değişkenleriyle geçerlidir", () => {
+    for (const t of SABLONLAR) expect(() => sablonDogrula(t, { konu: t.konu, metin: t.metin }), t.tur).not.toThrow();
+  });
+  it("eksik değişken gönderimi durdurur, boş metin geçerlidir", () => {
+    expect(() => sablonDoldur(fatura, null, { cari: "A", belge_adi: "x" })).toThrow("belge_no");
+    expect(sablonDoldur(sablonTanimi("belge_eposta"), null, { cari: "A", belge_no: "1", belge_turu: "T", belge_turu_kucuk: "t", gecerlilik_cumlesi: "" }).metin).toContain("ekte yer almaktadır.\n");
+  });
+  it("değerin içindeki yer tutucu yeniden işlenmez", () => {
+    expect(sablonDoldur(fatura, null, { ...degerler, cari: "{{belge_no}}" }).metin).toContain("Sayın {{belge_no}},");
+  });
+  it("bilinmeyen, bozuk ve zorunlu eksik şablon kaydedilemez", () => {
+    expect(() => sablonDogrula(fatura, { konu: "K", metin: "{{tutar}}" })).toThrow("Bilinmeyen");
+    expect(() => sablonDogrula(fatura, { konu: "K", metin: "{{cari" })).toThrow("biçiminde");
+    expect(() => sablonDogrula(sms, { metin: "Bağlantısız metin" })).toThrow("baglanti");
+    expect(() => sablonDogrula(fatura, { konu: "", metin: "M" })).toThrow("Konu");
+    expect(sablonDogrula(sms, { konu: "yok sayılır", metin: "{{baglanti}}" }).konu).toBeNull();
+  });
+  it("düzenlenmiş sistem şablonu gömülü HTML'i taşımaz", async () => {
+    const ileti = { kuyruga: vi.fn(async () => undefined), gonder: vi.fn() };
+    const uret = vi.fn(async () => ({ konu: "Ozel", metin: "Ozel metin", ozel: true }));
+    const s = new EpostaService({} as never, ileti as never, { uret } as never);
+    await baglamla(() => s.parolaSifirlamaGonder("u@x.co", "Ali", "http://l", 30));
+    expect(ileti.kuyruga).toHaveBeenCalledWith(expect.objectContaining({ konu: "Ozel", metin: "Ozel metin", html: undefined, tur: "parola_sifirlama" }));
+  });
+  it("varsayılan sistem şablonu HTML'i korur", async () => {
+    const ileti = { kuyruga: vi.fn(async () => undefined), gonder: vi.fn() };
+    await baglamla(() => new EpostaService({} as never, ileti as never).parolaSifirlamaGonder("u@x.co", "Ali", "http://l", 30));
+    expect(ileti.kuyruga).toHaveBeenCalledWith(expect.objectContaining({ konu: "TekirExtra — parola sıfırlama", html: expect.stringContaining("http://l") }));
+  });
+});
+
+describe("gönderim tavanları (ILT-14)", () => {
+  it("günlük önce, sonra aylık sınır denetlenir", () => {
+    expect(tavanIhlali("eposta", { gunluk: 9, aylik: 99 }, { gunluk: 10, aylik: 100 })).toBeNull();
+    expect(tavanIhlali("eposta", { gunluk: 10, aylik: 100 }, { gunluk: 10, aylik: 100 })?.neden).toBe("gunluk");
+    expect(tavanIhlali("sms", { gunluk: 1, aylik: 100 }, { gunluk: 10, aylik: 100 })?.kayit).toBe("Aylık SMS tavanı doldu");
+  });
+  it("ay başı İstanbul saatine göre hesaplanır", () => {
+    expect(istanbulAyBasi(new Date("2026-11-30T21:30:00Z")).toISOString()).toBe("2026-11-30T21:00:00.000Z");
+    expect(istanbulAyBasi(new Date("2026-11-30T20:30:00Z")).toISOString()).toBe("2026-10-31T21:00:00.000Z");
+  });
+  it("firma istisnası yalnız dolu alanları değiştirir", async () => {
+    vi.stubEnv("DATABASE_URL_PLATFORM", "postgres://x"); vi.stubEnv("SMS_GUNLUK_TAVAN", "");
+    const db = { platformIletiLimit: { findUnique: async () => ({ id: 1, epostaGunluk: 50, epostaAylik: 500, smsGunluk: 5, smsAylik: 60 }) }, platformIletiFirmaLimit: { findMany: async () => [{ tenantId: "t9", epostaGunluk: 70, epostaAylik: null, smsGunluk: null, smsAylik: null }] } };
+    const s = new PlatformIletiService({ db } as never);
+    expect(await s.tavan("t9", "eposta")).toEqual({ gunluk: 70, aylik: 500 });
+    expect(await s.tavan("t1", "sms")).toEqual({ gunluk: 5, aylik: 60 });
+    vi.unstubAllEnvs();
+  });
+  it("ayar yoksa onaylı varsayılanlar geçerlidir", async () => {
+    vi.stubEnv("DATABASE_URL_PLATFORM", ""); vi.stubEnv("SMS_GUNLUK_TAVAN", "");
+    expect(await new PlatformIletiService({} as never).tavan("t1", "eposta")).toEqual({ gunluk: VARSAYILAN_TAVANLAR.epostaGunluk, aylik: VARSAYILAN_TAVANLAR.epostaAylik });
+    vi.unstubAllEnvs();
+  });
 });
 
 describe("firma başına sayılar (ILT-08)", () => {
@@ -112,16 +184,43 @@ describe("firma başına sayılar (ILT-08)", () => {
 describe("firma e-posta servisi (ILT-02)", () => {
   const gidenFirma: Record<string, unknown>[] = [], kayitlar: Record<string, unknown>[] = [];
   let sira: unknown[] = [];
+  const sayim = { tavan: 0, tekrar: 0 };
   const kur2 = (firmaAyari: unknown) => {
     gidenFirma.length = 0; kayitlar.length = 0;
     const transport = { sendMail: async (m: Record<string, unknown>) => { const h = sira.shift(); if (h) throw h; gidenFirma.push(m); return { messageId: "mid" }; } };
-    const tx = { modulAyar: { findUnique: async () => (firmaAyari ? { ayarlar: firmaAyari } : null) }, tenant: { findUnique: async () => ({ eposta: "firma@ornek.co" }) }, epostaGonderim: { create: async ({ data }: { data: Record<string, unknown> }) => { if (data.anahtar && kayitlar.some((k) => k.anahtar === data.anahtar)) { const { Prisma } = await import("@prisma/client"); throw new Prisma.PrismaClientKnownRequestError("yinelenen", { code: "P2002", clientVersion: "x" }); } const k = { id: `e${kayitlar.length + 1}`, ...data }; kayitlar.push(k); return k; }, update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => Object.assign(kayitlar.find((k) => k.id === where.id)!, data) } };
+    const tx = { $queryRaw: async () => [], modulAyar: { findUnique: async () => (firmaAyari ? { ayarlar: firmaAyari } : null) }, tenant: { findUnique: async () => ({ eposta: "firma@ornek.co" }) }, epostaGonderim: { findUnique: async ({ where }: { where: { tenantId_anahtar: { anahtar: string } } }) => kayitlar.find((k) => k.anahtar === where.tenantId_anahtar.anahtar) ?? null, count: async ({ where }: { where: { alici?: string } }) => (where.alici ? sayim.tekrar : sayim.tavan), create: async ({ data }: { data: Record<string, unknown> }) => { if (data.anahtar && kayitlar.some((k) => k.anahtar === data.anahtar)) { const { Prisma } = await import("@prisma/client"); throw new Prisma.PrismaClientKnownRequestError("yinelenen", { code: "P2002", clientVersion: "x" }); } const k = { id: `e${kayitlar.length + 1}`, ...data }; kayitlar.push(k); return k; }, update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => Object.assign(kayitlar.find((k) => k.id === where.id)!, data) } };
     const prisma = { tenantIslem: async (_t: string, f: (t: typeof tx) => unknown) => f(tx) };
-    const ileti = { tasiyici: vi.fn(async () => ({ transport, from: "TekirExtra <p@t.co>", replyTo: undefined })), gonder: vi.fn(async () => ({ gonderildi: true })) };
+    const ileti = { tavan: vi.fn(async () => ({ gunluk: 10, aylik: 100 })), kuyruga: vi.fn(async () => undefined), tasiyici: vi.fn(async () => ({ transport, from: "TekirExtra <p@t.co>", replyTo: undefined })), gonder: vi.fn(async () => ({ gonderildi: true })) };
     return { servis: new EpostaService(prisma as never, ileti as never), ileti };
   };
-  beforeEach(() => { sira = []; });
+  beforeEach(() => { sira = []; sayim.tavan = 0; sayim.tekrar = 0; });
   afterEach(() => { vi.useRealTimers(); });
+  const tasiyiciBagla = (servis: EpostaService) => vi.spyOn(servis as never, "transporter" as never).mockResolvedValue({ transport: { sendMail: async (m: Record<string, unknown>) => { gidenFirma.push(m); return { messageId: "mid" }; } }, from: "f@o.co", gonderen: "firma" } as never);
+  it("tavan doluysa ileti çıkmaz, anahtar bırakılır, firma kaydında görünür (ILT-14)", async () => {
+    const { servis } = kur2({ host: "smtp.ornek.co" }); tasiyiciBagla(servis);
+    sayim.tavan = 10;
+    await expect(baglamla(() => servis.iletiGonder({ alici: "a@b.co", konu: "K", metin: "M", anahtar: "bildirim:9" }))).rejects.toBeInstanceOf(IletiSiniriAsildi);
+    expect(gidenFirma).toHaveLength(0);
+    expect(kayitlar[0]).toMatchObject({ durum: "basarisiz", hataMesaji: "Günlük e-posta tavanı doldu" });
+    expect(kayitlar[0].anahtar).toBeUndefined();
+  });
+  it("tekrar sınırı yalnız otomatik iletiye uygulanır ve kayıt açmaz (ILT-14)", async () => {
+    const { servis } = kur2({ host: "smtp.ornek.co" }); tasiyiciBagla(servis);
+    sayim.tekrar = 5;
+    await expect(baglamla(() => servis.iletiGonder({ alici: "a@b.co", konu: "K", metin: "M", tur: "bildirim", otomatik: true }))).rejects.toMatchObject({ neden: "tekrar" });
+    expect(kayitlar).toHaveLength(0);
+    await baglamla(() => servis.iletiGonder({ alici: "a@b.co", konu: "K", metin: "M" }));
+    expect(gidenFirma).toHaveLength(1);
+  });
+  it("anlık sistem iletisi tavana sayılmaz, davet tek deneme kalır (ILT-04/14)", async () => {
+    const { servis, ileti } = kur2({ host: "smtp.firma.co" });
+    sayim.tavan = 999;
+    await baglamla(() => servis.dogrulamaGonder("u@x.co", "Ali", "http://l"));
+    expect(ileti.kuyruga).toHaveBeenCalledWith(expect.objectContaining({ tur: "dogrulama", anlik: true }));
+    await baglamla(() => servis.kullaniciDavetGonder("u@x.co", "Ali", "F", "http://l", 3));
+    expect(ileti.gonder).toHaveBeenCalledWith(expect.objectContaining({ tur: "kullanici_davet" }));
+    expect(ileti.tavan).not.toHaveBeenCalled();
+  });
   it("aynı anahtarla ikinci ileti çıkmaz (ILT-05)", async () => {
     const { servis } = kur2({ host: "smtp.ornek.co", port: 587, guvenlik: "starttls", gondericiAdi: "F", gondericiEposta: "f@o.co" });
     vi.spyOn(servis as never, "transporter" as never).mockResolvedValue({ transport: { sendMail: async (m: Record<string, unknown>) => { const h = sira.shift(); if (h) throw h; gidenFirma.push(m); return { messageId: "mid" }; } }, from: "f@o.co", gonderen: "firma" } as never);
@@ -157,7 +256,7 @@ describe("firma e-posta servisi (ILT-02)", () => {
   it("sistem iletisi firma bağlamı olsa da platformdan çıkar", async () => {
     const { servis, ileti } = kur2({ host: "smtp.firma.co" });
     await baglamla(() => servis.parolaSifirlamaGonder("u@x.co", "Ali", "http://l", 30));
-    expect(ileti.gonder).toHaveBeenCalledWith(expect.objectContaining({ tur: "parola_sifirlama", alicilar: ["u@x.co"], tenantId: "t1" }));
+    expect(ileti.kuyruga).toHaveBeenCalledWith(expect.objectContaining({ tur: "parola_sifirlama", alicilar: ["u@x.co"], tenantId: "t1", anlik: true }));
     expect(kayitlar).toHaveLength(0);
   });
   it("SMTP'si olmayan firma platformdan, yanıt adresi kendi e-postası olarak gönderir", async () => {
@@ -208,30 +307,30 @@ describe("SMS kuralları", () => {
     expect(smsParcaSayisi("ş" + "a".repeat(155))).toBe(2);
   });
   it("metinler firma adını taşır, uzun ad kırpılır", () => {
-    const m = vadeSmsMetni({ firma: "ACME", unvan: "B".repeat(80), toplam: "1.000,00 TL", ihtar: false });
+    const m = varsayilanSablon(vadeSmsSablonu({ firma: "ACME", unvan: "B".repeat(80), toplam: "1.000,00 TL", ihtar: false })).metin;
     expect(m).toContain("ACME"); expect(m).toContain("1.000,00 TL"); expect(m.length).toBeLessThan(200);
-    expect(vadeSmsMetni({ firma: "A", unvan: "B", toplam: "1 TL", ihtar: true })).toContain("ihtar");
-    expect(sozSmsMetni({ firma: "ACME", unvan: "B", tutar: "5 TRY" })).toContain("ACME");
-    expect(odemeBaglantisiSmsMetni({ unvan: "B", link: "https://l", faturaIcin: true })).toContain("https://l");
+    expect(varsayilanSablon(vadeSmsSablonu({ firma: "A", unvan: "B", toplam: "1 TL", ihtar: true })).metin).toContain("ihtar");
+    expect(varsayilanSablon(sozSmsSablonu({ firma: "ACME", unvan: "B", tutar: "5 TRY" })).metin).toContain("ACME");
+    expect(varsayilanSablon(odemeBaglantisiSmsSablonu({ unvan: "B", link: "https://l", faturaIcin: true })).metin).toContain("https://l");
   });
 });
 
 describe("SMS gönderimi (ILT-10)", () => {
   process.env.BAGLANTI_SIFRELEME_ANAHTARI ??= "0".repeat(64);
   afterEach(() => { vi.restoreAllMocks(); delete process.env.SMS_GUNLUK_TAVAN; });
-  const kur3 = (b: { baglanti?: boolean; bugun?: number; anahtarVar?: boolean } = {}) => {
+  const kur3 = (b: { baglanti?: boolean; bugun?: number; anahtarVar?: boolean; aylikTavan?: number; tekrar?: number } = {}) => {
     const satirlar: Record<string, unknown>[] = [];
     const tx = {
       $queryRaw: async () => [],
       smsGonderim: {
         findUnique: async () => (b.anahtarVar ? { id: "e" } : null),
-        count: async () => b.bugun ?? 0,
+        count: async ({ where }: { where: { telefon?: string } }) => (where.telefon ? b.tekrar ?? 0 : b.bugun ?? 0),
         create: async ({ data }: { data: Record<string, unknown> }) => { const k = { id: `s${satirlar.length + 1}`, ...data }; satirlar.push(k); return k; },
         update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => Object.assign(satirlar.find((s) => s.id === where.id)!, data),
       },
       baglanti: { findFirst: async () => (b.baglanti === false ? null : { saglayici: "netgsm", sifreliConfig: sifrele(JSON.stringify({ kullaniciAdi: "u", parola: "p", gondericiAdi: "ACME" })) }) },
     };
-    return { servis: new SmsService({ tenantIslem: async (_t: string, f: (t: typeof tx) => unknown) => f(tx) } as never), satirlar };
+    return { servis: new SmsService({ tenantIslem: async (_t: string, f: (t: typeof tx) => unknown) => f(tx) } as never, { tavan: async () => ({ gunluk: 3, aylik: b.aylikTavan ?? 100 }) } as never), satirlar };
   };
   const sms = { tur: "vade_hatirlatma", telefon: "05321112233", mesaj: "GIZLI-METIN" };
   it("gönderir, kaydeder, metni yazmaz", async () => {
@@ -249,8 +348,17 @@ describe("SMS gönderimi (ILT-10)", () => {
     expect(satirlar[0]).toMatchObject({ durum: "basarisiz", hata: "SMS hesabı yok" });
     expect(yolla).not.toHaveBeenCalled();
   });
+  it("aylık tavan ve otomatik tekrar sınırı SMS'i durdurur (ILT-14)", async () => {
+    const yolla = vi.spyOn(NetgsmAdapter.prototype, "smsGonder").mockClear();
+    const aylik = kur3({ bugun: 2, aylikTavan: 2 });
+    await expect(baglamla(() => aylik.servis.gonder(sms))).rejects.toMatchObject({ neden: "aylik" });
+    expect(aylik.satirlar[0]).toMatchObject({ durum: "basarisiz", hata: "Aylık SMS tavanı doldu" });
+    await expect(baglamla(() => kur3({ tekrar: 5 }).servis.gonder({ ...sms, otomatik: true }))).rejects.toMatchObject({ neden: "tekrar" });
+    expect(yolla).not.toHaveBeenCalled();
+    yolla.mockResolvedValueOnce({ gorevId: "j2" });
+    expect(await baglamla(() => kur3({ tekrar: 5 }).servis.gonder(sms))).toMatchObject({ gorevId: "j2" });
+  });
   it("günlük tavan aşılmaz", async () => {
-    process.env.SMS_GUNLUK_TAVAN = "3";
     const yolla = vi.spyOn(NetgsmAdapter.prototype, "smsGonder");
     const { servis } = kur3({ bugun: 3 });
     await expect(baglamla(() => servis.gonder(sms))).rejects.toThrow("tavan");
@@ -375,7 +483,7 @@ describe("tek çıkış (ILT-01)", () => {
   const dosyalar = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((g) => g.isDirectory() ? dosyalar(join(d, g.name)) : g.name.endsWith(".ts") && !g.name.endsWith(".test.ts") ? [join(d, g.name)] : []);
   it("SMS sağlayıcısı yalnız merkezi servisten çağrılır", () => {
     const kok = join(__dirname, "..");
-    const ihlal = dosyalar(kok).map((f) => f.slice(kok.length + 1)).filter((f) => f !== "ileti/sms.service.ts" && /new NetgsmAdapter\(/.test(readFileSync(join(kok, f), "utf8")));
+    const ihlal = dosyalar(kok).map((f) => f.slice(kok.length + 1)).filter((f) => f !== "ileti/sms-saglayici.ts" && /new NetgsmAdapter\(/.test(readFileSync(join(kok, f), "utf8")));
     expect(ihlal).toEqual([]);
   });
   it("nodemailer yalnız merkezi serviste açılır", () => {

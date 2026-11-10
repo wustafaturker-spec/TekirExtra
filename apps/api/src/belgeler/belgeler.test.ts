@@ -992,8 +992,8 @@ describe("BelgelerService.pdfGonder (FTR-36)", () => {
     const { servis, eposta } = kur(kayit());
     await expect(servis.pdfGonder("b1")).resolves.toEqual({ gonderildi: true, alici: "cari@ornek.local", belge: "sistem" });
     const ileti = eposta.ekliIletiGonder.mock.calls[0][0];
-    expect(ileti.konu).toBe("Satış Teklifi TKF2026000020");
-    expect(ileti.metin).toContain("27.10.2026 tarihine kadar geçerlidir");
+    expect(ileti.sablon).toMatchObject({ tur: "belge_eposta", degiskenler: { belge_turu: "Satış Teklifi", belge_no: "TKF2026000020" } });
+    expect(ileti.sablon.degiskenler.gecerlilik_cumlesi).toContain("27.10.2026 tarihine kadar geçerlidir");
     expect(ileti.ekler[0].dosyaAdi).toBe("belge-TKF2026000020.pdf");
   });
 
@@ -1019,7 +1019,7 @@ describe("BelgelerService.pdfGonder (FTR-36)", () => {
     const gorunum = { gidenIrsaliyePdf: vi.fn().mockResolvedValue({ buffer: Buffer.from("resmi"), dosyaAdi: "irsaliye-GBZ1.pdf" }) };
     const { servis, eposta } = kur(kayit({ tur: "irsaliye", no: "GBZ1", gecerlilikTarihi: null, eirsaliye: { durum: "iletildi" } }), gorunum);
     await expect(servis.pdfGonder("b1")).resolves.toMatchObject({ belge: "ebelge" });
-    expect(eposta.ekliIletiGonder.mock.calls[0][0]).toMatchObject({ konu: "e-İrsaliye GBZ1", ekler: [{ dosyaAdi: "irsaliye-GBZ1.pdf" }] });
+    expect(eposta.ekliIletiGonder.mock.calls[0][0]).toMatchObject({ sablon: { degiskenler: { belge_turu: "e-İrsaliye", belge_no: "GBZ1" } }, ekler: [{ dosyaAdi: "irsaliye-GBZ1.pdf" }] });
   });
 
   it("hatalı e-İrsaliyede kendi çıktımızı ekler", async () => {
@@ -1027,6 +1027,6 @@ describe("BelgelerService.pdfGonder (FTR-36)", () => {
     const { servis, eposta } = kur(kayit({ tur: "irsaliye", no: "GBZ1", gecerlilikTarihi: null, eirsaliye: { durum: "hata" } }), gorunum);
     await servis.pdfGonder("b1");
     expect(gorunum.gidenIrsaliyePdf).not.toHaveBeenCalled();
-    expect(eposta.ekliIletiGonder.mock.calls[0][0].konu).toBe("Sevk İrsaliyesi GBZ1");
+    expect(eposta.ekliIletiGonder.mock.calls[0][0].sablon.degiskenler).toMatchObject({ belge_turu: "Sevk İrsaliyesi", belge_no: "GBZ1" });
   });
 });

@@ -123,6 +123,7 @@ enum DuzeltmeTuru {
 }
 
 model Tenant {
+  iletiSablonlari      IletiSablonu[]
   pesinVergiMahsuplari PesinVergiMahsup[]
   vergiTakvimiAyari    VergiTakvimiAyari?
   smsGonderimleri      SmsGonderim[]
@@ -6707,6 +6708,58 @@ model PlatformIletiAyari {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("platform_ileti_ayari")
+}
+
+/// ILT-09: firmanın değiştirdiği belge ve cari şablonu; varsayılan metin koddadır.
+model IletiSablonu {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  tur           String   @db.VarChar(40)
+  konu          String?  @db.VarChar(200)
+  metin         String
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, tur])
+  @@map("ileti_sablonlari")
+}
+
+/// ILT-09: platformun değiştirdiği sistem şablonu.
+model PlatformIletiSablonu {
+  tur           String   @id @db.VarChar(40)
+  konu          String   @db.VarChar(200)
+  metin         String
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_ileti_sablonlari")
+}
+
+/// ILT-14: firma başına varsayılan gönderim tavanları (tek satır).
+model PlatformIletiLimit {
+  id            Int      @id @default(1)
+  epostaGunluk  Int      @map("eposta_gunluk")
+  epostaAylik   Int      @map("eposta_aylik")
+  smsGunluk     Int      @map("sms_gunluk")
+  smsAylik      Int      @map("sms_aylik")
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_ileti_limit")
+}
+
+/// ILT-14: firma istisnası; boş alan varsayılanı kullanır.
+model PlatformIletiFirmaLimit {
+  tenantId      String   @id @map("tenant_id") @db.Uuid
+  epostaGunluk  Int?     @map("eposta_gunluk")
+  epostaAylik   Int?     @map("eposta_aylik")
+  smsGunluk     Int?     @map("sms_gunluk")
+  smsAylik      Int?     @map("sms_aylik")
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_ileti_firma_limitleri")
 }
 
 /// ILT-06: platform iletilerinin gönderim kaydı; ileti gövdesi saklanmaz.

@@ -236,6 +236,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/sms", ikon: MessageSquare, baslik: "SMS Ayarları", eslesme: "tam", esanlamlilar: ["netgsm"] },
   { href: "/panel/ayarlar/eposta", ikon: Mail, baslik: "E-posta Ayarları", eslesme: "tam", esanlamlilar: ["smtp"] },
   { href: "/panel/ayarlar/gonderimler", ikon: Mail, baslik: "E-posta ve SMS Gönderimleri", eslesme: "tam", esanlamlilar: ["sms kaydı", "gönderilen e-posta", "iletilmedi", "e-posta geçmişi"] },
+  { href: "/panel/ayarlar/ileti-sablonlari", ikon: Mail, baslik: "E-posta ve SMS Şablonları", eslesme: "tam", esanlamlilar: ["ileti metni", "sms metni", "e-posta metni", "şablon"] },
   { href: "/panel/ayarlar/bildirimler", ikon: Bell, baslik: "Bildirim Tercihleri", eslesme: "tam", esanlamlilar: ["sessiz saat", "kanal", "e-posta bildirimi"] },
   { href: "/panel/ayarlar/moduller", ikon: Settings, baslik: "Modül Ayarları", eslesme: "tam" },
   { href: "/panel/ayarlar/yapay-zeka", ikon: Sparkles, baslik: "Yapay Zeka & Ajanlar", eslesme: "tam", esanlamlilar: ["ai", "yapay zeka", "byok", "openai", "claude", "gemini", "ajan", "kurallar"] },

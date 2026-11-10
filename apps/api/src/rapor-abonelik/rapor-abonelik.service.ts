@@ -7,6 +7,8 @@ import { raporErisilebilir, raporTanimiAl, type RaporGirdisi, type RaporTanimi }
 import { RaporlarService } from "../core/raporlar/raporlar.service";
 import { donemCoz, sonrakiGonderim, yenidenDenemeAni, type GoreliDonem, type Siklik } from "../core/raporlar/rapor-abonelik-zaman";
 import { EpostaService } from "../tenant/eposta.service";
+import { PlatformIletiService } from "../ileti/platform-ileti.service";
+import { smtpHataSinifi } from "../ileti/ileti-kurallari";
 
 export interface AbonelikGirdisi {
   gorunumId: string;
@@ -68,6 +70,7 @@ export class RaporAbonelikService {
     private readonly prisma: PrismaService,
     private readonly raporlar: RaporlarService,
     private readonly eposta: EpostaService,
+    private readonly ileti: PlatformIletiService,
   ) {}
 
   /**
@@ -190,10 +193,11 @@ export class RaporAbonelikService {
     const duraklat = async (neden: string) => {
       await yaz({ aktif: false, sonDurum: "duraklatildi", sonHata: neden, denemeSayisi: 0 });
       if (kuran?.aktif) {
-        await baglamlaCalistir({ tenantId, userId: kuran.id, rol: kuran.rol as Rol }, () => this.eposta.iletiGonder({
-          alici: kuran.eposta, konu: `Zamanlanmış rapor duraklatıldı: ${kayit.gorunum.ad}`,
+        // ILT-04: bu haberin kendi tekrarı yok, kuyruk yeniden dener. Konuya görünüm adı yazılmaz; platform kaydında görünür.
+        await this.ileti.kuyruga({
+          tur: "rapor_duraklatildi", tenantId, alicilar: [kuran.eposta], konu: "TekirExtra — zamanlanmış raporunuz duraklatıldı",
           metin: `Merhaba ${kuran.adSoyad},\n\n"${kayit.gorunum.ad}" görünümü için kurduğunuz zamanlanmış rapor duraklatıldı: ${neden}\n\nRaporlar ekranındaki "Zamanlanmış raporlarım" listesinden düzenleyip yeniden başlatabilirsiniz.`,
-        })).catch(() => undefined);
+        }).catch(() => undefined);
       }
       return { durum: "duraklatildi", alici: 0, hata: neden };
     };
@@ -221,7 +225,7 @@ export class RaporAbonelikService {
         const metin = gonderimMetni(tanim, [`${DONEM_ADI[kayit.donem as GoreliDonem]}`, ...paket.bilgi.bilgiler], paket.satirSayisi, paket.toplamlar, kayit.gorunum.ad);
         const konu = `${paket.bilgi.firma ? `${paket.bilgi.firma} — ` : ""}${tanim.ad}: ${kayit.gorunum.ad}`;
         // ILT-05: yeniden denemede daha önce alan kişiye ikinci kez gitmez; son başarılı gönderim dönemi ayırır.
-        for (const a of alicilar) await this.eposta.raporGonder({ alici: a.eposta, konu, metin, ekler, anahtar: secenek.elle ? undefined : `rapor:${id}:${kayit.sonGonderim?.toISOString() ?? "ilk"}:${a.eposta}` });
+        for (const a of alicilar) await this.eposta.raporGonder({ alici: a.eposta, konu, metin, ekler, otomatik: !secenek.elle, anahtar: secenek.elle ? undefined : `rapor:${id}:${kayit.sonGonderim?.toISOString() ?? "ilk"}:${a.eposta}` });
         return { durum: "gonderildi", alici: alicilar.length };
       });
       await yaz({ sonGonderim: simdi, sonDurum: sonuc.durum, sonHata: null, denemeSayisi: 0, ...(secenek.elle ? {} : { sonrakiGonderim: siradaki }) });
@@ -229,7 +233,8 @@ export class RaporAbonelikService {
     } catch (hata) {
       const mesaj = (hata instanceof Error ? hata.message : String(hata)).slice(0, 500);
       const deneme = kayit.denemeSayisi + 1;
-      const yeniden = secenek.elle ? null : yenidenDenemeAni(deneme, simdi);
+      // ILT-04: geçersiz adres ya da kimlik reddi yeniden denemeyle düzelmez.
+      const yeniden = secenek.elle || smtpHataSinifi(hata) === "kalici" ? null : yenidenDenemeAni(deneme, simdi);
       await yaz({ sonDurum: "basarisiz", sonHata: mesaj, denemeSayisi: yeniden ? deneme : 0, ...(secenek.elle ? {} : { sonrakiGonderim: yeniden ?? siradaki }) });
       this.logger.warn(JSON.stringify({ event: "report_subscription_failed", tenantId, id, deneme, error: mesaj }));
       return { durum: "basarisiz", alici: 0, hata: mesaj };

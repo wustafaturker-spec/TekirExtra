@@ -1,3 +1,4 @@
+import { istanbulGunBasi, TAVAN_HATA_SONU } from "../ileti/ileti-kurallari";
 import { Injectable, Optional } from "@nestjs/common";
 import { HATA_ESIGI } from "../pazaryeri/otomatik-is";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -85,7 +86,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   // VTK-12: kalem ödenince ya da eşik değişince önceki uyarı kapanır.
   donem: ["duzeltme:", "donem:", "vergi-takvimi:"],
   // KSB-31: fark kapanınca bakiye uyarısı da kapanır.
-  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:", "banka-bakiye-farki:", "eposta-smtp:"],
+  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:", "banka-bakiye-farki:", "eposta-smtp:", "ileti-tavan:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
   personel: ["personel:"],
   // MVZ-07: duyurular ("mevzuat:") taramada kapatılmaz; MVZ-17 yayın eksiği uyarısı ("mevzuat-eksik:") yayınlanınca kapanır.
@@ -169,6 +170,7 @@ export class BildirimUreticiService {
       ...(await this.pazaryeriOtomatik()),
       ...(await this.vergiTakvimi()),
       ...(await this.epostaSmtpHatalari()),
+      ...(await this.iletiTavanUyarilari()),
       ...(await this.personelBildirimleri()),
       ...(await this.mevzuatDegisiklikleri()),
       ...(await this.mevzuatYayinEksikleri()),
@@ -683,6 +685,27 @@ export class BildirimUreticiService {
       hedefYol: "/panel/ayarlar/gonderimler",
       roller: ["yonetici"],
     }];
+  }
+
+  /** ILT-14: bugün tavana takılan gönderim varsa yöneticiye uyarı; ertesi gün kayıt düşmezse kendiliğinden kapanır. */
+  private async iletiTavanUyarilari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bas = istanbulGunBasi();
+    const [eposta, sms] = await this.oku(tenantId, (tx) => Promise.all([
+      tx.epostaGonderim.findFirst({ where: { durum: "basarisiz", createdAt: { gte: bas }, hataMesaji: { endsWith: TAVAN_HATA_SONU } }, orderBy: { createdAt: "desc" }, select: { hataMesaji: true } }),
+      tx.smsGonderim.findFirst({ where: { durum: "basarisiz", createdAt: { gte: bas }, hata: { endsWith: TAVAN_HATA_SONU } }, orderBy: { createdAt: "desc" }, select: { hata: true } }),
+    ]));
+    return ([["eposta", eposta?.hataMesaji], ["sms", sms?.hata]] as const).flatMap(([kanal, metin]): BildirimGirdisi[] => !metin ? [] : [{
+      tur: "entegrasyon",
+      onem: "uyari",
+      baslik: kanal === "eposta" ? "E-posta gönderim tavanı doldu" : "SMS gönderim tavanı doldu",
+      aciklama: `${metin}; yeni iletiler tavan yenilenene kadar gönderilmiyor. Daha yüksek tavan için platform yöneticisine başvurun.`,
+      birlesimAnahtari: `ileti-tavan:${kanal}`,
+      kaynakTur: "ileti_tavani",
+      kaynakRef: tenantId,
+      hedefYol: "/panel/ayarlar/gonderimler",
+      roller: ["yonetici"],
+    }]);
   }
 
   private async pazaryeriOtomatik(): Promise<BildirimGirdisi[]> {

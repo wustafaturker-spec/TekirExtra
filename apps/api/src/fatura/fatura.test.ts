@@ -425,7 +425,7 @@ describe("FaturaService.pdfGonder — e-posta eki", () => {
     expect(sistemPdf).not.toHaveBeenCalled();
     const ileti = ekliIletiGonder.mock.calls[0][0];
     expect(ileti.ekler[0]).toMatchObject({ dosyaAdi: "efatura-K07.pdf", icerik: Buffer.from("resmi") });
-    expect(ileti.metin).toContain("e-Faturanız");
+    expect(ileti.sablon.degiskenler.belge_adi).toBe("e-Faturanız");
   });
 
   it("e-Belgesi olmayan ya da arşivi bulunmayan faturada sistem PDF'ine düşer", async () => {

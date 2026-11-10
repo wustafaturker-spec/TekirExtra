@@ -78,7 +78,8 @@ function servisKur(secenek: TxSecenekleri = {}) {
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     krediKarti: { findMany: vi.fn().mockResolvedValue(secenek.kartlar ?? []) },
-    epostaGonderim: { findMany: vi.fn().mockResolvedValue((secenek as { gonderimler?: unknown[] }).gonderimler ?? []) },
+    epostaGonderim: { findMany: vi.fn().mockResolvedValue((secenek as { gonderimler?: unknown[] }).gonderimler ?? []), findFirst: vi.fn().mockResolvedValue((secenek as { tavanEposta?: unknown }).tavanEposta ?? null) },
+    smsGonderim: { findFirst: vi.fn().mockResolvedValue(null) },
     baglantiOtomatikIsi: { findMany: vi.fn().mockResolvedValue((secenek as { pazaryeriIsleri?: unknown[] }).pazaryeriIsleri ?? []) },
     baglanti: { findMany: vi.fn(async ({ where }: { where: { aile: string } }) => (where.aile === "ebelge"
       ? (secenek.ebelgeAyarlari ?? []).map((ayar, i) => ({ id: `e${i + 1}`, sifreliConfig: JSON.stringify(ayar) }))
@@ -658,6 +659,11 @@ describe("BildirimUreticiService — vergi takvimi (VTK-12)", () => {
 });
 
 describe("BildirimUreticiService — firma SMTP uyarısı (ILT-15)", () => {
+  it("tavana takılan kanal için yöneticiye uyarı üretir, kayıt yoksa üretmez (ILT-14)", async () => {
+    const tavan = (tavanEposta: unknown) => (servisKur({ tavanEposta } as never) as unknown as { servis: { iletiTavanUyarilari(): Promise<{ birlesimAnahtari: string; aciklama: string }[]> } }).servis.iletiTavanUyarilari();
+    expect(await tavan(null)).toEqual([]);
+    expect((await tavan({ hataMesaji: "Günlük e-posta tavanı doldu" }))[0]).toMatchObject({ birlesimAnahtari: "ileti-tavan:eposta" });
+  });
   const tara = (gonderimler: unknown[]) => (servisKur({ gonderimler } as never) as unknown as { servis: { epostaSmtpHatalari(): Promise<{ birlesimAnahtari: string; aciklama: string }[]> } }).servis.epostaSmtpHatalari();
   const kotu = { durum: "basarisiz", hataMesaji: "Invalid login" };
   it("son üç gönderim de başarısızsa uyarır", async () => {

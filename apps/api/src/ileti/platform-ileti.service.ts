@@ -10,15 +10,24 @@ import { anaMakineHatasi, guvenliAdresCoz } from "../core/guvenlik/dis-istek";
 import { redisBaglantisi } from "../core/redis-baglantisi";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { SmsReddedildi } from "../pos/netgsm.adapter";
-import { hataMetni, smtpHataSinifi, type IletiOzeti } from "./ileti-kurallari";
-import { telefonE164 } from "./sms-kurallari";
-import { smsSaglayiciAl } from "./sms.service";
+import { hataMetni, smtpHataSinifi, VARSAYILAN_TAVANLAR, type IletiKanali, type IletiOzeti, type IletiTavani, type IletiTavanlari } from "./ileti-kurallari";
+import { smsGunlukTavan, telefonE164 } from "./sms-kurallari";
+import { smsSaglayiciAl } from "./sms-saglayici";
 
 const KUYRUK_ADI = "tekirextra-ileti";
 const DENEME_SAYISI = 5;
 const ILK_BEKLEME_MS = 60_000;
 /** Başarısız iş bu süre kuyrukta durur; gövde veritabanında olmadığı için yeniden gönderme bunu kullanır. */
 const BASARISIZ_SAKLAMA_SN = 7 * 24 * 60 * 60;
+/** ILT-04: parola ve doğrulama iletisi öne geçer; bu süreden sonra gönderilmez. */
+const ANLIK_OMUR_MS = 10 * 60_000;
+const ANLIK_ILK_BEKLEME_MS = 15_000;
+/** BullMQ'da önceliksiz iş öncelikliden önce alınır; bu yüzden olağan işe de öncelik verilir. */
+const ONCELIK = { anlik: 1, olagan: 10 } as const;
+/** ILT-14: sağlayıcı hız sınırı. */
+const SAGLAYICI_HIZ = { max: 5, duration: 1_000 };
+const KUYRUGA_EKLEME_SURESI_MS = 5_000;
+const TAVAN_ONBELLEK_MS = 60_000;
 
 export const SMTP_PORTLARI = [25, 465, 587, 2525] as const;
 
@@ -32,6 +41,11 @@ export const platformIletiAyariSemasi = z.object({
   gondericiEposta: z.email(),
   yanitAdresi: z.email().optional().or(z.literal("")),
 });
+
+const tavanAlani = z.number().int().min(1).max(10_000_000);
+export const iletiTavanSemasi = z.object({ epostaGunluk: tavanAlani, epostaAylik: tavanAlani, smsGunluk: tavanAlani, smsAylik: tavanAlani })
+  .refine((t) => t.epostaAylik >= t.epostaGunluk && t.smsAylik >= t.smsGunluk, { message: "Aylık tavan günlük tavandan küçük olamaz" });
+export const firmaTavanSemasi = z.object({ epostaGunluk: tavanAlani.nullable(), epostaAylik: tavanAlani.nullable(), smsGunluk: tavanAlani.nullable(), smsAylik: tavanAlani.nullable() });
 
 export const platformSmsAyariSemasi = z.object({
   kullaniciAdi: z.string().trim().min(1).max(100),
@@ -49,10 +63,12 @@ export interface IletiGirdisi {
   /** ILT-05: verilirse aynı anahtarla ikinci ileti çıkmaz. */
   anahtar?: string;
   tenantId?: string | null;
+  /** ILT-04: parola ve doğrulama; öncelikli, 10 dakika geçerli, gövdesi kuyrukta saklanmaz. */
+  anlik?: boolean;
 }
 
 export interface FirmaIletiSayisi { tenantId: string; firma: string; sistemToplam: number; sistemHata: number; epostaToplam: number; epostaHata: number; smsToplam: number; smsHata: number }
-interface IsVerisi extends Omit<IletiGirdisi, "anahtar"> { kayitId: string }
+interface IsVerisi extends Omit<IletiGirdisi, "anahtar" | "anlik"> { kayitId: string; sonGecerlilik?: number }
 export class IletiGonderilemedi extends Error {}
 
 const ozet = (a: string) => createHash("sha256").update(a).digest("hex");
@@ -68,6 +84,7 @@ export class PlatformIletiService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PlatformIletiService.name);
   private kuyrukNesnesi?: Queue;
   private isci?: Worker;
+  private tavanOnbellegi?: { bitis: number; varsayilan: IletiTavanlari; firmalar: Map<string, Partial<IletiTavanlari>> };
 
   constructor(private readonly platform: PlatformPrismaService) {}
 
@@ -77,7 +94,7 @@ export class PlatformIletiService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1" || !this.kuyrukEtkin) return;
-    this.isci = new Worker(KUYRUK_ADI, (is: Job<IsVerisi>) => this.isle(is), { connection: redisBaglantisi(), concurrency: 3 });
+    this.isci = new Worker(KUYRUK_ADI, (is: Job<IsVerisi>) => this.isle(is), { connection: redisBaglantisi(), concurrency: 3, limiter: SAGLAYICI_HIZ });
     this.isci.on("error", (h) => this.logger.error(JSON.stringify({ event: "ileti_worker_error", error: h.message })));
   }
 
@@ -142,16 +159,28 @@ export class PlatformIletiService implements OnModuleInit, OnModuleDestroy {
     if (!this.kuyrukEtkin) { await this.gonder(g); return; }
     const kayitId = await this.kayitAc(g);
     if (kayitId === null) return;
-    const { anahtar: _a, ...veri } = g;
-    await this.kuyruk.add("gonder", { ...veri, kayitId } satisfies IsVerisi, {
-      jobId: kayitId, attempts: DENEME_SAYISI, backoff: { type: "exponential", delay: ILK_BEKLEME_MS },
-      removeOnComplete: true, removeOnFail: { age: BASARISIZ_SAKLAMA_SN },
+    const { anahtar: _a, anlik, ...veri } = g;
+    const eklendi = this.kuyruk.add("gonder", { ...veri, kayitId, ...(anlik ? { sonGecerlilik: Date.now() + ANLIK_OMUR_MS } : {}) } satisfies IsVerisi, {
+      jobId: kayitId, attempts: DENEME_SAYISI, backoff: { type: "exponential", delay: anlik ? ANLIK_ILK_BEKLEME_MS : ILK_BEKLEME_MS },
+      priority: anlik ? ONCELIK.anlik : ONCELIK.olagan,
+      // Anlık iletinin gövdesinde tek kullanımlık bağlantı vardır; başarısız iş saklanmaz.
+      removeOnComplete: true, removeOnFail: anlik ? true : { age: BASARISIZ_SAKLAMA_SN },
     });
+    if (!anlik) { await eklendi; return; }
+    // Redis erişilemezse istek askıda kalmasın.
+    let zamanlayici: NodeJS.Timeout | undefined;
+    try { await Promise.race([eklendi, new Promise((_, ret) => { zamanlayici = setTimeout(() => ret(new Error("İleti kuyruğuna erişilemedi")), KUYRUGA_EKLEME_SURESI_MS); })]); }
+    catch (hata) { await this.kayitGuncelle(kayitId, { durum: "basarisiz", hata: hataMetni(hata) }); throw new IletiGonderilemedi(hataMetni(hata)); }
+    finally { clearTimeout(zamanlayici); }
   }
 
   private async isle(is: Job<IsVerisi>): Promise<void> {
-    const { kayitId, ...g } = is.data;
+    const { kayitId, sonGecerlilik, ...g } = is.data;
     const deneme = is.attemptsMade + 1;
+    if (sonGecerlilik && Date.now() > sonGecerlilik) {
+      await this.kayitGuncelle(kayitId, { durum: "suresi_doldu", deneme: Math.max(1, is.attemptsMade), hata: "İleti geçerlilik süresinde gönderilemedi" });
+      throw new UnrecoverableError("İleti süresi doldu");
+    }
     try {
       const no = await this.ilet(g);
       await this.kayitGuncelle(kayitId, { durum: "gonderildi", deneme, saglayiciNo: no, gonderildiAt: new Date(), hata: null });
@@ -164,6 +193,57 @@ export class PlatformIletiService implements OnModuleInit, OnModuleDestroy {
       await this.kayitGuncelle(kayitId, { durum: deneme >= DENEME_SAYISI ? "basarisiz" : "kuyrukta", deneme, hata: metin });
       throw hata;
     }
+  }
+
+  // ─── ILT-14 tavanları ─────────────────────────────────────────────────────
+
+  private async tavanlariOku() {
+    if (this.tavanOnbellegi && this.tavanOnbellegi.bitis > Date.now()) return this.tavanOnbellegi;
+    const ortam = { ...VARSAYILAN_TAVANLAR, smsGunluk: smsGunlukTavan() };
+    const [satir, firmalar] = this.kayitEtkin ? await Promise.all([this.platform.db.platformIletiLimit.findUnique({ where: { id: 1 } }), this.platform.db.platformIletiFirmaLimit.findMany()]) : [null, []];
+    const secim = (a: Partial<IletiTavanlari> & Record<string, unknown>): Partial<IletiTavanlari> => Object.fromEntries((["epostaGunluk", "epostaAylik", "smsGunluk", "smsAylik"] as const).flatMap((k) => (a[k] == null ? [] : [[k, a[k]]])));
+    this.tavanOnbellegi = { bitis: Date.now() + TAVAN_ONBELLEK_MS, varsayilan: { ...ortam, ...(satir ? secim(satir) : {}) }, firmalar: new Map(firmalar.map((f) => [f.tenantId, secim(f as never)])) };
+    return this.tavanOnbellegi;
+  }
+
+  /** ILT-14: firmanın geçerli tavanı; anlık sistem iletileri bu sayıma girmez. */
+  async tavan(tenantId: string, kanal: IletiKanali): Promise<IletiTavani> {
+    const { varsayilan, firmalar } = await this.tavanlariOku();
+    const t = { ...varsayilan, ...firmalar.get(tenantId) };
+    return kanal === "eposta" ? { gunluk: t.epostaGunluk, aylik: t.epostaAylik } : { gunluk: t.smsGunluk, aylik: t.smsAylik };
+  }
+
+  async tavanlariGetir() {
+    this.tavanOnbellegi = undefined;
+    const { varsayilan } = await this.tavanlariOku();
+    return { varsayilan, istisnalar: await this.platform.db.$queryRaw<(Record<keyof IletiTavanlari, number | null> & { tenantId: string; firma: string })[]>`SELECT tenant_id AS "tenantId", firma, eposta_gunluk AS "epostaGunluk", eposta_aylik AS "epostaAylik", sms_gunluk AS "smsGunluk", sms_aylik AS "smsAylik" FROM platform_ileti_firma_limit_listesi()` };
+  }
+
+  async tavanKaydet(g: z.infer<typeof iletiTavanSemasi>) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    await this.platform.db.$transaction(async (tx) => {
+      await tx.platformIletiLimit.upsert({ where: { id: 1 }, create: { id: 1, ...g, guncelleyenId: kullaniciId }, update: { ...g, guncelleyenId: kullaniciId } });
+      await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "ileti_tavani_degisti", detay: g } });
+    });
+    return this.tavanlariGetir();
+  }
+
+  async firmaTavanKaydet(tenantId: string, g: z.infer<typeof firmaTavanSemasi>) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    await this.platform.db.$transaction(async (tx) => {
+      await tx.platformIletiFirmaLimit.upsert({ where: { tenantId }, create: { tenantId, ...g, guncelleyenId: kullaniciId }, update: { ...g, guncelleyenId: kullaniciId } });
+      await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "ileti_firma_tavani_degisti", detay: { tenantId, ...g } } });
+    });
+    return this.tavanlariGetir();
+  }
+
+  async firmaTavanSil(tenantId: string) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    await this.platform.db.$transaction(async (tx) => {
+      await tx.platformIletiFirmaLimit.deleteMany({ where: { tenantId } });
+      await tx.mevzuatOlay.create({ data: { kullaniciId, olay: "ileti_firma_tavani_kaldirildi", detay: { tenantId } } });
+    });
+    return this.tavanlariGetir();
   }
 
   async smsHazir(): Promise<boolean> {

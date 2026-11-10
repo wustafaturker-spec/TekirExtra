@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BildirimEpostaService, sessizSaatte } from "./bildirim-eposta.service";
+import { IletiSiniriAsildi } from "../ileti/ileti-kurallari";
 
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }) }));
 
@@ -76,6 +77,26 @@ describe("BildirimEpostaService.bekleyenleriGonder", () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ epostaDurumu: "beklemede", epostaDenemeSayisi: 2, epostaHatasi: "SMTP bağlantısı reddedildi" }) }),
     );
+  });
+
+  it("kalıcı SMTP hatasında tekrar denemez (ILT-04)", async () => {
+    const { servis, update } = servisKur([teslimat()], async () => { throw Object.assign(new Error("adres yok"), { responseCode: 550 }); });
+    await servis.bekleyenleriGonder();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ epostaDurumu: "hata", epostaDenemeSayisi: 1 }) }));
+  });
+
+  it("tavan doluysa turu durdurur, deneme harcamaz (ILT-14)", async () => {
+    const { servis, eposta, update } = servisKur([teslimat(), teslimat({ id: "d2" })], async () => { throw new IletiSiniriAsildi("tavan", "gunluk"); });
+    expect(await servis.bekleyenleriGonder()).toEqual({ gonderilen: 0, ertelenen: 1, basarisiz: 0 });
+    expect(eposta.iletiGonder).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("tekrar sınırında sıradaki alıcıya geçer (ILT-14)", async () => {
+    const { servis, eposta, update } = servisKur([teslimat(), teslimat({ id: "d2" })], async () => { throw new IletiSiniriAsildi("tekrar", "tekrar"); });
+    expect(await servis.bekleyenleriGonder()).toEqual({ gonderilen: 0, ertelenen: 2, basarisiz: 0 });
+    expect(eposta.iletiGonder).toHaveBeenCalledTimes(2);
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("son denemede de başarısızsa kalıcı hata olarak kapatır", async () => {

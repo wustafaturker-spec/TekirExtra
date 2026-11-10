@@ -3,6 +3,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { SmsService } from "../ileti/sms.service";
+import { IletiSiniriAsildi, smtpHataSinifi } from "../ileti/ileti-kurallari";
 
 const AZAMI_DENEME = 5;
 const PARTI_BOYU = 50;
@@ -59,7 +60,7 @@ export class BildirimEpostaService {
       if (!acik.has(`${t.userId}:${t.bildirim.tur}`) || sessizSaatte(simdiDakika, t.kullanici.bildirimAyari?.sessizBaslangic, t.kullanici.bildirimAyari?.sessizBitis)) continue;
       const { count } = await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimTeslimati.updateMany({ where: { id: t.id, smsGonderildiAt: null }, data: { smsGonderildiAt: new Date() } }));
       if (count !== 1) continue;
-      await this.sms.gonder({ tur: "kritik_bildirim", anahtar: `bld:${t.id}`, telefon: t.kullanici.telefon!, mesaj: `TekirExtra: ${t.bildirim.baslik.slice(0, 120)}` })
+      await this.sms.gonder({ tur: "kritik_bildirim", otomatik: true, anahtar: `bld:${t.id}`, telefon: t.kullanici.telefon!, mesaj: `TekirExtra: ${t.bildirim.baslik.slice(0, 120)}` })
         .then(() => { gonderilen += 1; })
         .catch((h: unknown) => this.logger.warn(JSON.stringify({ event: "critical_sms_failed", tenantId, error: h instanceof Error ? h.message : String(h) })));
     }
@@ -105,7 +106,7 @@ export class BildirimEpostaService {
       ].join("\n");
 
       try {
-        await this.eposta.iletiGonder({ alici: teslimat.kullanici.eposta, konu, metin: govde, anahtar: `bildirim:${teslimat.id}` });
+        await this.eposta.iletiGonder({ alici: teslimat.kullanici.eposta, konu, metin: govde, tur: "bildirim", otomatik: true, anahtar: `bildirim:${teslimat.id}` });
         await this.prisma.tenantIslem(tenantId, (tx) =>
           tx.bildirimTeslimati.update({
             where: { id: teslimat.id },
@@ -114,12 +115,18 @@ export class BildirimEpostaService {
         );
         gonderilen++;
       } catch (hata) {
+        // ILT-14: ileti hiç çıkmadı, deneme harcanmaz. Tavan doluysa bu turda başka ileti denenmez.
+        if (hata instanceof IletiSiniriAsildi) {
+          ertelenen++;
+          if (hata.neden === "tekrar") continue;
+          break;
+        }
         const deneme = teslimat.epostaDenemeSayisi + 1;
         const mesaj = hata instanceof Error ? hata.message : String(hata);
         await this.prisma.tenantIslem(tenantId, (tx) =>
           tx.bildirimTeslimati.update({
             where: { id: teslimat.id },
-            data: { epostaDurumu: deneme >= AZAMI_DENEME ? "hata" : "beklemede", epostaDenemeSayisi: deneme, epostaHatasi: mesaj.slice(0, 500) },
+            data: { epostaDurumu: deneme >= AZAMI_DENEME || smtpHataSinifi(hata) === "kalici" ? "hata" : "beklemede", epostaDenemeSayisi: deneme, epostaHatasi: mesaj.slice(0, 500) },
           }),
         );
         basarisiz++;

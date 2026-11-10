@@ -1,3 +1,5 @@
+import type { SablonIstegi } from "./ileti-sablonlari";
+
 /** ILT-10/11: SMS kuralları; veritabanından bağımsızdır. */
 
 /** Türkiye cep numarasını E.164'e çevirir; geçersizse null. */
@@ -18,17 +20,17 @@ export function smsParcaSayisi(mesaj: string): number {
 export const SMS_GUNLUK_TAVAN_VARSAYILAN = 500;
 export const smsGunlukTavan = () => { const n = Number(process.env.SMS_GUNLUK_TAVAN); return Number.isInteger(n) && n > 0 ? n : SMS_GUNLUK_TAVAN_VARSAYILAN; };
 
-const kirp = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
+export const kirp = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
 
-/** Tanıtım içermez; alıcının kimden aldığı her metinde yazar (ILT-13). */
-export function vadeSmsMetni(d: { firma: string; unvan: string; toplam: string; ihtar: boolean }): string {
-  return `Sayın ${kirp(d.unvan, 40)}, ${kirp(d.firma, 40)} firmasına vadesi geçmiş ${d.toplam} borcunuz ${d.ihtar ? "için ödeme ihtarıdır" : "bulunmaktadır"}. Ödediyseniz dikkate almayınız.`;
+/** ILT-09/13: varsayılan metinler ileti-sablonlari.ts'de; değişkenler burada kırpılır ki SMS parça sayısı kaçmasın. */
+export function vadeSmsSablonu(d: { firma: string; unvan: string; toplam: string; ihtar: boolean }): SablonIstegi {
+  return { tur: d.ihtar ? "vade_ihtar_sms" : "vade_sms", degiskenler: { cari: kirp(d.unvan, 40), firma: kirp(d.firma, 40), toplam: d.toplam } };
 }
 
-export function sozSmsMetni(d: { firma: string; unvan: string; tutar: string }): string {
-  return `Sayın ${kirp(d.unvan, 40)}, ${kirp(d.firma, 40)} firmasına verdiğiniz ${d.tutar} ödeme sözünün tarihi bugündür. Ödediyseniz dikkate almayınız.`;
+export function sozSmsSablonu(d: { firma: string; unvan: string; tutar: string }): SablonIstegi {
+  return { tur: "odeme_sozu_sms", degiskenler: { cari: kirp(d.unvan, 40), firma: kirp(d.firma, 40), tutar: d.tutar } };
 }
 
-export function odemeBaglantisiSmsMetni(d: { unvan: string; link: string; faturaIcin: boolean }): string {
-  return `Sayın ${kirp(d.unvan, 40)}, ${d.faturaIcin ? "fatura" : "cari hesap"} ödeme bağlantınız: ${d.link}`;
+export function odemeBaglantisiSmsSablonu(d: { unvan: string; link: string; faturaIcin: boolean }): SablonIstegi {
+  return { tur: "odeme_baglantisi_sms", degiskenler: { cari: kirp(d.unvan, 40), baglanti: d.link, odeme_turu: d.faturaIcin ? "fatura" : "cari hesap" } };
 }

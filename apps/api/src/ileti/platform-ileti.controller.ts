@@ -1,9 +1,9 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
 import { z } from "zod";
 import { PlatformRolleri, PlatformUcu } from "../auth/public.decorator";
-import { platformIletiAyariSemasi, platformSmsAyariSemasi, PlatformIletiService } from "./platform-ileti.service";
+import { firmaTavanSemasi, iletiTavanSemasi, platformIletiAyariSemasi, platformSmsAyariSemasi, PlatformIletiService } from "./platform-ileti.service";
 
-const durumSemasi = z.object({ durum: z.enum(["kuyrukta", "gonderildi", "basarisiz", "belirsiz"]).optional(), sayfa: z.coerce.number().int().min(1).max(10_000).optional() });
+const durumSemasi = z.object({ durum: z.enum(["kuyrukta", "gonderildi", "basarisiz", "belirsiz", "suresi_doldu"]).optional(), sayfa: z.coerce.number().int().min(1).max(10_000).optional() });
 
 /** ILT-03/08: yalnız platform yöneticisi; parola hiçbir yanıtta dönmez. */
 @PlatformUcu()
@@ -31,6 +31,18 @@ export class PlatformIletiController {
   @Post("sms-test")
   @HttpCode(200)
   smsTest(@Body() govde: unknown) { return this.servis.smsTest(z.object({ telefon: z.string().min(10).max(20) }).parse(govde).telefon); }
+
+  @Get("tavan")
+  tavanlar() { return this.servis.tavanlariGetir(); }
+
+  @Put("tavan")
+  tavanKaydet(@Body() govde: unknown) { return this.servis.tavanKaydet(iletiTavanSemasi.parse(govde)); }
+
+  @Put("tavan/firma/:tenantId")
+  firmaTavanKaydet(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body() govde: unknown) { return this.servis.firmaTavanKaydet(tenantId, firmaTavanSemasi.parse(govde)); }
+
+  @Delete("tavan/firma/:tenantId")
+  firmaTavanSil(@Param("tenantId", ParseUUIDPipe) tenantId: string) { return this.servis.firmaTavanSil(tenantId); }
 
   @Get("kayitlar")
   kayitlar(@Query() sorgu: unknown) { const q = durumSemasi.parse(sorgu); return this.servis.kayitlar(q.durum, q.sayfa); }

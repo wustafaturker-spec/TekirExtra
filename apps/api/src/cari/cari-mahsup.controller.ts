@@ -146,8 +146,7 @@ export class CariMahsupController {
     if (!hedef) throw new BadRequestException("Cari kartında e-posta adresi yok; alıcı girin");
     await this.eposta.ekliIletiGonder({
       alici: hedef,
-      konu: `Alış–satış mahsup bildirimi — ${cari.unvan}`,
-      metin: `Sayın Yetkili,\n\n${mahsup.tarih.toISOString().slice(0, 10)} tarihinde karşılıklı faturalarımız ${mahsup.tutar.toFixed(2)} ${mahsup.dovizCinsi} tutarında mahsup edilmiştir. Ayrıntılar ekteki bildirimdedir.\n\nSaygılarımızla`,
+      sablon: { tur: "mahsup_eposta", degiskenler: { cari: cari.unvan, tarih: mahsup.tarih.toISOString().slice(0, 10), tutar: `${mahsup.tutar.toFixed(2)} ${mahsup.dovizCinsi}` } },
       ekler: [{ dosyaAdi, icerik: pdf, mime: "application/pdf" }],
     });
     return { mesaj: `Mahsup bildirimi ${hedef} adresine gönderildi` };

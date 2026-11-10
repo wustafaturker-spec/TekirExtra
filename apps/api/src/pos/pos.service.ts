@@ -19,7 +19,7 @@ import { PrismaService } from "../core/prisma.service";
 import { coz } from "../core/kripto";
 import { IyzicoAdapter, iyzicoTelefonuDuzenle, type IyzicoConfig, type IyzicoKesintisi } from "./iyzico.adapter";
 import { EpostaService } from "../tenant/eposta.service";
-import { odemeBaglantisiSmsMetni } from "../ileti/sms-kurallari";
+import { odemeBaglantisiSmsSablonu } from "../ileti/sms-kurallari";
 import { SmsService } from "../ileti/sms.service";
 import { PaytrAdapter, type PaytrCallback, type PaytrConfig } from "./paytr.adapter";
 import { randomBytes } from "node:crypto";
@@ -952,8 +952,7 @@ export class PosService {
     try {
       await this.eposta.iletiGonder({
         alici,
-        konu: `TekirExtra — ${faturaId ? "fatura" : "cari hesap"} ödeme bağlantısı`,
-        metin: `Merhaba ${unvan},\n\nGüvenli kart ödeme bağlantınız:\n${link}\n\nKart bilgileriniz TekirExtra tarafından görüntülenmez veya saklanmaz.`,
+        sablon: { tur: "odeme_baglantisi_eposta", degiskenler: { cari: unvan, baglanti: link, odeme_turu: faturaId ? "fatura" : "cari hesap" } },
       });
       await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.posTahsilat.update({ where: { id }, data: { epostaGonderimTarihi: new Date(), epostaHatasi: null } }),
@@ -967,7 +966,7 @@ export class PosService {
 
   private async odemeLinkiSmsGonder(tenantId: string, id: string, telefon: string, unvan: string, link: string, faturaId?: string | null) {
     try {
-      const { gorevId } = await this.sms.gonder({ tur: "odeme_baglantisi", telefon, mesaj: odemeBaglantisiSmsMetni({ unvan, link, faturaIcin: Boolean(faturaId) }) });
+      const { gorevId } = await this.sms.gonder({ tur: "odeme_baglantisi", telefon, sablon: odemeBaglantisiSmsSablonu({ unvan, link, faturaIcin: Boolean(faturaId) }) });
       await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.posTahsilat.update({ where: { id }, data: { smsGonderimTarihi: new Date(), smsGorevId: gorevId, smsHatasi: null } }),
       );

@@ -1604,8 +1604,7 @@ export class CariService {
     const donem = `${AY_ADLARI[ay - 1]} ${yil}`;
     await this.eposta.ekliIletiGonder({
       alici: hedef,
-      konu: `${donem} Form BA/BS mutabakatı — ${cari.unvan}`,
-      metin: `Sayın Yetkili,\n\n${donem} dönemine ait Form BA/BS mutabakat mektubumuz ekte sunulmuştur. Kayıtlarınızla uyumluysa imzalayıp iletmenizi, fark varsa belge listesini bildirmenizi rica ederiz.\n\nSaygılarımızla`,
+      sablon: { tur: "babs_mutabakat_eposta", degiskenler: { cari: cari.unvan, donem } },
       ekler: [{ dosyaAdi: `babs-mutabakat-${cari.kod}-${yil}-${String(ay).padStart(2, "0")}.pdf`, icerik: pdf, mime: "application/pdf" }],
     });
     return { mesaj: `BA/BS mutabakatı ${hedef} adresine gönderildi` };
@@ -1617,7 +1616,7 @@ export class CariService {
     if (!hedef) throw new BadRequestException("Cari kartında e-posta adresi bulunmuyor");
     const [pdf, excel] = await Promise.all([this.ekstrePdf(cariId, baslangic, bitis, iptalleriGosterilsin, secenekler), this.ekstreExcel(cariId, baslangic, bitis, iptalleriGosterilsin, secenekler)]);
     const donem = baslangic || bitis ? `${baslangic ?? "başlangıç"} - ${bitis ?? "bugün"}` : "tüm dönem";
-    await this.eposta.ekliIletiGonder({ alici: hedef, konu: `${cari.unvan} cari hesap ekstresi`, metin: `Sayın Yetkili,\n\n${donem} cari hesap ekstreniz PDF ve Excel formatında ekte sunulmuştur.\n\nSaygılarımızla`, ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: pdf, mime: "application/pdf" }, { dosyaAdi: `ekstre-${cari.kod}.xlsx`, icerik: excel, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
+    await this.eposta.ekliIletiGonder({ alici: hedef, sablon: { tur: "ekstre_eposta", degiskenler: { cari: cari.unvan, donem } }, ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: pdf, mime: "application/pdf" }, { dosyaAdi: `ekstre-${cari.kod}.xlsx`, icerik: excel, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
     return { mesaj: `Ekstre ${hedef} adresine gönderildi` };
   }
 

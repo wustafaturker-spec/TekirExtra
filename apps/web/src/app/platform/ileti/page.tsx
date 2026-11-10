@@ -3,18 +3,20 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { platformApi } from "@/lib/platform-api";
+import { GonderimTavanlari } from "./tavanlar";
+import { IletiSablonEditoru } from "@/components/ileti-sablon-editoru";
 
 /** ILT-03/08: platformun e-posta ayarı ve gönderim kaydı. Parola sunucudan hiç dönmez. */
-type Durum = "kuyrukta" | "gonderildi" | "basarisiz" | "belirsiz";
+type Durum = "kuyrukta" | "gonderildi" | "basarisiz" | "belirsiz" | "suresi_doldu";
 interface Ayar { yapilandirildi: boolean; parolaKayitli: boolean; host: string; port: number; guvenlik: "yok" | "starttls" | "ssl"; kullaniciAdi: string; gondericiAdi: string; gondericiEposta: string; yanitAdresi: string }
 interface Kayit { id: string; tur: string; alicilar: string; konu: string; durum: Durum; deneme: number; hata: string | null; createdAt: string; gonderildiAt: string | null }
 interface FirmaSayisi { tenantId: string; firma: string; sistemToplam: number; sistemHata: number; epostaToplam: number; epostaHata: number; smsToplam: number; smsHata: number }
 interface Kayitlar { satirlar: Kayit[]; toplam: number; sayfa: number; sayfaBoyutu: number }
 
 const DURUM: Record<Durum, { ad: string; rozet: "info" | "success" | "danger" | "warning" }> = {
-  kuyrukta: { ad: "Kuyrukta", rozet: "info" }, gonderildi: { ad: "Gönderildi", rozet: "success" }, basarisiz: { ad: "Başarısız", rozet: "danger" }, belirsiz: { ad: "Belirsiz", rozet: "warning" },
+  kuyrukta: { ad: "Kuyrukta", rozet: "info" }, gonderildi: { ad: "Gönderildi", rozet: "success" }, basarisiz: { ad: "Başarısız", rozet: "danger" }, belirsiz: { ad: "Belirsiz", rozet: "warning" }, suresi_doldu: { ad: "Süresi doldu", rozet: "warning" },
 };
-const TUR: Record<string, string> = { platform_davet: "Platform daveti", mevzuat_hatirlatma: "Mevzuat hatırlatması", abonelik_hatirlatma: "Abonelik hatırlatması", abonelik_ozeti: "Tahsilat özeti", abonelik_odeme: "Abonelik ödemesi", sistem_alarmi: "Sistem alarmı", test: "Test", sms_kod_telefon_dogrula: "SMS: telefon doğrulama", sms_kod_parola_sifirla: "SMS: parola sıfırlama", sms_kod_giris: "SMS: giriş kodu" };
+const TUR: Record<string, string> = { platform_davet: "Platform daveti", mevzuat_hatirlatma: "Mevzuat hatırlatması", abonelik_hatirlatma: "Abonelik hatırlatması", abonelik_ozeti: "Tahsilat özeti", abonelik_odeme: "Abonelik ödemesi", sistem_alarmi: "Sistem alarmı", test: "Test", dogrulama: "E-posta doğrulama", parola_sifirlama: "Parola sıfırlama", kullanici_davet: "Kullanıcı daveti", eposta_degisimi: "E-posta değişimi", rapor_duraklatildi: "Rapor duraklatma haberi", sms_kod_telefon_dogrula: "SMS: telefon doğrulama", sms_kod_parola_sifirla: "SMS: parola sıfırlama", sms_kod_giris: "SMS: giriş kodu" };
 
 export default function PlatformIletiSayfasi() {
   const [ayar, setAyar] = useState<Ayar | null>(null);
@@ -114,6 +116,10 @@ export default function PlatformIletiSayfasi() {
         <Button disabled={islem || !testTelefon || !sms?.yapilandirildi} onClick={smsTest}>Test SMS'i gönder</Button>
       </div>
     </Card>
+
+    <GonderimTavanlari />
+
+    <IletiSablonEditoru baslik="Sistem iletisi şablonları" istek={platformApi} taban="/platform/ileti/sablonlar" />
 
     <Card title="Firma başına gönderim (son 30 gün)" pad={false}>
       <p className="muted" style={{ padding: "0.8rem 1.25rem 0" }}>Yalnız sayılar gösterilir; firmaların müşterilerine gönderdiği iletilerin alıcısı ve konusu burada görünmez. Hata sayısı başarısız ve belirsiz gönderimleri kapsar.</p>

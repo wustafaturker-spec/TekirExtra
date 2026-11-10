@@ -3,7 +3,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { baglanmamisOdemeler } from "../kasa-banka/baglanmamis-odeme";
 import { EpostaService } from "../tenant/eposta.service";
-import { vadeSmsMetni } from "../ileti/sms-kurallari";
+import { vadeSmsSablonu } from "../ileti/sms-kurallari";
 import { SmsService } from "../ileti/sms.service";
 import { CariService } from "./cari.service";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
@@ -146,7 +146,7 @@ export class VadeHatirlatmaService {
           // E-posta çıktıysa SMS hatası gönderimi "hata" yapmaz, sonuca yazılır.
           try {
             await this.prisma.tenantIslem(tenantId, (tx) => tahsilatIletisiminiDogrula(tx, tenantId, cariId));
-            await this.sms!.gonder({ tur: "vade_hatirlatma", telefon: smsTelefonu, cariId, mesaj: vadeSmsMetni({ firma, unvan: cari.unvan, toplam: ileti.toplam, ihtar: girdi.kademe === "ihtar" }) });
+            await this.sms!.gonder({ tur: "vade_hatirlatma", telefon: smsTelefonu, cariId, sablon: vadeSmsSablonu({ firma, unvan: cari.unvan, toplam: ileti.toplam, ihtar: girdi.kademe === "ihtar" }) });
             if (!cari.eposta) {
               await this.prisma.tenantIslem(tenantId, (tx) => tx.crmEtkilesim.create({ data: { tenantId, cariId, userId, tip: "telefon", tarih: new Date(), konu: `${KADEME_ADI[girdi.kademe]}: ${ileti.toplam}`.slice(0, 255), aciklama: `SMS gönderildi; ${kalemler.length} kalem.` } }));
             }

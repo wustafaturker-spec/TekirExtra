@@ -1849,8 +1849,7 @@ export class FaturaService {
     const belgeAdi = resmi ? (fatura.ebelge?.tur === "earsiv" ? "e-Arşiv faturanız" : "e-Faturanız") : "faturanız";
     await this.eposta.ekliIletiGonder({
       alici,
-      konu: `Fatura ${fatura.no}`,
-      metin: `Sayın ${fatura.cari.unvan},\n\n${fatura.no} numaralı ${belgeAdi} ekte yer almaktadır.\n\nİyi çalışmalar dileriz.`,
+      sablon: { tur: "fatura_eposta", degiskenler: { cari: fatura.cari.unvan, belge_no: fatura.no, belge_adi: belgeAdi } },
       ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
     });
     return { gonderildi: true, alici, belge: resmi ? "ebelge" as const : "sistem" as const };
