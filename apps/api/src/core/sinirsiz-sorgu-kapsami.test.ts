@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 /**
  * Rapor V-2: büyüyen işlem tablolarında `take` vermeden geniş koşulla okuma, firma büyüdükçe
@@ -59,6 +59,9 @@ function sinirsizSorgular(kok: string): Map<string, string[]> {
   }
   return sonuc;
 }
+
+// Bütün kaynağı ayrıştırır; tam test koşusunda 5 sn varsayılanını aşabiliyor.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe("büyüyen tablolarda sınırsız okuma", () => {
   it("dosya başına sayı tavanı aşmaz", () => {

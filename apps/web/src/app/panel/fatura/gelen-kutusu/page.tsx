@@ -46,6 +46,14 @@ interface GelenOzet {
   denetimUyari: number | null;
 }
 
+/** Gelen kutusu sayfası: kayıtlar parça parça, sayaçlar seçilen süzgeçle sunucuda hesaplanır. */
+interface GelenSayfa {
+  kayitlar: GelenOzet[];
+  sonrakiImlec: string | null;
+  ozet: { adet: number; toplamTutar: string; kalem: number; beklemede: number; islendi: number; reddedildi: number };
+}
+const BOS_OZET: GelenSayfa["ozet"] = { adet: 0, toplamTutar: "0", kalem: 0, beklemede: 0, islendi: 0, reddedildi: 0 };
+
 /** EBLG-144…149: gelen alış denetçisinin sonucu. */
 interface GelenDenetim { bulgular: OnDenetimBulgusu[]; susturulan: number; cariId: string | null }
 
@@ -211,6 +219,12 @@ export default function GelenKutusuSayfasi() {
   const [basari, setBasari] = useState("");
   const [islemde, setIslemde] = useState<string | null>(null);
   const [arama, setArama] = useState("");
+  const [aranan, setAranan] = useState("");
+  const [ozet, setOzet] = useState(BOS_OZET);
+  const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
+  const [listeYukleniyor, setListeYukleniyor] = useState(false);
+  // Arama sunucuda yapılır; her tuşta istek gitmesin.
+  useEffect(() => { const z = setTimeout(() => setAranan(arama.trim()), 300); return () => clearTimeout(z); }, [arama]);
 
   /** siraNo → seçili stok kartı; tümü dolmadan "Faturaya İşle" açılmaz (S-01). */
   const [eslesme, setEslesme] = useState<Record<number, StokSecenek | null>>({});
@@ -247,28 +261,34 @@ export default function GelenKutusuSayfasi() {
   const [aiDenetim, setAiDenetim] = useState<AiDenetimSonucu | "yukleniyor" | null>(null);
   const acikBelge = useRef<string | null>(null);
 
-  const listeYukle = useCallback(async () => {
+  const listeYukle = useCallback(async (imlec?: string) => {
+    setListeYukleniyor(true);
     try {
-      const yol = suzgec === "hepsi" ? "/ebelge/gelen" : `/ebelge/gelen?durum=${suzgec}`;
-      setListe(await api<GelenOzet[]>(yol));
+      const p = new URLSearchParams({ adet: "50" });
+      if (suzgec !== "hepsi") p.set("durum", suzgec);
+      if (aranan) p.set("arama", aranan);
+      if (yalnizUyarili) p.set("uyarili", "true");
+      if (imlec) p.set("imlec", imlec);
+      const sayfa = await api<GelenSayfa>(`/ebelge/gelen/sayfa?${p}`);
+      setListe((eski) => (imlec ? [...eski, ...sayfa.kayitlar] : sayfa.kayitlar));
+      setSonrakiImlec(sayfa.sonrakiImlec);
+      setOzet(sayfa.ozet);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Gelen kutusu yüklenemedi");
+    } finally {
+      setListeYukleniyor(false);
     }
-  }, [suzgec]);
+  }, [suzgec, aranan, yalnizUyarili]);
 
   useEffect(() => {
     if (!tokenAl()) return;
     void listeYukle();
   }, [listeYukle]);
 
-  const gorunenListe = useMemo(() => {
-    const sorgu = arama.trim().toLocaleLowerCase("tr-TR");
-    const uyarili = yalnizUyarili ? liste.filter((g) => (g.denetimUyari ?? 0) > 0) : liste;
-    if (!sorgu) return uyarili;
-    return uyarili.filter((g) => `${g.belgeNo} ${g.gonderenUnvan} ${g.gonderenVkn}`.toLocaleLowerCase("tr-TR").includes(sorgu));
-  }, [arama, liste, yalnizUyarili]);
-  const bekleyenSayisi = liste.filter((g) => g.durum === "beklemede").length;
-  const toplamTutar = liste.reduce((toplam, g) => toplam + Number(g.genelToplam ?? 0), 0);
+  // Süzgeç ve arama sunucuda uygulanır; liste yüklenen sayfalardır.
+  const gorunenListe = liste;
+  const bekleyenSayisi = ozet.beklemede;
+  const toplamTutar = Number(ozet.toplamTutar);
 
   const detayAc = useCallback(async (id: string) => {
     setHata("");
@@ -693,10 +713,10 @@ export default function GelenKutusuSayfasi() {
         <Alert tone="success">{basari}</Alert>
 
         <section className="archive-kpis incoming-kpis">
-          <div className="is-lead"><span>Görünen belge toplamı</span><strong>{para(toplamTutar)}</strong><small>{gorunenListe.length} belge · {gorunenListe.reduce((t, g) => t + g.satirSayisi, 0)} kalem</small></div>
+          <div className="is-lead"><span>Görünen belge toplamı</span><strong>{para(toplamTutar)}</strong><small>{ozet.adet} belge · {ozet.kalem} kalem</small></div>
           <div className={bekleyenSayisi ? "is-warning" : ""}><span>Onay bekleyen</span><strong>{bekleyenSayisi}</strong><small>İşlem yapılması gereken</small></div>
-          <div><span>Faturaya işlenen</span><strong>{liste.filter((g) => g.durum === "islendi").length}</strong><small>Başarıyla aktarılan</small></div>
-          <div className={liste.filter((g) => g.durum === "reddedildi").length ? "is-danger" : ""}><span>Reddedilen</span><strong>{liste.filter((g) => g.durum === "reddedildi").length}</strong><small>Yanıt gönderilen</small></div>
+          <div><span>Faturaya işlenen</span><strong>{ozet.islendi}</strong><small>Başarıyla aktarılan</small></div>
+          <div className={ozet.reddedildi ? "is-danger" : ""}><span>Reddedilen</span><strong>{ozet.reddedildi}</strong><small>Yanıt gönderilen</small></div>
         </section>
 
         <Card className="archive-filter">
@@ -706,11 +726,11 @@ export default function GelenKutusuSayfasi() {
             <label className="row-tight" style={{ alignSelf: "end", fontSize: "0.875rem" }}>
               <input type="checkbox" checked={yalnizUyarili} onChange={(e) => setYalnizUyarili(e.target.checked)} /> Yalnız denetim uyarısı olanlar
             </label>
-            <div className="incoming-filter-hint"><span>Görüntülenen kayıt</span><strong>{gorunenListe.length}</strong></div>
+            <div className="incoming-filter-hint"><span>Görüntülenen kayıt</span><strong>{gorunenListe.length} / {ozet.adet}</strong></div>
           </div>
         </Card>
 
-        <div className="archive-toolbar"><div><strong>Gelen belge kayıtları</strong><span>{gorunenListe.length} sonuç</span></div><div><Button variant="ghost" onClick={() => void entegratordenCek()} disabled={islemde !== null}>{islemde === "cek" ? "Alınıyor…" : "Listeyi yenile"}</Button></div></div>
+        <div className="archive-toolbar"><div><strong>Gelen belge kayıtları</strong><span>{ozet.adet} sonuç</span></div><div><Button variant="ghost" onClick={() => void entegratordenCek()} disabled={islemde !== null}>{islemde === "cek" ? "Alınıyor…" : "Listeyi yenile"}</Button></div></div>
 
         <Card className="archive-register" pad={false}>
           <TableWrap>
@@ -745,6 +765,13 @@ export default function GelenKutusuSayfasi() {
               )}
             </tbody>
           </TableWrap>
+          {sonrakiImlec && (
+            <div style={{ padding: "1rem", textAlign: "center" }}>
+              <Button type="button" onClick={() => void listeYukle(sonrakiImlec)} disabled={listeYukleniyor}>
+                {listeYukleniyor ? "Belgeler yükleniyor…" : "Daha fazla belge yükle"}
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
     );

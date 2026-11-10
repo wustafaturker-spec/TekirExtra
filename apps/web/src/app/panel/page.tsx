@@ -61,7 +61,7 @@ export default function PanelSayfasi() {
         api<DovizKurlari>("/doviz-kurlari?tip=satis"),
         ...(finansalErisim ? [
           api<FinansOzet>("/rapor/ozet"), api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"),
-          api<unknown[]>("/ebelge/gelen?durum=beklemede"), api<CekSenet[]>("/kasa-banka/cek-senet"), api<VadesiGecenler>("/rapor/vadesi-gecenler"),
+          api<{ ozet: { adet: number } }>("/ebelge/gelen/sayfa?durum=beklemede&adet=1"), api<CekSenet[]>("/kasa-banka/cek-senet"), api<VadesiGecenler>("/rapor/vadesi-gecenler"),
         ] : []),
       ]);
       if (sonuclar[0]?.status === "fulfilled") setFatura(sonuclar[0].value as FaturaKuyrukOzeti);
@@ -72,7 +72,7 @@ export default function PanelSayfasi() {
       if (finansalErisim) {
         if (sonuclar[5]?.status === "fulfilled") setFinans(sonuclar[5].value as FinansOzet);
         if (sonuclar[6]?.status === "fulfilled") setEkstre((sonuclar[6].value as unknown[]).length);
-        if (sonuclar[7]?.status === "fulfilled") setGelen((sonuclar[7].value as unknown[]).length);
+        if (sonuclar[7]?.status === "fulfilled") setGelen((sonuclar[7].value as { ozet: { adet: number } }).ozet.adet);
         if (sonuclar[8]?.status === "fulfilled") setCekler(sonuclar[8].value as CekSenet[]);
         if (sonuclar[9]?.status === "fulfilled") setVadesiGecenler(sonuclar[9].value as VadesiGecenler);
         else setVadesiGecenler({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" });

@@ -218,6 +218,14 @@ function gonderimKosullariniDenetle(
 }
 
 
+/** Gelen kutusu listesinin sütunları; XML bilerek seçilmez. */
+const GELEN_LISTE_SECIMI = {
+  id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, profilId: true,
+  durum: true, yanit: true, yanitGerekce: true, faturaId: true,
+  satirSayisi: true, genelToplam: true, dovizCinsi: true, okunabilir: true, denetimUyariSayisi: true,
+  fatura: { select: { id: true, no: true, durum: true } },
+} as const satisfies Prisma.GelenEbelgeSelect;
+
 @Injectable()
 export class EbelgeService {
   private readonly logger = new Logger(EbelgeService.name);
@@ -1843,17 +1851,62 @@ export class EbelgeService {
         where: durum ? { durum } : undefined,
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         // XML bilerek seçilmez; özet sütunları yeter.
-        select: {
-          id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, profilId: true,
-          durum: true, yanit: true, yanitGerekce: true, faturaId: true,
-          satirSayisi: true, genelToplam: true, dovizCinsi: true, okunabilir: true, denetimUyariSayisi: true,
-          fatura: { select: { id: true, no: true, durum: true } },
-        },
+        select: GELEN_LISTE_SECIMI,
       });
     });
 
-    // Özeti henüz yazılmamış (göçten önce gelmiş, doldurulamamış) belgeler
-    // birer birer tamamlanır; aynı anda yalnız bir XML bellekte durur.
+    await this.gelenOzetleriniTamamla(tenantId, kayitlar);
+    return kayitlar.map((k) => this.gelenSatiri(k));
+  }
+
+  /**
+   * Gelen kutusu ekranı: sayfa sayfa okunur, arama ve süzgeç veritabanında uygulanır,
+   * sayaçlar ve toplamlar seçilen süzgeçle hesaplanır (rapor V-2; eski uç bütün kutuyu dönüyordu).
+   * Durum sayaçları durum süzgecinden bağımsızdır: "Onay bekleyen" her zaman gerçek sayıyı gösterir.
+   */
+  async gelenSayfa(g: { durum?: GelenEbelgeDurum; arama?: string; uyarili?: boolean; imlec?: string; adet?: number }) {
+    const { tenantId } = aktifBaglam();
+    const adet = Math.min(Math.max(g.adet ?? 50, 1), 200);
+    const aranan = g.arama?.trim();
+    // ILIKE Türkçe İ/ı'yı eşlemez; yazılan, büyük ve küçük biçim ayrı aranır.
+    const bicimler = aranan ? [...new Set([aranan, aranan.toLocaleUpperCase("tr-TR"), aranan.toLocaleLowerCase("tr-TR")])] : [];
+    const ortak: Prisma.GelenEbelgeWhereInput = {
+      ...(g.uyarili ? { denetimUyariSayisi: { gt: 0 } } : {}),
+      ...(bicimler.length ? { OR: bicimler.flatMap((b) => [{ belgeNo: { contains: b, mode: "insensitive" as const } }, { gonderenUnvan: { contains: b, mode: "insensitive" as const } }, { gonderenVkn: { contains: b } }]) } : {}),
+    };
+    const where: Prisma.GelenEbelgeWhereInput = { ...ortak, ...(g.durum ? { durum: g.durum } : {}) };
+    const { kayitlar, toplam, durumlar } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.gelenEbelge.updateMany({ where: { durum: "islendi", faturaId: null }, data: { durum: "beklemede" } });
+      const [kayitlar, toplam, durumlar] = await Promise.all([
+        tx.gelenEbelge.findMany({
+          where,
+          orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+          take: adet + 1,
+          ...(g.imlec ? { cursor: { id: g.imlec }, skip: 1 } : {}),
+          select: GELEN_LISTE_SECIMI,
+        }),
+        tx.gelenEbelge.aggregate({ where, _count: { _all: true }, _sum: { genelToplam: true, satirSayisi: true } }),
+        tx.gelenEbelge.groupBy({ by: ["durum"], where: ortak, _count: { _all: true } }),
+      ]);
+      return { kayitlar, toplam, durumlar };
+    });
+    const sayfa = kayitlar.slice(0, adet);
+    await this.gelenOzetleriniTamamla(tenantId, sayfa);
+    const sayi = (d: GelenEbelgeDurum) => durumlar.find((x) => x.durum === d)?._count._all ?? 0;
+    return {
+      kayitlar: sayfa.map((k) => this.gelenSatiri(k)),
+      sonrakiImlec: kayitlar.length > adet ? sayfa[adet - 1].id : null,
+      ozet: {
+        adet: toplam._count._all,
+        toplamTutar: (toplam._sum.genelToplam ?? new Prisma.Decimal(0)).toFixed(2),
+        kalem: toplam._sum.satirSayisi ?? 0,
+        beklemede: sayi("beklemede"), islendi: sayi("islendi"), reddedildi: sayi("reddedildi"),
+      },
+    };
+  }
+
+  /** Özeti henüz yazılmamış (göçten önce gelmiş) belgeler birer birer tamamlanır; aynı anda yalnız bir XML bellekte durur. */
+  private async gelenOzetleriniTamamla(tenantId: string, kayitlar: { id: string; okunabilir: boolean | null; satirSayisi: number | null; genelToplam: Prisma.Decimal | null; dovizCinsi: string | null }[]) {
     for (const k of kayitlar.filter((x) => x.okunabilir === null)) {
       const ozet = await this.prisma.tenantIslem(tenantId, async (tx) => {
         const xml = await tx.gelenEbelge.findUnique({ where: { id: k.id }, select: { xmlIcerik: true, xmlAnahtar: true, xmlOzet: true } });
@@ -1863,8 +1916,9 @@ export class EbelgeService {
       });
       Object.assign(k, { ...ozet, genelToplam: ozet.genelToplam === null ? null : new Prisma.Decimal(ozet.genelToplam) });
     }
+  }
 
-    return kayitlar.map((k) => {
+  private gelenSatiri(k: Prisma.GelenEbelgeGetPayload<{ select: typeof GELEN_LISTE_SECIMI }>) {
       return {
         id: k.id,
         uuid: k.uuid,
@@ -1885,7 +1939,6 @@ export class EbelgeService {
         /** EBLG-144: son kural denetimindeki uyarı sayısı; null = henüz denetlenmedi. */
         denetimUyari: k.denetimUyariSayisi,
       };
-    });
   }
 
   /**

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   BadRequestException,
   Body,
@@ -24,6 +25,14 @@ import { GelenDenetimAiService } from "./gelen-denetim-ai.service";
 import { sihirbazEngelleri } from "./gonderim-engelleri";
 import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenAiDenetimSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi, onDenetimSusturmaSemasi } from "./ebelge.semalar";
 import { SaltOkumadaAcik } from "../auth/public.decorator";
+
+const gelenSayfaSemasi = z.object({
+  durum: z.enum(["beklemede", "islendi", "reddedildi"]).optional(),
+  arama: z.string().trim().max(100).optional(),
+  uyarili: z.enum(["true", "false"]).optional(),
+  imlec: z.uuid().optional(),
+  adet: z.coerce.number().int().min(1).max(200).optional(),
+});
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -335,6 +344,15 @@ export class EbelgeController {
       );
     }
     return this.ebelgeService.gelenListele(durum as GelenEbelgeDurum | undefined);
+  }
+
+  /** Gelen kutusu ekranı: sayfalı, arama sunucuda (rapor V-2). `gelen/:id`'den önce tanımlıdır. */
+  @EbelgeUygulamasi("efatura")
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
+  @Get("gelen/sayfa")
+  gelenSayfa(@Query() sorgu: unknown) {
+    const g = gelenSayfaSemasi.parse(sorgu);
+    return this.ebelgeService.gelenSayfa({ ...g, uyarili: g.uyarili === "true" });
   }
 
   @EbelgeUygulamasi("efatura")
