@@ -125,7 +125,7 @@ def api_hazirla(paket, taban_runtime):
     adim("API paketi: çalışan paket sabit bağla kopyalanıyor")
     calistir(["cp", "-al", str(taban_runtime), str(paket / "runtime")])
     runtime = paket / "runtime"
-    ortam = {**os.environ, "NODE_OPTIONS": "--max-old-space-size=7000"}
+    ortam = {**os.environ, "NODE_OPTIONS": "--max-old-space-size=4500"}
     with tempfile.TemporaryDirectory(prefix="pilot-yayin-") as gecici:
         adim("API derleniyor")
         calistir(["npx", "prisma", "generate"], cwd=KOK / "apps/api", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -184,6 +184,11 @@ def web_hazirla(paket, ad):
     return {"webBuildId": kimlik}
 
 
+def kaynak_izi():
+    """Derlenen kaynakların izi: derleme sırasında dosya değişirse paket karışık kodla oluşur."""
+    return subprocess.check_output(["git", "status", "--porcelain=v1", "-z", "apps", "packages"], cwd=KOK) + subprocess.check_output(["git", "diff", "--no-ext-diff", "HEAD", "--", "apps", "packages"], cwd=KOK)
+
+
 def hazirla(ad, api=True, web=True):
     paket = ADAYLAR / ad
     if paket.exists():
@@ -196,10 +201,13 @@ def hazirla(ad, api=True, web=True):
             "onceki": {k: str(v) for k, v in calisan.items()}}
     if ozet["kirliDosyalar"]:
         adim(f"UYARI: commit edilmemiş {len(ozet['kirliDosyalar'])} dosya pakete girecek")
+    iz = kaynak_izi()
     if api:
         ozet.update(api_hazirla(paket, calisan["runtime"]))
     if web:
         ozet.update(web_hazirla(paket, ad))
+    if kaynak_izi() != iz:
+        dur(f"Derleme sırasında kaynak dosyalar değişti; paket karışık kod içerebilir. {paket} klasörünü silip yeniden deneyin")
     # Compose: çalışan dosyadan türetilir; yalnız yeniden kurulan parçanın yolu değişir.
     metin = calisan["compose"].read_text(encoding="utf-8")
     shutil.copy2(calisan["compose"], paket / "ops/geri-donus-compose.json")
