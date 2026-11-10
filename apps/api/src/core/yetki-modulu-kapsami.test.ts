@@ -12,6 +12,7 @@ const MODULSUZ: Record<string, string> = {
   "abonelik-odeme": "oturumsuz ödeme uçları",
   "banka-webhook": "kendi anahtarıyla gelen banka bildirimi",
   bildirimler: "kullanıcının kendi bildirimleri",
+  duyurular: "platformun her role gösterdiği duyurular; kullanıcının kendi okuma ve tercih kaydı",
   ekler: "sahibin modülüyle serviste denetlenir (EK_ERISIMI)",
   health: "sağlık denetimi",
   metrics: "işletim metrikleri",
