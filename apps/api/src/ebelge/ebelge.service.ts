@@ -1,3 +1,4 @@
+import { GelenXmlDeposu, gelenXmlOku, gelenXmlYaz } from "./gelen-xml-deposu.service";
 import { stokKartiBul, tedarikciKodlariniOgren } from "./stok-eslesme";
 import { belgeNetMatrahlari, fiyatKarsilastir, yilOnce } from "./fiyat-analizi";
 import { earsivIptalGecenGun } from "./earsiv-iptal-suresi";
@@ -232,6 +233,7 @@ export class EbelgeService {
     private readonly ayarlar: AyarlarService,
     private readonly belgeler: BelgelerService,
     @Optional() private readonly mevzuat?: MevzuatService,
+    @Optional() private readonly xmlDepo?: GelenXmlDeposu,
   ) {}
 
   /** MVZ-11/12: gelen belgenin tarihindeki merkezi tablolar (karşı tarafın belgesi: firmanın gizledikleri de tanınır). */
@@ -1573,6 +1575,7 @@ export class EbelgeService {
         }),
       );
 
+      const xmlKaydi = await gelenXmlYaz(this.xmlDepo, tenantId, b.uuid, b.xml);
       const kaydedilen = await this.prisma.tenantIslem(tenantId, async (tx) => {
         const k = await tx.gelenEbelge.upsert({
           where: { tenantId_uuid: { tenantId, uuid: b.uuid } },
@@ -1584,12 +1587,12 @@ export class EbelgeService {
             gonderenUnvan: b.gonderenUnvan,
             tarih: b.tarih,
             profilId,
-            xmlIcerik: b.xml,
+            ...xmlKaydi,
             ...gelenOzeti(b.xml),
           },
           // Yalnızca entegratör tarafındaki gövde tazelenir; durum/yanıt
           // bizim iş akışımıza ait olduğu için korunur.
-          update: { xmlIcerik: b.xml, profilId, ...gelenOzeti(b.xml) },
+          update: { ...xmlKaydi, profilId, ...gelenOzeti(b.xml) },
           select: { id: true },
         });
         // EBLG-34: belge portalda ya da başka bir yerde yanıtlanmışsa karar
@@ -1760,6 +1763,7 @@ export class EbelgeService {
     const tarih = new Date(ubl.tarih);
     const gecerliTarih = Number.isNaN(tarih.getTime()) ? new Date() : tarih;
 
+    const xmlKaydi = await gelenXmlYaz(this.xmlDepo, tenantId, ubl.uuid, xmlIcerik);
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.gelenEbelge.upsert({
         where: { tenantId_uuid: { tenantId, uuid: ubl.uuid } },
@@ -1771,10 +1775,10 @@ export class EbelgeService {
           gonderenUnvan: ubl.gonderen.unvan,
           tarih: gecerliTarih,
           profilId: ubl.profilId,
-          xmlIcerik,
+          ...xmlKaydi,
           ...gelenOzeti(xmlIcerik),
         },
-        update: { xmlIcerik, profilId: ubl.profilId, ...gelenOzeti(xmlIcerik) },
+        update: { ...xmlKaydi, profilId: ubl.profilId, ...gelenOzeti(xmlIcerik) },
       }),
     );
     await this.gelenDenetimSakla(kayit.id);
@@ -1820,8 +1824,8 @@ export class EbelgeService {
     // birer birer tamamlanır; aynı anda yalnız bir XML bellekte durur.
     for (const k of kayitlar.filter((x) => x.okunabilir === null)) {
       const ozet = await this.prisma.tenantIslem(tenantId, async (tx) => {
-        const xml = await tx.gelenEbelge.findUnique({ where: { id: k.id }, select: { xmlIcerik: true } });
-        const hesap = gelenOzeti(xml?.xmlIcerik ?? "");
+        const xml = await tx.gelenEbelge.findUnique({ where: { id: k.id }, select: { xmlIcerik: true, xmlAnahtar: true, xmlOzet: true } });
+        const hesap = gelenOzeti(xml ? await gelenXmlOku(xml, this.xmlDepo) : "");
         await tx.gelenEbelge.update({ where: { id: k.id }, data: hesap });
         return hesap;
       });
@@ -1863,7 +1867,7 @@ export class EbelgeService {
       const kayit = await tx.gelenEbelge.findFirst({ where: { id, tenantId } });
       if (!kayit) throw new NotFoundException("Gelen belge bulunamadı");
       let ubl: UblFatura;
-      try { ubl = faturaUblOku(kayit.xmlIcerik); }
+      try { ubl = faturaUblOku(await gelenXmlOku(kayit, this.xmlDepo)); }
       catch { throw new BadRequestException("Belgenin XML'i okunamadı"); }
       if (["IADE", "TEVKIFATIADE", "OZELMATRAH"].includes(ubl.faturaTipKodu))
         throw new BadRequestException("İade ve özel matrah belgeleri fiyat analizine dahil değildir");
@@ -1930,9 +1934,10 @@ export class EbelgeService {
     );
     if (!kayit) throw new NotFoundException("Gelen belge bulunamadı");
 
+    const kayitXml = await gelenXmlOku(kayit, this.xmlDepo);
     let ubl: UblFatura;
     try {
-      ubl = faturaUblOku(kayit.xmlIcerik);
+      ubl = faturaUblOku(kayitXml);
     } catch (hata) {
       throw new BadRequestException(
         hata instanceof UblOkumaHatasi
@@ -2004,7 +2009,7 @@ export class EbelgeService {
       satirlar,
       /** EBLG-144…149: gelen alış denetçisi; hesaplanamadıysa null. */
       onDenetim: aliDenetimi,
-      xmlIcerik: kayit.xmlIcerik,
+      xmlIcerik: kayitXml,
     };
   }
 
@@ -2033,7 +2038,7 @@ export class EbelgeService {
 
     let ubl: UblFatura;
     try {
-      ubl = faturaUblOku(kayit.xmlIcerik);
+      ubl = faturaUblOku(await gelenXmlOku(kayit, this.xmlDepo));
     } catch {
       throw new BadRequestException("Belgenin XML'i okunamadı; faturaya işlenemez");
     }
@@ -2314,7 +2319,7 @@ export class EbelgeService {
 
     const sonuc = await adapter.yanitGonder(cfg, kayit.uuid, girdi.yanit, girdi.gerekce ?? undefined, {
       gonderenVkn: kayit.gonderenVkn || "",
-      xml: kayit.xmlIcerik || "",
+      xml: (await gelenXmlOku(kayit, this.xmlDepo)) || "",
     });
     if (!sonuc.basarili) {
       throw new BadRequestException(
@@ -2652,6 +2657,7 @@ export class EbelgeService {
     }
 
     // Gelen e-Belge tablosuna taslak olarak kaydet (varsa güncelle, yoksa ekle)
+    const xmlKaydi = await gelenXmlYaz(this.xmlDepo, tenantId, ubl.uuid, xmlIcerik);
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.gelenEbelge.findFirst({
         where: { tenantId, uuid: ubl.uuid },
@@ -2661,7 +2667,7 @@ export class EbelgeService {
         return tx.gelenEbelge.update({
           where: { id: mevcut.id },
           data: {
-            xmlIcerik,
+            ...xmlKaydi,
             belgeNo: ubl.belgeNo,
             gonderenVkn: ubl.gonderen.vknTckn,
             gonderenUnvan: ubl.gonderen.unvan,
@@ -2681,7 +2687,7 @@ export class EbelgeService {
           gonderenUnvan: ubl.gonderen.unvan,
           tarih: new Date(ubl.tarih),
           profilId: ubl.profilId,
-          xmlIcerik,
+          ...xmlKaydi,
           ...gelenOzeti(xmlIcerik),
           durum: "beklemede",
         },
@@ -2763,10 +2769,10 @@ export class EbelgeService {
       const ayar = this.ayarlar ? await this.ayarlar.getir("ebelge") : {};
       const satinAlma = this.ayarlar ? await this.ayarlar.getir("satin_alma") : {};
       return await this.prisma.tenantIslem(tenantId, async (tx) => {
-        const kayit = await tx.gelenEbelge.findUnique({ where: { id }, select: { id: true, gonderenVkn: true, faturaId: true, xmlIcerik: true } });
+        const kayit = await tx.gelenEbelge.findUnique({ where: { id }, select: { id: true, gonderenVkn: true, faturaId: true, xmlIcerik: true, xmlAnahtar: true, xmlOzet: true } });
         if (!kayit) return null;
         let ubl: UblFatura;
-        try { ubl = faturaUblOku(kayit.xmlIcerik); } catch { return null; }
+        try { ubl = faturaUblOku(await gelenXmlOku(kayit, this.xmlDepo)); } catch { return null; }
         const tip = gelenFaturaTipi(ubl);
         const { cari } = await gonderenCariSec(tx, tenantId, kayit.gonderenVkn, tip === "satis_iade" ? "musteri" : "tedarikci");
         const harita = new Map<number, { stokId: string; varyantId?: string | null }>();
@@ -2784,7 +2790,7 @@ export class EbelgeService {
           fiyatYuzde: Number(ayar.gelenFiyatYuzde ?? 25),
           siparisToleransYuzde: Number(satinAlma.fiyatToleransYuzde ?? 1),
           testOrtami,
-        });
+        }, this.xmlDepo);
         await tx.gelenEbelge.update({
           where: { id },
           data: {

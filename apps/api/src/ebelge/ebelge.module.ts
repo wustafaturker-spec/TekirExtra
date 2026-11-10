@@ -1,3 +1,5 @@
+import { EklerModule } from "../ekler/ekler.module";
+import { GelenXmlDeposu } from "./gelen-xml-deposu.service";
 import { Module, forwardRef } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { BelgelerModule } from "../belgeler/belgeler.module";
@@ -21,9 +23,10 @@ import { TopluFaturaService } from "./toplu-fatura.service";
 @Module({
   // Gelen belgenin taslak alış faturasına dönüşü FaturaService üzerinden
   // yapılır; FaturaModule da e-belge kuyruğunu kullandığı için döngüsel.
-  imports: [TenantModule, BildirimlerModule, BelgelerModule, forwardRef(() => FaturaModule)],
+  imports: [TenantModule, BildirimlerModule, BelgelerModule, EklerModule, forwardRef(() => FaturaModule)],
   controllers: [EbelgeController, EirsaliyeController, TopluFaturaController],
   providers: [
+    GelenXmlDeposu,
     EbelgeService, EbelgeKuyrukService, EbelgeGorunumService, EirsaliyeService, MukellefListesiService,
     EbelgeUygulamalariService, OnDenetimAiService, GelenDenetimAiService, TopluFaturaService,
     // EBLG-77: kapalı e-belge uygulamasının ucu reddedilir. Guard global

@@ -1,3 +1,4 @@
+import { GelenXmlDeposu, gelenXmlOku } from "./gelen-xml-deposu.service";
 import { HttpException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { OnDenetimBulgusu } from "@tekirextra/shared";
@@ -46,15 +47,16 @@ export class GelenDenetimAiService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly ayarlar?: AyarlarService,
+    @Optional() private readonly xmlDepo?: GelenXmlDeposu,
   ) {}
 
   async denetle(id: string, eslesmeler: Eslesme[], yeniden = false): Promise<GelenAiSonucu> {
     const { tenantId } = aktifBaglam();
     const imza = eslesmeImzasi(eslesmeler);
     const veri = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kayit = await tx.gelenEbelge.findUnique({ where: { id }, select: { gonderenVkn: true, xmlIcerik: true, aiDenetim: true } });
+      const kayit = await tx.gelenEbelge.findUnique({ where: { id }, select: { gonderenVkn: true, xmlIcerik: true, xmlAnahtar: true, xmlOzet: true, aiDenetim: true } });
       if (!kayit) throw new NotFoundException("Gelen belge bulunamadı");
-      const ubl = faturaUblOku(kayit.xmlIcerik);
+      const ubl = faturaUblOku(await gelenXmlOku(kayit, this.xmlDepo));
       const tip = gelenFaturaTipi(ubl);
       const { cari } = await gonderenCariSec(tx, tenantId, kayit.gonderenVkn, tip === "satis_iade" ? "musteri" : "tedarikci");
       const susturulan = cari

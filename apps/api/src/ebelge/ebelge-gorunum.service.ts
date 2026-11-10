@@ -1,3 +1,4 @@
+import { GelenXmlDeposu, gelenXmlOku } from "./gelen-xml-deposu.service";
 import { Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { bugunTR } from "@tekirextra/shared";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
@@ -29,6 +30,7 @@ export class EbelgeGorunumService {
     private readonly pdf: PdfService,
     private readonly baglantilar: BaglantilarService,
     @Optional() private readonly mevzuat?: MevzuatService,
+    @Optional() private readonly xmlDepo?: GelenXmlDeposu,
   ) {}
 
   /**
@@ -104,10 +106,10 @@ export class EbelgeGorunumService {
   async gelenPdf(id: string) {
     const { tenantId } = aktifBaglam();
     const belge = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.gelenEbelge.findUnique({ where: { id }, select: { belgeNo: true, xmlIcerik: true } }),
+      tx.gelenEbelge.findUnique({ where: { id }, select: { belgeNo: true, xmlIcerik: true, xmlAnahtar: true, xmlOzet: true } }),
     );
     if (!belge) throw new NotFoundException("Gelen e-belge bulunamadı");
-    return this.pdfUret(belge.xmlIcerik, `gelen-fatura-${belge.belgeNo}.pdf`);
+    return this.pdfUret(await gelenXmlOku(belge, this.xmlDepo), `gelen-fatura-${belge.belgeNo}.pdf`);
   }
 
   /**

@@ -3979,7 +3979,11 @@ model GelenEbelge {
   gonderenUnvan      String            @map("gonderen_unvan")
   tarih              DateTime          @db.Date
   profilId           String?           @map("profil_id")
-  xmlIcerik          String            @map("xml_icerik")
+  /// Geçiş kopyası; depoya alınıp doğrulanınca NULL olur. Okuma gelenXmlOku ile yapılır.
+  xmlIcerik          String?           @map("xml_icerik")
+  /// Nesne deposundaki gzip XML'in anahtarı ve XML'in SHA-256 özeti.
+  xmlAnahtar         String?           @map("xml_anahtar") @db.VarChar(200)
+  xmlOzet            String?           @map("xml_ozet") @db.VarChar(64)
   durum              GelenEbelgeDurum  @default(beklemede)
   faturaId           String?           @unique @map("fatura_id") @db.Uuid
   /// EBLG-06: TICARIFATURA profilinde gönderilen kabul/ret yanıtı.

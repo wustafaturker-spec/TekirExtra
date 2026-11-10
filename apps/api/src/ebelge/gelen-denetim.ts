@@ -1,3 +1,4 @@
+import { type GelenXmlDeposu, gelenXmlOku } from "./gelen-xml-deposu.service";
 import { Prisma } from "@prisma/client";
 import {
   gelenDenetimYap,
@@ -44,6 +45,7 @@ export async function gelenDenetimCalistir(
   ubl: UblFatura,
   eslesme: (siraNo: number) => SatirEslesmesi,
   ayar: GelenDenetimAyari,
+  xmlDepo?: GelenXmlDeposu,
 ): Promise<{ bulgular: OnDenetimBulgusu[]; susturulan: number }> {
   const tip = gelenFaturaTipi(ubl);
   const tarih = ubl.tarih;
@@ -161,8 +163,8 @@ export async function gelenDenetimCalistir(
     let ayniSatirlar = false;
     // Satırlar yalnız satır sayısı tutan komşuda okunur (XML ağırdır).
     if (!ayniNo && !ayniToplam && k.satirSayisi === ubl.satirlar.length) {
-      const xml = await tx.gelenEbelge.findUnique({ where: { id: k.id }, select: { xmlIcerik: true } });
-      try { ayniSatirlar = adImzasi(faturaUblOku(xml?.xmlIcerik ?? "")) === buAdImzasi; } catch { ayniSatirlar = false; }
+      const xml = await tx.gelenEbelge.findUnique({ where: { id: k.id }, select: { xmlIcerik: true, xmlAnahtar: true, xmlOzet: true } });
+      try { ayniSatirlar = adImzasi(faturaUblOku(xml ? await gelenXmlOku(xml, xmlDepo) : "")) === buAdImzasi; } catch { ayniSatirlar = false; }
     }
     mukerrerAdaylari.push({ tur: "gelen", id: k.id, no: k.belgeNo, tarih: gun(k.tarih), ayniNo, ayniToplam, ayniSatirlar });
   }
