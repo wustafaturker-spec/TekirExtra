@@ -59,7 +59,8 @@ import { acikFaturaOzeti } from "./acik-fatura-ozeti";
  * EBLG-155: iptal ve geri almada entegratör çağrısı işlemin içindedir; böylece çağrı başarısızsa
  * işlem geri alınır. Varsayılan 5 sn, entegratör geç yanıt verince işlemi düşürüyordu; iki çağrı (en çok 30'ar sn) ve ters kayıtları karşılar.
  */
-const ENTEGRATORLU_ISLEM_SURESI_MS = 90_000;
+/** EBLG-160: iptal ve geri almada entegratör çağrısı işlem dışında; işlem yalnız ters kayıtları yazar. */
+const TERS_KAYIT_ISLEM_SURESI_MS = 30_000;
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -1129,109 +1130,131 @@ export class FaturaService {
         throw hata;
       }
     }
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const fatura = await tx.fatura.findUnique({
-        where: { id },
-        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true, createdAt: true } } },
-      });
-      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      if (fatura.durum === "iptal") throw new BadRequestException("Fatura zaten iptal edilmiş");
-      // Kesilen e-Fatura iptal edilmez; düzeltme yolu iade faturasıdır.
-      // e-Arşiv'de ise iptal normal mekanizmadır — belge GİB raporuna
-      // girmediği sürece iptal edilebilir (EBLG-22).
-      // e-Belgesi entegratöre hiç ulaşmamış fatura (hata, numarasız, referanssız)
-      // kanaldan bağımsız iptal edilebilir: GİB'de karşılığı yoktur. Ulaşmadığı
-      // iptal anında entegratöre sorularak doğrulanır.
-      const gitmemisEbelge = Boolean(fatura.ebelge && ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge }));
-      if (fatura.ebelge && fatura.ebelge.tur !== "earsiv" && !gitmemisEbelge) {
-        throw new BadRequestException("e-Fatura olarak gönderilmiş fatura iptal edilemez; iade faturası düzenleyin");
-      }
-
-      if (fatura.durum === "taslak") {
-        await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
-        await tx.gelenEbelge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "beklemede" } });
-        return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
-      }
-
-      const [kasaBankaSayisi, posSayisi, krediKartiSayisi, elleKapamaSayisi] = await Promise.all([
-        tx.kasaBankaHareket.count({ where: { faturaId: id } }),
-        tx.posTahsilat.count({ where: { faturaId: id } }),
-        tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
-        // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
-        // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
-        // PZR-13: pazaryeri hakedişinin kapaması da bağlı ödemedir (önce hakediş geri alınır).
-        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, OR: [{ cariHareketId: null }, { cariHareket: { kaynakTur: "pazaryeri_hakedis" } }] } }),
-      ]);
-      if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
-        throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura doğrudan iptal edilemez; önce finans hareketini ya da mahsubu geri alın veya iade faturası düzenleyin");
-      }
-
-      // Entegratördeki iptal bu işlemin içinde yapılır: başarısız olursa
-      // buradaki hata işlemi geri alır ve bizde iptal görünen ama GİB'de canlı
-      // duran bir belge kalmaz.
-      if (fatura.ebelge && gitmemisEbelge) {
-        await this.ebelge.gitmemisBelgeyiKapat(tx, fatura, fatura.ebelge);
-      } else if (fatura.ebelge && fatura.ebelge.durum !== "iptal") {
-        await this.ebelge.earsivBelgesiniIptalEt(tx, fatura, fatura.ebelge);
-      }
-
-      if (fatura.tip !== "proforma") {
-        const hareketler = await this.sonKesinlestirmeHareketleri(tx, id);
-        await this.stokService.kartlariKilitle(tx, hareketler.map((h) => h.stokId));
-        for (const hareket of hareketler) {
-          await this.stokService.hareketEkle(tx, {
-            stokId: hareket.stokId,
-            varyantId: hareket.varyantId,
-            depoId: hareket.depoId,
-            tip: hareket.tip === "cikis" ? "giris" : "cikis",
-            // Hareket miktarı işaretli saklanır (çıkış eksi), `hareketEkle` ise
-            // yönü tipten alıp pozitif miktar bekler. İşaretli verilince iptalin
-            // "girişi" stoğu bir kez daha düşürüyordu.
-            miktar: hareket.miktar.abs(),
-            girilenBirim: hareket.girilenBirim,
-            girilenMiktar: hareket.girilenMiktar,
-            birimMaliyet: hareket.maliyet,
-            // STK-27: girişin tersi girdiği maliyetle çıkar ve ortalamadan düşer.
-            maliyetliCikis: hareket.tip !== "cikis",
-            tarih: fatura.tarih,
-            aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
-            kaynakTur: "fatura_iptal",
-            kaynakRef: fatura.id,
-            partiler: hareket.partiler.map((parti) => ({
-              lotNo: parti.parti.lotNo,
-              seriNo: parti.parti.seriNo,
-              sonKullanmaTarihi: parti.parti.sonKullanmaTarihi?.toISOString().slice(0, 10) ?? null,
-              uretimTarihi: parti.parti.uretimTarihi?.toISOString().slice(0, 10) ?? null,
-              miktar: parti.miktar.abs(),
-            })),
-          });
+    // EBLG-160: entegratör çağrısı veritabanı işleminin dışındadır. Önce kısa bir işlemde
+    // ön koşullar denetlenir, sonra entegratör (e-Arşiv iptali ya da "ulaşmadı" sorgusu),
+    // en son kısa bir işlemde faturanın kendisi iptal edilir ve ön koşullar yeniden denetlenir.
+    const on = await this.prisma.tenantIslem(tenantId, (tx) => this.iptalHazirla(tx, tenantId, id));
+    if (on.taslakSonucu) return on.taslakSonucu;
+    const ebelgeKaydi = on.fatura.ebelge;
+    const earsivIptali = Boolean(ebelgeKaydi && !on.gitmemisEbelge && ebelgeKaydi.durum !== "iptal");
+    if (ebelgeKaydi && on.gitmemisEbelge) {
+      await this.ebelge.entegratoreUlasmadiginiDogrula(on.fatura, ebelgeKaydi, "fatura iptal edilemez", "iptal durduruldu");
+    } else if (ebelgeKaydi && earsivIptali) {
+      // Başarılıysa e-Belge kaydı burada `iptal` yazılır; aşağıdaki adım düşerse yeniden denemede entegratör tekrar çağrılmaz.
+      await this.ebelge.earsivBelgesiniIptalEt(on.fatura, ebelgeKaydi);
+    }
+    try {
+      return await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const { fatura, gitmemisEbelge, taslakSonucu } = await this.iptalHazirla(tx, tenantId, id);
+        if (taslakSonucu) return taslakSonucu;
+        if (fatura.ebelge && gitmemisEbelge) {
+          await tx.ebelgeKayit.update({ where: { id: fatura.ebelge.id }, data: { durum: "iptal" } });
+        } else if (fatura.ebelge && fatura.ebelge.durum !== "iptal") {
+          throw new ConflictException("Faturanın e-Belge durumu iptal sırasında değişti; yeniden deneyin");
         }
 
-        const cariHareketTip = fatura.tip === "satis" || fatura.tip === "alis_iade" ? "alacak" : "borc";
-        await tx.cariHareket.create({
-          data: {
-            tenantId,
-            cariId: fatura.cariId,
-            tip: cariHareketTip,
-            tutar: fatura.genelToplam,
-            dovizCinsi: fatura.dovizCinsi,
-            kur: fatura.kur,
-            tutarTry: fatura.genelToplam.mul(fatura.kur).toDecimalPlaces(2),
-            tarih: fatura.tarih,
-            aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
-            kaynakTur: "fatura_iptal",
-            kaynakRef: fatura.id,
-          },
-        });
-      }
-      // KSB-29: kur farkı karşılığı ters kayıtla kapanır.
-      await kurFarkiKarsiliginiCoz(tx, tenantId, id);
-      // KSB-16: iptal edilen faturanın kapamaları (elle dahil) çözülür; ödemeler avansa döner ve yeniden dağılır.
-      await faturaKapamalariniCoz(tx, id);
-      const iptalEdilen = await tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
-      await cariDenklestir(tx, tenantId, fatura.cariId);
-      return iptalEdilen;
-    }, { timeout: ENTEGRATORLU_ISLEM_SURESI_MS });
+        if (fatura.tip !== "proforma") {
+          const hareketler = await this.sonKesinlestirmeHareketleri(tx, id);
+          await this.stokService.kartlariKilitle(tx, hareketler.map((h) => h.stokId));
+          for (const hareket of hareketler) {
+            await this.stokService.hareketEkle(tx, {
+              stokId: hareket.stokId,
+              varyantId: hareket.varyantId,
+              depoId: hareket.depoId,
+              tip: hareket.tip === "cikis" ? "giris" : "cikis",
+              // Hareket miktarı işaretli saklanır (çıkış eksi), `hareketEkle` ise
+              // yönü tipten alıp pozitif miktar bekler. İşaretli verilince iptalin
+              // "girişi" stoğu bir kez daha düşürüyordu.
+              miktar: hareket.miktar.abs(),
+              girilenBirim: hareket.girilenBirim,
+              girilenMiktar: hareket.girilenMiktar,
+              birimMaliyet: hareket.maliyet,
+              // STK-27: girişin tersi girdiği maliyetle çıkar ve ortalamadan düşer.
+              maliyetliCikis: hareket.tip !== "cikis",
+              tarih: fatura.tarih,
+              aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
+              kaynakTur: "fatura_iptal",
+              kaynakRef: fatura.id,
+              partiler: hareket.partiler.map((parti) => ({
+                lotNo: parti.parti.lotNo,
+                seriNo: parti.parti.seriNo,
+                sonKullanmaTarihi: parti.parti.sonKullanmaTarihi?.toISOString().slice(0, 10) ?? null,
+                uretimTarihi: parti.parti.uretimTarihi?.toISOString().slice(0, 10) ?? null,
+                miktar: parti.miktar.abs(),
+              })),
+            });
+          }
+
+          const cariHareketTip = fatura.tip === "satis" || fatura.tip === "alis_iade" ? "alacak" : "borc";
+          await tx.cariHareket.create({
+            data: {
+              tenantId,
+              cariId: fatura.cariId,
+              tip: cariHareketTip,
+              tutar: fatura.genelToplam,
+              dovizCinsi: fatura.dovizCinsi,
+              kur: fatura.kur,
+              tutarTry: fatura.genelToplam.mul(fatura.kur).toDecimalPlaces(2),
+              tarih: fatura.tarih,
+              aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
+              kaynakTur: "fatura_iptal",
+              kaynakRef: fatura.id,
+            },
+          });
+        }
+        // KSB-29: kur farkı karşılığı ters kayıtla kapanır.
+        await kurFarkiKarsiliginiCoz(tx, tenantId, id);
+        // KSB-16: iptal edilen faturanın kapamaları (elle dahil) çözülür; ödemeler avansa döner ve yeniden dağılır.
+        await faturaKapamalariniCoz(tx, id);
+        const iptalEdilen = await tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
+        await cariDenklestir(tx, tenantId, fatura.cariId);
+        return iptalEdilen;
+      }, { timeout: TERS_KAYIT_ISLEM_SURESI_MS });
+    } catch (hata) {
+      // e-Arşiv entegratörde iptal edildi ama fatura iptal edilemedi: belge "e-Arşivi iptal, fatura kesin" kalır.
+      if (earsivIptali) await this.ebelge.earsivIptaliYarimKaldi(on.fatura, hata);
+      throw hata;
+    }
+  }
+
+  /** EBLG-160: iptalin ön koşulları; hem entegratör çağrısından önce hem asıl iptal işleminde çalışır. Taslak fatura burada iptal edilir. */
+  private async iptalHazirla(tx: Prisma.TransactionClient, tenantId: string, id: string) {
+  const fatura = await tx.fatura.findUnique({
+    where: { id },
+    include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true, createdAt: true } } },
+  });
+  if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+  if (fatura.durum === "iptal") throw new BadRequestException("Fatura zaten iptal edilmiş");
+  // Kesilen e-Fatura iptal edilmez; düzeltme yolu iade faturasıdır.
+  // e-Arşiv'de ise iptal normal mekanizmadır — belge GİB raporuna
+  // girmediği sürece iptal edilebilir (EBLG-22).
+  // e-Belgesi entegratöre hiç ulaşmamış fatura (hata, numarasız, referanssız)
+  // kanaldan bağımsız iptal edilebilir: GİB'de karşılığı yoktur. Ulaşmadığı
+  // iptal anında entegratöre sorularak doğrulanır.
+  const gitmemisEbelge = Boolean(fatura.ebelge && ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge }));
+  if (fatura.ebelge && fatura.ebelge.tur !== "earsiv" && !gitmemisEbelge) {
+    throw new BadRequestException("e-Fatura olarak gönderilmiş fatura iptal edilemez; iade faturası düzenleyin");
+  }
+
+  if (fatura.durum === "taslak") {
+    await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
+    await tx.gelenEbelge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "beklemede" } });
+    return { fatura, gitmemisEbelge, taslakSonucu: await tx.fatura.update({ where: { id }, data: { durum: "iptal" } }) };
+  }
+
+  const [kasaBankaSayisi, posSayisi, krediKartiSayisi, elleKapamaSayisi] = await Promise.all([
+    tx.kasaBankaHareket.count({ where: { faturaId: id } }),
+    tx.posTahsilat.count({ where: { faturaId: id } }),
+    tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
+    // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
+    // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
+    // PZR-13: pazaryeri hakedişinin kapaması da bağlı ödemedir (önce hakediş geri alınır).
+    tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, OR: [{ cariHareketId: null }, { cariHareket: { kaynakTur: "pazaryeri_hakedis" } }] } }),
+  ]);
+  if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
+    throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura doğrudan iptal edilemez; önce finans hareketini ya da mahsubu geri alın veya iade faturası düzenleyin");
+  }
+    return { fatura, gitmemisEbelge, taslakSonucu: null };
   }
 
   /**
@@ -1250,31 +1273,19 @@ export class FaturaService {
     if (!kayit) throw new NotFoundException("Fatura bulunamadı");
     await this.dagitimEngeli(tenantId, id, "taslağa geri alınamaz");
     await this.donemKilidi.tarihDogrula(tenantId, kayit.tarih, "faturayı taslağa geri alma");
+    // EBLG-160: "entegratöre ulaşmadı" sorgusu işlemin dışında; ön koşullar sorgudan önce ve asıl işlemde yeniden denetlenir.
+    const on = await this.prisma.tenantIslem(tenantId, (tx) => this.geriAlmaHazirla(tx, tenantId, id));
+    if (on.ebelge) await this.ebelge.entegratoreUlasmadiginiDogrula(on, on.ebelge, "fatura taslağa geri alınamaz", "geri alma durduruldu");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const fatura = await tx.fatura.findUnique({
-        where: { id },
-        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true, createdAt: true } } },
-      });
-      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      const engel = faturaGeriAlmaEngeli(fatura);
-      if (engel) throw new BadRequestException(engel);
-
-      const [kasaBankaSayisi, posSayisi, krediKartiSayisi, elleKapamaSayisi] = await Promise.all([
-        tx.kasaBankaHareket.count({ where: { faturaId: id } }),
-        tx.posTahsilat.count({ where: { faturaId: id } }),
-        tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
-        // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
-        // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
-        // PZR-13: pazaryeri hakedişinin kapaması da bağlı ödemedir (önce hakediş geri alınır).
-        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, OR: [{ cariHareketId: null }, { cariHareket: { kaynakTur: "pazaryeri_hakedis" } }] } }),
-      ]);
-      if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
-        throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura taslağa geri alınamaz; önce finans hareketini ya da mahsubu geri alın");
-      }
-
+      const fatura = await this.geriAlmaHazirla(tx, tenantId, id);
       if (fatura.ebelge) {
-        await this.ebelge.entegratoreUlasmadiginiDogrula(tx, fatura, fatura.ebelge, "fatura taslağa geri alınamaz", "geri alma durduruldu");
+        // Sorgulanan kayıt değişmişse (ör. bu arada gönderildi) sorgu sonucu geçersizdir.
+        if (fatura.ebelge.id !== on.ebelge?.id || fatura.ebelge.durum !== on.ebelge.durum || fatura.ebelge.entegratorRef !== on.ebelge.entegratorRef) {
+          throw new ConflictException("Faturanın e-Belge durumu geri alma sırasında değişti; yeniden deneyin");
+        }
         await tx.ebelgeKayit.delete({ where: { id: fatura.ebelge.id } });
+      } else if (on.ebelge) {
+        throw new ConflictException("Faturanın e-Belge durumu geri alma sırasında değişti; yeniden deneyin");
       }
 
       const etiket = `${fatura.no || fatura.id} nolu fatura taslağa geri alma ters hareketi`;
@@ -1332,7 +1343,32 @@ export class FaturaService {
       const taslak = await tx.fatura.update({ where: { id }, data: { durum: "taslak" } });
       await cariDenklestir(tx, tenantId, fatura.cariId);
       return this.gorunum(taslak);
-    }, { timeout: ENTEGRATORLU_ISLEM_SURESI_MS });
+    }, { timeout: TERS_KAYIT_ISLEM_SURESI_MS });
+  }
+
+  /** EBLG-160: taslağa geri almanın ön koşulları; entegratör sorgusundan önce ve asıl işlemde çalışır. */
+  private async geriAlmaHazirla(tx: Prisma.TransactionClient, tenantId: string, id: string) {
+  const fatura = await tx.fatura.findUnique({
+    where: { id },
+    include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true, createdAt: true } } },
+  });
+  if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+  const engel = faturaGeriAlmaEngeli(fatura);
+  if (engel) throw new BadRequestException(engel);
+
+  const [kasaBankaSayisi, posSayisi, krediKartiSayisi, elleKapamaSayisi] = await Promise.all([
+    tx.kasaBankaHareket.count({ where: { faturaId: id } }),
+    tx.posTahsilat.count({ where: { faturaId: id } }),
+    tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
+    // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
+    // KSB-29: kur farkı karşılığı ödeme sayılmaz; geri almada ters kaydıyla çözülür.
+    // PZR-13: pazaryeri hakedişinin kapaması da bağlı ödemedir (önce hakediş geri alınır).
+    tx.faturaKapama.count({ where: { faturaId: id, otomatik: false, OR: [{ cariHareketId: null }, { cariHareket: { kaynakTur: "pazaryeri_hakedis" } }] } }),
+  ]);
+  if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
+    throw new BadRequestException("Tahsilat, ödeme ya da mahsup bağlı fatura taslağa geri alınamaz; önce finans hareketini ya da mahsubu geri alın");
+  }
+    return fatura;
   }
 
   /**

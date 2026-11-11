@@ -128,6 +128,11 @@ export interface EntegratorAdapter {
   earsivRaporTutari?(cfg: EntegratorConfig, uuid: string): Promise<EarsivRaporTutari>;
   irsaliyeGonder?(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc>;
   /**
+   * EBLG-161: giden e-İrsaliyeyi bizim UUID'mizle arar. Zaman aşımına düşen gönderim
+   * entegratöre ulaşmış olabilir; yeniden denemeden önce sorulur. Yoksa `undefined`.
+   */
+  irsaliyeAra?(cfg: EntegratorConfig, uuid: string): Promise<GonderimSonuc | undefined>;
+  /**
    * EBLG-36: alıcı irsaliyenin bir kısmını kabul edebilir (`kismi_kabul`).
    * Entegratöre ulaşılamazsa hata fırlatılmalıdır; `hata` durumu belgenin
    * kendisinin reddedildiği anlamına gelir ve son durumdur.

@@ -1391,7 +1391,8 @@ export default function FaturaSayfasi() {
   function kesinIptalEdilebilir(fatura: Fatura) {
     if (!fatura.izinliEylemler?.includes("iptal")) return false;
     if (!fatura.ebelge) return true;
-    if (fatura.ebelge.durum === "iptal") return false;
+    // EBLG-160: e-Arşivi entegratörde iptal edilip kendisi kesin kalmış fatura (yarım kalan iptal) tamamlanabilir.
+    if (fatura.ebelge.durum === "iptal") return fatura.ebelge.tur === "earsiv";
     return fatura.ebelge.tur === "earsiv" || ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge });
   }
 
@@ -1399,6 +1400,8 @@ export default function FaturaSayfasi() {
     const gitmemis = ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge });
     const uyari = gitmemis
       ? "e-Belgesi entegratöre hiç ulaşmamış bu fatura iptal edilecek. Önce entegratöre belgenin oluşmadığı sorulur; stok ve cari için ters kayıt yazılır."
+      : fatura.ebelge?.durum === "iptal"
+        ? "e-Arşiv belgesi entegratörde zaten iptal edilmiş; fatura iptali tamamlanacak, entegratöre yeniden gidilmez. Stok ve cari için ters kayıt yazılır."
       : fatura.ebelge
         ? "Bu e-Arşiv faturası iptal edilecek ve iptal entegratöre bildirilecek. Bu işlem geri alınamaz; stok ve cari için ters kayıt yazılır."
         : "Bu kesin fatura iptal edilecek; stok ve cari için ters kayıt yazılır.";
@@ -3702,6 +3705,9 @@ export default function FaturaSayfasi() {
                   </div>
                 </dl>
               )
+            )}
+            {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "kesin" && ebelgeDetayi.ebelge.durum === "iptal" && (
+              <Alert tone="warning">e-Arşiv belgesi entegratörde iptal edildi ama fatura iptali tamamlanmadı. Faturayı iptal ederek tamamlayın; entegratöre yeniden gidilmez.</Alert>
             )}
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>

@@ -1007,6 +1007,36 @@ describe("NES gelen fatura çekimi — akış", () => {
     expect(islenen.filter((u) => u.startsWith("son-"))).toHaveLength(2);
   });
 
+  it("giden irsaliye UUID ile aranır; NES süzgeci yok sayıp başka belge dönerse benimsenmez (EBLG-161)", async () => {
+    const uuid = "11111111-1111-4111-8111-111111111111";
+    const f = vi.fn().mockResolvedValueOnce(yanit({ data: [{ id: uuid.toUpperCase(), documentNumber: "GBZ2026000800021" }] }))
+      .mockResolvedValueOnce(yanit({ data: [{ id: "22222222-2222-4222-8222-222222222222", documentNumber: "X" }] }));
+    vi.stubGlobal("fetch", f);
+    const a = new NesEntegratorAdapter();
+    expect(await a.irsaliyeAra(config, uuid)).toEqual({ basarili: true, belgeRef: uuid.toUpperCase(), belgeNo: "GBZ2026000800021" });
+    const u = new URL(String(f.mock.calls[0][0]));
+    expect(u.pathname).toBe("/edespatch/v1/outgoing/despatches");
+    expect(u.searchParams.get("uuid")).toBe(uuid);
+    expect(await a.irsaliyeAra(config, uuid)).toBeUndefined();
+    await expect(a.irsaliyeAra(config, "x")).rejects.toThrow(/UUID/);
+  });
+
+  it("gelen e-İrsaliyede de tavanı dolduran pencere bölünür (EBLG-162)", async () => {
+    const pencereler = new Set<string>();
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {
+      const u = new URL(String(adres));
+      if (u.pathname.endsWith("/xml")) return yanit("<DespatchAdvice/>");
+      const s = u.searchParams.get("startCreateDate")!, e = u.searchParams.get("endCreateDate")!, sayfa = Number(u.searchParams.get("page"));
+      pencereler.add(`${s}|${e}`);
+      if (pencereler.size === 1) return yanit({ data: Array.from({ length: 100 }, (_, i) => ({ id: `a${sayfa}-${i}`, documentNumber: "A" })) });
+      return yanit({ data: [{ id: `son-${s}`, documentNumber: "B" }] });
+    }));
+    const gelen = await new NesEntegratorAdapter().gelenIrsaliyeleriCek(config, new Date("2026-10-29T00:00:00Z"));
+    expect(pencereler.size).toBe(3);
+    expect(gelen.filter((g) => g.uuid.startsWith("a"))).toHaveLength(5000);
+    expect(gelen.filter((g) => g.uuid.startsWith("son-"))).toHaveLength(2);
+  });
+
   it("isle verilince her belge indirildiği anda işlenir, dizide biriktirilmez", async () => {
     const sira: string[] = [];
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (adres: string) => {

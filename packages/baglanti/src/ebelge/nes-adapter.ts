@@ -1108,16 +1108,39 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     await this.cagir(cfg, "edespatch", "/v1/uploads/draft/send", { metot: "POST", govde: [belgeRef] });
   }
 
+  /** EBLG-161: giden irsaliye listesinde UUID ile arama; dönen kimlik sorulanla birebir eşleşmelidir (bkz. belgeAra). */
+  async irsaliyeAra(cfg: EntegratorConfig, uuid: string): Promise<GonderimSonuc | undefined> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+      throw new Error(`İrsaliye araması için geçerli bir UUID gerekir: ${uuid}`);
+    }
+    const liste = await this.cagir<{ data?: { id?: string; documentNumber?: string }[] }>(cfg, "edespatch", "/v1/outgoing/despatches", {
+      sorgu: { uuid, page: 1, pageSize: 1 },
+    });
+    const belge = liste?.data?.find((satir) => satir.id?.toLowerCase() === uuid.toLowerCase());
+    return belge?.id ? { basarili: true, belgeRef: belge.id, belgeNo: belge.documentNumber } : undefined;
+  }
+
   async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date, bilinenler?: ReadonlySet<string>): Promise<GelenEirsaliye[]> {
     const hata = configDogrula(cfg);
     if (hata) throw new Error(hata);
-    const bitis = new Date();
-    const gorulen = new Set<string>();
     const irsaliyeler: GelenEirsaliye[] = [];
+    await this.gelenIrsaliyePencere(cfg, sonrasi, new Date(), new Set<string>(), irsaliyeler, bilinenler);
+    return irsaliyeler;
+  }
+
+  /** EBLG-162: pencere sayfa tavanını doldurursa kalan irsaliyeler kaybolmasın diye ikiye bölünür (EBLG-154 gibi). */
+  private async gelenIrsaliyePencere(
+    cfg: EntegratorConfig,
+    baslangic: Date,
+    bitis: Date,
+    gorulen: Set<string>,
+    irsaliyeler: GelenEirsaliye[],
+    bilinenler?: ReadonlySet<string>,
+  ): Promise<void> {
     for (let sayfa = 1; sayfa <= SAYFA_TAVANI; sayfa++) {
       const liste = await this.cagir<{ data?: GelenSatir[] }>(cfg, "edespatch", "/v1/incoming/despatches", {
         sorgu: {
-          startCreateDate: sonrasi.toISOString(),
+          startCreateDate: baslangic.toISOString(),
           endCreateDate: bitis.toISOString(),
           page: sayfa,
           pageSize: SAYFA_BOYUTU,
@@ -1149,9 +1172,13 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
           ...(yanit ? { yanit } : {}),
         });
       }
-      if (satirlar.length < SAYFA_BOYUTU) break;
+      if (satirlar.length < SAYFA_BOYUTU) return;
     }
-    return irsaliyeler;
+    const sureMs = bitis.getTime() - baslangic.getTime();
+    if (sureMs <= ASGARI_PENCERE_MS) throw new Error("NES gelen e-İrsaliye penceresi sayfa tavanını aşıyor; tarama durduruldu");
+    const orta = new Date(baslangic.getTime() + Math.floor(sureMs / 2));
+    await this.gelenIrsaliyePencere(cfg, baslangic, orta, gorulen, irsaliyeler, bilinenler);
+    await this.gelenIrsaliyePencere(cfg, orta, bitis, gorulen, irsaliyeler, bilinenler);
   }
 
   /**

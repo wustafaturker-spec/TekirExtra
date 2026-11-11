@@ -2451,29 +2451,25 @@ export class EbelgeService {
    * sorulur. Belge oradaysa ya da sorulamıyorsa iptal durur — körlemesine
    * iptal, GİB'de canlı duran bir belgeyi bizde iptal göstermek olurdu.
    */
-  async gitmemisBelgeyiKapat(
-    tx: Prisma.TransactionClient,
-    fatura: { id: string },
-    ebelge: { id: string; tur: EbelgeTur },
-  ): Promise<void> {
-    await this.entegratoreUlasmadiginiDogrula(tx, fatura, ebelge, "fatura iptal edilemez", "iptal durduruldu");
-    await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal" } });
+  /** Aktif e-belge bağlantısı kısa bir işlemle okunur; entegratör çağrısı işlemin dışında yapılır (EBLG-160). */
+  private aktifEbelgeBaglantisi(tenantId: string) {
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }));
   }
 
   /**
    * Belgenin entegratörde oluşmadığını sağlayıcıya sorarak doğrular; oluşmuşsa
    * ya da sorulamıyorsa hata fırlatır. Gitmemiş belgenin iptali (EBLG-81) ve
-   * taslağa geri alınması (FTR-29) bunu kullanır.
+   * taslağa geri alınması (FTR-29) bunu kullanır. EBLG-160: yalnız okur ve
+   * veritabanı işleminin dışında çağrılır; sorgu sürerken bağlantı tutulmaz.
    */
   async entegratoreUlasmadiginiDogrula(
-    tx: Prisma.TransactionClient,
     fatura: { id: string },
     ebelge: { tur: EbelgeTur },
     engel: string,
     durdu: string,
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
-    const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+    const baglanti = await this.aktifEbelgeBaglantisi(tenantId);
     if (!baglanti) throw new BadRequestException(`Aktif e-belge bağlantısı bulunamadı; belgenin entegratöre ulaşmadığı doğrulanamadan ${engel}`);
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
@@ -2491,13 +2487,19 @@ export class EbelgeService {
     }
   }
 
+  /**
+   * EBLG-160: e-Arşiv iptali veritabanı işleminin dışında entegratöre bildirilir; başarılıysa
+   * e-Belge kaydı hemen kendi kısa işlemiyle `iptal` yazılır. Faturanın kendisi (stok, cari)
+   * ardından ayrı işlemde iptal edilir; o adım düşerse yeniden denemede entegratör tekrar
+   * çağrılmaz (kayıt zaten iptal).
+   */
   async earsivBelgesiniIptalEt(
-    tx: Prisma.TransactionClient,
     fatura: { id: string; no: string | null; tarih: Date; genelToplam: Prisma.Decimal },
     ebelge: { id: string; entegratorRef: string | null; createdAt?: Date | null },
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
-    const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+    const ebelgeIptalYaz = () => this.prisma.tenantIslem(tenantId, (tx) => tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal", hataMesaji: null } }));
+    const baglanti = await this.aktifEbelgeBaglantisi(tenantId);
     if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı; e-Arşiv belgesi iptal edilemez");
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
@@ -2509,7 +2511,7 @@ export class EbelgeService {
     // gidiyor, belge ertesi gün raporlanmış oluyor ama iptal hakkı sürüyor.
     // MVZ-13: süre Mevzuat Merkezi'nden, fatura tarihindeki değer (yoksa 8 gün).
     // Süre fatura tarihi ile gönderim gününden sonrakinden, takvim günüyle işler.
-    const gunSayisi = await kanuniDegerOku(tx, "earsiv_iptal_gun", fatura.tarih, 8);
+    const gunSayisi = await this.prisma.tenantIslem(tenantId, (tx) => kanuniDegerOku(tx, "earsiv_iptal_gun", fatura.tarih, 8));
     const gunFarki = earsivIptalGecenGun(fatura.tarih, ebelge.createdAt);
     if (gunFarki > gunSayisi) {
       throw new BadRequestException(
@@ -2526,7 +2528,7 @@ export class EbelgeService {
       // eşitleyip sessizce çıkıyoruz.
       if (durum.iptalEdilmis) {
         this.logger.warn(JSON.stringify({ event: "earsiv_zaten_iptal", faturaId: fatura.id, belgeNo: fatura.no }));
-        await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal", hataMesaji: null } });
+        await ebelgeIptalYaz();
         return;
       }
       // Raporlanmış olmak iptali engellemez ama iptalin de GİB'e bildirilmesi
@@ -2539,7 +2541,7 @@ export class EbelgeService {
       adapter.earsivIptal!(cfg, { faturaNo: fatura.no!, toplamTutar: fatura.genelToplam.toFixed(2), iptalTarihi: new Date() }),
     );
     if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali entegratöre bildirilemedi");
-    await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal", hataMesaji: null } });
+    await ebelgeIptalYaz();
 
     if (raporlandi) {
       await this.bildirimler.uret({
@@ -2554,6 +2556,26 @@ export class EbelgeService {
         roller: ["muhasebe", "yonetici"],
       });
     }
+  }
+
+  /**
+   * EBLG-160: e-Arşiv entegratörde iptal edildi ama faturanın kendisi (stok, cari) iptal edilemedi.
+   * Belge "e-Arşivi iptal, fatura kesin" kalır; fatura iptali yeniden denendiğinde entegratör çağrılmaz.
+   */
+  async earsivIptaliYarimKaldi(fatura: { id: string; no: string | null }, hata: unknown) {
+    const sebep = hata instanceof Error ? hata.message : String(hata);
+    this.logger.error(JSON.stringify({ event: "earsiv_iptal_yarim_kaldi", faturaId: fatura.id, belgeNo: fatura.no, hata: sebep }));
+    await this.bildirimler.uret({
+      tur: "ebelge",
+      onem: "kritik",
+      baslik: `${fatura.no ?? "Fatura"}: e-Arşiv iptal edildi, fatura iptali tamamlanamadı`,
+      aciklama: `e-Arşiv belgesi entegratörde iptal edildi ama fatura TekirExtra'da iptal edilemedi (${sebep}). Sorunu giderip fatura iptalini yeniden deneyin; entegratöre tekrar gidilmez.`,
+      birlesimAnahtari: `earsiv-iptal-yarim:${fatura.id}`,
+      kaynakTur: "fatura",
+      kaynakRef: fatura.id,
+      hedefYol: `/panel/fatura?fatura=${fatura.id}`,
+      roller: ["muhasebe", "yonetici"],
+    }).catch((e: unknown) => this.logger.warn(`Yarım kalan iptal bildirimi üretilemedi: ${String(e)}`));
   }
 
   async earsivIptalBildir(faturaId: string, girdi: { iptalTarihi: Date; sube?: string }) {

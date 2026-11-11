@@ -343,6 +343,62 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].update.hataMesaji).toBeNull();
   });
 
+  it("entegratör çağrısı veritabanı işlemi kapandıktan sonra yapılır (EBLG-161)", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge());
+    let acikIslem = 0;
+    const prisma = (servis as unknown as { prisma: { tenantIslem: ReturnType<typeof vi.fn> } }).prisma;
+    const asil = prisma.tenantIslem.getMockImplementation()!;
+    prisma.tenantIslem.mockImplementation(async (t: string, f: (tx: unknown) => unknown) => { acikIslem++; try { return await asil(t, f); } finally { acikIslem--; } });
+    irsaliyeGonder.mockImplementation(async () => { expect(acikIslem).toBe(0); return { basarili: true, belgeRef: "nes-uuid" }; });
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyeGonder).toHaveBeenCalledOnce();
+  });
+
+  it("ilk gönderimde entegratörde arama yapılmaz (EBLG-161)", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge());
+    const irsaliyeAra = vi.fn();
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder, irsaliyeAra } } as never);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyeAra).not.toHaveBeenCalled();
+    expect(irsaliyeGonder).toHaveBeenCalledOnce();
+  });
+
+  it("yeniden denemede entegratörde bulunan belge yeniden gönderilmez, kaydına bağlanır (EBLG-161)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: { durum: "hata" } }));
+    const irsaliyeAra = vi.fn().mockResolvedValue({ basarili: true, belgeRef: "11111111-1111-4111-8111-111111111111", belgeNo: "GBZ2026000800021" });
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder, irsaliyeAra } } as never);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyeAra).toHaveBeenCalledWith(expect.anything(), "11111111-1111-4111-8111-111111111111");
+    expect(irsaliyeGonder).not.toHaveBeenCalled();
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].update).toMatchObject({ durum: "kuyrukta", entegratorRef: "11111111-1111-4111-8111-111111111111", hataMesaji: null });
+  });
+
+  it("yeniden denemede arama yapılamazsa gönderim durur (EBLG-161)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: { durum: "hata" } }));
+    const irsaliyeAra = vi.fn().mockRejectedValue(new Error("NES 503"));
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder, irsaliyeAra } } as never);
+
+    await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/kontrol edilemedi.*NES 503/);
+    expect(irsaliyeGonder).not.toHaveBeenCalled();
+    expect(tx.eirsaliyeKayit.upsert).not.toHaveBeenCalled();
+  });
+
+  it("yeniden denemede bulunamayan belge aynı numarayla gönderilir (EBLG-161)", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: { durum: "hata" } }));
+    const irsaliyeAra = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder, irsaliyeAra } } as never);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800021");
+  });
+
   it("bağlantıda e-İrsaliye öneki yoksa varsayılan seriye düşmez, numara harcamadan durur (EBLG-97)", async () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge(), { basarili: true }, true, {});
 

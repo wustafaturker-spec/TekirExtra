@@ -1,8 +1,8 @@
-import { BadGatewayException, BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } from "@prisma/client";
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type EirsaliyeKayit, type ZincirBelgeDurum } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
-import { postaKutusuSec, type EntegratorConfig } from "@tekirextra/baglanti";
+import { postaKutusuSec, type EntegratorConfig, type GonderimSonuc } from "@tekirextra/baglanti";
 import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi, eirsaliyeAsamasi, referansNotlari, siparisReferansi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -226,9 +226,14 @@ export class EirsaliyeService {
   }
 
   /** `otomatik`: kuyruk işçisinin yeniden denemesi (EBLG-94); elle gönderim sayacı sıfırlar. */
-  async gonder(belgeId: string, secenekler: { otomatik?: boolean } = {}) {
+  /**
+   * EBLG-161: entegratör çağrısı veritabanı işleminin dışında yapılır. Hazırlık (denetim,
+   * numara, XML) kısa bir işlemde yazılır; numara gönderim düşse de belgede kalır. Yeniden
+   * denemede belge önce entegratörde aranır: zaman aşımına düşen gönderim ulaşmış olabilir.
+   */
+  async gonder(belgeId: string, secenekler: { otomatik?: boolean } = {}): Promise<EirsaliyeKayit> {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const h = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true, varyant: { select: { kod: true, ad: true, nitelikler: true } } } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } }, depo: true } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || (belge.yon !== "satis" && !belge.gumrukDepoSevki)) throw new BadRequestException("Yalnızca satış irsaliyesi ve gümrükten depoya sevk irsaliyesi e-İrsaliye olarak gönderilebilir");
@@ -239,7 +244,9 @@ export class EirsaliyeService {
       // Entegratöre ulaşmış belge ikinci kez yüklenmez; yükleme artık `kuyrukta`
       // yazdığından (EBLG-106) yalnız `iletildi`/`kabul`'e bakmak yetmez.
       // Taslakta kalan belge `taslakGonder` ile ilerletilir.
-      if (belge.eirsaliye?.entegratorRef && belge.eirsaliye.durum !== "hata") return belge.eirsaliye;
+      const oncekiKayit = belge.eirsaliye;
+      if (oncekiKayit?.entegratorRef && oncekiKayit.durum !== "hata") return { hazir: oncekiKayit } as const;
+      const oncekiNo = belge.no;
       const { baglanti, cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeGonder) throw new BadRequestException("Seçili entegratör e-İrsaliye gönderimini desteklemiyor");
       // EBLG-84: yurt dışı alıcının Türk VKN'si yoktur; belgeye GİB'in yurt dışı
@@ -308,23 +315,39 @@ export class EirsaliyeService {
       }
       notlar.push(...referansNotlari(belge));
       const xml = this.ubl({ ...belge, cari, teslimatAdresi, notlar, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
-      // EBLG-106: NES'in toplu listesinde olup canlı sorgusunda olmayan kutu
-      // (2026-09-27: 1234567801'in nes.com.tr kutuları) hata vermeden boşaltılır,
-      // belge taslakta kalır. Birden çok kutusu olan alıcıda seçim canlı listeyle
-      // doğrulanır; tek kutulu alıcıda (gerçek firmaların çoğu) ek çağrı yapılmaz.
-      if (aliciPostaKutusu && mukellef?.postaKutulari && adapter.irsaliyePostaKutulariSorgula) {
-        const canli = await adapter.irsaliyePostaKutulariSorgula(cfg, aliciVkn!).catch(() => null);
-        if (canli?.length && !canli.includes(aliciPostaKutusu)) {
-          const { adaylar } = await postaKutusuSecimi(tx, aliciVkn!, "eirsaliye", null, cfg.gondericiBirimEtiketi);
-          const gecerli = adaylar.filter((a) => canli.includes(a.postaKutusu));
-          const yeni = postaKutusuSec(gecerli.length ? gecerli : canli.map((k) => ({ postaKutusu: k })), cfg.gondericiBirimEtiketi);
-          this.logger.warn(JSON.stringify({ event: "eirsaliye_posta_kutusu_degisti", tenantId, belgeNo: belge.no, eski: aliciPostaKutusu, yeni }));
-          aliciPostaKutusu = yeni;
-        }
+      return { belgeNo: belge.no, xml, cfg, adapter, aliciPostaKutusu, aliciVkn, cokKutulu: Boolean(mukellef?.postaKutulari), yenidenDeneme: Boolean(oncekiNo) && oncekiNo === belge.no } as const;
+    });
+    if (h.hazir) return h.hazir;
+    const { belgeNo, xml, cfg, adapter, aliciVkn } = h;
+    let { aliciPostaKutusu } = h;
+    // EBLG-106: NES'in toplu listesinde olup canlı sorgusunda olmayan kutu
+    // (2026-09-27: 1234567801'in nes.com.tr kutuları) hata vermeden boşaltılır,
+    // belge taslakta kalır. Birden çok kutusu olan alıcıda seçim canlı listeyle
+    // doğrulanır; tek kutulu alıcıda (gerçek firmaların çoğu) ek çağrı yapılmaz.
+    if (aliciPostaKutusu && h.cokKutulu && adapter.irsaliyePostaKutulariSorgula) {
+      const canli = await adapter.irsaliyePostaKutulariSorgula(cfg, aliciVkn!).catch(() => null);
+      if (canli?.length && !canli.includes(aliciPostaKutusu)) {
+        const { adaylar } = await this.prisma.tenantIslem(tenantId, (tx) => postaKutusuSecimi(tx, aliciVkn!, "eirsaliye", null, cfg.gondericiBirimEtiketi));
+        const gecerli = adaylar.filter((a) => canli.includes(a.postaKutusu));
+        const yeni = postaKutusuSec(gecerli.length ? gecerli : canli.map((k) => ({ postaKutusu: k })), cfg.gondericiBirimEtiketi);
+        this.logger.warn(JSON.stringify({ event: "eirsaliye_posta_kutusu_degisti", tenantId, belgeNo, eski: aliciPostaKutusu, yeni }));
+        aliciPostaKutusu = yeni;
       }
-      const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
+    }
+    // EBLG-161: arama desteklenmiyorsa (Sovos) gönderim sürer; aynı UUID GİB'de ikinci belge açmaz.
+    let mevcut: GonderimSonuc | undefined;
+    if (h.yenidenDeneme && adapter.irsaliyeAra) {
+      try {
+        mevcut = await adapter.irsaliyeAra(cfg, belgeId);
+      } catch (hata) {
+        throw new ServiceUnavailableException(`e-İrsaliyenin entegratörde zaten oluşup oluşmadığı kontrol edilemedi, yeniden gönderim durduruldu: ${hata instanceof Error ? hata.message : "bilinmeyen hata"}`);
+      }
+      if (mevcut) this.logger.warn(JSON.stringify({ event: "eirsaliye_mevcut_belge_benimsendi", tenantId, belgeId, belgeRef: mevcut.belgeRef, belgeNo }));
+    }
+    const sonuc = mevcut ?? await adapter.irsaliyeGonder!(cfg, { uuid: belgeId, belgeNo: belgeNo!, xml, aliciPostaKutusu });
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
       // Seçilen kutu belgede saklanmaz; entegratörde farklı kutu görünürse iz buradadır.
-      this.logger.log(JSON.stringify({ event: "eirsaliye_gonderildi", tenantId, belgeNo: belge.no, aliciPostaKutusu: aliciPostaKutusu ?? null, basarili: sonuc.basarili }));
+      this.logger.log(JSON.stringify({ event: "eirsaliye_gonderildi", tenantId, belgeNo, aliciPostaKutusu: aliciPostaKutusu ?? null, basarili: sonuc.basarili }));
       // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
       // ve başarılı yeniden gönderim önceki hatayı göstermeye devam ederdi.

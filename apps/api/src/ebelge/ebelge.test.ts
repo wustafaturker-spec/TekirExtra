@@ -1243,6 +1243,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     const bildirimler = { uret: vi.fn().mockResolvedValue({}) };
     const ayarlar = { getir: vi.fn().mockResolvedValue({ earsivIptalGunSayisi: gunSayisi }) } as any;
     const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, bildirimler as any, ayarlar);
+    mockTenantIslem.mockImplementation((_t: string, cb: (x: unknown) => unknown) => cb(tx));
     return { service, tx, earsivIptal, bildirimler, adapter };
   }
 
@@ -1254,14 +1255,14 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     // e-Arşiv raporu günlük gidiyor; sınır raporlanma değil süredir.
     const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: true });
 
-    await expect(service.earsivBelgesiniIptalEt(tx, { ...fatura, tarih: gunOnce(9) }, ebelge)).rejects.toThrow("iade faturası");
+    await expect(service.earsivBelgesiniIptalEt({ ...fatura, tarih: gunOnce(9) }, ebelge)).rejects.toThrow("iade faturası");
     expect(earsivIptal).not.toHaveBeenCalled();
     expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
   });
 
   it("geriye tarihli faturada süre gönderim gününden işler", async () => {
     const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
-    await service.earsivBelgesiniIptalEt(tx, { ...fatura, tarih: gunOnce(12) }, { ...ebelge, createdAt: gunOnce(3) });
+    await service.earsivBelgesiniIptalEt({ ...fatura, tarih: gunOnce(12) }, { ...ebelge, createdAt: gunOnce(3) });
     expect(earsivIptal).toHaveBeenCalled();
   });
 
@@ -1269,8 +1270,9 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     // Süre kiracı ayarı değil, fatura tarihindeki merkezi kanuni değerdir.
     const { service, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
     const tx = { ...kur({}).tx, mevzuatKayit: { findFirst: vi.fn().mockResolvedValue({ deger: { deger: 30 } }) } };
+    mockTenantIslem.mockImplementation((_t: string, cb: (x: unknown) => unknown) => cb(tx));
 
-    await service.earsivBelgesiniIptalEt(tx as never, { ...fatura, tarih: gunOnce(20) }, ebelge);
+    await service.earsivBelgesiniIptalEt({ ...fatura, tarih: gunOnce(20) }, ebelge);
 
     expect(tx.mevzuatKayit.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tur: "kanuni_deger", anahtar: "earsiv_iptal_gun" }) }));
     expect(earsivIptal).toHaveBeenCalled();
@@ -1279,7 +1281,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
   it("süre içindeki belgeyi iptal eder ve kaydı iptal olarak işaretler", async () => {
     const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
 
-    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+    await service.earsivBelgesiniIptalEt(fatura, ebelge);
 
     expect(earsivIptal).toHaveBeenCalled();
     expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal", hataMesaji: null } });
@@ -1289,7 +1291,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     // Raporlanmış olmak iptali engellemez ama iptalin de bildirilmesi gerekir.
     const { service, tx, earsivIptal, bildirimler } = kur({ durum: "iletildi", raporlandi: true });
 
-    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+    await service.earsivBelgesiniIptalEt(fatura, ebelge);
 
     expect(earsivIptal).toHaveBeenCalled();
     expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "ebelge", onem: "uyari" }));
@@ -1300,7 +1302,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     // "belge bulunamadı" diye dönüp gerçek arıza gibi görünüyordu.
     const { service, tx, earsivIptal, bildirimler } = kur({ durum: "iletildi", iptalEdilmis: true, raporlandi: true });
 
-    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+    await service.earsivBelgesiniIptalEt(fatura, ebelge);
 
     expect(earsivIptal).not.toHaveBeenCalled();
     expect(bildirimler.uret).not.toHaveBeenCalled();
@@ -1313,57 +1315,66 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     const { service, tx, earsivIptal, adapter } = kur({});
     adapter.durumSorgula.mockRejectedValue(new Error("NES 503"));
 
-    await expect(service.earsivBelgesiniIptalEt(tx, fatura, ebelge)).rejects.toThrow("NES 503");
+    await expect(service.earsivBelgesiniIptalEt(fatura, ebelge)).rejects.toThrow("NES 503");
     expect(earsivIptal).not.toHaveBeenCalled();
     expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
+  });
+
+  it("entegratör çağrıları açık veritabanı işlemi dışında yapılır (EBLG-160)", async () => {
+    const { service, tx, earsivIptal, adapter } = kur({ durum: "iletildi", raporlandi: false });
+    let acik = 0;
+    mockTenantIslem.mockImplementation(async (_t: string, cb: (x: unknown) => unknown) => { acik++; try { return await cb(tx); } finally { acik--; } });
+    adapter.durumSorgula.mockImplementation(async () => { expect(acik).toBe(0); return { durum: "iletildi", raporlandi: false }; });
+    earsivIptal.mockImplementation(async () => { expect(acik).toBe(0); return { basarili: true }; });
+
+    await service.earsivBelgesiniIptalEt(fatura, ebelge);
+
+    expect(earsivIptal).toHaveBeenCalledOnce();
+    expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal", hataMesaji: null } });
   });
 
   it("rapora girmemiş belgede bildirim üretilmez", async () => {
     const { service, tx, bildirimler } = kur({ durum: "iletildi", raporlandi: false });
 
-    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+    await service.earsivBelgesiniIptalEt(fatura, ebelge);
 
     expect(bildirimler.uret).not.toHaveBeenCalled();
   });
 });
 
-describe("EbelgeService.gitmemisBelgeyiKapat (EBLG-81)", () => {
+describe("EbelgeService.entegratoreUlasmadiginiDogrula (EBLG-81, EBLG-160)", () => {
   const metrics = { increment: vi.fn(), set: vi.fn() } as any;
 
   function kur(belgeAra: ReturnType<typeof vi.fn>) {
     const earsivIptal = vi.fn();
     const baglantilar = { adapterCoz: vi.fn().mockReturnValue({ belgeAra, earsivIptal }) } as any;
-    const tx = {
-      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "u" }) }) },
-      ebelgeKayit: { update: vi.fn().mockResolvedValue({}) },
-    } as any;
-    const service = new EbelgeService({} as any, baglantilar, {} as any, {} as any, metrics, {} as any, {} as any, {} as any);
-    return { service, tx, earsivIptal };
+    const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "u" }) }) } } as any;
+    let acik = 0;
+    const prisma = { tenantIslem: vi.fn(async (_t: string, cb: (x: unknown) => unknown) => { acik++; try { return await cb(tx); } finally { acik--; } }) } as any;
+    belgeAra.mockImplementation(((onceki) => async (...a: unknown[]) => { expect(acik).toBe(0); return onceki(...a); })(belgeAra.getMockImplementation() ?? (async () => undefined)));
+    const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, {} as any, {} as any, {} as any);
+    return { service, earsivIptal };
   }
+  const dogrula = (service: EbelgeService, tur: "earsiv" | "efatura" = "earsiv") => service.entegratoreUlasmadiginiDogrula({ id: "f1" }, { tur }, "fatura iptal edilemez", "iptal durduruldu");
 
-  it("belge entegratörde yoksa kaydı iptal eder, entegratöre iptal göndermez", async () => {
+  it("belge entegratörde yoksa geçer; sorgu işlem dışında yapılır, iptal gönderilmez", async () => {
     const belgeAra = vi.fn().mockResolvedValue(undefined);
-    const { service, tx, earsivIptal } = kur(belgeAra);
+    const { service, earsivIptal } = kur(belgeAra);
 
-    await service.gitmemisBelgeyiKapat(tx, { id: "f1" }, { id: "eb1", tur: "earsiv" });
+    await dogrula(service);
 
     expect(belgeAra).toHaveBeenCalledWith(expect.anything(), "f1", "earsiv");
-    expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal" } });
     expect(earsivIptal).not.toHaveBeenCalled();
   });
 
   it("belge entegratörde oluşmuşsa durur", async () => {
-    const { service, tx } = kur(vi.fn().mockResolvedValue({ basarili: true, belgeRef: "x", belgeNo: "SNC2026000000009" }));
-
-    await expect(service.gitmemisBelgeyiKapat(tx, { id: "f1" }, { id: "eb1", tur: "earsiv" })).rejects.toThrow("SNC2026000000009");
-    expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
+    const { service } = kur(vi.fn().mockResolvedValue({ basarili: true, belgeRef: "x", belgeNo: "SNC2026000000009" }));
+    await expect(dogrula(service)).rejects.toThrow("SNC2026000000009");
   });
 
   it("sorgu çalışmazsa körlemesine iptal etmez", async () => {
-    const { service, tx } = kur(vi.fn().mockRejectedValue(new Error("zaman aşımı")));
-
-    await expect(service.gitmemisBelgeyiKapat(tx, { id: "f1" }, { id: "eb1", tur: "efatura" })).rejects.toThrow("kontrol edilemedi");
-    expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
+    const { service } = kur(vi.fn().mockRejectedValue(new Error("zaman aşımı")));
+    await expect(dogrula(service, "efatura")).rejects.toThrow("kontrol edilemedi");
   });
 });
 
