@@ -169,7 +169,7 @@ export function KomutPaleti({
     if (!acik || aranan.length < 2) { setKayitlar([]); setAraniyor(false); return; }
     let iptal = false;
     setAraniyor(true);
-    const zamanlayici = window.setTimeout(async () => {
+    const ara = async () => {
       const parametre = encodeURIComponent(aranan);
       const izinli = (yol: string) => rolMenuYoluGorebilir(rol, yol);
       const [cariler, stoklar, faturalar] = await Promise.all([
@@ -196,8 +196,9 @@ export function KomutPaleti({
           href: `/panel/fatura?yon=${["alis", "alis_iade"].includes(fatura.tip) ? "alis" : "satis"}&faturaId=${fatura.id}&arama=${encodeURIComponent(fatura.no ?? aranan)}`,
         })),
       ]);
-      setAraniyor(false);
-    }, KAYIT_ARAMA_GECIKMESI);
+    };
+    // Sonuç işlenirken bir şey fırlatsa da "aranıyor" durumu takılı kalmaz.
+    const zamanlayici = window.setTimeout(() => void ara().catch(() => undefined).finally(() => { if (!iptal) setAraniyor(false); }), KAYIT_ARAMA_GECIKMESI);
     return () => { iptal = true; window.clearTimeout(zamanlayici); };
   }, [acik, sorgu, rol]);
 

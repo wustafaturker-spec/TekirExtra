@@ -27,6 +27,9 @@ jobs:
       - name: Lint (dar kapsam, eslint.config.mjs)
         run: pnpm lint
 
+      - name: Söz denetimi (K-3, tip bilgili; eslint.soz.config.mjs)
+        run: pnpm lint:soz
+
       - name: Derle
         run: pnpm turbo build
 

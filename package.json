@@ -11,7 +11,8 @@
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "dev": "turbo dev",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lint:soz": "eslint -c eslint.soz.config.mjs apps/api/src packages/shared/src packages/baglanti/src && eslint -c eslint.soz.config.mjs apps/web/src"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

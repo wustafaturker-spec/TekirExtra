@@ -68,7 +68,7 @@ export default function YapayZekaAyarlariSayfasi() {
   }
 
   useEffect(() => {
-    verileriYukle();
+    void verileriYukle();
   }, []);
 
   async function ayarlariKaydet() {

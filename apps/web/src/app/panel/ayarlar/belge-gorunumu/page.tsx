@@ -95,7 +95,7 @@ export default function BelgeGorunumuSayfasi() {
   useEffect(() => {
     if (!gorunum) return;
     const sira = ++siraRef.current;
-    const zamanlayici = setTimeout(async () => {
+    const onizlemeUret = async () => {
       setOnizlemeYukleniyor(true);
       try {
         const blob = await apiDosyaBlob("/belge-gorunumu/onizleme", {
@@ -112,7 +112,8 @@ export default function BelgeGorunumuSayfasi() {
       } finally {
         if (sira === siraRef.current) setOnizlemeYukleniyor(false);
       }
-    }, 500);
+    };
+    const zamanlayici = setTimeout(() => void onizlemeUret(), 500);
     return () => clearTimeout(zamanlayici);
   }, [gorunum, tur, dil, ciftDil, kase]);
   useEffect(() => () => { if (adresRef.current) URL.revokeObjectURL(adresRef.current); }, []);
