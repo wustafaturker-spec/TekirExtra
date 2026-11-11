@@ -11,7 +11,7 @@
  * Komut paleti (⌘K) de bu listeyi kullanır; buraya eklenen sayfa aramada
  * kendiliğinden çıkar.
  */
-import {
+import { FileUp,
   Archive,
   Armchair,
   Car,
@@ -239,6 +239,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/ileti-sablonlari", ikon: Mail, baslik: "E-posta ve SMS Şablonları", eslesme: "tam", esanlamlilar: ["ileti metni", "sms metni", "e-posta metni", "şablon"] },
   { href: "/panel/ayarlar/bildirimler", ikon: Bell, baslik: "Bildirim Tercihleri", eslesme: "tam", esanlamlilar: ["sessiz saat", "kanal", "e-posta bildirimi"] },
   { href: "/panel/ayarlar/moduller", ikon: Settings, baslik: "Modül Ayarları", eslesme: "tam" },
+  { href: "/panel/ayarlar/veri-aktarimi", ikon: FileUp, baslik: "Veri Aktarımı", eslesme: "tam", esanlamlilar: ["excel", "içe aktar", "açılış bakiyesi", "devir", "geçiş", "logo", "mikro", "netsis", "paraşüt"] },
   { href: "/panel/ayarlar/yapay-zeka", ikon: Sparkles, baslik: "Yapay Zeka & Ajanlar", eslesme: "tam", esanlamlilar: ["ai", "yapay zeka", "byok", "openai", "claude", "gemini", "ajan", "kurallar"] },
   { href: "/panel/ayarlar/abonelik", ikon: CreditCard, baslik: "Abonelik ve Paket", eslesme: "tam" },
   { href: "/panel/ayarlar/denetim", ikon: ShieldCheck, baslik: "Denetim İzi", eslesme: "tam", esanlamlilar: ["log", "audit"] },
