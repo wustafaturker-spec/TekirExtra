@@ -11,7 +11,7 @@
  * Komut paleti (⌘K) de bu listeyi kullanır; buraya eklenen sayfa aramada
  * kendiliğinden çıkar.
  */
-import { FileUp,
+import { CheckCheck, FileUp,
   Archive,
   Armchair,
   Car,
@@ -96,6 +96,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel", ikon: Gauge, baslik: "Finansal Özet", eslesme: "tam", esanlamlilar: ["ana sayfa", "dashboard", "kokpit"] },
       { href: "/panel/islemler", ikon: TriangleAlert, baslik: "Düzeltme Merkezi", eslesme: "tam", esanlamlilar: ["hata", "istisna", "uyarı"] },
       { href: "/panel/bildirimler", ikon: Bell, baslik: "Bildirimler", eslesme: "tam", esanlamlilar: ["uyarı", "hatırlatma", "görev"] },
+      { href: "/panel/onaylar", ikon: CheckCheck, baslik: "Onaylar", eslesme: "tam", esanlamlilar: ["onay kutusu", "onay bekleyen", "onay talebi", "görev ayrılığı"] },
       { href: "/panel/donem-kapatma", ikon: Lock, baslik: "Dönem Kapatma", eslesme: "tam", esanlamlilar: ["mali dönem", "kilit", "kapanış"] },
       { href: "/panel/nakit-akisi", ikon: TrendingUp, baslik: "Nakit Akışı", eslesme: "tam", esanlamlilar: ["nakit akış tahmini", "nakit tahmini", "likidite", "senaryo"] },
       { href: "/panel/butce", ikon: CalendarRange, baslik: "Bütçe", eslesme: "tam", esanlamlilar: ["plan", "gerçekleşen", "sapma", "revizyon"] },
@@ -239,6 +240,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/ileti-sablonlari", ikon: Mail, baslik: "E-posta ve SMS Şablonları", eslesme: "tam", esanlamlilar: ["ileti metni", "sms metni", "e-posta metni", "şablon"] },
   { href: "/panel/ayarlar/bildirimler", ikon: Bell, baslik: "Bildirim Tercihleri", eslesme: "tam", esanlamlilar: ["sessiz saat", "kanal", "e-posta bildirimi"] },
   { href: "/panel/ayarlar/moduller", ikon: Settings, baslik: "Modül Ayarları", eslesme: "tam" },
+  { href: "/panel/ayarlar/onay-kurallari", ikon: CheckCheck, baslik: "Onay Kuralları", eslesme: "tam", esanlamlilar: ["onay akışı", "onay eşiği", "iskonto sınırı", "risk limiti", "dört göz"] },
   { href: "/panel/ayarlar/veri-aktarimi", ikon: FileUp, baslik: "Veri Aktarımı", eslesme: "tam", esanlamlilar: ["excel", "içe aktar", "açılış bakiyesi", "devir", "geçiş", "logo", "mikro", "netsis", "paraşüt"] },
   { href: "/panel/ayarlar/yapay-zeka", ikon: Sparkles, baslik: "Yapay Zeka & Ajanlar", eslesme: "tam", esanlamlilar: ["ai", "yapay zeka", "byok", "openai", "claude", "gemini", "ajan", "kurallar"] },
   { href: "/panel/ayarlar/abonelik", ikon: CreditCard, baslik: "Abonelik ve Paket", eslesme: "tam" },
