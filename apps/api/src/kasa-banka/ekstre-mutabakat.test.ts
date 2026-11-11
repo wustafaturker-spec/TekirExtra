@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
-import { gunSonuBakiyesi, mutabakatHesapla, type MutabakatSatiri } from "./ekstre-mutabakat";
+import { gunlukHareketNetleri, gunSonuBakiyesi, mutabakatHesapla, type MutabakatSatiri } from "./ekstre-mutabakat";
 
 const D = (d: string) => new Prisma.Decimal(d);
 const satir = (tarih: string, tutar: string, bakiye: string | null, durum: MutabakatSatiri["durum"] = "eslesti"): MutabakatSatiri =>
@@ -47,5 +47,24 @@ describe("banka bakiyesi mutabakatı (KSB-06)", () => {
     ]);
     expect(sonuc.acilisBakiyesiEksikOlabilir).toBe(true);
     expect(sonuc.aciklanmayanFark).toBe("5000.00");
+  });
+});
+
+describe("gün başına net hareket (V-2)", () => {
+  it("gün toplamı satır satır hesapla aynı sonucu verir; işaret tipe çevrilir", async () => {
+    const t = (g: string) => new Date(`${g}T00:00:00Z`);
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([{ tarih: t("2026-11-01"), net: "150.00" }, { tarih: t("2026-11-02"), net: "-70.00" }]) };
+    const netler = await gunlukHareketNetleri(tx as never, "t1", "h1");
+    expect(netler.map((n) => [n.tip, n.tutar.toFixed(2)])).toEqual([["tahsilat", "150.00"], ["tediye", "70.00"]]);
+    const satirlar = [
+      { tarih: t("2026-11-01"), tutar: D("150.00"), bakiye: D("150.00"), durum: "eslesti" as const },
+      { tarih: t("2026-11-02"), tutar: D("-70.00"), bakiye: D("80.00"), durum: "eslesti" as const },
+    ];
+    const tekTek = [
+      { tarih: t("2026-11-01"), tip: "tahsilat", tutar: D("200.00") }, { tarih: t("2026-11-01"), tip: "virman_gidis", tutar: D("50.00") },
+      { tarih: t("2026-11-02"), tip: "tediye", tutar: D("100.00") }, { tarih: t("2026-11-02"), tip: "virman_gelis", tutar: D("30.00") },
+    ];
+    expect(mutabakatHesapla(satirlar, netler)).toEqual(mutabakatHesapla(satirlar, tekTek));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(["t1", "h1"]);
   });
 });

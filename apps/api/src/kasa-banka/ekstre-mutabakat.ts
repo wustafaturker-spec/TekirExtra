@@ -98,3 +98,20 @@ export function mutabakatHesapla(satirlar: MutabakatSatiri[], hareketler: Mutaba
     gunler: sonuc.slice(-60),
   };
 }
+
+/**
+ * Sistem tarafı gün başına net tutar olarak veritabanında toplanır: mutabakat yalnız her ekstre
+ * gününe kadarki birikimli bakiyeyi kullanır, hesabın bütün hareketlerini belleğe almaya gerek
+ * yoktur. Giriş tipleri `giris` ile aynıdır. Dönen satırlar `mutabakatHesapla`ya hareket olarak verilir.
+ */
+export async function gunlukHareketNetleri(tx: Prisma.TransactionClient, tenantId: string, bankaHesapId: string): Promise<MutabakatHareketi[]> {
+  const satirlar = await tx.$queryRaw<{ tarih: Date; net: string }[]>`
+    SELECT tarih, sum(CASE WHEN tip::text IN ('tahsilat', 'virman_gelis') THEN tutar ELSE -tutar END)::text AS net
+    FROM kasa_banka_hareketleri
+    WHERE tenant_id = ${tenantId}::uuid AND banka_hesap_id = ${bankaHesapId}::uuid
+    GROUP BY tarih`;
+  return satirlar.map((s) => {
+    const net = D(s.net);
+    return { tarih: s.tarih, tip: net.isNegative() ? "tediye" : "tahsilat", tutar: net.abs() };
+  });
+}

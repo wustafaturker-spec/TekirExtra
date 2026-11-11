@@ -16,7 +16,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { kuralBul } from "./ekstre-kural";
-import { mutabakatHesapla } from "./ekstre-mutabakat";
+import { gunlukHareketNetleri, mutabakatHesapla } from "./ekstre-mutabakat";
 import { StandartEkstreHatasi, standartEkstreOku, type StandartEkstre } from "./ekstre-standart";
 import { bakiyeSaglamasi, pdfEkstreOku, pdfMi, type PdfEkstre } from "./ekstre-pdf";
 import {
@@ -322,7 +322,7 @@ export class EkstreService {
     const hesap = await this.hesapGetir(tenantId, bankaHesapId);
     const [satirlar, hareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.bankaEkstreSatir.findMany({ where: { bankaHesapId }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
-      tx.kasaBankaHareket.findMany({ where: { bankaHesapId }, select: { tarih: true, tip: true, tutar: true } }),
+      gunlukHareketNetleri(tx, tenantId, bankaHesapId),
     ]));
     return {
       bankaHesap: { id: hesap.id, ad: hesap.ad, dovizCinsi: hesap.dovizCinsi },
@@ -339,7 +339,7 @@ export class EkstreService {
   async bakiyeDurumu(tenantId: string, bankaHesapId: string) {
     const [satirlar, hareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.bankaEkstreSatir.findMany({ where: { bankaHesapId }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
-      tx.kasaBankaHareket.findMany({ where: { bankaHesapId }, select: { tarih: true, tip: true, tutar: true } }),
+      gunlukHareketNetleri(tx, tenantId, bankaHesapId),
     ]));
     const sonuc = mutabakatHesapla(satirlar, hareketler);
     if (!sonuc.son) return null;
