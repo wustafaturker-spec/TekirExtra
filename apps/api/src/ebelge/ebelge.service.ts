@@ -17,7 +17,7 @@ import {
   ServiceUnavailableException,
   forwardRef,
 } from "@nestjs/common";
-import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
+import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, FaturaTip, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GelenBelge, GonderimSonuc } from "@tekirextra/baglanti";
 import { bugunTR, faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type KodTablosu, type TevkifatKodu, VARSAYILAN_KOD_TABLOSU } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
@@ -225,6 +225,11 @@ const GELEN_LISTE_SECIMI = {
   satirSayisi: true, genelToplam: true, dovizCinsi: true, okunabilir: true, denetimUyariSayisi: true,
   fatura: { select: { id: true, no: true, durum: true } },
 } as const satisfies Prisma.GelenEbelgeSelect;
+
+/** EBLG-157: gelen belgeden açılan taslağın açıklaması; bağsız kalan taslak bu önekle tanınır. */
+const gelenTaslakAciklamaOneki = (belgeNo: string) => `Gelen e-Fatura ${belgeNo} — `;
+/** Bu süreden yeni bağsız taslak, süren bir işlemin olabilir; dokunulmaz. */
+const BAGSIZ_TASLAK_BEKLEME_MS = 2 * 60_000;
 
 @Injectable()
 export class EbelgeService {
@@ -2173,6 +2178,8 @@ export class EbelgeService {
       tip === "satis_iade" ? "musteri" : "tedarikci",
     );
 
+    await this.bagsizGelenTaslaklariniTemizle(tenantId, kayit, tip, cariId);
+
     // EBLG-115: tolerans içindeki kuruş farkı faturanın notunda kalır.
     const kurusFarklari = denetim.satirlar.filter((f) => f.fark !== 0);
     const fatura = await this.faturaService.olustur({
@@ -2185,7 +2192,7 @@ export class EbelgeService {
       kur: belgeGirdisi.kur,
       genelIskontoYuzdesi: "0",
       genelIskontoTutari: belgeGirdisi.genelIskontoTutari,
-      aciklama: `Gelen e-Fatura ${kayit.belgeNo} — ${kayit.gonderenUnvan}`,
+      aciklama: `${gelenTaslakAciklamaOneki(kayit.belgeNo)}${kayit.gonderenUnvan}`,
       notlar: kurusFarklari.length
         ? `Belge ile kuruş farkı (${ubl.dovizCinsi}): ${kurusFarklari.map((f) => `${f.ad} ${f.fark > 0 ? "+" : ""}${f.fark.toFixed(2)}`).join(", ")}`
         : null,
@@ -2263,6 +2270,29 @@ export class EbelgeService {
       /** EBLG-115: tolerans içi farklar (aşanlar işlemeyi zaten durdurur). */
       tutarDenetimi: denetim,
     };
+  }
+
+  /**
+   * EBLG-157: fatura oluşturma ile gelen belgeye bağlama ayrı işlemlerdir; arada süreç çökerse
+   * bağsız bir taslak kalır. Yeniden işlemede bu belgeden açılmış bağsız taslaklar silinir, yerine
+   * güncel eşleşmeyle yenisi açılır. Çift tıklamayla yarışmamak için yalnız eski taslaklara dokunulur.
+   */
+  private async bagsizGelenTaslaklariniTemizle(tenantId: string, kayit: { id: string; belgeNo: string }, tip: FaturaTip, cariId: string) {
+    const yetimler = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({
+      where: {
+        tip, cariId, no: kayit.belgeNo, durum: "taslak", gelenEbelge: { is: null }, ebelge: { is: null },
+        aciklama: { startsWith: gelenTaslakAciklamaOneki(kayit.belgeNo) },
+        createdAt: { lt: new Date(Date.now() - BAGSIZ_TASLAK_BEKLEME_MS) },
+      },
+      select: { id: true },
+      take: 10,
+    }));
+    for (const y of yetimler) {
+      await this.faturaService.sil(y.id).then(
+        () => this.logger.warn(JSON.stringify({ event: "bagsiz_gelen_taslagi_silindi", gelenEbelgeId: kayit.id, faturaId: y.id })),
+        (hata: unknown) => this.logger.warn(JSON.stringify({ event: "bagsiz_gelen_taslagi_silinemedi", gelenEbelgeId: kayit.id, faturaId: y.id, hata: hata instanceof Error ? hata.message : String(hata) })),
+      );
+    }
   }
 
   /**

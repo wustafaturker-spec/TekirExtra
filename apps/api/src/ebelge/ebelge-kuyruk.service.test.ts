@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
-import { EbelgeKuyrukService, listeSenkronKiracisi } from "./ebelge-kuyruk.service";
+import { EbelgeKuyrukService, KUYRUK_TARAMA_SINIRI, listeSenkronKiracisi, tenantIsleriniTara } from "./ebelge-kuyruk.service";
 
 const bull = vi.hoisted(() => ({
   add: vi.fn(), getJob: vi.fn(), getJobs: vi.fn(), close: vi.fn(), on: vi.fn(), getWorkersCount: vi.fn(),
@@ -245,12 +245,24 @@ describe("EbelgeKuyrukService", () => {
       .mockResolvedValueOnce(Array.from({ length: 500 }, (_, i) => ({ id: `diger-${i}`, data: { tenantId: "tenant-diger" } })))
       .mockResolvedValueOnce([{ id: "hedef-1", data: { tenantId: "tenant-1" } }]);
 
-    const isler = await (service as unknown as {
-      tenantIsleriniGetir(durumlar: string[], tenantId: string): Promise<Array<{ id: string }>>;
+    const { isler, sinirli } = await (service as unknown as {
+      tenantIsleriniGetir(durumlar: string[], tenantId: string): Promise<{ isler: Array<{ id: string }>; sinirli: boolean }>;
     }).tenantIsleriniGetir(["waiting"], "tenant-1");
 
     expect(isler.map((is) => is.id)).toEqual(["hedef-1"]);
-    expect(bull.getJobs).toHaveBeenNthCalledWith(2, ["waiting"], 500, 999, true);
+    expect(sinirli).toBe(false);
+    expect(bull.getJobs).toHaveBeenNthCalledWith(2, ["waiting"], 500, 999, false);
+  });
+
+  it("tarama en yeni 5.000 işte durur ve sınıra takıldığını söyler (EBLG-156)", async () => {
+    const dolu = (i: number) => Array.from({ length: 500 }, (_, j) => ({ id: `d-${i}-${j}`, data: { tenantId: j === 0 ? "tenant-1" : "diger" } }));
+    const getJobs = vi.fn(async (_d: string[], bas: number) => dolu(bas / 500));
+    const { isler, sinirli } = await tenantIsleriniTara({ getJobs } as never, ["completed"], "tenant-1");
+    expect(getJobs).toHaveBeenCalledTimes(KUYRUK_TARAMA_SINIRI / 500);
+    expect(isler).toHaveLength(10);
+    expect(sinirli).toBe(true);
+    const kisa = vi.fn(async () => dolu(0).slice(0, 3));
+    expect((await tenantIsleriniTara({ getJobs: kisa } as never, ["completed"], "tenant-1")).sinirli).toBe(false);
   });
 
   it("özet, kuyruğu dinleyen worker sayısını da söyler (EBLG-48)", async () => {

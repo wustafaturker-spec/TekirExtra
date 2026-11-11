@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { MetricsService } from "./metrics.service";
 import { structuredLogger } from "./structured-logger";
+import { XML_YUKLEME_SINIRI_MB, xmlYuklemeYoluMu } from "../govde-sinirlari";
 
 /**
  * STK-35: bağlantı havuzu dolduğunda Prisma'nın verdiği hatalar — P2024
@@ -29,10 +30,11 @@ const GOVDE_HATASI_ILETILERI: Record<string, string> = {
   "entity.too.large": "İstek gövdesi çok büyük",
   "charset.unsupported": "İstek karakter kümesi desteklenmiyor",
 };
-export function istemciGovdeHatasi(hata: unknown): { status: number; mesaj: string } | null {
+export function istemciGovdeHatasi(hata: unknown, yol?: string): { status: number; mesaj: string } | null {
   if (!(hata instanceof Error)) return null;
   const h = hata as Error & { status?: unknown; expose?: unknown; type?: unknown };
   if (h.expose !== true || typeof h.status !== "number" || h.status < 400 || h.status > 499) return null;
+  if (h.type === "entity.too.large" && xmlYuklemeYoluMu(yol)) return { status: h.status, mesaj: `XML dosyası ${XML_YUKLEME_SINIRI_MB} MB sınırını aşıyor` };
   return { status: h.status, mesaj: GOVDE_HATASI_ILETILERI[String(h.type)] ?? "İstek gövdesi işlenemedi" };
 }
 
@@ -65,7 +67,7 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();
-    const istemci = istemciGovdeHatasi(exception);
+    const istemci = istemciGovdeHatasi(exception, req.originalUrl?.split("?")[0] ?? req.path);
     const status = exception instanceof HttpException
       ? exception.getStatus()
       : exception instanceof ZodError

@@ -10,7 +10,7 @@ type IsTuru = "ebelge-gonder" | "ebelge-durum-sorgula" | "gelen-belge-cek" | "ea
 interface KuyrukIsi { id: string; isTuru: IsTuru; faturaId: string | null; durum: IsDurumu; deneme: number; azamiDeneme: number; hata: string | null; kuyrugaAlinmaZamani: string; islenmeZamani: string | null; tamamlanmaZamani: string | null }
 interface Sayilar { waiting: number; active: number; delayed: number; failed: number; "dead-letter": number; completed: number }
 /** `calisanWorker` kuyruğu dinleyen worker sayısı; null ise okunamadı (EBLG-48). */
-interface Ozet { sayilar: Sayilar; calisanWorker: number | null }
+interface Ozet { sayilar: Sayilar; calisanWorker: number | null; sinirli?: boolean; taramaSiniri?: number }
 
 const DURUM: Record<IsDurumu, { ad: string; aciklama: string; ton: "neutral" | "info" | "warning" | "danger" | "success" }> = {
   waiting: { ad: "Bekliyor", aciklama: "Worker tarafından alınmayı bekliyor", ton: "info" },
@@ -41,6 +41,7 @@ export default function EbelgeKuyrukSayfasi() {
   return <div className="queue-page">
     <header className="queue-hero"><div><span>E-BELGE OPERASYON MERKEZİ</span><h1>Entegrasyon kuyruğu</h1><p>Gönderim, durum sorgulama ve gelen belge senkronizasyonlarını tek merkezden izleyin.</p></div><div><small>{sonYenileme ? `Son güncelleme ${sonYenileme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Henüz güncellenmedi"}</small><Button disabled={yukleniyor} onClick={() => void yukle()}>{yukleniyor ? "Yükleniyor…" : "↻ Şimdi yenile"}</Button></div></header>
     {hata && <Alert tone="error">{hata}</Alert>}{basari && <Alert tone="success">{basari}</Alert>}
+    {ozet.sinirli && <Alert tone="warning">Sayılar ve liste her durumun son {(ozet.taramaSiniri ?? 5000).toLocaleString("tr-TR")} işi içinden hesaplandı; daha eski işler gösterilmiyor.</Alert>}
     {ozet.calisanWorker === 0 && <Alert tone="warning">e-Belge worker'ı çalışmıyor: kuyruğu dinleyen süreç yok. {bekleyenIs > 0 ? `${bekleyenIs} iş kuyrukta bekliyor ve ` : "Yeni gönderimler kuyruğa yazılır, "}worker başlatılana kadar hiçbiri ilerlemez; sistem yöneticinize bildirin.</Alert>}
     <section className="queue-kpis"><button className={!filtre ? "is-selected" : ""} onClick={() => setFiltre("")}><span>Toplam görünür iş</span><strong>{Object.values(ozet.sayilar).reduce((a, b) => a + b, 0)}</strong><small>Tüm durumlar</small></button>{(["active", "waiting", "delayed", "dead-letter"] as IsDurumu[]).map((durum) => <button className={`${filtre === durum ? "is-selected" : ""} ${durum === "dead-letter" && ozet.sayilar["dead-letter"] ? "is-danger" : ""}`} key={durum} onClick={() => setFiltre(durum)}><span>{DURUM[durum].ad}</span><strong>{ozet.sayilar[durum]}</strong><small>{DURUM[durum].aciklama}</small></button>)}</section>
     <Card className="queue-register" pad={false} title={<div className="queue-register__title"><div><span>CANLI İŞ AKIŞI</span><h2>Tüm e-Belge operasyonları</h2></div><Select aria-label="Kuyruk durumu filtresi" value={filtre} onChange={(e) => setFiltre(e.target.value as IsDurumu | "")}><option value="">Tüm durumlar</option>{Object.entries(DURUM).map(([kod, d]) => <option key={kod} value={kod}>{d.ad}</option>)}</Select></div>}>

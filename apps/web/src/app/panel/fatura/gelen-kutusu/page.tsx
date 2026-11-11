@@ -652,6 +652,13 @@ export default function GelenKutusuSayfasi() {
   function xmlDosyaSec(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // EBLG-158: sunucu XML yüklemesini 10 MB ile sınırlar; büyük dosya gönderilmeden söylenir.
+    if (file.size > 10 * 1024 * 1024) {
+      setHata("XML dosyası 10 MB sınırını aşıyor");
+      e.target.value = "";
+      return;
+    }
+    setHata("");
     const reader = new FileReader();
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
@@ -687,7 +694,8 @@ export default function GelenKutusuSayfasi() {
                 <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>📄 Manuel XML Alış Faturası Yükle</h3>
                 <button onClick={() => setXmlModal(false)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer" }}>×</button>
               </div>
-              <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>Tedarikçinizden aldığınız UBL-TR formatındaki <strong>.xml</strong> fatura dosyasını seçebilir veya metin olarak yapıştırabilirsiniz.</p>
+              <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>Tedarikçinizden aldığınız UBL-TR formatındaki <strong>.xml</strong> fatura dosyasını seçebilir veya metin olarak yapıştırabilirsiniz. Dosya en fazla 10 MB olabilir.</p>
+              <Alert tone="error">{hata}</Alert>
 
               <Field label="XML Dosyası Seç (.xml)">
                 <input type="file" accept=".xml" onChange={xmlDosyaSec} style={{ width: "100%", padding: "8px", border: "1px solid #cbd5e1", borderRadius: "6px" }} />

@@ -76,10 +76,10 @@ describe("paket DB hatasının güvenli sunumu", () => {
 });
 
 describe("ObservabilityExceptionFilter istek gövdesi hataları (SEC-04)", () => {
-  const calistir = (hata: unknown) => {
+  const calistir = (hata: unknown, yol = "/auth/giris") => {
     const json = vi.fn();
     const status = vi.fn(() => ({ json }));
-    const host = { switchToHttp: () => ({ getRequest: () => ({ headers: {}, method: "POST", path: "/auth/giris" }), getResponse: () => ({ status }) }) };
+    const host = { switchToHttp: () => ({ getRequest: () => ({ headers: {}, method: "POST", path: yol, originalUrl: yol }), getResponse: () => ({ status }) }) };
     new ObservabilityExceptionFilter({ increment: vi.fn() } as never).catch(hata, host as never);
     return { status, json };
   };
@@ -91,6 +91,12 @@ describe("ObservabilityExceptionFilter istek gövdesi hataları (SEC-04)", () =>
     expect(a.json).toHaveBeenCalledWith({ statusCode: 415, message: "Sıkıştırılmış istek gövdesi desteklenmiyor" });
     expect(calistir(govdeHatasi(400, "entity.parse.failed")).status).toHaveBeenCalledWith(400);
     expect(calistir(govdeHatasi(413, "entity.too.large")).status).toHaveBeenCalledWith(413);
+  });
+
+  it("XML yükleme ucunda büyük gövde sınırı söyleyen iletiyle döner (EBLG-158)", () => {
+    const a = calistir(govdeHatasi(413, "entity.too.large"), "/api/v1/ebelge/gelen/xml-yukle?x=1");
+    expect(a.json).toHaveBeenCalledWith({ statusCode: 413, message: "XML dosyası 10 MB sınırını aşıyor" });
+    expect(calistir(govdeHatasi(413, "entity.too.large"), "/api/v1/fatura").json).toHaveBeenCalledWith({ statusCode: 413, message: "İstek gövdesi çok büyük" });
   });
 
   it("expose olmayan ya da 5xx durumlu hata 500 kalır, ayrıntı sızmaz", () => {

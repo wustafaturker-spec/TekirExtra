@@ -101,12 +101,39 @@ export function listeSenkronKiracisi<T extends { id: string; baglantilar: { sagl
 /** Planlayıcının iş açarken baktığı en uzun irsaliye yanıt süresi; kiracının kendi süresi işte uygulanır. */
 const EIRSALIYE_AZAMI_YANIT_GUNU = 60;
 
+/** EBLG-156: başarısız iş 30 gün saklanır (kalıcı kayıt dead-letter kuyruğundadır). */
+const BASARISIZ_IS_SAKLAMA_SN = 30 * 86_400;
+/** EBLG-156: ekran bir durumda en fazla bu kadar işe bakar (bütün firmaların işleri dahil). */
+export const KUYRUK_TARAMA_SINIRI = 5_000;
+const KUYRUK_DURUMLARI = ["waiting", "active", "delayed", "failed", "completed"] as const;
+
+/**
+ * Kuyruk bütün firmaların işlerini tutar; firmanınkiler en yeniden başlayarak sayfa sayfa süzülür.
+ * En fazla KUYRUK_TARAMA_SINIRI iş taranır; daha eskisi kaldıysa `sinirli` döner.
+ */
+export async function tenantIsleriniTara<T extends { tenantId: string }>(
+  kuyruk: Pick<Queue<T>, "getJobs">,
+  durumlar: Parameters<Queue<T>["getJobs"]>[0],
+  tenantId: string,
+  sinir = Number.POSITIVE_INFINITY,
+): Promise<{ isler: Job<T>[]; sinirli: boolean }> {
+  const isler: Job<T>[] = [];
+  const sayfaBoyutu = 500;
+  for (let baslangic = 0; isler.length < sinir; baslangic += sayfaBoyutu) {
+    if (baslangic >= KUYRUK_TARAMA_SINIRI) return { isler: isler.slice(0, sinir), sinirli: true };
+    const sayfa = await kuyruk.getJobs(durumlar, baslangic, baslangic + sayfaBoyutu - 1, false);
+    isler.push(...sayfa.filter((is) => is.data.tenantId === tenantId));
+    if (sayfa.length < sayfaBoyutu) break;
+  }
+  return { isler: isler.slice(0, sinir), sinirli: false };
+}
+
 @Injectable()
 export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EbelgeKuyrukService.name);
   private readonly kuyruk = new Queue<EbelgeKuyrukVerisi>(KUYRUK_ADI, {
     connection: redisBaglantisi(),
-    defaultJobOptions: { attempts: 5, backoff: { type: "exponential", delay: 5_000 }, removeOnComplete: { age: 604_800, count: 10_000 }, removeOnFail: false },
+    defaultJobOptions: { attempts: 5, backoff: { type: "exponential", delay: 5_000 }, removeOnComplete: { age: 604_800, count: 10_000 }, removeOnFail: { age: BASARISIZ_IS_SAKLAMA_SN } },
   });
   private readonly kuyrukOlaylari = new QueueEvents(KUYRUK_ADI, { connection: redisBaglantisi() });
   private readonly deadLetter = new Queue<DeadLetterVerisi>(DEAD_LETTER_KUYRUGU, { connection: redisBaglantisi(), defaultJobOptions: { removeOnComplete: false, removeOnFail: false } });
@@ -221,15 +248,23 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     return this.tekrarlanabilirIsEkle(EARSIV_RAPOR_ISI, earsivRaporIsKimligi(baglam.tenantId, raporUuid), { raporUuid });
   }
 
+  /**
+   * EBLG-156: sayılar her durumun en yeni KUYRUK_TARAMA_SINIRI işi içinden çıkar; kuyruk bütün
+   * firmaların işlerini tuttuğu için tamamı taranmaz. Sınıra takılınca `sinirli` ekranda söylenir.
+   */
   async ozet() {
     const { tenantId } = aktifBaglam();
-    const isler = await this.tenantIsleriniGetir(["waiting", "active", "delayed", "failed", "completed"], tenantId);
-    const deadLetterIsleri = await this.tenantDeadLetterIsleriniGetir(tenantId);
-    const deadLetterAsilIdleri = new Set(deadLetterIsleri.map((is) => is.data.asilIsId));
+    const dlq = await this.tenantDeadLetterIsleriniGetir(tenantId);
+    const deadLetterAsilIdleri = new Set(dlq.isler.map((is) => is.data.asilIsId));
     const sayilar: Record<string, number> = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 };
-    await Promise.all(isler.map(async (is) => { if (deadLetterAsilIdleri.has(String(is.id))) return; const durum = await is.getState(); sayilar[durum] = (sayilar[durum] || 0) + 1; }));
-    sayilar["dead-letter"] = deadLetterIsleri.length;
-    return { sayilar, calisanWorker: await this.calisanWorkerSayisi() };
+    let sinirli = dlq.sinirli;
+    for (const durum of KUYRUK_DURUMLARI) {
+      const t = await this.tenantIsleriniGetir([durum], tenantId);
+      sayilar[durum] = t.isler.filter((is) => !deadLetterAsilIdleri.has(String(is.id))).length;
+      sinirli ||= t.sinirli;
+    }
+    sayilar["dead-letter"] = dlq.isler.length;
+    return { sayilar, calisanWorker: await this.calisanWorkerSayisi(), sinirli, taramaSiniri: KUYRUK_TARAMA_SINIRI };
   }
 
   /**
@@ -252,39 +287,20 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
 
   async listele() {
     const { tenantId } = aktifBaglam();
-    const deadLetterIsleri = await this.tenantDeadLetterIsleriniGetir(tenantId, 200, false);
+    const deadLetterIsleri = (await this.tenantDeadLetterIsleriniGetir(tenantId, 200)).isler;
     const deadLetterAsilIdleri = new Set(deadLetterIsleri.map((is) => is.data.asilIsId));
-    const isler = (await this.tenantIsleriniGetir(["waiting", "active", "delayed", "failed", "completed"], tenantId, 200, false)).filter((is) => !deadLetterAsilIdleri.has(String(is.id)));
+    const isler = (await this.tenantIsleriniGetir([...KUYRUK_DURUMLARI], tenantId, 200)).isler.filter((is) => !deadLetterAsilIdleri.has(String(is.id)));
     const normal = await Promise.all(isler.map(async (is) => ({ id: is.id, isTuru: is.data.isTuru || is.name, faturaId: is.data.faturaId || null, durum: await is.getState(), deneme: is.attemptsMade, azamiDeneme: is.opts.attempts || 1, hata: is.failedReason || null, kuyrugaAlinmaZamani: is.data.kuyrugaAlinmaZamani, islenmeZamani: is.processedOn ? new Date(is.processedOn).toISOString() : null, tamamlanmaZamani: is.finishedOn ? new Date(is.finishedOn).toISOString() : null })));
     const dlq = deadLetterIsleri.map((is) => ({ id: String(is.id), isTuru: is.data.isTuru, faturaId: is.data.faturaId || null, durum: "dead-letter", deneme: 5, azamiDeneme: 5, hata: is.data.hata, kuyrugaAlinmaZamani: is.data.kuyrugaAlinmaZamani, islenmeZamani: null, tamamlanmaZamani: is.data.deadLetterZamani }));
     return [...dlq, ...normal];
   }
 
-  private async tenantIsleriniGetir(
-    durumlar: Parameters<Queue<EbelgeKuyrukVerisi>["getJobs"]>[0],
-    tenantId: string,
-    sinir = Number.POSITIVE_INFINITY,
-    artan = true,
-  ) {
-    const sonuc: Job<EbelgeKuyrukVerisi>[] = [];
-    const sayfaBoyutu = 500;
-    for (let baslangic = 0; sonuc.length < sinir; baslangic += sayfaBoyutu) {
-      const sayfa = await this.kuyruk.getJobs(durumlar, baslangic, baslangic + sayfaBoyutu - 1, artan);
-      sonuc.push(...sayfa.filter((is) => is.data.tenantId === tenantId));
-      if (sayfa.length < sayfaBoyutu) break;
-    }
-    return sonuc.slice(0, sinir);
+  private tenantIsleriniGetir(durumlar: Parameters<Queue<EbelgeKuyrukVerisi>["getJobs"]>[0], tenantId: string, sinir = Number.POSITIVE_INFINITY) {
+    return tenantIsleriniTara(this.kuyruk, durumlar, tenantId, sinir);
   }
 
-  private async tenantDeadLetterIsleriniGetir(tenantId: string, sinir = Number.POSITIVE_INFINITY, artan = true) {
-    const sonuc: Job<DeadLetterVerisi>[] = [];
-    const sayfaBoyutu = 500;
-    for (let baslangic = 0; sonuc.length < sinir; baslangic += sayfaBoyutu) {
-      const sayfa = await this.deadLetter.getJobs(["waiting"], baslangic, baslangic + sayfaBoyutu - 1, artan);
-      sonuc.push(...sayfa.filter((is) => is.data.tenantId === tenantId));
-      if (sayfa.length < sayfaBoyutu) break;
-    }
-    return sonuc.slice(0, sinir);
+  private tenantDeadLetterIsleriniGetir(tenantId: string, sinir = Number.POSITIVE_INFINITY) {
+    return tenantIsleriniTara(this.deadLetter, ["waiting"], tenantId, sinir);
   }
 
   /**

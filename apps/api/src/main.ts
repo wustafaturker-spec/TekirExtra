@@ -15,6 +15,7 @@ import { structuredLogger } from "./core/observability/structured-logger";
 import { DagitikRateLimiter } from "./core/guvenlik/rate-limiter";
 
 import { json, urlencoded } from "express";
+import { XML_YUKLEME_SINIRI_MB, XML_YUKLEME_YOLLARI } from "./core/govde-sinirlari";
 
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();
@@ -25,6 +26,8 @@ async function bootstrap(): Promise<void> {
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
   // SEC-04: istemciler gövdeyi sıkıştırmaz; sıkıştırılmış gövde (gzip bombası ve
   // body-parser açma hatası DoS'u) 415 ile reddedilir.
+  // EBLG-158: XML yükleme uçları genel sınırdan önce kendi sınırıyla ayrıştırılır (gövde bir kez okunur).
+  app.use(XML_YUKLEME_YOLLARI, json({ limit: `${XML_YUKLEME_SINIRI_MB}mb`, inflate: false }));
   app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb", inflate: false }));
   app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true, inflate: false }));
   const metrics = app.get(MetricsService);
