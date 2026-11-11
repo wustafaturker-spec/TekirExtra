@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { ROL_ADI } from "@/lib/rol-adlari";
@@ -52,11 +52,15 @@ function OnayKutusu() {
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState("");
 
+  // Sekme hızla değiştirilince geç gelen eski yanıt yeni sekmenin listesini ezmesin.
+  const sonIstek = useRef(0);
   const yukle = useCallback(async (k: Kutu) => {
+    const no = ++sonIstek.current;
     try {
       const r = await api<{ talepler: Talep[]; digerOnaylar: DigerOnay[] }>(`/onaylar?kutu=${k}`);
+      if (no !== sonIstek.current) return;
       setTalepler(r.talepler); setDiger(r.digerOnaylar);
-    } catch (e) { setHata(e instanceof Error ? e.message : "Onaylar alınamadı"); }
+    } catch (e) { if (no === sonIstek.current) setHata(e instanceof Error ? e.message : "Onaylar alınamadı"); }
   }, []);
   useEffect(() => { setTalepler(null); void yukle(kutu); }, [kutu, yukle]);
 
