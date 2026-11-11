@@ -1524,6 +1524,31 @@ export class KasaBankaService {
     });
   }
 
+  /**
+   * VAK-05: veri aktarım sihirbazı açılışı kendi işleminde (parti tek işlem) yazar.
+   * Kurallar `acilisKaydet` ile aynıdır; mevcut açılış sihirbazdan değiştirilmez.
+   */
+  async acilisYazIslemde(tx: Prisma.TransactionClient, tur: HesapTuru, hesapId: string, girdi: AcilisGirdisi) {
+    const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "açılış fişi", tx);
+    const hesap = await this.hesabiKilitle(tx, tur, hesapId);
+    if (await tx.kasaBankaHareket.findFirst({ where: { ...hesapAlani(tur, hesapId), kaynakTur: "acilis" }, select: { id: true } })) {
+      throw new ConflictException(`${hesap.ad} hesabının zaten bir açılış fişi var`);
+    }
+    return this.acilisYaz(tx, tenantId, tur, hesap, girdi);
+  }
+
+  /** VAK-07: aktarım partisi geri alınırken açılış fişi silinir (denetim izi yazılır). */
+  async acilisSilIslemde(tx: Prisma.TransactionClient, hareketId: string, neden: string) {
+    const { tenantId } = aktifBaglam();
+    const mevcut = await tx.kasaBankaHareket.findUnique({ where: { id: hareketId } });
+    if (!mevcut || mevcut.kaynakTur !== "acilis") return false;
+    await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi silme", tx);
+    await tx.kasaBankaHareket.delete({ where: { id: mevcut.id } });
+    await this.geriAlmaIzi(tx, tenantId, "kasa_banka_acilis_silindi", mevcut.id, { neden, hareket: mevcut });
+    return true;
+  }
+
   async acilisSil(tur: HesapTuru, hesapId: string, neden: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {

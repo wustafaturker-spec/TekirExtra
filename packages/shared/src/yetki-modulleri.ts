@@ -55,8 +55,8 @@ export const YETKI_MODULLERI: readonly YetkiModulu[] = [
   { kod: "yapay_zeka", ad: "Yapay Zekâ ve Asistan", api: ["ai", "mcp"], panel: ["/panel/ai"] },
   {
     kod: "ayarlar", ad: "Ayarlar", yalnizYazma: true, korunanOkuma: ["denetim", "eposta/gecmis"],
-    api: ["ayarlar", "kullanicilar", "ozel-roller", "denetim", "kullanim", "eposta", "ileti-sablonlari", "guvenlik-politikasi", "destek-izni", "abonelik", "calisma-takvimi", "doviz-kurlari", "firma", "baglantilar", "belge-gorunumu"],
-    panel: ["/panel/ayarlar/kullanicilar", "/panel/ayarlar/denetim", "/panel/ayarlar/kullanim", "/panel/ayarlar/guvenlik", "/panel/ayarlar/abonelik", "/panel/ayarlar/ileti-sablonlari"],
+    api: ["ayarlar", "kullanicilar", "ozel-roller", "denetim", "kullanim", "eposta", "ileti-sablonlari", "guvenlik-politikasi", "destek-izni", "abonelik", "calisma-takvimi", "doviz-kurlari", "firma", "baglantilar", "belge-gorunumu", "veri-aktarimi"],
+    panel: ["/panel/ayarlar/kullanicilar", "/panel/ayarlar/denetim", "/panel/ayarlar/kullanim", "/panel/ayarlar/guvenlik", "/panel/ayarlar/abonelik", "/panel/ayarlar/ileti-sablonlari", "/panel/ayarlar/veri-aktarimi"],
   },
 ];
 

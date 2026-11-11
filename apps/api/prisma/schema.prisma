@@ -127,6 +127,7 @@ model Tenant {
   pesinVergiMahsuplari PesinVergiMahsup[]
   vergiTakvimiAyari    VergiTakvimiAyari?
   smsGonderimleri      SmsGonderim[]
+  veriAktarimlari                 VeriAktarimi[]
   vergiYukumlulukKayitlari VergiYukumlulukKaydi[]
   vergiOdemeleri       VergiOdemesi[]
   duyuruAlicilari PlatformDuyuruAlicisi[]
@@ -904,6 +905,28 @@ model SmsGonderim {
   @@unique([tenantId, anahtar])
   @@index([tenantId, createdAt])
   @@map("sms_gonderimleri")
+}
+
+/// VAK-07: veri aktarım sihirbazının her uygulaması bir partidir; geri alma bu kayıttan yapılır.
+model VeriAktarimi {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  /// cari | stok | acilis_stok | kasa_banka | acik_fatura
+  adim           String    @db.VarChar(20)
+  dosyaAdi       String    @map("dosya_adi") @db.VarChar(255)
+  /// Satır sayıları (toplam, yeni, güncellenen, hatalı…)
+  ozet           Json
+  /// Oluşturulan kayıt kimlikleri: cariler, stoklar, cariHareketler, stokHareketleri, kasaBankaHareketleri
+  olusturulanlar Json
+  kullaniciId    String?   @map("kullanici_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  geriAlindiAt   DateTime? @map("geri_alindi_at")
+  geriAlanId     String?   @map("geri_alan_id") @db.Uuid
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("veri_aktarimlari")
 }
 
 /// ILT-12: tek kullanımlık SMS kodu; yalnız özet saklanır. Giriş öncesi kullanıldığı için RLS'siz (parola_sifirlamalar gibi).

@@ -1,3 +1,4 @@
+import { vadesiGecmisAcilisKalemleri } from "./acilis-kalemleri";
 import { fifoDegerleri, satisSatirlari } from "../stok/satis-ozeti";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
@@ -388,7 +389,7 @@ export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenan
   // eksik kalıyordu. Şimdi hepsi 500'erli sayfalarla taranır; toplam ve
   // sayı tamdır, listeler en eski LISTE_SINIRI kayıtla sınırlıdır.
   const LISTE_SINIRI = 50;
-  type Satir = { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: string };
+  type Satir = { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: string; acilis?: true };
   const alacaklar: Satir[] = [], borclar: Satir[] = [];
   let toplamAlacak = D(0), toplamBorc = D(0), alacakSayisi = 0, borcSayisi = 0;
   let imlec: string | undefined;
@@ -411,6 +412,10 @@ export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenan
     if (faturalar.length < 500) break;
     imlec = faturalar[faturalar.length - 1].id;
   }
+  // VAK-06: devreden açık faturalar ve açılış bakiyeleri (cari hareketi olarak aktarılır, faturaya bağlı değildir).
+  const acilis = await vadesiGecmisAcilisKalemleri(tx, tenantId, bugunBaslangic);
+  for (const a of acilis.alacaklar) { toplamAlacak = toplamAlacak.add(a.kalanTry); alacakSayisi++; alacaklar.push(a); }
+  for (const b of acilis.borclar) { toplamBorc = toplamBorc.add(b.kalanTry); borcSayisi++; borclar.push(b); }
   // Vade veritabanında boş olabildiği için en eskiler hesaplanan vadeyle seçilir.
   const enEskiler = (l: Satir[]) => l.sort((a, b) => a.vadeTarihi.localeCompare(b.vadeTarihi) || a.faturaId.localeCompare(b.faturaId)).slice(0, LISTE_SINIRI);
   // KSB-23: faturası vadesi geçmiş görünen cari aslında faturaya bağlanmamış bir ödemeyle ödemiş olabilir.

@@ -16,7 +16,8 @@ interface CekSenet { id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"
 interface IsOgesi { href: string; baslik: string; aciklama: string; sayi: number; ton: "danger" | "warning" | "neutral"; }
 interface GunlukOzet { satis: { toplam: string; adet: number }; tahsilat: { toplam: string; adet: number }; }
 interface DovizKurlari { kurTarihi: string; oncekiIsGunuKullanildi?: boolean; kurlar: Record<string, number>; }
-interface VadesiGecenSatir { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: "satis" | "alis"; baglanmamisOdemeTry?: string | null; }
+/** `acilis`: VAK-06 açılış kalemi (devreden açık fatura); fatura değil, cari kartına bağlanır. */
+interface VadesiGecenSatir { faturaId: string; no: string | null; acilis?: boolean; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: "satis" | "alis"; baglanmamisOdemeTry?: string | null; }
 interface VadesiGecenler { alacaklar: VadesiGecenSatir[]; borclar: VadesiGecenSatir[]; toplamAlacak: string; toplamBorc: string; }
 
 const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü", ik: "İK görünümü", calisan: "Çalışan görünümü" };
@@ -372,10 +373,10 @@ export default function PanelSayfasi() {
 
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {grup.liste.slice(0, 5).map((satir) => (
-                  <Link href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--surface-2)", borderRadius: "10px", textDecoration: "none", color: "var(--text)" }}>
+                  <Link href={satir.acilis ? `/panel/cari/${satir.cariId}` : `/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--surface-2)", borderRadius: "10px", textDecoration: "none", color: "var(--text)" }}>
                     <div>
                       <div style={{ fontSize: "13px", fontWeight: "700" }}>{satir.cariUnvan}</div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{satir.no || "Fatura"} · Vade: <Tarih deger={satir.vadeTarihi} /></div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{satir.no || "Fatura"}{satir.acilis ? " (açılış)" : ""} · Vade: <Tarih deger={satir.vadeTarihi} /></div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: "13px", fontWeight: "800", color: grup.renk }}><Para basamak={0} deger={satir.kalanTry} /></div>

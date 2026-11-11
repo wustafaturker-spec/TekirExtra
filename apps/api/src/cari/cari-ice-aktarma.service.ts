@@ -7,8 +7,9 @@ import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { kurCoz } from "../doviz/kur-coz";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
 import { gercekKisiUnvani } from "./ad-soyad";
+import type { BaslikEslemeleri } from "../veri-aktarimi/tablo";
 import {
-  dovizCoz, EPOSTA_DESENI, excelSatirlariniOku, hataliSatirlarDosyasi, kisiTipiCoz, sablonOlustur, sayiCoz, SUTUNLAR,
+  cariTablosunuOku, dovizCoz, EPOSTA_DESENI, hataliSatirlarDosyasi, kisiTipiCoz, sablonOlustur, sayiCoz, SUTUNLAR,
   tarihCoz, tipCoz, yonCoz, type Cozum, type HamSatir, type SutunAnahtari,
 } from "./cari-ice-aktarma";
 
@@ -40,6 +41,13 @@ interface IcPlan extends SatirPlani {
   acilis: Acilis | null;
 }
 
+/** VAK-02/03: sihirbazdan gelen seçenekler; doğrudan cari ekranından boş gelir. */
+export interface CariAktarimSecenegi {
+  eslemeler?: BaslikEslemeleri;
+  /** Açılış tutarı olup tarihi boş satırlarda kullanılır (geçiş tarihi). */
+  varsayilanAcilisTarihi?: string | null;
+}
+
 const BASLIK = Object.fromEntries(SUTUNLAR.map((s) => [s.anahtar, s.baslik])) as Record<SutunAnahtari, string>;
 const coz = <T>(c: Cozum<T>, hatalar: string[]): T | undefined => ("hata" in c ? (hatalar.push(c.hata), undefined) : c.deger);
 
@@ -59,21 +67,23 @@ export class CariIceAktarmaService {
     return sablonOlustur();
   }
 
-  async onizleme(buffer: Buffer) {
-    const plan = await this.planla(buffer);
-    return { ozet: this.ozet(plan), satirlar: plan.map(({ satir, durum, kod, unvan, degisenAlanlar, hatalar, uyarilar }) => ({ satir, durum, kod, unvan, degisenAlanlar, hatalar, uyarilar })) };
+  async onizleme(buffer: Buffer, secenek: CariAktarimSecenegi = {}) {
+    const { plan, basliklar, taninmayanlar } = await this.planla(buffer, secenek);
+    return { ozet: this.ozet(plan), basliklar, taninmayanlar, satirlar: plan.map(({ satir, durum, kod, unvan, degisenAlanlar, hatalar, uyarilar }) => ({ satir, durum, kod, unvan, degisenAlanlar, hatalar, uyarilar })) };
   }
 
-  async hataliSatirlar(buffer: Buffer) {
-    const plan = await this.planla(buffer);
+  async hataliSatirlar(buffer: Buffer, secenek: CariAktarimSecenegi = {}) {
+    const { plan } = await this.planla(buffer, secenek);
     return hataliSatirlarDosyasi(plan.filter((p) => p.durum === "hatali").map((p) => ({ ...p.ham, hatalar: p.hatalar })));
   }
 
-  async iceAktar(buffer: Buffer) {
+  /** VAK-07: yeni açılan kartların ve yazılan açılış hareketlerinin kimlikleri de döner (geri alma için). */
+  async iceAktar(buffer: Buffer, secenek: CariAktarimSecenegi = {}, disTx?: Tx) {
     const { tenantId } = aktifBaglam();
-    const plan = await this.planla(buffer);
+    const { plan } = await this.planla(buffer, secenek);
     const yazilacak = plan.filter((p) => p.durum === "yeni" || p.durum === "guncelle");
-    await this.prisma.tenantIslem(tenantId, async (tx) => {
+    const olusturulanlar = { cariler: [] as string[], cariHareketler: [] as string[] };
+    const yaz = async (tx: Tx) => {
       const etiketAdlari = [...new Set(yazilacak.flatMap((p) => p.etiketler))];
       const etiketler = new Map<string, string>();
       for (const ad of etiketAdlari) {
@@ -89,6 +99,7 @@ export class CariIceAktarmaService {
         const cariId = p.eslesenId
           ? (await tx.cariHesap.update({ where: { id: p.eslesenId }, data: veri, select: { id: true } })).id
           : (await tx.cariHesap.create({ data: { ...(veri as Prisma.CariHesapUncheckedCreateInput), tenantId }, select: { id: true } })).id;
+        if (!p.eslesenId) olusturulanlar.cariler.push(cariId);
         if (p.adres) {
           const mevcut = p.eslesenId ? await tx.cariAdres.findFirst({ where: { cariId, tip: "fatura" }, orderBy: { id: "asc" } }) : null;
           if (mevcut) await tx.cariAdres.update({ where: { id: mevcut.id }, data: p.adres });
@@ -100,16 +111,20 @@ export class CariIceAktarmaService {
         if (p.acilis) {
           const a = p.acilis;
           const tutar = new Prisma.Decimal(a.tutar);
-          await tx.cariHareket.create({
+          const hareket = await tx.cariHareket.create({
+            select: { id: true },
             data: {
               tenantId, cariId, tip: a.tip, tutar, dovizCinsi: a.dovizCinsi as Prisma.CariHareketCreateInput["dovizCinsi"], kur: a.kur, tutarTry: tutar.mul(a.kur).toDecimalPlaces(2),
               tarih: new Date(a.tarih), vadeTarihi: a.vadeTarihi ? new Date(a.vadeTarihi) : null, aciklama: "Açılış bakiyesi (Excel)", kaynakTur: "acilis",
             },
           });
+          olusturulanlar.cariHareketler.push(hareket.id);
         }
       }
-    }, { timeout: 120_000 });
-    return this.ozet(plan);
+    };
+    if (disTx) await yaz(disTx);
+    else await this.prisma.tenantIslem(tenantId, yaz, { timeout: 120_000 });
+    return { ...this.ozet(plan), olusturulanlar };
   }
 
   private ozet(plan: IcPlan[]) {
@@ -120,19 +135,22 @@ export class CariIceAktarmaService {
     };
   }
 
-  private async planla(buffer: Buffer): Promise<IcPlan[]> {
+  private async planla(buffer: Buffer, secenek: CariAktarimSecenegi = {}): Promise<{ plan: IcPlan[]; basliklar: { baslik: string; anahtar: string | null; elle: boolean }[]; taninmayanlar: string[] }> {
     const { tenantId } = aktifBaglam();
     let satirlar: HamSatir[];
+    let basliklar: { baslik: string; anahtar: string | null; elle: boolean }[];
+    let taninmayanlar: string[];
     try {
-      satirlar = await excelSatirlariniOku(buffer);
+      ({ satirlar, basliklar, taninmayanlar } = await cariTablosunuOku(buffer, secenek.eslemeler));
     } catch (hata) {
       throw new BadRequestException(hata instanceof Error ? hata.message : "Excel dosyası okunamadı");
     }
     if (satirlar.length === 0) throw new BadRequestException("Dosyada başlık satırından sonra veri yok");
-    return this.prisma.tenantIslem(tenantId, (tx) => this.satirlariPlanla(tx, tenantId, satirlar), { timeout: 120_000 });
+    const plan = await this.prisma.tenantIslem(tenantId, (tx) => this.satirlariPlanla(tx, tenantId, satirlar, secenek), { timeout: 120_000 });
+    return { plan, basliklar, taninmayanlar };
   }
 
-  private async satirlariPlanla(tx: Tx, tenantId: string, satirlar: HamSatir[]): Promise<IcPlan[]> {
+  private async satirlariPlanla(tx: Tx, tenantId: string, satirlar: HamSatir[], secenek: CariAktarimSecenegi = {}): Promise<IcPlan[]> {
     const [cariler, acilislar, etiketler] = await Promise.all([
       tx.cariHesap.findMany({
         select: {
@@ -242,7 +260,9 @@ export class CariIceAktarmaService {
         else if (tutar !== undefined) {
           const yon = h.acilisYonu ? coz(yonCoz(h.acilisYonu), hatalar) : (hatalar.push("Açılış yönü (Borç/Alacak) zorunludur"), undefined);
           const doviz = h.acilisDovizi ? coz(dovizCoz(h.acilisDovizi, "Açılış dövizi"), hatalar) : kart.dovizCinsi ?? eslesen?.dovizCinsi ?? "TRY";
-          const tarih = h.acilisTarihi ? coz(tarihCoz(h.acilisTarihi, "Açılış tarihi"), hatalar) : (hatalar.push("Açılış tarihi zorunludur"), undefined);
+          const tarih = h.acilisTarihi ? coz(tarihCoz(h.acilisTarihi, "Açılış tarihi"), hatalar)
+            : secenek.varsayilanAcilisTarihi ? secenek.varsayilanAcilisTarihi
+            : (hatalar.push("Açılış tarihi zorunludur"), undefined);
           const vade = h.acilisVadesi ? coz(tarihCoz(h.acilisVadesi, "Açılış vadesi"), hatalar) : null;
           if (tarih && vade && vade < tarih) hatalar.push("Açılış vadesi açılış tarihinden önce olamaz");
           if (tarih) {

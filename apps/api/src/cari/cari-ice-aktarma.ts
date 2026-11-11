@@ -1,5 +1,8 @@
 import * as ExcelJS from "exceljs";
 import { DOVIZ_CINSLERI, metinNormalize } from "@tekirextra/shared";
+import { hucreMetni, tabloOku, type BaslikEslemeleri, type OkunanTablo, type SutunTanimi } from "../veri-aktarimi/tablo";
+
+export { hucreMetni };
 
 /**
  * CARI-31 (karar 2026-10-03): cari Excel içe aktarma şablonu ve satır
@@ -43,53 +46,58 @@ export type HamSatir = { satir: number; hucreler: Partial<Record<SutunAnahtari, 
 const ESKI_DUZEN: SutunAnahtari[] = ["kod", "unvan", "tip", "vknTckn", "eposta", "telefon"];
 export const AZAMI_SATIR = 5000;
 
-/** exceljs hücre değeri → metin (köprü, zengin metin, formül sonucu, tarih). */
-export function hucreMetni(deger: ExcelJS.CellValue): string {
-  if (deger === null || deger === undefined) return "";
-  if (deger instanceof Date) return deger.toISOString().slice(0, 10);
-  if (typeof deger === "object") {
-    if ("richText" in deger) return deger.richText.map((p) => p.text).join("").trim();
-    if ("text" in deger) return String(deger.text ?? "").trim();
-    if ("result" in deger) return hucreMetni(deger.result as ExcelJS.CellValue);
-    if ("error" in deger) return "";
-  }
-  return String(deger).trim();
-}
-
-/** Elle hazırlanmış dosyalardaki yaygın başlık yazımları. */
+/**
+ * Elle hazırlanmış dosyalardaki ve kaynak programların (Logo, Mikro, Netsis, Paraşüt)
+ * dışa aktarımlarındaki yaygın başlık yazımları (VAK-03).
+ */
 const BASLIK_TAKMA_ADLARI: Record<string, SutunAnahtari> = {
-  "cari kodu": "kod", "cari kod": "kod", "unvani": "unvan", "firma adi": "unvan", "cari adi": "unvan", "cari tipi": "tip", tur: "tip",
-  vkn: "vknTckn", tckn: "vknTckn", "vkn / tckn": "vknTckn", "vergi no": "vknTckn", "vergi numarasi": "vknTckn", "tc kimlik no": "vknTckn",
-  eposta: "eposta", "e-mail": "eposta", email: "eposta", tel: "telefon", "posta kodu": "postaKodu", "para birimi": "dovizCinsi", vade: "varsayilanVadeGun",
+  "cari kodu": "kod", "cari kod": "kod", "cari hesap kodu": "kod", "hesap kodu": "kod", "musteri kodu": "kod", "tedarikci kodu": "kod",
+  "unvani": "unvan", "firma adi": "unvan", "cari adi": "unvan", "cari unvani": "unvan", "cari hesap unvani": "unvan", "cari unvani 1": "unvan", "cari isim": "unvan", "cari ismi": "unvan", "musteri adi": "unvan", "tedarikci adi": "unvan", "isim": "unvan", "ad / unvan": "unvan",
+  "cari tipi": "tip", tur: "tip", "hesap turu": "tip", "cari hesap turu": "tip",
+  vkn: "vknTckn", tckn: "vknTckn", "vkn / tckn": "vknTckn", "vkn/tckn": "vknTckn", "vergi no": "vknTckn", "vergi numarasi": "vknTckn", "vergi kimlik no": "vknTckn", "tc kimlik no": "vknTckn", "tc kimlik numarasi": "vknTckn", "vergi dairesi no": "vknTckn",
+  "vergi dairesi adi": "vergiDairesi", "v.d.": "vergiDairesi", vd: "vergiDairesi",
+  eposta: "eposta", "e-mail": "eposta", email: "eposta", "e-posta adresi": "eposta", "eposta adresi": "eposta", "mail": "eposta",
+  tel: "telefon", "telefon 1": "telefon", "telefon no": "telefon", "cep tel": "telefon", "cep telefonu": "telefon", "gsm": "telefon",
+  "adres 1": "adres", "fatura adresi": "adres", "il / sehir": "il", sehir: "il", "ilce adi": "ilce", "posta kodu": "postaKodu", "ulke kodu": "ulke",
+  "para birimi": "dovizCinsi", "doviz cinsi": "dovizCinsi", "doviz turu": "dovizCinsi", vade: "varsayilanVadeGun", "vade gunu": "varsayilanVadeGun", "odeme vadesi": "varsayilanVadeGun",
+  "risk limiti tl": "riskLimiti", "kredi limiti": "riskLimiti",
 };
-const basligiAnahtaraCevir = new Map<string, SutunAnahtari>([
-  ...Object.entries(BASLIK_TAKMA_ADLARI),
-  ...SUTUNLAR.map((s) => [metinNormalize(s.baslik), s.anahtar] as [string, SutunAnahtari]),
-]);
 
-export async function excelSatirlariniOku(buffer: Buffer): Promise<HamSatir[]> {
+/** VAK-03: ortak okuyucunun kullandığı sütun tanımı (şablon başlığı + eşanlamlılar). */
+export const CARI_SUTUNLARI: SutunTanimi<SutunAnahtari>[] = SUTUNLAR.map((s) => ({
+  ...s,
+  esanlamlilar: Object.entries(BASLIK_TAKMA_ADLARI).filter(([, a]) => a === s.anahtar).map(([b]) => b),
+}));
+
+
+/**
+ * Cari tablosu. Başlıklar tanınmazsa (en az iki başlık) eski 6 sütunlu dosya düzeni
+ * (Kod, Ünvan, Tip, VKN, E-posta, Telefon) varsayılır; elle eşleme verilmişse bu yapılmaz.
+ */
+export async function cariTablosunuOku(buffer: Buffer, eslemeler: BaslikEslemeleri = {}): Promise<OkunanTablo<SutunAnahtari>> {
+  const tablo = await tabloOku(buffer, CARI_SUTUNLARI, eslemeler);
+  const taninan = tablo.basliklar.filter((b) => b.anahtar).length;
+  if (taninan >= 2 || Object.keys(eslemeler).length) return tablo;
   const kitap = new ExcelJS.Workbook();
   await kitap.xlsx.load(buffer as unknown as ArrayBuffer);
   const sayfa = kitap.worksheets[0];
-  if (!sayfa) throw new Error("Çalışma sayfası bulunamadı");
-  const basliklar: Array<SutunAnahtari | undefined> = [];
-  sayfa.getRow(1).eachCell({ includeEmpty: true }, (hucre, no) => { basliklar[no] = basligiAnahtaraCevir.get(metinNormalize(hucreMetni(hucre.value))); });
-  const taninan = basliklar.filter(Boolean).length;
-  // Başlığı tanınmayan dosya: eski şablon (Kod, Ünvan, Tip, VKN, E-posta, Telefon).
-  const sutun = (no: number): SutunAnahtari | undefined => (taninan >= 2 ? basliklar[no] : ESKI_DUZEN[no - 1]);
   const satirlar: HamSatir[] = [];
   sayfa.eachRow((row, no) => {
     if (no === 1) return;
     const hucreler: HamSatir["hucreler"] = {};
     row.eachCell({ includeEmpty: false }, (hucre, s) => {
-      const anahtar = sutun(s);
+      const anahtar = ESKI_DUZEN[s - 1];
       const metin = hucreMetni(hucre.value);
       if (anahtar && metin) hucreler[anahtar] = metin;
     });
     if (Object.keys(hucreler).length) satirlar.push({ satir: no, hucreler });
   });
   if (satirlar.length > AZAMI_SATIR) throw new Error(`Bir dosyada en fazla ${AZAMI_SATIR} satır içe aktarılabilir`);
-  return satirlar;
+  return { satirlar, basliklar: ESKI_DUZEN.map((a) => ({ baslik: SUTUNLAR.find((s) => s.anahtar === a)!.baslik, anahtar: a, elle: false })), taninmayanlar: [] };
+}
+
+export async function excelSatirlariniOku(buffer: Buffer, eslemeler: BaslikEslemeleri = {}): Promise<HamSatir[]> {
+  return (await cariTablosunuOku(buffer, eslemeler)).satirlar;
 }
 
 // ─── Değer çözümleyicileri: geçersizse hata metni döner ─────────────────────
