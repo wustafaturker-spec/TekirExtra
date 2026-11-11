@@ -18,7 +18,7 @@ const TAVAN: Record<string, number> = {
   "belgeler/belgeler.service.ts": 1, "belgeler/irsaliye-eslesme.ts": 3,
   "cari/cari.raporlar.ts": 2, "cari/cari.service.ts": 8, "cari/son-odeme.ts": 1,
   "duzeltmeler/duzeltmeler.service.ts": 3,
-  "ebelge/ebelge.service.ts": 4, "ebelge/eirsaliye.service.ts": 3,
+  "ebelge/ebelge.service.ts": 3, "ebelge/eirsaliye.service.ts": 3,
   "fatura/denklestirme.ts": 4, "fatura/kur-farki-karsilik.ts": 1, "fatura/fatura.raporlar.ts": 4, "fatura/fatura.service.ts": 4, "fatura/kdv-beyan.ts": 1, "fatura/mahsup.ts": 1, "fatura/teslim-yeri.ts": 1, "fatura/vergi.raporlar.ts": 1,
   "kasa-banka/cek-bordro.service.ts": 1, "kasa-banka/ekstre.service.ts": 4, "kasa-banka/kasa-banka.raporlar.ts": 3, "kasa-banka/kasa-banka.service.ts": 4,
   "mali-musavir/mali-musavir.service.ts": 2, "mali-musavir/muhasebe/fis-okuyucu.ts": 8,

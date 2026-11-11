@@ -13,7 +13,6 @@ import {
   Res,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { GelenEbelgeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EbelgeUygulamasi } from "./ebelge-uygulamasi.decorator";
 import { EbelgeUygulamalariService } from "./ebelge-uygulamalari.service";
@@ -30,11 +29,11 @@ const gelenSayfaSemasi = z.object({
   durum: z.enum(["beklemede", "islendi", "reddedildi"]).optional(),
   arama: z.string().trim().max(100).optional(),
   uyarili: z.enum(["true", "false"]).optional(),
+  baslangic: z.iso.date().optional(),
+  bitis: z.iso.date().optional(),
   imlec: z.uuid().optional(),
   adet: z.coerce.number().int().min(1).max(200).optional(),
 });
-
-const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
 @Controller("ebelge")
 export class EbelgeController {
@@ -332,18 +331,6 @@ export class EbelgeController {
       );
     }
     return this.ebelgeService.gelenXmlYukle(ayristirma.data.xml);
-  }
-
-  @EbelgeUygulamasi("efatura")
-  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
-  @Get("gelen")
-  async gelenListele(@Query("durum") durum?: string) {
-    if (durum && !GELEN_DURUMLARI.includes(durum as GelenEbelgeDurum)) {
-      throw new BadRequestException(
-        `Geçersiz durum; beklenen: ${GELEN_DURUMLARI.join(", ")}`,
-      );
-    }
-    return this.ebelgeService.gelenListele(durum as GelenEbelgeDurum | undefined);
   }
 
   /** Gelen kutusu ekranı: sayfalı, arama sunucuda (rapor V-2). `gelen/:id`'den önce tanımlıdır. */

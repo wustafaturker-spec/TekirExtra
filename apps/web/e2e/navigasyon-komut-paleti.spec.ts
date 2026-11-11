@@ -74,7 +74,11 @@ async function apiMockla(page: Page) {
       await route.fulfill({ json: { kritik: 0, slaAsan: 0 } });
       return;
     }
-    if (pathname.includes("/kasa-banka/") || pathname.endsWith("/ebelge/gelen")) {
+    if (pathname.endsWith("/ebelge/gelen/sayfa")) {
+      await route.fulfill({ json: { kayitlar: [], sonrakiImlec: null, ozet: { adet: 0, toplamTutar: "0.00", kalem: 0, beklemede: 0, islendi: 0, reddedildi: 0 } } });
+      return;
+    }
+    if (pathname.includes("/kasa-banka/")) {
       await route.fulfill({ json: [] });
       return;
     }

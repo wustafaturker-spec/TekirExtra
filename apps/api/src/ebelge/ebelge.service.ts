@@ -1836,35 +1836,13 @@ export class EbelgeService {
     };
   }
 
-  /** Gelen kutusu listesi; XML gövdesi yerine ayrıştırılmış özeti döner. */
-  async gelenListele(durum?: GelenEbelgeDurum) {
-    const { tenantId } = aktifBaglam();
-
-    const kayitlar = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      // Taslak faturası silinen belgeler yeniden onaya düşsün (bkz. kayitTazele).
-      await tx.gelenEbelge.updateMany({
-        where: { durum: "islendi", faturaId: null },
-        data: { durum: "beklemede" },
-      });
-
-      return tx.gelenEbelge.findMany({
-        where: durum ? { durum } : undefined,
-        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
-        // XML bilerek seçilmez; özet sütunları yeter.
-        select: GELEN_LISTE_SECIMI,
-      });
-    });
-
-    await this.gelenOzetleriniTamamla(tenantId, kayitlar);
-    return kayitlar.map((k) => this.gelenSatiri(k));
-  }
-
   /**
    * Gelen kutusu ekranı: sayfa sayfa okunur, arama ve süzgeç veritabanında uygulanır,
-   * sayaçlar ve toplamlar seçilen süzgeçle hesaplanır (rapor V-2; eski uç bütün kutuyu dönüyordu).
+   * sayaçlar ve toplamlar seçilen süzgeçle hesaplanır (rapor V-2; bütün kutuyu dönen eski `GET /ebelge/gelen` kaldırıldı).
+   * Taslak faturası silinen belgeler yeniden onaya düşer (bkz. kayitTazele).
    * Durum sayaçları durum süzgecinden bağımsızdır: "Onay bekleyen" her zaman gerçek sayıyı gösterir.
    */
-  async gelenSayfa(g: { durum?: GelenEbelgeDurum; arama?: string; uyarili?: boolean; imlec?: string; adet?: number }) {
+  async gelenSayfa(g: { durum?: GelenEbelgeDurum; arama?: string; uyarili?: boolean; baslangic?: string; bitis?: string; imlec?: string; adet?: number }) {
     const { tenantId } = aktifBaglam();
     const adet = Math.min(Math.max(g.adet ?? 50, 1), 200);
     const aranan = g.arama?.trim();
@@ -1872,6 +1850,7 @@ export class EbelgeService {
     const bicimler = aranan ? [...new Set([aranan, aranan.toLocaleUpperCase("tr-TR"), aranan.toLocaleLowerCase("tr-TR")])] : [];
     const ortak: Prisma.GelenEbelgeWhereInput = {
       ...(g.uyarili ? { denetimUyariSayisi: { gt: 0 } } : {}),
+      ...(g.baslangic || g.bitis ? { tarih: { ...(g.baslangic ? { gte: new Date(g.baslangic) } : {}), ...(g.bitis ? { lte: new Date(g.bitis) } : {}) } } : {}),
       ...(bicimler.length ? { OR: bicimler.flatMap((b) => [{ belgeNo: { contains: b, mode: "insensitive" as const } }, { gonderenUnvan: { contains: b, mode: "insensitive" as const } }, { gonderenVkn: { contains: b } }]) } : {}),
     };
     const where: Prisma.GelenEbelgeWhereInput = { ...ortak, ...(g.durum ? { durum: g.durum } : {}) };

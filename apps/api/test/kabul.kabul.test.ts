@@ -582,14 +582,14 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
     expect(tekrar.durum, JSON.stringify(tekrar.veri)).toBe(400);
     expect(tekrar.veri.message).toContain("tazelenebilir");
 
-    const kutu = await istek<Array<{ id: string; durum: string; belgeNo: string; satirSayisi: number }>>(
-      "/ebelge/gelen",
+    const kutu = await istek<{ kayitlar: Array<{ id: string; durum: string; belgeNo: string; satirSayisi: number }> }>(
+      "/ebelge/gelen/sayfa",
       { jeton },
     );
     expect(kutu.durum, JSON.stringify(kutu.veri)).toBe(200);
     // Mock entegratör biri TİCARİ biri TEMEL iki belge döner.
-    expect(kutu.veri).toHaveLength(2);
-    const gelen = kutu.veri.find((k) => k.belgeNo === "MCK2026000000001")!;
+    expect(kutu.veri.kayitlar).toHaveLength(2);
+    const gelen = kutu.veri.kayitlar.find((k) => k.belgeNo === "MCK2026000000001")!;
     expect(gelen.durum).toBe("beklemede");
 
     // Onay ekranı satırları stok kartıyla eşleştirmeyi zorunlu kılar

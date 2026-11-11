@@ -12,6 +12,13 @@ function okuyucu(yanitlar: Record<string, () => unknown>): UcOkuyucu {
   }) as UcOkuyucu;
 }
 
+/** `GET /ebelge/gelen/sayfa` sahtesi: süzgeci uygular, en fazla `adet` kayıt döner, sayacı tümünden verir. */
+const gelenSayfa = (kutu: any[]) => (s: Record<string, string>) => {
+  const uygun = kutu.filter((k) => (!s.durum || (k.durum ?? "beklemede") === s.durum) && (s.uyarili !== "true" || (k.denetimUyari ?? 0) > 0)
+    && (!s.baslangic || k.tarih >= s.baslangic) && (!s.bitis || k.tarih <= s.bitis));
+  return { kayitlar: uygun.slice(0, Number(s.adet ?? 50)), sonrakiImlec: null, ozet: { adet: uygun.length } };
+};
+
 const tam = {
   "GET /rapor/vadesi-gecenler": () => ({ toplamAlacak: "15000.00", alacakSayisi: 3, toplamBorc: "2000.00", borcSayisi: 1, alacaklar: [
     { cariUnvan: "Kaya", kalanTry: "1000.00", gecikmeGun: 40 }, { cariUnvan: "Deniz", kalanTry: "9000.00", gecikmeGun: 12 }, { cariUnvan: "Yıldız", kalanTry: "5000.00", gecikmeGun: 5 },
@@ -20,11 +27,13 @@ const tam = {
   "GET /ai/onay-ozeti": () => ({ bekleyen: 2, ornekler: ["Kesinleştirilecek: FTR1"] }),
   "GET /duzeltmeler/ozet": () => ({ acik: 5, kritik: 1, banaAtanan: 0, slaAsan: 2 }),
   "GET /satin-alma/talepler": () => [{ durum: "onay_bekliyor" }, { durum: "taslak" }],
-  "GET /ebelge/gelen": () => [
+  "GET /ebelge/gelen/sayfa": gelenSayfa([
     { belgeNo: "A1", gonderenUnvan: "Kaya", profilId: "TICARIFATURA", yanit: null, tarih: "2026-10-14", denetimUyari: 1 }, // son gün 22.10 → 1 gün
     { belgeNo: "A2", gonderenUnvan: "Deniz", profilId: "TICARIFATURA", yanit: null, tarih: "2026-10-01", denetimUyari: 0 }, // süresi geçmiş
     { belgeNo: "A3", gonderenUnvan: "Yıldız", profilId: "TEMELFATURA", yanit: null, tarih: "2026-10-14", denetimUyari: 0 },
-  ],
+    { belgeNo: "A4", gonderenUnvan: "Ece", profilId: "TICARIFATURA", yanit: null, tarih: "2026-10-12", denetimUyari: 0 }, // son gün 20.10 → geçti
+    { belgeNo: "A5", gonderenUnvan: "Can", profilId: "TICARIFATURA", yanit: null, tarih: "2026-10-15", denetimUyari: 0, durum: "islendi" },
+  ]),
   "GET /stok/kritik-ozeti": () => ({ kritikStok: 4 }),
 };
 
@@ -34,11 +43,23 @@ describe("günlük brifing (AI-83)", () => {
     expect(v.vade?.enEskiAlacaklar.map((a) => a.cari)).toEqual(["Deniz", "Yıldız", "Kaya"]);
     expect(v.nakit?.ilkEksi).toEqual({ tarih: "2026-10-24", bakiye: -3000 });
     expect(v.onaylar).toEqual({ asistan: 2, asistanOrnek: ["Kesinleştirilecek: FTR1"], satinAlma: 1 });
-    expect(v.gelenFatura).toEqual({ bekleyen: 3, uyarili: 1, yanitiYaklasan: [{ no: "A1", gonderen: "Kaya", sonGun: "2026-10-22" }] });
+    expect(v.gelenFatura).toEqual({ bekleyen: 4, uyarili: 1, yanitiYaklasan: [{ no: "A1", gonderen: "Kaya", sonGun: "2026-10-22" }] });
     expect(v.kritikStok).toBe(4);
     expect(v.duzeltme).toEqual({ acik: 5, kritik: 1, banaAtanan: 0, slaAsan: 2 });
     expect(v.gelenIrsaliye).toBeUndefined();
     expect(brifingOnemi(v)).toBe("kritik");
+  });
+
+  it("gelen kutusu sayfalı uçtan okunur: sayılar sayaçtan, adaylar yalnız yaklaşan son gün aralığından", async () => {
+    const cagrilar: Record<string, string>[] = [];
+    const sahte = gelenSayfa([]);
+    await brifingVerisiTopla(okuyucu({ "GET /ebelge/gelen/sayfa": (s: Record<string, string>) => (cagrilar.push(s), sahte(s)) }), BUGUN);
+    expect(cagrilar).toEqual(expect.arrayContaining([
+      { durum: "beklemede", adet: "1" },
+      { durum: "beklemede", uyarili: "true", adet: "1" },
+      { durum: "beklemede", baslangic: "2026-10-13", bitis: "2026-10-15", adet: "200" },
+    ]));
+    expect(cagrilar.every((s) => Number(s.adet) <= 200)).toBe(true);
   });
 
   it("e-İrsaliye tarihleri Date nesnesi gelse de süre hesaplanır", async () => {

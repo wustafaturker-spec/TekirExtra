@@ -236,8 +236,8 @@ async function veriDoluAnaPanelMockla(page: Page) {
       await route.fulfill({ json: { kurTarihi: "2026-08-09", kurlar: { USD: 40.72, EUR: 47.46 } } });
     } else if (pathname.endsWith("/kasa-banka/ekstre/satirlar")) {
       await route.fulfill({ json: [{ id: "e1" }, { id: "e2" }, { id: "e3" }] });
-    } else if (pathname.endsWith("/ebelge/gelen")) {
-      await route.fulfill({ json: [{ id: "g1" }, { id: "g2" }] });
+    } else if (pathname.endsWith("/ebelge/gelen/sayfa")) {
+      await route.fulfill({ json: { kayitlar: [], sonrakiImlec: null, ozet: { adet: 2, toplamTutar: "0.00", kalem: 0, beklemede: 2, islendi: 0, reddedildi: 0 } } });
     } else if (pathname.endsWith("/kasa-banka/cek-senet")) {
       await route.fulfill({ json: [] });
     } else if (pathname.endsWith("/rapor/vadesi-gecenler")) {

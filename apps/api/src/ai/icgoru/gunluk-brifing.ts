@@ -66,7 +66,15 @@ export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise
     }),
     bolum(async () => oku<{ bekleyen: number; ornekler: string[] }>(UC.aiOnayOzeti, [])),
     bolum(async () => ((await oku<any[]>(UC.satinAlmaListe, ["onay"])) ?? []).filter((t: any) => t.durum === "onay_bekliyor").length),
-    bolum(async () => (await oku<any[]>(UC.gelenEfaturaListe, ["beklemede"])) ?? []),
+    bolum(async () => {
+      // Sayılar veritabanından; yanıt süresi dolmak üzere olanlar için yalnız o tarih aralığı okunur.
+      const sayfa = (s: Record<string, string>) => oku<{ kayitlar: any[]; ozet: { adet: number } }>(UC.gelenEfaturaSayfa, [{ durum: "beklemede", ...s }]);
+      const [tum, uyarili, aralik] = await Promise.all([
+        sayfa({ adet: "1" }), sayfa({ uyarili: "true", adet: "1" }),
+        sayfa({ baslangic: gunEkle(bugun, -TICARI_YANIT_GUN), bitis: gunEkle(bugun, YAKLASAN_GUN - TICARI_YANIT_GUN), adet: "200" }),
+      ]);
+      return { bekleyen: tum.ozet.adet, uyarili: uyarili.ozet.adet, adaylar: aralik.kayitlar };
+    }),
     bolum(async () => (await oku<any[]>(UC.gelenEirsaliyeListe, ["yeni"])) ?? []),
     bolum(async () => {
       const r = await oku<any>(UC.duzeltmeOzet, []);
@@ -82,10 +90,10 @@ export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise
     veri.onaylar = { asistan: asistanOnay?.bekleyen ?? 0, asistanOrnek: asistanOnay?.ornekler ?? [], satinAlma: satinAlma ?? 0 };
   }
   if (gelen) {
-    const ticari = gelen.filter((g: any) => g.profilId === "TICARIFATURA" && !g.yanit);
+    const ticari = gelen.adaylar.filter((g: any) => g.profilId === "TICARIFATURA" && !g.yanit);
     veri.gelenFatura = {
-      bekleyen: gelen.length,
-      uyarili: gelen.filter((g: any) => (g.denetimUyari ?? 0) > 0).length,
+      bekleyen: gelen.bekleyen,
+      uyarili: gelen.uyarili,
       yanitiYaklasan: ticari
         .map((g: any) => ({ no: String(g.belgeNo), gonderen: String(g.gonderenUnvan ?? ""), sonGun: gunEkle(gunOf(g.tarih), TICARI_YANIT_GUN) }))
         .filter((g) => { const kalan = gunFarki(g.sonGun, bugun); return kalan >= 0 && kalan <= YAKLASAN_GUN; })

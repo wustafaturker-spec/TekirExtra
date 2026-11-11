@@ -97,7 +97,7 @@ export const UC = {
   gelenEpostaOkundu: uc(GelenEpostaController, "okunduGuncelle", "PATCH /eposta/gelen/:id/okundu"),
 
   // AI-73: gelen e-Fatura / e-İrsaliye kutusu.
-  gelenEfaturaListe: uc(EbelgeController, "gelenListele", "GET /ebelge/gelen"),
+  gelenEfaturaSayfa: uc(EbelgeController, "gelenSayfa", "GET /ebelge/gelen/sayfa"),
   gelenEfaturaGetir: uc(EbelgeController, "gelenGetir", "GET /ebelge/gelen/:id"),
   gelenEfaturaDenetim: uc(EbelgeController, "gelenDenetim", "POST /ebelge/gelen/:id/denetim"),
   gelenEfaturaIsle: uc(EbelgeController, "gelenOnayla", "POST /ebelge/gelen/:id/onayla"),

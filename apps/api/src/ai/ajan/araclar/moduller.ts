@@ -62,18 +62,18 @@ export const MODUL_ARACLARI = [
       bitis: tarih("Belge tarihi bitiş").optional(),
       yalnizUyarili: z.boolean().optional().describe("Yalnız gelen alış denetiminde uyarı çıkanlar"),
     }),
-    uc: UC.gelenEfaturaListe,
+    uc: UC.gelenEfaturaSayfa,
     async calistir(b, g) {
-      const liste: any[] = await cagir(b, UC.gelenEfaturaListe, [g.durum]);
-      const sorgu = g.arama?.toLocaleLowerCase("tr-TR").trim();
-      const uygun = liste.filter((k) =>
-        (!sorgu || `${k.belgeNo} ${k.gonderenUnvan} ${k.gonderenVkn}`.toLocaleLowerCase("tr-TR").includes(sorgu)) &&
-        (!g.baslangic || k.tarih >= g.baslangic) && (!g.bitis || k.tarih <= g.bitis) &&
-        (!g.yalnizUyarili || (k.denetimUyari ?? 0) > 0));
+      // Süzgeç veritabanında uygulanır; bütün kutu belleğe alınmaz (rapor V-2).
+      const sorgu = Object.fromEntries(Object.entries({
+        durum: g.durum, arama: g.arama?.trim().slice(0, 100) || undefined, baslangic: g.baslangic, bitis: g.bitis,
+        uyarili: g.yalnizUyarili ? "true" : undefined, adet: "20",
+      }).filter(([, v]) => v !== undefined));
+      const s: { kayitlar: any[]; ozet: { adet: number } } = await cagir(b, UC.gelenEfaturaSayfa, [sorgu]);
       return {
-        toplam: uygun.length,
-        kayitlar: uygun.slice(0, 20).map((k) => ({ ...sec(k, GELEN_ALANLARI), adres: adres.gelenEfatura(k.id) })),
-        ...(uygun.length > 20 ? { not: "İlk 20 kayıt; süzgeci daraltın." } : {}),
+        toplam: s.ozet.adet,
+        kayitlar: s.kayitlar.map((k) => ({ ...sec(k, GELEN_ALANLARI), adres: adres.gelenEfatura(k.id) })),
+        ...(s.ozet.adet > s.kayitlar.length ? { not: `İlk ${s.kayitlar.length} kayıt; süzgeci daraltın.` } : {}),
       };
     },
   }),

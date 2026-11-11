@@ -50,6 +50,13 @@ describe("gelen kutusu sayfası (rapor V-2)", () => {
     expect(grupWhere.durum).toBeUndefined();
     expect(grupWhere.denetimUyariSayisi).toEqual({ gt: 0 });
   });
+  it("tarih aralığı hem listeye hem sayaçlara uygulanır", async () => {
+    const { servis, tx } = kur([]);
+    await servis.gelenSayfa({ baslangic: "2026-10-01", bitis: "2026-10-31" });
+    const tarih = { gte: new Date("2026-10-01"), lte: new Date("2026-10-31") };
+    expect(tx.gelenEbelge.findMany.mock.calls[0][0].where.tarih).toEqual(tarih);
+    expect(tx.gelenEbelge.groupBy.mock.calls[0][0].where.tarih).toEqual(tarih);
+  });
   it("sayfa boyu 1 ile 200 arasında tutulur", async () => {
     const { servis, tx } = kur([]);
     await servis.gelenSayfa({ adet: 5000 });

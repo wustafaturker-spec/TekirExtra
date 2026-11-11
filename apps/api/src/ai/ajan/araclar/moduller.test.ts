@@ -64,16 +64,16 @@ describe("AI-73 gelen e-Fatura araçları", () => {
     expect(isle).toHaveBeenCalledWith("g1", { satirEslesmeleri: eslesme, yeniCariOnay: true });
   });
 
-  it("liste aramayı, tarihi ve uyarı süzgecini uygular", async () => {
-    const { b } = baglam({ gelenListele: () => [
-      { id: "1", belgeNo: "A1", gonderenUnvan: "Kaya", gonderenVkn: "1", tarih: "2026-10-01", denetimUyari: 2 },
-      { id: "2", belgeNo: "A2", gonderenUnvan: "Deniz", gonderenVkn: "2", tarih: "2026-10-05", denetimUyari: 0 },
-      { id: "3", belgeNo: "A3", gonderenUnvan: "Kaya", gonderenVkn: "1", tarih: "2026-09-01", denetimUyari: null },
-    ] });
-    const r: any = await bul("gelen_efatura_ara").calistir(b, { arama: "kaya", baslangic: "2026-09-15" });
-    expect(r.kayitlar.map((k: any) => k.id)).toEqual(["1"]);
-    const u: any = await bul("gelen_efatura_ara").calistir(b, { yalnizUyarili: true });
-    expect(u.kayitlar.map((k: any) => k.adres)).toEqual(["/panel/fatura/gelen-kutusu?ac=1"]);
+  it("liste süzgeci sayfalı uca iletir; bütün kutuyu okumaz", async () => {
+    const sayfa = vi.fn(async () => ({ kayitlar: [{ id: "1", belgeNo: "A1", gonderenUnvan: "Kaya", gonderenVkn: "1", tarih: "2026-10-01", denetimUyari: 2 }], sonrakiImlec: "1", ozet: { adet: 35 } }));
+    const { b } = baglam({ gelenSayfa: sayfa });
+    const r: any = await bul("gelen_efatura_ara").calistir(b, { durum: "beklemede", arama: " kaya ", baslangic: "2026-09-15", yalnizUyarili: true });
+    expect(sayfa).toHaveBeenCalledWith({ durum: "beklemede", arama: "kaya", baslangic: "2026-09-15", uyarili: "true", adet: "20" });
+    expect(r.toplam).toBe(35);
+    expect(r.kayitlar.map((k: any) => k.adres)).toEqual(["/panel/fatura/gelen-kutusu?ac=1"]);
+    expect(r.not).toMatch(/İlk 1 kayıt/);
+    await bul("gelen_efatura_ara").calistir(b, {});
+    expect(sayfa).toHaveBeenLastCalledWith({ adet: "20" });
   });
 
   it("ret yanıtı gerekçesiz çalışmaz", async () => {
