@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { type Browser, chromium } from "playwright";
 import { DepoService } from "../../ekler/depo.service";
@@ -21,6 +22,14 @@ const YAZDIRILABILIR_GENISLIK_PX = Math.floor((186 / 25.4) * 96);
 const YAZDIRILABILIR_YUKSEKLIK_PX = Math.floor((269 / 25.4) * 96);
 /** Tek sayfaya sığdırmada okunurluğu bozmayacak en küçük ölçek. */
 const EN_KUCUK_OLCEK = 0.88;
+
+/**
+ * EBLG-159: Chrome 158 (17.11.2026) yerleşik XSLT'yi kaldırır. Dönüşüm, Chrome ekibinin
+ * libxslt'nin WebAssembly derlemesi olan polyfill'iyle yapılır; tarayıcı sürümünden bağımsız
+ * ve her zaman aynı motordur. Dosya bir kez okunur (≈1,4 MB, WASM gömülü, ağ istemez).
+ */
+let xsltPolyfill: string | null = null;
+const xsltPolyfillKaynagi = () => (xsltPolyfill ??= readFileSync(require.resolve("xslt-polyfill"), "utf8"));
 
 /** PDF'teki sayfa nesnelerinin sayısı (Chromium çıktısı sıkıştırılmamış nesne başlıkları yazar). */
 export function pdfSayfaSayisi(pdf: Buffer): number {
@@ -175,9 +184,10 @@ export class PdfService implements OnModuleDestroy {
 
   /**
    * EBLG-28/29: yabancı bir XSLT'yi yalıtılmış bir sayfada uygulayıp ortaya
-   * çıkan HTML'i verir. Dönüşüm Chromium'un yerleşik `XSLTProcessor`'ıyla
-   * yapılır; sayfa çevrimdışıdır, her istek düşürülür ve sonuç DOM üzerinde
-   * temizlenir (betik, çerçeve, dış kaynak ve olay öznitelikleri atılır).
+   * çıkan HTML'i verir. Dönüşüm sayfaya yüklenen libxslt polyfill'iyle yapılır
+   * (EBLG-159); sayfa çevrimdışıdır, her istek düşürülür (xsl:include ve
+   * document() dışarıya da diske de ulaşamaz) ve sonuç DOM üzerinde temizlenir
+   * (betik, çerçeve, dış kaynak ve olay öznitelikleri atılır).
    *
    * Bozuk, kötü niyetli ya da sonsuz döngüye giren XSLT `null` döndürür;
    * çağıran kendi yedek görünümüne düşer, PDF üretimi düşmez.
@@ -189,54 +199,66 @@ export class PdfService implements OnModuleDestroy {
     try {
       await sayfa.route("**", (yol) => void yol.abort());
       await sayfa.setContent("<!doctype html><html><body></body></html>", { waitUntil: "domcontentloaded" });
-      const donusum = sayfa.evaluate<string | null, [string, string]>(([kaynak, bicem]) => {
-        // Sunucu tarafı tsconfig'inde DOM tipleri yok; sayfa içinde kullanılan
-        // arayüz burada yerel olarak tanımlanır.
-        interface Oznitelik { name: string; value: string }
-        interface Dugum {
-          attributes: ArrayLike<Oznitelik>;
-          remove(): void;
-          removeAttribute(ad: string): void;
-        }
-        interface Belge {
-          documentElement: unknown;
-          querySelector(secici: string): unknown;
-          querySelectorAll(secici: string): ArrayLike<Dugum>;
-        }
-        const tarayici = globalThis as unknown as {
-          DOMParser: new () => { parseFromString(metin: string, tur: string): Belge };
-          XSLTProcessor: new () => {
-            importStylesheet(bicem: Belge): void;
-            transformToDocument(kaynak: Belge): Belge | null;
-          };
-          XMLSerializer: new () => { serializeToString(belge: Belge): string };
-        };
-
-        const ayristirici = new tarayici.DOMParser();
-        const xmlBelge = ayristirici.parseFromString(kaynak, "application/xml");
-        const bicemBelge = ayristirici.parseFromString(bicem, "application/xml");
-        if (xmlBelge.querySelector("parsererror") || bicemBelge.querySelector("parsererror")) return null;
-
-        const islemci = new tarayici.XSLTProcessor();
-        islemci.importStylesheet(bicemBelge);
-        const sonuc = islemci.transformToDocument(xmlBelge);
-        if (!sonuc?.documentElement) return null;
-
-        // Görünüm yalnız metin ve biçimdir: çalışabilir ya da dışarı bağlanan
-        // her şey atılır. Gömülü data: görselleri korunur.
-        for (const dugum of Array.from(sonuc.querySelectorAll("script,iframe,object,embed,link,base,form,meta"))) {
-          dugum.remove();
-        }
-        for (const dugum of Array.from(sonuc.querySelectorAll("*"))) {
-          for (const oznitelik of Array.from(dugum.attributes)) {
-            const ad = oznitelik.name.toLowerCase();
-            const deger = oznitelik.value.trim().toLowerCase();
-            const disKaynak = (ad === "src" || ad === "href" || ad === "srcset" || ad === "action") && !deger.startsWith("data:");
-            if (ad.startsWith("on") || disKaynak || deger.startsWith("javascript:")) dugum.removeAttribute(oznitelik.name);
+      const donusum = (async () => {
+        await sayfa.evaluate(() => { (globalThis as unknown as { xsltDontAutoloadXmlDocs: boolean }).xsltDontAutoloadXmlDocs = true; });
+        await sayfa.addScriptTag({ content: xsltPolyfillKaynagi() });
+        // Polyfill kurulmadıysa yerleşik motora sessizce düşülmez; yedek görünüm kullanılır.
+        const hazir = await sayfa.evaluate(async () => {
+          const pencere = globalThis as unknown as { xsltPolyfillInstalled?: boolean; xsltPolyfillReady?: () => Promise<void> };
+          if (!pencere.xsltPolyfillInstalled || !pencere.xsltPolyfillReady) return false;
+          await pencere.xsltPolyfillReady();
+          return true;
+        });
+        if (!hazir) throw new Error("XSLT polyfill yüklenemedi");
+        return sayfa.evaluate<string | null, [string, string]>(([kaynak, bicem]) => {
+          // Sunucu tarafı tsconfig'inde DOM tipleri yok; sayfa içinde kullanılan
+          // arayüz burada yerel olarak tanımlanır.
+          interface Oznitelik { name: string; value: string }
+          interface Dugum {
+            attributes: ArrayLike<Oznitelik>;
+            remove(): void;
+            removeAttribute(ad: string): void;
           }
-        }
-        return new tarayici.XMLSerializer().serializeToString(sonuc);
-      }, [xml, xslt] as [string, string]);
+          interface Belge {
+            documentElement: unknown;
+            querySelector(secici: string): unknown;
+            querySelectorAll(secici: string): ArrayLike<Dugum>;
+          }
+          const tarayici = globalThis as unknown as {
+            DOMParser: new () => { parseFromString(metin: string, tur: string): Belge };
+            XSLTProcessor: new () => {
+              importStylesheet(bicem: Belge): void;
+              transformToDocument(kaynak: Belge): Belge | null;
+            };
+            XMLSerializer: new () => { serializeToString(belge: Belge): string };
+          };
+
+          const ayristirici = new tarayici.DOMParser();
+          const xmlBelge = ayristirici.parseFromString(kaynak, "application/xml");
+          const bicemBelge = ayristirici.parseFromString(bicem, "application/xml");
+          if (xmlBelge.querySelector("parsererror") || bicemBelge.querySelector("parsererror")) return null;
+
+          const islemci = new tarayici.XSLTProcessor();
+          islemci.importStylesheet(bicemBelge);
+          const sonuc = islemci.transformToDocument(xmlBelge);
+          if (!sonuc?.documentElement) return null;
+
+          // Görünüm yalnız metin ve biçimdir: çalışabilir ya da dışarı bağlanan
+          // her şey atılır. Gömülü data: görselleri korunur.
+          for (const dugum of Array.from(sonuc.querySelectorAll("script,iframe,object,embed,link,base,form,meta"))) {
+            dugum.remove();
+          }
+          for (const dugum of Array.from(sonuc.querySelectorAll("*"))) {
+            for (const oznitelik of Array.from(dugum.attributes)) {
+              const ad = oznitelik.name.toLowerCase();
+              const deger = oznitelik.value.trim().toLowerCase();
+              const disKaynak = (ad === "src" || ad === "href" || ad === "srcset" || ad === "action") && !deger.startsWith("data:");
+              if (ad.startsWith("on") || disKaynak || deger.startsWith("javascript:")) dugum.removeAttribute(oznitelik.name);
+            }
+          }
+          return new tarayici.XMLSerializer().serializeToString(sonuc);
+        }, [xml, xslt] as [string, string]);
+      })();
 
       const zamanAsimi = new Promise<null>((coz) => {
         zamanlayici = setTimeout(() => coz(null), zamanAsimiMs);

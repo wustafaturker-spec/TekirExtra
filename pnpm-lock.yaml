@@ -102,7 +102,7 @@ importers:
         specifier: 6.4.299
         version: 6.4.299
       playwright:
-        specifier: ^1.61.1
+        specifier: 1.61.1
         version: 1.61.1
       qrcode-generator:
         specifier: ^2.0.4
@@ -125,6 +125,9 @@ importers:
       xmllint-wasm:
         specifier: ^5.3.0
         version: 5.3.0(@types/node@22.20.1)
+      xslt-polyfill:
+        specifier: 1.0.33
+        version: 1.0.33
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -3076,6 +3079,9 @@ packages:
     peerDependencies:
       '@types/node': '>=16'
 
+  xslt-polyfill@1.0.33:
+    resolution: {integrity: sha512-GFKg8/M20hbSWLgEBa0ucs36Fhun1gcIymJTw5vz5Suao+00g0KV2/6M4HF5kJ4oB36PfIkHJCVgejPNs5ZMlw==}
+
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
@@ -5935,6 +5941,8 @@ snapshots:
   xmllint-wasm@5.3.0(@types/node@22.20.1):
     dependencies:
       '@types/node': 22.20.1
+
+  xslt-polyfill@1.0.33: {}
 
   yocto-queue@0.1.0: {}
 

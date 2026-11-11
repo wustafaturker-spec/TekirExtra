@@ -119,12 +119,57 @@ def bagimliliklar(yol):
     return json.loads(Path(yol).read_text(encoding="utf-8")).get("dependencies", {})
 
 
+def kurulu_paket(kok, ad):
+    """apps/api'den çözülen paketin gerçek klasörü ve package.json'u; kurulu değilse None."""
+    yol = kok / "apps/api/node_modules" / ad
+    if not yol.exists():
+        return None
+    gercek = yol.resolve()
+    return gercek, json.loads((gercek / "package.json").read_text(encoding="utf-8"))
+
+
+def eklenecek_bagimliliklar(taban_runtime):
+    """
+    Belirteç değişse de kurulu sürüm aynıysa sorun yoktur (ör. ^1.61.1 → 1.61.1). Çalışan pakette
+    olmayan, kendi bağımlılığı ve kurulum betiği bulunmayan yeni paket runtime'a kopyalanabilir;
+    sürümü değişen ya da bağımlılık getiren paket elle kurulmalıdır.
+    """
+    eklenecek = []
+    for ad in bagimliliklar(KOK / "apps/api/package.json"):
+        yerel, calisan = kurulu_paket(KOK, ad), kurulu_paket(taban_runtime, ad)
+        if yerel is None:
+            dur(f"{ad} yerelde kurulu değil; önce pnpm install")
+        if calisan is not None:
+            if calisan[1].get("version") != yerel[1].get("version"):
+                dur(f"{ad} sürümü değişti ({calisan[1].get('version')} → {yerel[1].get('version')}); runtime paketinin node_modules'u elle güncellenmeli")
+            continue
+        bilgi = yerel[1]
+        betikler = set(bilgi.get("scripts", {})) & {"preinstall", "install", "postinstall"}
+        if bilgi.get("dependencies") or bilgi.get("optionalDependencies") or bilgi.get("peerDependencies") or betikler or (yerel[0] / "binding.gyp").exists():
+            dur(f"{ad} yeni ve kendi bağımlılığı/kurulum betiği var; runtime paketinin node_modules'u elle güncellenmeli")
+        eklenecek.append((ad, yerel[0], bilgi["version"]))
+    return eklenecek
+
+
+def bagimliliklari_ekle(runtime, eklenecek):
+    for ad, kaynak, surum in eklenecek:
+        hedef = runtime / "node_modules/.pnpm" / f"{ad.replace('/', '+')}@{surum}" / "node_modules" / ad
+        shutil.copytree(kaynak, hedef, symlinks=True)
+        bag = runtime / "apps/api/node_modules" / ad
+        bag.parent.mkdir(parents=True, exist_ok=True)
+        bag.symlink_to(os.path.relpath(hedef, bag.parent))
+    yaz(KOK / "apps/api/package.json", runtime / "apps/api/package.json")
+    return [f"{ad}@{surum}" for ad, _, surum in eklenecek]
+
+
 def api_hazirla(paket, taban_runtime):
-    if bagimliliklar(KOK / "apps/api/package.json") != bagimliliklar(taban_runtime / "apps/api/package.json"):
-        dur("apps/api bağımlılıkları çalışan paketten farklı; runtime paketinin node_modules'u elle güncellenmeli")
+    eklenecek = eklenecek_bagimliliklar(taban_runtime)
     adim("API paketi: çalışan paket sabit bağla kopyalanıyor")
     calistir(["cp", "-al", str(taban_runtime), str(paket / "runtime")])
     runtime = paket / "runtime"
+    yeni_bagimliliklar = bagimliliklari_ekle(runtime, eklenecek)
+    if yeni_bagimliliklar:
+        adim(f"API paketi: yeni bağımlılık {', '.join(yeni_bagimliliklar)}")
     ortam = {**os.environ, "NODE_OPTIONS": "--max-old-space-size=4500"}
     with tempfile.TemporaryDirectory(prefix="pilot-yayin-") as gecici:
         adim("API derleniyor")
@@ -153,7 +198,7 @@ def api_hazirla(paket, taban_runtime):
             yaz(k, h)
             istemci.append(k.name)
     adim(f"API paketi: {len(api)} dosya, shared {len(shared)}, baglanti {len(baglanti)}, yeni göç {len(gocler)}, Prisma istemcisi {len(istemci)} dosya")
-    return {"apiDosyalari": api, "sharedDosyalari": shared, "baglantiDosyalari": baglanti, "yeniGocler": gocler}
+    return {"apiDosyalari": api, "sharedDosyalari": shared, "baglantiDosyalari": baglanti, "yeniGocler": gocler, "yeniBagimliliklar": yeni_bagimliliklar}
 
 
 def web_hazirla(paket, ad):
