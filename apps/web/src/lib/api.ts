@@ -291,6 +291,14 @@ export async function tumSayfalariAl<T>(yol: string, adet = 200): Promise<T[]> {
   return kayitlar;
 }
 
+/**
+ * PLT-119: arka plan isteği (hata bildirimi). Yanıt beklenmez, oturum yenilenmez ve 401'de
+ * giriş sayfasına yönlendirilmez; her hata yutulur.
+ */
+export function arkaPlanIstegi(yol: string, govde: unknown): void {
+  void istekYap(yol, { method: "POST", body: JSON.stringify(govde), keepalive: true }, tokenAl()).catch(() => undefined);
+}
+
 /** Ham yanıt gereken istekler (yükleme, ikili yanıt): oturum başlıkları ve 401'de bir kez yenileme. */
 export async function kimlikliFetch(yol: string, secenekler: RequestInit = {}): Promise<Response> {
   const yanit = await istekYap(yol, secenekler, tokenAl());

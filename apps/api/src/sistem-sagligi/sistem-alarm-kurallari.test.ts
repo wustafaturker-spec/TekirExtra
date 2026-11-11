@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { afterEach, describe, expect, it } from "vitest";
 import { NabizLogger, nabizKaydediciAyarla, nabizla, type NabizSonucu } from "../core/nabiz/nabiz";
-import { saatlikAtlama, sorunlariBul, type AlarmGirdisi } from "./sistem-alarm-kurallari";
+import { ESIK, hataAcikMi, hataSorunlari, saatlikAtlama, sorunlariBul, type AlarmGirdisi, type HataGrubu } from "./sistem-alarm-kurallari";
 
 const simdi = new Date("2026-10-29T13:00:00Z");
 const once = (dk: number) => new Date(simdi.getTime() - dk * 60_000);
@@ -87,5 +87,27 @@ describe("zamanlayıcı nabzı (PLT-16)", () => {
     await nabizla("uzun", async () => { calisma++; }, 300_000);
     expect(calisma).toBe(2);
     expect(kayitlar.map((k) => [k.ad, k.atlandi ?? false, k.aralikMs])).toEqual([["uzun", true, 300_000], ["baska", false, 60_000], ["uzun", false, 300_000], ["uzun", false, 300_000]]);
+  });
+});
+
+describe("uygulama hatası alarmı (PLT-121)", () => {
+  const simdi = new Date("2026-11-11T12:00:00Z");
+  const once = (dk: number) => new Date(simdi.getTime() - dk * 60_000);
+  const h = (ek: Partial<HataGrubu> = {}): HataGrubu => ({ parmakIzi: "p1", kaynak: "api", ad: "TypeError", mesaj: "x", konum: "GET /a", saatSayi: 1, saatBaslangic: once(10), ilkGorulme: once(60 * 48), sonGorulme: once(5), cozulduAt: null, ...ek });
+
+  it("son 24 saatte ilk kez görülen hata alarm olur; eski ve sakin hata olmaz", () => {
+    expect(hataSorunlari([h({ ilkGorulme: once(30) })], simdi).map((s) => s.anahtar)).toEqual(["hata:p1"]);
+    expect(hataSorunlari([h()], simdi)).toEqual([]);
+  });
+
+  it("bir saatte eşiği aşan tekrar alarm olur", () => {
+    expect(hataSorunlari([h({ saatSayi: ESIK.saatlikHataTekrari })], simdi)[0].ozet).toContain(`son 1 saatte ${ESIK.saatlikHataTekrari} kez`);
+  });
+
+  it("bir saattir görülmeyen ya da çözüldü işaretli hata kapanır; çözüldükten sonra görülen yeniden açılır", () => {
+    expect(hataSorunlari([h({ ilkGorulme: once(30), sonGorulme: once(70) })], simdi)).toEqual([]);
+    expect(hataSorunlari([h({ ilkGorulme: once(30), cozulduAt: once(2) })], simdi)).toEqual([]);
+    expect(hataAcikMi(h({ cozulduAt: once(20) }))).toBe(true);
+    expect(hataSorunlari([h({ cozulduAt: once(20) })], simdi)[0].ozet).toContain("yeniden görüldü");
   });
 });

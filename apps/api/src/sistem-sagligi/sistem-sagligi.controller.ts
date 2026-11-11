@@ -13,6 +13,12 @@ export class SistemSagligiController {
     return this.saglik.ekran();
   }
 
+  @Post("hatalar/:parmakIzi/cozuldu")
+  @HttpCode(200)
+  hataCozuldu(@Param("parmakIzi") parmakIzi: string) {
+    return this.saglik.hataCozuldu(parmakIzi);
+  }
+
   @Post("olu-isler/:id/yeniden-dene")
   @HttpCode(200)
   yenidenDene(@Param("id") id: string) {

@@ -18,6 +18,12 @@ export const ESIK = {
   ardisikUzunTur: 2,
   /** BLD-12: son bu kadar saatte tur atlandıysa. */
   atlamaSaat: 1,
+  /** PLT-121: bir hata grubu bir saatte bu kadar ya da daha çok tekrarlandıysa. */
+  saatlikHataTekrari: 20,
+  /** PLT-121: bu kadar saat içinde ilk kez görülen hata grubu "yeni" sayılır. */
+  yeniHataSaat: 24,
+  /** PLT-122: hata kayıtlarının saklama süresi. */
+  hataSaklamaGun: 90,
 } as const;
 
 export interface AlarmGirdisi {
@@ -79,6 +85,42 @@ export function sorunlariBul(g: AlarmGirdisi): Sorun[] {
       ].filter(Boolean).join("; ");
       sorunlar.push({ anahtar: `is-asim:${i.isAdi}`, tur: "zamanlayici_asim", ozet: `${i.isAdi} kendi aralığına sığmıyor (${aralik}): ${neden}.`.slice(0, 1000) });
     }
+  }
+  return sorunlar;
+}
+
+export interface HataGrubu {
+  parmakIzi: string;
+  kaynak: string;
+  ad: string;
+  mesaj: string;
+  konum: string;
+  saatSayi: number;
+  saatBaslangic: Date;
+  ilkGorulme: Date;
+  sonGorulme: Date;
+  cozulduAt: Date | null;
+}
+
+/** PLT-120: çözüldü işaretlenip sonra yeniden görülen hata yeniden açıktır. */
+export const hataAcikMi = (h: Pick<HataGrubu, "cozulduAt" | "sonGorulme">) => !h.cozulduAt || h.sonGorulme > h.cozulduAt;
+
+/**
+ * PLT-121: son bir saatte görülen açık hata gruplarından yeni olanlar ya da bir saatte eşiği
+ * aşanlar alarm olur. Bir saat görülmeyince alarm kendiliğinden kapanır ("düzeldi").
+ */
+export function hataSorunlari(hatalar: HataGrubu[], simdi: Date): Sorun[] {
+  const t = simdi.getTime();
+  const sorunlar: Sorun[] = [];
+  for (const h of hatalar) {
+    if (!hataAcikMi(h) || t - h.sonGorulme.getTime() > 3_600_000) continue;
+    // Çözüldü işaretinden sonra yeniden görülen hata da yeni sayılır.
+    const yeni = t - h.ilkGorulme.getTime() <= ESIK.yeniHataSaat * 3_600_000 || Boolean(h.cozulduAt);
+    const sicrama = t - h.saatBaslangic.getTime() <= 3_600_000 && h.saatSayi >= ESIK.saatlikHataTekrari;
+    if (!yeni && !sicrama) continue;
+    const kaynak = h.kaynak === "web" ? "Tarayıcı" : "API";
+    const neden = sicrama ? `son 1 saatte ${h.saatSayi} kez` : h.cozulduAt ? "çözüldü işaretinden sonra yeniden görüldü" : "ilk kez görüldü";
+    sorunlar.push({ anahtar: `hata:${h.parmakIzi}`, tur: "uygulama_hatasi", ozet: `${kaynak} hatası (${neden}) — ${h.konum}: ${h.ad}: ${h.mesaj}`.slice(0, 1000) });
   }
   return sorunlar;
 }

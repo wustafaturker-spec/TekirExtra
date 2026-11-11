@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { PlatformIletiService } from "../ileti/platform-ileti.service";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
@@ -9,7 +9,7 @@ import { BaglantilarService } from "../tenant/baglantilar.service";
 import { iletiSorunlari } from "../ileti/ileti-kurallari";
 import { yedekSorunlari } from "../yedekleme/yedek-kurallari";
 import { YedeklemeService } from "../yedekleme/yedekleme.service";
-import { ESIK, saatlikAtlama, sorunlariBul, type Sorun } from "./sistem-alarm-kurallari";
+import { ESIK, hataAcikMi, hataSorunlari, saatlikAtlama, sorunlariBul, type Sorun } from "./sistem-alarm-kurallari";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const GUN_MS = 86_400_000;
@@ -47,7 +47,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }
 
   private async topla(simdi = new Date()) {
-    const [isler, surecler, oncekiWorker, kuyruk, kursorSatirlari, baglantilar, alarmlar] = await Promise.all([
+    const [isler, surecler, oncekiWorker, kuyruk, kursorSatirlari, baglantilar, alarmlar, hatalar] = await Promise.all([
       this.prisma.sistemIsi.findMany({ orderBy: { isAdi: "asc" } }),
       this.prisma.sistemSureci.findMany({ where: { basladiAt: { gt: new Date(simdi.getTime() - GUN_MS) } }, orderBy: { basladiAt: "desc" } }),
       this.prisma.sistemSureci.count({ where: { tur: "worker", basladiAt: { lte: new Date(simdi.getTime() - 3_600_000) } } }),
@@ -55,6 +55,8 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
       this.platform.db.$queryRaw<KursorSatiri[]>`SELECT * FROM platform_gelen_kursor_durumu()`,
       this.platform.db.$queryRaw<BaglantiSatiri[]>`SELECT * FROM platform_baglanti_sagligi()`,
       this.prisma.sistemAlarmi.findMany({ where: { OR: [{ acik: true }, { kapandiAt: { gt: new Date(simdi.getTime() - GUN_MS) } }] }, orderBy: { sonGorulmeAt: "desc" } }),
+      // PLT-120: son 7 günde görülen hata grupları (ekran ve alarm için yeter; eskisi 90 günde silinir).
+      this.prisma.sistemHata.findMany({ where: { sonGorulme: { gt: new Date(simdi.getTime() - 7 * GUN_MS) } }, orderBy: { sonGorulme: "desc" }, take: 200 }),
     ]);
     const kuyrukFirmalari = [...new Set([...kuyruk.firmalar.map((f) => f.tenantId), ...kuyruk.oluIsler.map((o) => o.tenantId)])];
     const adlar = new Map(
@@ -65,7 +67,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
     // Üretimde gerçek adaptörü olmayan sağlayıcının taraması bilinçli olarak atlanır; kursörü eskir ama sorun değildir.
     const kursorler = kursorSatirlari.filter((k) => BaglantilarService.taranir(k.saglayici));
     const workerSurecleri = surecler.filter((s) => s.tur === "worker");
-    return { simdi, isler, surecler, workerSurecleri, oncekiWorkerVar: oncekiWorker > 0, kuyruk, adlar, kursorler, baglantilar, alarmlar };
+    return { simdi, isler, surecler, workerSurecleri, oncekiWorkerVar: oncekiWorker > 0, kuyruk, adlar, kursorler, baglantilar, alarmlar, hatalar };
   }
 
   /** PLT-17: ekran. */
@@ -100,7 +102,19 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
         tenantId: b.tenant_id, unvan: b.unvan.trim(), aile: b.aile, saglayici: b.saglayici, durum: b.durum, sonSenkron: b.son_senkron_tarihi, hata: b.son_senkron_hatasi, ardisikHata: b.ardisik_hata,
       })),
       alarmlar: v.alarmlar,
+      // PLT-120: firma kimlikleri gösterilmez, yalnız kaç firmada görüldüğü.
+      hatalar: v.hatalar.map(({ firmalar, sayi, ...h }) => ({ ...h, sayi: Number(sayi), firmaSayisi: firmalar.length, acik: hataAcikMi(h) })),
     };
+  }
+
+  /** PLT-120: hata grubunu çözüldü işaretler; yeniden görülürse kendiliğinden açılır. */
+  async hataCozuldu(parmakIzi: string) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    const { count } = await this.prisma.sistemHata.updateMany({ where: { parmakIzi }, data: { cozulduAt: new Date() } });
+    if (!count) throw new NotFoundException("Hata kaydı bulunamadı");
+    await this.platform.db.mevzuatOlay.create({ data: { kullaniciId, olay: "sistem_hatasi_cozuldu", detay: { parmakIzi } as Prisma.InputJsonValue } });
+    await this.prisma.sistemAlarmi.updateMany({ where: { anahtar: `hata:${parmakIzi}`, acik: true }, data: { acik: false, kapandiAt: new Date() } });
+    return { mesaj: "Hata çözüldü olarak işaretlendi." };
   }
 
   /** PLT-18: kuyruktan düşen işi yeniden kuyruğa alır; platform olay kaydına yazılır. */
@@ -129,7 +143,7 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
         oluIsler: v.kuyruk.oluIsler.map((o) => ({ ...o, unvan: v.adlar.get(o.tenantId) })),
         kursorler: v.kursorler.map((k) => ({ tenantId: k.tenant_id, unvan: k.unvan, sonCekimAt: k.son_cekim_at })),
         isler: v.isler,
-      }), ...yedekSorunlari(await this.yedekleme.durum(simdi)), ...iletiSorunlari(await this.ileti.ozet(simdi))];
+      }), ...yedekSorunlari(await this.yedekleme.durum(simdi)), ...iletiSorunlari(await this.ileti.ozet(simdi)), ...hataSorunlari(v.hatalar, simdi)];
       const mevcut = new Map((await this.prisma.sistemAlarmi.findMany()).map((a) => [a.anahtar, a]));
       const bildirilecek: Sorun[] = [];
       for (const s of sorunlar) {
@@ -150,6 +164,8 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
       for (const a of duzelen) await this.prisma.sistemAlarmi.update({ where: { anahtar: a.anahtar }, data: { acik: false, kapandiAt: simdi } });
       // 30 günden eski kapalı alarmlar atılır.
       await this.prisma.sistemAlarmi.deleteMany({ where: { acik: false, kapandiAt: { lt: new Date(simdi.getTime() - 30 * GUN_MS) } } });
+      // PLT-122: hata grupları son görülmeden 90 gün sonra silinir.
+      await this.prisma.sistemHata.deleteMany({ where: { sonGorulme: { lt: new Date(simdi.getTime() - ESIK.hataSaklamaGun * GUN_MS) } } });
       const duzelenBildirilmis = duzelen.filter((a) => a.sonBildirimAt && a.sonBildirimAt >= a.ilkAt).map((a) => a.ozet);
       if (bildirilecek.length || duzelenBildirilmis.length) {
         try {

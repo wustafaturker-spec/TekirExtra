@@ -14,6 +14,7 @@ import { TenantDuyuruUstBandi } from "@/components/tenant-duyuru-ust-bandi";
 import { TenantDuyuruPopupYoneticisi } from "@/components/tenant-duyuru-popup-yoneticisi";
 import { TenantDuyuruModulKartlari } from "@/components/tenant-duyuru-modul-kartlari";
 import { HareketsizlikIzleyici } from "@/components/hareketsizlik-izleyici";
+import { HataDinleyici } from "@/components/hata-dinleyici";
 import { ASISTAN_AC_OLAYI, ekranKaydi, type AsistanBaglami } from "@/lib/asistan-baglami";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings, Sparkles } from "lucide-react";
@@ -503,6 +504,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       )}
 
       <HareketsizlikIzleyici dakika={hareketsizlikDk} />
+      <HataDinleyici />
       <KomutPaleti acik={paletAcik} ebelgeUygulamalari={ebelgeUygulamalari} rol={rol} setAcik={setPaletAcik} />
       <AsistanPenceresi acik={aiAsistanAcik} baglam={aiBaglam} onBaglamKaldir={() => setAiBaglam(null)} onKapat={() => setAiAsistanAcik(false)} />
 

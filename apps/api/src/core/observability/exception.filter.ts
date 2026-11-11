@@ -3,6 +3,9 @@ import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { MetricsService } from "./metrics.service";
 import { structuredLogger } from "./structured-logger";
+import type { HataKayitService } from "./hata-kayit";
+import { rotaEtiketi } from "./rota-etiketi";
+import { baglamAl } from "../istek-baglami";
 import { XML_YUKLEME_SINIRI_MB, xmlYuklemeYoluMu } from "../govde-sinirlari";
 
 /**
@@ -55,7 +58,7 @@ export function paketKotaHatasi(hata: unknown): HttpException | null {
 
 @Catch()
 export class ObservabilityExceptionFilter implements ExceptionFilter {
-  constructor(private readonly metrics: MetricsService) {}
+  constructor(private readonly metrics: MetricsService, private readonly hataKaydi?: HataKayitService) {}
 
   catch(hata: unknown, host: ArgumentsHost): void {
     const yogun = yogunlukHatasiMi(hata);
@@ -90,6 +93,19 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
         ...logAlanlari,
         errorName: exception instanceof Error ? exception.name : undefined,
         errorMessage: exception instanceof Error ? exception.message : String(exception),
+      });
+    }
+    // PLT-118: 500 ve üstü gruplu hata kaydına da yazılır (beklenmez; yanıt gecikmez).
+    if (status >= 500 && this.hataKaydi) {
+      const kaynakHata = (yogun ? hata : exception) as { name?: unknown; message?: unknown; stack?: unknown } | null;
+      void this.hataKaydi.kaydet({
+        kaynak: "api",
+        ad: typeof kaynakHata?.name === "string" ? kaynakHata.name : "Error",
+        mesaj: typeof kaynakHata?.message === "string" ? kaynakHata.message : String(kaynakHata),
+        yigin: typeof kaynakHata?.stack === "string" ? kaynakHata.stack : null,
+        konum: `${req.method} ${rotaEtiketi(req)}`,
+        tenantId: baglamAl()?.tenantId ?? null,
+        istekId: requestId,
       });
     }
     const body = exception instanceof HttpException

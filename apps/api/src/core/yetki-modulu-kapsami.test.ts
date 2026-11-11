@@ -15,6 +15,7 @@ const MODULSUZ: Record<string, string> = {
   duyurular: "platformun her role gösterdiği duyurular; kullanıcının kendi okuma ve tercih kaydı",
   ekler: "sahibin modülüyle serviste denetlenir (EK_ERISIMI)",
   health: "sağlık denetimi",
+  "istemci-hata": "kullanıcının kendi ekranındaki hata bildirimi (PLT-119)",
   metrics: "işletim metrikleri",
   mevzuat: "yürürlükteki ortak mevzuat",
   platform: "platform ekibi, kiracı rolü değil",

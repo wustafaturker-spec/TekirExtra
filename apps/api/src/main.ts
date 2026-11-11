@@ -10,6 +10,7 @@ import { bosTutucuylaCalistir } from "./core/istek-baglami";
 import { randomUUID } from "node:crypto";
 import { MetricsService } from "./core/observability/metrics.service";
 import { ObservabilityExceptionFilter } from "./core/observability/exception.filter";
+import { HataKayitService } from "./core/observability/hata-kayit";
 import { rotaEtiketi } from "./core/observability/rota-etiketi";
 import { structuredLogger } from "./core/observability/structured-logger";
 import { DagitikRateLimiter } from "./core/guvenlik/rate-limiter";
@@ -31,7 +32,7 @@ async function bootstrap(): Promise<void> {
   app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb", inflate: false }));
   app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true, inflate: false }));
   const metrics = app.get(MetricsService);
-  app.useGlobalFilters(new ObservabilityExceptionFilter(metrics));
+  app.useGlobalFilters(new ObservabilityExceptionFilter(metrics, app.get(HataKayitService)));
   app.setGlobalPrefix("api/v1", { exclude: ["health", "health/ready", "metrics"] });
   app.use((_req: unknown, _res: unknown, next: () => void) =>
     bosTutucuylaCalistir(next),

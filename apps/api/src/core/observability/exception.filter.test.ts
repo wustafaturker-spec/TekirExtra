@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import { bagHatasiMi, ObservabilityExceptionFilter, paketKotaHatasi } from "./exception.filter";
@@ -113,5 +114,24 @@ describe("yabancı anahtar hatası (P2003)", () => {
     expect(bagHatasiMi(hata)).toBe(true);
     expect(bagHatasiMi(Object.assign(new Error("x"), { name: "PrismaClientKnownRequestError", code: "P2002" }))).toBe(false);
     expect(bagHatasiMi(Object.assign(new Error("x"), { code: "P2003" }))).toBe(false);
+  });
+});
+
+describe("gruplu hata kaydı (PLT-118)", () => {
+  const calistir = (hata: unknown, kaydet = vi.fn()) => {
+    const json = vi.fn();
+    const status = vi.fn(() => ({ json }));
+    const host = { switchToHttp: () => ({ getRequest: () => ({ headers: { "x-request-id": "r9" }, method: "POST", path: "/api/v1/fatura/x/iptal", route: { path: "/fatura/:id/iptal" }, baseUrl: "/api/v1" }), getResponse: () => ({ status, setHeader: vi.fn() }) }) };
+    new ObservabilityExceptionFilter({ increment: vi.fn() } as never, { kaydet } as never).catch(hata, host as never);
+    return kaydet;
+  };
+
+  it("500 yanıtı rota kalıbı ve istek kimliğiyle kaydedilir", () => {
+    const kaydet = calistir(new TypeError("x is undefined"));
+    expect(kaydet).toHaveBeenCalledWith(expect.objectContaining({ kaynak: "api", ad: "TypeError", mesaj: "x is undefined", konum: "POST /api/v1/fatura/:id/iptal", istekId: "r9" }));
+  });
+
+  it("istemci hatası (4xx) kaydedilmez", () => {
+    expect(calistir(new BadRequestException("eksik alan"))).not.toHaveBeenCalled();
   });
 });

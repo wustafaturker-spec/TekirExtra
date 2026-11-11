@@ -8,6 +8,8 @@ import { platformApi, platformTokenAl } from "@/lib/platform-api";
 interface Surec { basladiAt: string; sonNabizAt: string; rssMb: number | null; heapMb: number | null; heapSinirMb: number | null; makine?: string | null }
 interface Is { isAdi: string; sonBaslangic: string | null; sonSureMs: number | null; sonBasariAt: string | null; sonHata: string | null; sonHataAt: string | null; ardisikHata: number; calismaSayisi: number; aralikMs: number | null; ardisikUzun: number; saatlikAtlama: number }
 interface OluIs { id: string; tenantId: string; unvan: string; isTuru: string; hata: string; zaman: string }
+/** PLT-120: gruplu uygulama hatası; firma kimliği gelmez, yalnız kaç firmada görüldüğü. */
+interface HataGrubu { parmakIzi: string; kaynak: "api" | "web"; ad: string; mesaj: string; yigin: string | null; konum: string; sayi: number; saatSayi: number; ilkGorulme: string; sonGorulme: string; surum: string | null; sonIstekId: string | null; firmaSayisi: number; cozulduAt: string | null; acik: boolean }
 interface Alarm { anahtar: string; tur: string; acik: boolean; ozet: string; ilkAt: string; sonBildirimAt: string | null; kapandiAt: string | null }
 interface Saglik {
   zaman: string;
@@ -20,6 +22,7 @@ interface Saglik {
   taranan: number;
   baglantilar: { tenantId: string; unvan: string; aile: string; saglayici: string; durum: string; sonSenkron: string | null; hata: string | null; ardisikHata: number }[];
   alarmlar: Alarm[];
+  hatalar: HataGrubu[];
 }
 
 const zaman = (s: string | null) => (s ? new Date(s).toLocaleString("tr-TR") : "—");
@@ -37,6 +40,7 @@ export default function PlatformSistemSagligi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState("");
+  const [tumHatalar, setTumHatalar] = useState(false);
 
   const yukle = useCallback(async () => {
     kontrol.current?.abort();
@@ -65,7 +69,18 @@ export default function PlatformSistemSagligi() {
     finally { setIslem(""); }
   }
 
+  async function hataCozuldu(parmakIzi: string) {
+    if (islem) return;
+    setIslem(parmakIzi); setHata(""); setBasari("");
+    try { setBasari((await platformApi<{ mesaj: string }>(`/platform/sistem-sagligi/hatalar/${encodeURIComponent(parmakIzi)}/cozuldu`, { method: "POST" })).mesaj); await yukle(); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Hata işaretlenemedi"); }
+    finally { setIslem(""); }
+  }
+
   const acikAlarmlar = v?.alarmlar.filter((a) => a.acik) ?? [];
+  const hatalar = v?.hatalar ?? [];
+  const acikHatalar = hatalar.filter((h) => h.acik);
+  const gorunenHatalar = tumHatalar ? hatalar : acikHatalar;
   const nabizGec = v?.worker.nabizGecikmesiDk !== null && v?.worker.nabizGecikmesiDk !== undefined && v.worker.nabizGecikmesiDk > v.esikler.workerNabizDk;
   const bellekOrani = v?.worker.son?.heapMb !== null && v?.worker.son?.heapMb !== undefined && v.worker.son.heapSinirMb ? Math.round((v.worker.son.heapMb / v.worker.son.heapSinirMb) * 100) : null;
 
@@ -86,7 +101,33 @@ export default function PlatformSistemSagligi() {
         <Stat label="Worker belleği" value={v.worker.son ? `${v.worker.son.heapMb ?? "—"} / ${v.worker.son.heapSinirMb ?? "—"} MB` : "—"} tone={bellekOrani !== null && bellekOrani >= 85 ? "danger" : undefined} />
         <Stat label="Kuyruktan düşen iş" value={v.kuyruk.oluIsler.length} tone={v.kuyruk.oluIsler.length ? "danger" : undefined} />
         <Stat label="Geciken gelen tarama" value={`${v.gecikenKursorler.length} / ${v.taranan}`} tone={v.gecikenKursorler.length ? "accent" : undefined} />
+        <Stat label="Açık uygulama hatası (7 gün)" value={acikHatalar.length} tone={acikHatalar.length ? "danger" : undefined} />
       </StatGrid>
+
+      <Card title="Uygulama hataları" pad={false} actions={hatalar.length > acikHatalar.length ? <Button size="sm" onClick={() => setTumHatalar((d) => !d)}>{tumHatalar ? "Yalnız açıkları göster" : `Çözülenleri de göster (${hatalar.length - acikHatalar.length})`}</Button> : undefined}>
+        <p className="subtle" style={{ padding: "0 1.25rem", margin: "0 0 0.75rem" }}>API'nin 500 yanıtları ve kullanıcı ekranlarındaki yakalanmamış hatalar, aynı hata tek satırda toplanarak. Mesajlarda e-posta, VKN/TCKN, IBAN ve telefon gizlenir. Son 7 gün; kayıtlar 90 gün saklanır.</p>
+        <TableWrap className="platform-responsive-table platform-health-table">
+          <thead><tr><th>Son görülme</th><th>Kaynak</th><th>Hata</th><th className="num">Tekrar</th><th className="num">Firma</th><th>İşlem</th></tr></thead>
+          <tbody>
+            {gorunenHatalar.map((h) => <tr key={h.parmakIzi}>
+              <td data-label="Son görülme" className="subtle">{zaman(h.sonGorulme)}<div>ilk: {zaman(h.ilkGorulme)}</div></td>
+              <td data-label="Kaynak"><Badge variant={h.kaynak === "api" ? "danger" : "warning"}>{h.kaynak === "api" ? "API" : "Tarayıcı"}</Badge></td>
+              <td data-label="Hata">
+                <div className="mono" style={{ fontSize: "0.8rem" }}>{h.konum}</div>
+                <div><strong>{h.ad}</strong>: {h.mesaj}</div>
+                {h.yigin && <details><summary className="subtle">Ayrıntı</summary><pre className="mono" style={{ whiteSpace: "pre-wrap", fontSize: "0.75rem", margin: "0.4rem 0 0" }}>{h.yigin}</pre></details>}
+                <div className="subtle" style={{ fontSize: "0.8rem" }}>{h.surum ? `Sürüm ${h.surum}` : ""}{h.sonIstekId ? ` · son istek ${h.sonIstekId}` : ""}</div>
+              </td>
+              <td data-label="Tekrar" className="num">{h.sayi}{h.saatSayi > 1 ? <div className="subtle">son saat {h.saatSayi}</div> : null}</td>
+              <td data-label="Firma" className="num">{h.firmaSayisi}</td>
+              <td data-label="İşlem">{h.acik
+                ? <Button size="sm" disabled={Boolean(islem)} onClick={() => void hataCozuldu(h.parmakIzi)}>{islem === h.parmakIzi ? "İşaretleniyor…" : "Çözüldü"}</Button>
+                : <Badge variant="success">Çözüldü {h.cozulduAt ? zaman(h.cozulduAt) : ""}</Badge>}</td>
+            </tr>)}
+            {!gorunenHatalar.length && <tr><td colSpan={6} className="empty">{hatalar.length ? "Açık hata yok." : "Son 7 günde uygulama hatası kaydı yok."}</td></tr>}
+          </tbody>
+        </TableWrap>
+      </Card>
 
       {v.kuyruk.oluIsler.length > 0 && <Card title="Kuyruktan düşen işler" pad={false}>
         <TableWrap className="platform-responsive-table platform-health-table">

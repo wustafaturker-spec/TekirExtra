@@ -168,6 +168,12 @@ def api_hazirla(paket, taban_runtime):
     calistir(["cp", "-al", str(taban_runtime), str(paket / "runtime")])
     runtime = paket / "runtime"
     yeni_bagimliliklar = bagimliliklari_ekle(runtime, eklenecek)
+    # PLT-118: hata kayıtları hangi pakette görüldüğünü buradan okur (sabit bağı bozmadan yeniden yazılır).
+    surum = runtime / "SURUM"
+    if surum.exists() or surum.is_symlink():
+        surum.unlink()
+    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=KOK, capture_output=True, text=True).stdout.strip()
+    surum.write_text(f"{paket.name} {sha}\n", encoding="utf-8")
     if yeni_bagimliliklar:
         adim(f"API paketi: yeni bağımlılık {', '.join(yeni_bagimliliklar)}")
     ortam = {**os.environ, "NODE_OPTIONS": "--max-old-space-size=4500"}

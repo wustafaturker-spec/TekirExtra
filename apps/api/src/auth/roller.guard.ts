@@ -11,7 +11,7 @@ import { DESTEK_OTURUMUNDA_ACIK_ANAHTAR, OZEL_ROLDE_YAZMA_KAPALI_ANAHTAR, SALT_O
 import { ROLLER_ANAHTAR } from "./roller.decorator";
 
 /** Çalışan ve B2B bayinin @Roller'da adı geçmeyen uçlardan yalnız erişebildiği hesap uçları. */
-export const CALISAN_ACIK_YOLLAR = ["/auth/ben", "/auth/totp", "/auth/cikis", "/auth/parola", "/auth/oturumlar", "/bildirimler"];
+export const CALISAN_ACIK_YOLLAR = ["/auth/ben", "/auth/totp", "/auth/cikis", "/auth/parola", "/auth/oturumlar", "/bildirimler", "/istemci-hata"];
 
 /**
  * Firma içi geniş erişimi olmayan roller: çalışan (PRS-21, yalnız kendi

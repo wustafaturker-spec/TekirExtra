@@ -7858,6 +7858,29 @@ model SistemAlarmi {
   @@map("sistem_alarmlari")
 }
 
+/// PLT-118/119: uygulama hataları (API 500'leri ve tarayıcı hataları) parmak izine göre
+/// gruplanır. Kiracı verisi taşımaz: mesaj maskelenir, istek gövdesi saklanmaz.
+model SistemHata {
+  parmakIzi     String    @id @map("parmak_izi") @db.VarChar(64)
+  kaynak        String    @db.VarChar(10)
+  ad            String    @db.VarChar(200)
+  mesaj         String    @db.VarChar(1000)
+  yigin         String?   @db.VarChar(4000)
+  konum         String    @db.VarChar(300)
+  sayi          BigInt    @default(1)
+  saatSayi      Int       @default(1) @map("saat_sayi")
+  saatBaslangic DateTime  @default(now()) @map("saat_baslangic")
+  ilkGorulme    DateTime  @default(now()) @map("ilk_gorulme")
+  sonGorulme    DateTime  @default(now()) @map("son_gorulme")
+  sonIstekId    String?   @map("son_istek_id") @db.VarChar(100)
+  surum         String?   @db.VarChar(120)
+  firmalar      String[]  @default([]) @db.Uuid
+  cozulduAt     DateTime? @map("cozuldu_at")
+
+  @@index([sonGorulme])
+  @@map("sistem_hatalari")
+}
+
 /// PLT-20: abonelik faturasını kesen firma (TekirExtra'nın kendi kiracısı) ve
 /// tahsilat hesapları. Tek satır; yalnız platform yazar.
 model AbonelikFaturaAyari {
