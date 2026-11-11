@@ -11,6 +11,7 @@ const TURLER = [
   { deger: "stok", ad: "Stok", aciklama: "Kritik seviye ve onaysız sayım" },
   { deger: "donem", ad: "Dönem", aciklama: "Kapanmaya hazır olmayan mali dönem" },
   { deger: "entegrasyon", ad: "Entegrasyon", aciklama: "Banka, POS ve kart mutabakat istisnaları" },
+  { deger: "onay", ad: "Onay talepleri", aciklama: "Onayınızı bekleyen işlemler ve taleplerinizin sonucu" },
 ] as const;
 
 interface Tercih {

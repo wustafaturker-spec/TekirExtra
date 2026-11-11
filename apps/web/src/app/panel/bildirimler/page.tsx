@@ -42,6 +42,8 @@ const TUR_ADLARI: Record<string, string> = {
   yapay_zeka: "Yapay Zekâ",
   personel: "Personel / İK",
   teklif: "Teklif takibi",
+  mevzuat: "Mevzuat",
+  onay: "Onay talebi",
 };
 
 const DURUM_ADLARI: Record<Durum, string> = {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const BILDIRIM_TURLERI = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel", "teklif"] as const;
+export const BILDIRIM_TURLERI = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel", "mevzuat", "yapay_zeka", "teklif", "onay"] as const;
 
 export const bildirimListeSemasi = z.object({
   tur: z.enum(BILDIRIM_TURLERI).optional(),
