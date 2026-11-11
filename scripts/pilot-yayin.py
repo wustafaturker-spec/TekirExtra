@@ -50,8 +50,15 @@ def calisan_paketler():
     """Çalışan konteynerlerin bağlı olduğu paket klasörleri ve compose dosyası."""
     api, web = incele(konteyner("api")), incele(konteyner("web"))
     kaynak = lambda v, hedef: next(Path(m["Source"]) for m in v["Mounts"] if m["Destination"] == hedef)
-    compose = Path(api["Config"]["Labels"]["com.docker.compose.project.config_files"].split(",")[0])
-    return {"runtime": kaynak(api, "/runtime"), "web": kaynak(web, "/web"), "compose": compose}
+    runtime, web_yolu = kaynak(api, "/runtime"), kaynak(web, "/web")
+    # Yalnız web (ya da yalnız api) yayınında değişmeyen konteyner yeniden kurulmaz ve etiketi eski
+    # compose dosyasını gösterir; çalışan iki yolu birden içeren dosya geçerli olandır.
+    adaylar = [Path(v["Config"]["Labels"]["com.docker.compose.project.config_files"].split(",")[0]) for v in (web, api)]
+    for compose in adaylar:
+        metin = compose.read_text(encoding="utf-8") if compose.exists() else ""
+        if f'"{runtime}"' in metin and f'"{web_yolu}"' in metin:
+            return {"runtime": runtime, "web": web_yolu, "compose": compose}
+    dur(f"Çalışan api ({runtime}) ve web ({web_yolu}) yollarını birlikte içeren compose dosyası yok: {', '.join(map(str, adaylar))}")
 
 
 def anahtarlar():
