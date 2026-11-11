@@ -692,7 +692,7 @@ export default function GelenKutusuSayfasi() {
             <div style={{ backgroundColor: "#fff", padding: "24px", borderRadius: "12px", width: "90%", maxWidth: "600px", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>📄 Manuel XML Alış Faturası Yükle</h3>
-                <button onClick={() => setXmlModal(false)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer" }}>×</button>
+                <button onClick={() => { setXmlModal(false); setHata(""); }} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer" }}>×</button>
               </div>
               <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>Tedarikçinizden aldığınız UBL-TR formatındaki <strong>.xml</strong> fatura dosyasını seçebilir veya metin olarak yapıştırabilirsiniz. Dosya en fazla 10 MB olabilir.</p>
               <Alert tone="error">{hata}</Alert>
@@ -708,7 +708,7 @@ export default function GelenKutusuSayfasi() {
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
-                <Button onClick={() => setXmlModal(false)}>İptal</Button>
+                <Button onClick={() => { setXmlModal(false); setHata(""); }}>İptal</Button>
                 <Button variant="primary" onClick={() => void xmlYukleHander()} disabled={!xmlIcerik.trim() || islemde === "xml"}>
                   {islemde === "xml" ? "İçeri Aktarılıyor…" : "📥 İçeri Aktar & Gelen Kutusuna Ekle"}
                 </Button>
@@ -717,7 +717,8 @@ export default function GelenKutusuSayfasi() {
           </div>
         )}
 
-        <Alert tone="error">{hata}</Alert>
+        {/* XML penceresi açıkken hata pencerenin içinde gösterilir; arkada ikinci kez çıkmaz. */}
+        {!xmlModal && <Alert tone="error">{hata}</Alert>}
         <Alert tone="success">{basari}</Alert>
 
         <section className="archive-kpis incoming-kpis">
