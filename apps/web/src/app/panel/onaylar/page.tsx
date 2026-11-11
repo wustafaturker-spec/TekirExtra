@@ -98,8 +98,8 @@ function OnayKutusu() {
         {talepler?.map((t) => {
           const hedefYolu = t.hedefTur && t.hedefId ? HEDEF_YOLU[t.hedefTur]?.(t.hedefId) : null;
           return (
-            <Card key={t.id} title={t.islemAdi} actions={<Badge variant={DURUM[t.durum].ton}>{DURUM[t.durum].ad}</Badge>}>
-              <div className="stack" style={{ gap: "0.5rem", outline: vurgulu === t.id ? "2px solid var(--accent)" : undefined, borderRadius: 8 }}>
+            <Card key={t.id} title={t.islemAdi} actions={<Badge variant={DURUM[t.durum].ton}>{DURUM[t.durum].ad}</Badge>} style={vurgulu === t.id ? { outline: "2px solid var(--accent)", outlineOffset: 2 } : undefined}>
+              <div className="stack" style={{ gap: "0.5rem" }}>
                 <div><strong>{t.ozet}</strong>{t.tutarTry && <span className="subtle"> · TL karşılığı {tl(t.tutarTry)}</span>}</div>
                 <div className="subtle">Neden: {t.nedenler.join("; ")}{t.kuralAdi ? ` (kural: ${t.kuralAdi})` : ""}</div>
                 <div className="subtle">Talep eden: {t.talepEden} · {zaman(t.createdAt)}</div>

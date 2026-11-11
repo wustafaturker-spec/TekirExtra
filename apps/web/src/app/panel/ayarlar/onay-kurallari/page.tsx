@@ -103,9 +103,9 @@ export default function OnayKurallariSayfasi() {
                   </Select>
                 </Field>
                 <Field label="Kural adı"><Input required minLength={2} maxLength={120} value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} placeholder="Örn. 100.000 TL üstü satış faturası" /></Field>
-                <div><Field label="Tutar eşiği (TL karşılığı)"><Input inputMode="decimal" value={form.tutarEsigi} onChange={(e) => setForm({ ...form, tutarEsigi: e.target.value })} /></Field><p className="subtle" style={{ margin: "0.25rem 0 0", fontSize: "0.85em" }}>Bu tutarın üstündeki işlemler onaya düşer. Boş bırakılırsa tutar koşulu yok.</p></div>
+                <div><Field label="Tutar eşiği (TL karşılığı)"><Input inputMode="decimal" value={form.tutarEsigi} onChange={(e) => setForm({ ...form, tutarEsigi: e.target.value })} /></Field><p className="subtle" style={{ margin: "0.25rem 0 0", fontSize: "0.85em" }}>Bu tutar ve üstündeki işlemler onaya düşer. Boş bırakılırsa tutar koşulu yok.</p></div>
                 {KOSUL[form.islem].iskonto && (
-                  <div><Field label="İskonto eşiği (%)"><Input inputMode="decimal" value={form.iskontoEsigi} onChange={(e) => setForm({ ...form, iskontoEsigi: e.target.value })} /></Field><p className="subtle" style={{ margin: "0.25rem 0 0", fontSize: "0.85em" }}>Herhangi bir satırdaki ya da belge altı iskonto bu oranı geçerse onaya düşer.</p></div>
+                  <div><Field label="İskonto eşiği (%)"><Input inputMode="decimal" value={form.iskontoEsigi} onChange={(e) => setForm({ ...form, iskontoEsigi: e.target.value })} /></Field><p className="subtle" style={{ margin: "0.25rem 0 0", fontSize: "0.85em" }}>Herhangi bir satırdaki ya da belge altı iskonto bu orana ulaşırsa onaya düşer.</p></div>
                 )}
               </div>
               {KOSUL[form.islem].risk && (
@@ -161,7 +161,7 @@ export default function OnayKurallariSayfasi() {
                       <tr key={k.id}>
                         <td>{k.ad}</td>
                         <td>{islemAdi(k.islem)}</td>
-                        <td>{[k.tutarEsigi && `> ${tl(k.tutarEsigi)}`, k.iskontoEsigi && `iskonto > %${Number(k.iskontoEsigi)}`, k.riskAsimi && "risk aşımı"].filter(Boolean).join(" ve ") || "Her işlem"}</td>
+                        <td>{[k.tutarEsigi && `≥ ${tl(k.tutarEsigi)}`, k.iskontoEsigi && `iskonto ≥ %${Number(k.iskontoEsigi)}`, k.riskAsimi && "risk aşımı"].filter(Boolean).join(" ve ") || "Her işlem"}</td>
                         <td>{k.adimlar.map((a, i) => `${i + 1}. ${adimAdi(a)}`).join(" → ")}</td>
                         <td><Badge variant={k.aktif ? "success" : "neutral"}>{k.aktif ? "Etkin" : "Kapalı"}</Badge></td>
                         <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
