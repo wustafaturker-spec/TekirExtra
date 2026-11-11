@@ -127,6 +127,8 @@ model Tenant {
   pesinVergiMahsuplari PesinVergiMahsup[]
   vergiTakvimiAyari    VergiTakvimiAyari?
   smsGonderimleri      SmsGonderim[]
+  onayKurallari                   OnayKurali[]
+  onayTalepleri                   OnayTalebi[]
   veriAktarimlari                 VeriAktarimi[]
   vergiYukumlulukKayitlari VergiYukumlulukKaydi[]
   vergiOdemeleri       VergiOdemesi[]
@@ -673,6 +675,7 @@ model User {
   aiOnayTalepleri              AiOnayTalebi[]
   aiMcpAnahtarlari             AiMcpAnahtari[]
 
+  onayTalepleri                OnayTalebi[]          @relation("OnayTalebiTalepEden")
   @@unique([tenantId, eposta])
   @@unique([tenantId, id], map: "users_tenant_id_id_duyuru_key")
   @@index([tenantId])
@@ -905,6 +908,70 @@ model SmsGonderim {
   @@unique([tenantId, anahtar])
   @@index([tenantId, createdAt])
   @@map("sms_gonderimleri")
+}
+
+/// ONY-01: onay kuralı. Koşullar "ve" ile bağlanır; koşulsuz kural işlemin her seferinde onay ister.
+model OnayKurali {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  /// fatura_kesinlestir_satis | fatura_kesinlestir_alis | belge_onayla_satis | masraf_onayla | kasa_banka_odeme
+  islem        String   @db.VarChar(40)
+  ad           String   @db.VarChar(120)
+  aktif        Boolean  @default(true)
+  /// TL karşılığı bu tutar ve üstü
+  tutarEsigi   Decimal? @map("tutar_esigi") @db.Decimal(15, 2)
+  /// En yüksek satır ya da genel iskonto yüzdesi bu değer ve üstü
+  iskontoEsigi Decimal? @map("iskonto_esigi") @db.Decimal(5, 2)
+  /// Cari (ya da grubu) risk limitini aşıyorsa
+  riskAsimi    Boolean  @default(false) @map("risk_asimi")
+  /// Sıralı adımlar: [{ rol } | { kullaniciId }], 1–2 adım
+  adimlar      Json
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talepler OnayTalebi[]
+
+  @@index([tenantId, islem])
+  @@map("onay_kurallari")
+}
+
+/// ONY-03: kurala takılan işlemin talebi; son adım onaylayınca talep edenin adına yürütülür.
+model OnayTalebi {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  kuralId        String?   @map("kural_id") @db.Uuid
+  islem          String    @db.VarChar(40)
+  hedefTur       String?   @map("hedef_tur") @db.VarChar(30)
+  hedefId        String?   @map("hedef_id") @db.Uuid
+  /// Talep anındaki hedef kayıt özeti; yürütmede farklıysa talep geçersiz olur.
+  hedefOzeti     String?   @map("hedef_ozeti") @db.VarChar(64)
+  parametreler   Json
+  ozet           String
+  tutarTry       Decimal?  @map("tutar_try") @db.Decimal(15, 2)
+  /// Talebi tetikleyen koşullar (tutar, iskonto, risk)
+  nedenler       Json
+  talepEdenId    String    @map("talep_eden_id") @db.Uuid
+  /// bekliyor | isleniyor | onaylandi | reddedildi | geri_cekildi | gecersiz | hata
+  durum          String    @default("bekliyor") @db.VarChar(16)
+  /// Kural adımlarının talep anındaki kopyası
+  adimlar        Json
+  adim           Int       @default(0)
+  /// [{ adim, userId, karar, gerekce, at }]
+  kararlar       Json      @default("[]")
+  sonuc          Json?
+  hata           String?
+  hatirlatildiAt DateTime? @map("hatirlatildi_at")
+  kararAt        DateTime? @map("karar_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kural     OnayKurali? @relation(fields: [kuralId], references: [id], onDelete: SetNull)
+  talepEden User        @relation("OnayTalebiTalepEden", fields: [talepEdenId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, durum])
+  @@index([tenantId, hedefId])
+  @@map("onay_talepleri")
 }
 
 /// VAK-07: veri aktarım sihirbazının her uygulaması bir partidir; geri alma bu kayıttan yapılır.
@@ -6424,6 +6491,8 @@ enum BildirimTuru {
   yapay_zeka
   /// AI-40/41: gönderilen teklife yanıt yok, geçerlilik bitiyor.
   teklif
+  /// ONY-07: genel onay akışı talebi ve kararı.
+  onay
 }
 
 enum BildirimOnemi {

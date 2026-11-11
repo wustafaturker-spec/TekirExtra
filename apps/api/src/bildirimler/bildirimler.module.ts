@@ -11,6 +11,6 @@ import { BildirimlerController } from "./bildirimler.controller";
   imports: [RaporModule, forwardRef(() => TenantModule)],
   controllers: [BildirimlerController],
   providers: [BildirimService, BildirimUreticiService, BildirimEpostaService, BildirimZamanlayiciService],
-  exports: [BildirimService],
+  exports: [BildirimService, BildirimUreticiService],
 })
 export class BildirimlerModule {}

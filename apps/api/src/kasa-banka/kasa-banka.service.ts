@@ -1,8 +1,11 @@
+import { OnayService } from "../onay/onay.service";
+import { kasaBankaHareketOlusturSemasi as odemeGirdisiSemasi } from "./kasa-banka.semalar";
 import {
   BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { Prisma, CekSenetDurum, CekSenetYon, DovizCinsi, type KasaBankaHareketTip } from "@prisma/client";
 import { bugunTR, GIRIS_KUR_TIPI, hareketKurTipi } from "@tekirextra/shared";
@@ -113,7 +116,10 @@ function posUcretAlanlari(girdi: { komisyonOrani?: string; islemUcreti?: string 
 
 @Injectable()
 export class KasaBankaService {
-  constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService, private readonly donemKilidi: DonemKilidiService) {}
+  constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService, private readonly donemKilidi: DonemKilidiService, @Optional() private readonly onay?: OnayService) {
+    // ONY-03: onaylanan ödeme fişi talep edenin adına aynı girdiyle buradan yazılır.
+    this.onay?.yurutucuKaydet("kasa_banka_odeme", { yurut: (p) => this.hareketEkle(odemeGirdisiSemasi.parse(p)) });
+  }
 
   // ─── KASA YÖNETİMİ (KSB-01/04) ─────────────────────────────────────────────
 
@@ -497,6 +503,17 @@ export class KasaBankaService {
   async hareketEkle(girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kasa/banka hareketi oluşturma");
+    // ONY-02: kasa/banka ödemesi (tediye) kuraldan geçer; ekstre eşleştirmesi (gerçekleşmiş ödeme) geçmez.
+    if (girdi.tip === "tediye" && this.onay) {
+      await this.onay.kapi({
+        islem: "kasa_banka_odeme", parametreler: girdi,
+        ozet: `Ödeme ${girdi.tutar} ${girdi.dovizCinsi} · ${girdi.tarih}${girdi.aciklama ? ` · ${girdi.aciklama}` : ""}`,
+        olc: async () => {
+          const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await this.prisma.tenantIslem(tenantId, (tx) => kurCoz(tx, tenantId, girdi.dovizCinsi, new Date(girdi.tarih), GIRIS_KUR_TIPI));
+          return { tutarTry: Number(D(girdi.tutar).mul(kur ?? 1)) };
+        },
+      });
+    }
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const once = girdi.tip === "tediye" ? await this.hesapBakiyesi(tx, girdi) : null;
       const hareket = await this.hareketOlustur(tx, tenantId, girdi);

@@ -13,6 +13,7 @@ import { TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi } from "./cari/tahsilat-ot
 import { TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi } from "./ai/teklif-talebi/teklif-talebi-ayari";
 import { TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi } from "./belgeler/teklif-takibi/teklif-takip.kurallari";
 import { VERI_AKTARIMI_MODULU, veriAktarimiAyariSemasi } from "./veri-aktarimi/adim";
+import { onayAyariSemasi, onayModulu } from "./onay/onay-kurallari";
 
 registerModulAyar(IHTIYAC_MODULU,ihtiyacAyariSemasi,{surum:1,mod:'kapali'});
 registerModulAyar(MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi, { surum: 1, mod: "kapali" });
@@ -22,6 +23,8 @@ registerModulAyar(TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi, { acik: false, 
 registerModulAyar(TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi, { acik: false, isGunu: 3, gecerlilikUyariGun: 2 });
 // VAK-02: veri aktarım sihirbazının geçiş tarihi; açılış kayıtlarında tarih boşsa kullanılır.
 registerModulAyar(VERI_AKTARIMI_MODULU, veriAktarimiAyariSemasi, { gecisTarihi: null });
+// ONY-04: görev ayrılığı yalnız tek yöneticili firmada kapatılabilir.
+registerModulAyar(onayModulu, onayAyariSemasi, { gorevAyriligiKapali: false });
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi

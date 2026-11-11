@@ -1,5 +1,5 @@
 import { istanbulGunBasi, TAVAN_HATA_SONU } from "../ileti/ileti-kurallari";
-import { Injectable, Optional } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { HATA_ESIGI } from "../pazaryeri/otomatik-is";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { BildirimTuru, DuzeltmeTuru, Prisma } from "@prisma/client";
@@ -52,6 +52,7 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   // AI-04: onay talebi yalnız isteyen kullanıcıya düşer (kullaniciIdler).
   yapay_zeka: [],  // AI-40/41: teklif takibi bildirimi teklifi gönderen kullanıcıya düşer (kullaniciIdler).
   teklif: [],
+  onay: [],
 };
 
 /**
@@ -95,6 +96,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   yapay_zeka: [],
   // AI-40/41: takip bildirimleri taramada değil, teklif takip servisinde üretilir.
   teklif: [],
+  onay: [],
 };
 
 function gunAnahtari(tarih = new Date()): string {
@@ -145,13 +147,24 @@ export class BildirimUreticiService {
     return ortak && ortak.tenantId === tenantId ? fn(ortak.tx) : this.prisma.tenantIslem(tenantId, fn);
   }
 
+  /** Başka modüllerin taramaya eklediği işler (ör. ONY-07 onay hatırlatması); kiracı bağlamında çalışır. */
+  private readonly ekTaramalar: { ad: string; is: () => Promise<unknown> }[] = [];
+  private readonly ekTaramaGunlugu = new Logger("BildirimEkTarama");
+  ekTaramaKaydet(ad: string, is: () => Promise<unknown>) {
+    this.ekTaramalar.push({ ad, is });
+  }
+
   async tara(): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number; kesikOnekler: string[] }> {
     const { tenantId } = aktifBaglam();
     // Performans: 14 dedektör ayrı ayrı işlem açmak yerine tek okuma işleminde
     // çalışır; firma başına sabit maliyet düşer. Yazmalar (üret/kapat/yükselt) ayrıdır.
     const kesik = new Set<string>();
     const girdiler = await this.prisma.tenantIslem(tenantId, (tx) => taramaIslemi.run({ tenantId, tx, kesik }, () => this.dedektorleriCalistir()), { timeout: TARAMA_ISLEM_SURESI_MS });
-    return { ...(await this.isle(girdiler, [...kesik])), kesikOnekler: [...kesik] };
+    const sonuc = { ...(await this.isle(girdiler, [...kesik])), kesikOnekler: [...kesik] };
+    for (const e of this.ekTaramalar) {
+      await e.is().catch((hata: unknown) => this.ekTaramaGunlugu.warn(`${e.ad} taraması başarısız: ${hata instanceof Error ? hata.message : String(hata)}`));
+    }
+    return sonuc;
   }
 
   private async dedektorleriCalistir(): Promise<BildirimGirdisi[]> {

@@ -1,3 +1,5 @@
+import { OnayService } from "../onay/onay.service";
+import { enYuksekIskonto, kayitOzeti } from "../onay/olculer";
 import {
   BadRequestException,
   ConflictException,
@@ -33,7 +35,7 @@ import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
-import { cariIslemDenetle, riskLimitiDenetle, type BelgeTuru } from "../cari/cari-islem-denetimi";
+import { cariIslemDenetle, riskAsimiVarMi, riskLimitiDenetle, type BelgeTuru } from "../cari/cari-islem-denetimi";
 import { belgeGuncelTry } from "../cari/doviz-degerleme";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
 import { tedarikciKodlariniOgren } from "../ebelge/stok-eslesme";
@@ -139,7 +141,39 @@ export class BelgelerService {
     @Optional() private readonly eposta?: EpostaService,
     // e-Belge modülü bu modülü içe aktarır; görünüm servisi döngü kurmadan çalışma anında alınır.
     @Optional() private readonly moduleRef?: ModuleRef,
-  ) {}
+    @Optional() private readonly onay?: OnayService,
+  ) {
+    // ONY-03: onaylanan satış teklifi/siparişi talep edenin adına buradan onaylanır.
+    this.onay?.yurutucuKaydet("belge_onayla_satis", {
+      yurut: (p, id) => this.onayla(id!, (p ?? {}) as { riskOnayGerekcesi?: string | null }),
+      hedefOzeti: async (id) => {
+        const b = await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => tx.belge.findUnique({ where: { id }, select: { updatedAt: true, durum: true } }));
+        return b ? kayitOzeti(b) : null;
+      },
+    });
+  }
+
+  /** ONY-02: satış teklifi ve siparişinin onayı kuraldan geçer; risk koşulu yalnız siparişte. */
+  private async onayKapisi(id: string, secenekler: { riskOnayGerekcesi?: string | null }) {
+    if (!this.onay) return;
+    const { tenantId } = aktifBaglam();
+    const b = await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.findUnique({
+      where: { id },
+      select: { tur: true, yon: true, durum: true, no: true, cariId: true, genelToplam: true, kur: true, dovizCinsi: true, genelIskontoYuzdesi: true, genelIskontoTutari: true, updatedAt: true, cari: { select: { unvan: true } }, satirlar: { select: { miktar: true, birimFiyat: true, iskontoOrani: true, iskontoTutari: true } } },
+    }));
+    if (!b || b.durum !== "taslak" || b.yon !== "satis" || (b.tur !== "teklif" && b.tur !== "siparis")) return;
+    const tutarTry = b.genelToplam.mul(b.kur).toDecimalPlaces(2);
+    await this.onay.kapi({
+      islem: "belge_onayla_satis", hedefTur: "belge", hedefId: id, parametreler: secenekler,
+      ozet: `Satış ${b.tur === "teklif" ? "teklifi" : "siparişi"} ${b.no ?? "(taslak)"} · ${b.cari.unvan} · ${b.genelToplam.toFixed(2)} ${b.dovizCinsi}`,
+      olc: async () => ({
+        tutarTry: Number(tutarTry),
+        iskontoYuzde: enYuksekIskonto(b),
+        riskAsimi: b.tur === "siparis" ? await this.prisma.tenantIslem(tenantId, (tx) => riskAsimiVarMi(tx, tenantId, b.cariId, tutarTry)) : false,
+        hedefOzeti: kayitOzeti(b),
+      }),
+    });
+  }
 
   // ─── FATURALAMA SÜRESİ (EBLG-82) ──────────────────────────────────────────
 
@@ -989,6 +1023,7 @@ export class BelgelerService {
     const tarih = await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.findUnique({ where: { id }, select: { tarih: true } }));
     if (!tarih) throw new NotFoundException("Belge bulunamadı");
     await this.donemKilidi.tarihDogrula(tenantId, tarih.tarih, "belge onaylama");
+    await this.onayKapisi(id, secenekler);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({
         where: { id },

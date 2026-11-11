@@ -1,3 +1,4 @@
+import { OnayGerekliHatasi } from "../../onay/onay-kurallari";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import type { AiIslemKaynagi, AiOnayTalebi, Prisma } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
@@ -157,7 +158,9 @@ export class AiOnayService {
         sonuc = await arac.calistir(baglam, girdi);
       }
     } catch (e) {
-      hata = hataMetni(e);
+      // ONY-09: işlem genel onay kuralına takıldı; hata değil, onay talebi açıldı.
+      if (e instanceof OnayGerekliHatasi) sonuc = { onayaGonderildi: true, ...(e.getResponse() as Record<string, unknown>) };
+      else hata = hataMetni(e);
     }
     const durum = hedefDegisti ? "hedef_degisti" : hata ? "hata" : "onaylandi";
     const guncel = await this.prisma.tenantIslem(tenantId, (tx) =>

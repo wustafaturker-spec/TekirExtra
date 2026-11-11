@@ -45,7 +45,9 @@ import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from ".
 import { cariDenklestir, faturaKapamalariniCoz, kapamaKaynagi } from "./denklestirme";
 import { kurFarkiKarsiligiYaz, kurFarkiKarsiliginiCoz } from "./kur-farki-karsilik";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, kurFarkiTry, odemeOzetiGorunumu } from "./odeme-durumu";
-import { cariIslemDenetle, riskLimitiDenetle } from "../cari/cari-islem-denetimi";
+import { cariIslemDenetle, riskAsimiVarMi, riskLimitiDenetle } from "../cari/cari-islem-denetimi";
+import { OnayService } from "../onay/onay.service";
+import { enYuksekIskonto, kayitOzeti } from "../onay/olculer";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -81,7 +83,42 @@ export class FaturaService {
     @Inject(forwardRef(() => EbelgeGorunumService)) private readonly ebelgeGorunum: EbelgeGorunumService,
     @Optional() private readonly ayarlar?: AyarlarService,
     @Optional() private readonly mevzuat?: MevzuatService,
-  ) {}
+    @Optional() private readonly onay?: OnayService,
+  ) {
+    // ONY-03: onaylanan kesinleştirme talep edenin adına buradan yürütülür.
+    for (const islem of ["fatura_kesinlestir_satis", "fatura_kesinlestir_alis"] as const) {
+      this.onay?.yurutucuKaydet(islem, {
+        yurut: (p, id) => this.kesinlestir(id!, p as Parameters<FaturaService["kesinlestir"]>[1]),
+        hedefOzeti: async (id) => {
+          const f = await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { updatedAt: true, durum: true } }));
+          return f ? kayitOzeti(f) : null;
+        },
+      });
+    }
+  }
+
+  /** ONY-02: satış ve alış faturası kesinleştirmesi onay kuralından geçer (iade ve proforma geçmez). */
+  private async kesinlestirmeOnayKapisi(id: string, veri?: Parameters<FaturaService["kesinlestir"]>[1]) {
+    if (!this.onay) return;
+    const { tenantId } = aktifBaglam();
+    const f = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({
+      where: { id },
+      select: { tip: true, durum: true, no: true, cariId: true, genelToplam: true, kur: true, dovizCinsi: true, genelIskontoYuzdesi: true, genelIskontoTutari: true, updatedAt: true, cari: { select: { unvan: true } }, satirlar: { select: { miktar: true, birimFiyat: true, iskontoOrani: true, iskontoTutari: true } } },
+    }));
+    if (!f || f.durum !== "taslak" || (f.tip !== "satis" && f.tip !== "alis")) return;
+    const islem = f.tip === "satis" ? "fatura_kesinlestir_satis" : "fatura_kesinlestir_alis";
+    const tutarTry = f.genelToplam.mul(f.kur).toDecimalPlaces(2);
+    await this.onay.kapi({
+      islem, hedefTur: "fatura", hedefId: id, parametreler: veri ?? {},
+      ozet: `${f.tip === "satis" ? "Satış" : "Alış"} faturası ${f.no ?? "(taslak)"} · ${f.cari.unvan} · ${f.genelToplam.toFixed(2)} ${f.dovizCinsi}`,
+      olc: async () => ({
+        tutarTry: Number(tutarTry),
+        iskontoYuzde: enYuksekIskonto(f),
+        riskAsimi: f.tip === "satis" ? await this.prisma.tenantIslem(tenantId, (tx) => riskAsimiVarMi(tx, tenantId, f.cariId, tutarTry)) : false,
+        hedefOzeti: kayitOzeti(f),
+      }),
+    });
+  }
 
   /** MVZ-11/12: belge tarihindeki merkezi tablolarla KDV oranı ve kod kuralları; ihlal kaydı durdurur. */
   private async tevkifatTablosuIleDogrula(girdi: { tarih: string | Date; ozelMatrahKodu?: string | null; ihracKayitliKodu?: string | null; satirlar?: { kdvOrani?: string | number | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }[] }, pasifKodKabul: boolean) {
@@ -1573,6 +1610,7 @@ export class FaturaService {
     const tarih = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true } }));
     if (!tarih) throw new NotFoundException("Fatura bulunamadı");
     await this.donemKilidi.tarihDogrula(tenantId, tarih.tarih, "fatura kesinleştirme");
+    await this.kesinlestirmeOnayKapisi(id, veri);
     
     // Faturayı kilitlemek ve işlemleri yürütmek için transaction başlatıyoruz
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {

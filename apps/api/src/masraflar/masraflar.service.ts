@@ -1,3 +1,5 @@
+import { OnayService } from "../onay/onay.service";
+import { kayitOzeti } from "../onay/olculer";
 import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
@@ -28,7 +30,16 @@ const VARSAYILAN_KATEGORILER = ["Kira", "Elektrik, Su ve Doğalgaz", "Telefon ve
 
 @Injectable()
 export class MasraflarService {
-  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService, private readonly doviz: DovizService, @Optional() private readonly mevzuat?: MevzuatService) {}
+  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService, private readonly doviz: DovizService, @Optional() private readonly mevzuat?: MevzuatService, @Optional() private readonly onay?: OnayService) {
+    // ONY-03: onaylanan masraf talep edenin adına buradan onaylanır.
+    this.onay?.yurutucuKaydet("masraf_onayla", {
+      yurut: (_p, id) => this.onayla(id!),
+      hedefOzeti: async (id) => {
+        const m = await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => tx.masraf.findUnique({ where: { id }, select: { updatedAt: true, durum: true } }));
+        return m ? kayitOzeti(m) : null;
+      },
+    });
+  }
 
   async kategoriListele() {
     const { tenantId } = aktifBaglam();
@@ -131,6 +142,15 @@ export class MasraflarService {
     if (mevcut.durum !== "taslak") throw new BadRequestException("Yalnızca taslak masraf onaylanabilir");
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "masraf onaylama");
+    // ONY-02: masraf onayı kuraldan geçer (TL karşılığı tutar).
+    await this.onay?.kapi({
+      islem: "masraf_onayla", hedefTur: "masraf", hedefId: id, parametreler: {},
+      ozet: `Masraf ${mevcut.belgeNo ? `#${mevcut.belgeNo} ` : ""}· ${mevcut.cari?.unvan ?? mevcut.saticiUnvan ?? mevcut.kategori.ad} · ${mevcut.toplam.toFixed(2)} ${mevcut.dovizCinsi}`,
+      olc: async () => {
+        const m = await this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.findUnique({ where: { id }, select: { updatedAt: true, durum: true } }));
+        return { tutarTry: Number(mevcut.toplam.mul(mevcut.kur)), hedefOzeti: m ? kayitOzeti(m) : null };
+      },
+    });
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (mevcut.cariId) {
         const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));

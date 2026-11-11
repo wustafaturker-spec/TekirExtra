@@ -1,3 +1,4 @@
+import { onayYurutmesi } from "../onay/onay-kurallari";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
@@ -61,7 +62,12 @@ export interface RiskDenetimi {
  * null; "uyar"da uyarı metni; "engelle"de hata; "yonetici_onayi"nda yönetici
  * gerekçe yazarak geçer (denetim izine yazılır), diğerleri hata alır.
  */
-export async function riskLimitiDenetle(tx: Prisma.TransactionClient, d: RiskDenetimi): Promise<string | null> {
+/** ONY-01: politika uygulanmadan, belge eklenince carinin ya da grubunun risk limiti aşılıyor mu. */
+export async function riskAsimiVarMi(tx: Prisma.TransactionClient, tenantId: string, cariId: string, ekTutarTry: Prisma.Decimal): Promise<boolean> {
+  return (await riskAsimlari(tx, { tenantId, cariId, ekTutarTry, belgeEtiketi: "" })).length > 0;
+}
+
+async function riskAsimlari(tx: Prisma.TransactionClient, d: Pick<RiskDenetimi, "tenantId" | "cariId" | "ekTutarTry" | "belgeEtiketi">) {
   const cari = await tx.cariHesap.findUnique({ where: { id: d.cariId }, select: { riskLimiti: true, grup: { select: { id: true, ad: true, riskLimiti: true } } } });
   const asimlar: { metin: string; detay: Record<string, string> }[] = [];
   if (cari?.riskLimiti) {
@@ -91,13 +97,20 @@ export async function riskLimitiDenetle(tx: Prisma.TransactionClient, d: RiskDen
       });
     }
   }
+  return asimlar;
+}
+
+export async function riskLimitiDenetle(tx: Prisma.TransactionClient, d: RiskDenetimi): Promise<string | null> {
+  const asimlar = await riskAsimlari(tx, d);
   if (asimlar.length === 0) return null;
   const metin = asimlar.map((a) => a.metin).join("; ");
   const politika = await riskPolitikasi(tx, d.tenantId);
   if (politika === "uyar") return metin;
   if (politika === "engelle") throw new ConflictException(`${metin}. Risk politikası aşıma izin vermiyor; limiti artırın ya da tahsilat bekleyin`);
-  const gerekce = d.onayGerekcesi?.trim().slice(0, 500);
-  if (d.rol !== "yonetici" || !gerekce) {
+  // ONY-03: genel onay akışında onaylanmış işlem risk onayı yerine geçer (kayıt denetim izine yazılır).
+  const onayTalebi = onayYurutmesi()?.talepId;
+  const gerekce = onayTalebi ? `Onay talebi ${onayTalebi} ile onaylandı` : d.onayGerekcesi?.trim().slice(0, 500);
+  if (!onayTalebi && (d.rol !== "yonetici" || !gerekce)) {
     throw new ConflictException(`${metin}; ${RISK_ONAYI_ISARETI}${d.rol === "yonetici" ? " — gerekçe yazın" : ""}`);
   }
   await tx.auditLog.create({

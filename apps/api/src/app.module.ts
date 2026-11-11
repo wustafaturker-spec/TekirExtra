@@ -39,6 +39,7 @@ import { VergiTakvimiModule } from "./vergi-takvimi/vergi-takvimi.module";
 import { ProjelerModule } from "./projeler/projeler.module";
 import { DemirbasModule } from "./demirbas/demirbas.module";
 import { VeriAktarimiModule } from "./veri-aktarimi/veri-aktarimi.module";
+import { OnayModule } from "./onay/onay.module";
 import { AracTakipModule } from "./arac-takip/arac-takip.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
@@ -81,6 +82,7 @@ import { SistemSagligiModule } from "./sistem-sagligi/sistem-sagligi.module";
     ProjelerModule,
     DemirbasModule,
     VeriAktarimiModule,
+    OnayModule,
     AracTakipModule,
     DuzeltmelerModule,
     DonemKapatmaModule,
