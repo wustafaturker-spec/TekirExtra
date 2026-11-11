@@ -13,6 +13,7 @@ import { kurCoz } from "../doviz/kur-coz";
 import { KasaBankaService } from "../kasa-banka/kasa-banka.service";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { StokService } from "../stok/stok.service";
+import { AbonelikService } from "../tenant/abonelik.service";
 import { ACIK_FATURA_SUTUNLARI, acikFaturaPlanla } from "./adim-acik-fatura";
 import { ACILIS_STOK_SUTUNLARI, acilisStokPlanla } from "./adim-acilis-stok";
 import { KASA_BANKA_SUTUNLARI, kasaBankaPlanla } from "./adim-kasa-banka";
@@ -60,7 +61,35 @@ export class VeriAktarimiService {
     private readonly stok: StokService,
     private readonly kasaBanka: KasaBankaService,
     @Optional() private readonly mevzuat?: MevzuatService,
+    @Optional() private readonly abonelik?: AbonelikService,
   ) {}
+
+  /**
+   * VAK-09: paket kotasına göre açılabilecek yeni kart sayısı; sınırsızsa ya da okunamazsa null.
+   * Kotayı aşan yeni kart satırları önizlemede hatalı işaretlenir, uygulamada atlanır.
+   */
+  private async kalanKota(anahtar: "cari" | "stok"): Promise<{ kalan: number; limit: number; planAdi: string } | null> {
+    try {
+      const k = await this.abonelik?.kalanLimit(anahtar);
+      return k && k.kalan !== null && k.limit !== null ? { kalan: k.kalan, limit: k.limit, planAdi: k.planAdi } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private kotayiUygula<T extends SatirSonucu>(satirlar: T[], kota: { kalan: number; limit: number; planAdi: string } | null, ad: string): T[] {
+    if (!kota) return satirlar;
+    let acilacak = 0;
+    for (const s of satirlar) {
+      if (s.durum !== "yeni") continue;
+      acilacak += 1;
+      if (acilacak > kota.kalan) {
+        s.durum = "hatali";
+        s.hatalar.push(`Paket kotası: ${kota.planAdi} planında en çok ${kota.limit} ${ad}; bu dosyadan ${kota.kalan} yeni kart açılabilir`);
+      }
+    }
+    return satirlar;
+  }
 
   // ─── Durum ve geçiş tarihi ─────────────────────────────────────────────
 
@@ -122,6 +151,12 @@ export class VeriAktarimiService {
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const olusturulanlar = bosOlusturulanlar();
       if (adim === "cari") {
+        // Cari adımı mevcut cari aktarımıyla yazılır; kota aşılıyorsa yazmadan önce söylenir.
+        const kota = await this.kalanKota("cari");
+        if (kota) {
+          const yeni = (await this.cari.onizleme(buffer, { eslemeler, varsayilanAcilisTarihi: gecis })).ozet.yeni;
+          if (yeni > kota.kalan) throw new BadRequestException(`Dosyada ${yeni} yeni cari var; ${kota.planAdi} planında ${kota.kalan} yeni cari açılabilir (en çok ${kota.limit}). Fazla satırları çıkarın ya da paketi yükseltin`);
+        }
         const r = await this.cari.iceAktar(buffer, { eslemeler, varsayilanAcilisTarihi: gecis }, tx);
         if (!r.yeni && !r.guncelle) throw new BadRequestException("Yazılacak hatasız satır yok");
         olusturulanlar.cariler = r.olusturulanlar.cariler;
@@ -195,12 +230,13 @@ export class VeriAktarimiService {
     const gecis = await this.gecisTarihi();
     if (adim === "cari") {
       const r = await this.cari.onizleme(buffer, { eslemeler, varsayilanAcilisTarihi: gecis });
+      const kota = await this.kalanKota("cari");
       return {
         tablo: { basliklar: r.basliklar as OkunanTablo["basliklar"], taninmayanlar: r.taninmayanlar },
-        satirlar: r.satirlar.map((s) => ({
+        satirlar: this.kotayiUygula(r.satirlar.map((s) => ({
           satir: s.satir, durum: s.durum, etiket: s.kod, aciklama: s.unvan, hatalar: s.hatalar,
           uyarilar: [...s.uyarilar, ...(s.durum === "guncelle" ? [`Değişecek: ${s.degisenAlanlar.join(", ")} (güncelleme geri alınamaz)`] : [])],
-        })),
+        })), kota, "cari kart"),
       };
     }
     const tablo = await this.oku(adim, buffer, eslemeler);
@@ -217,7 +253,7 @@ export class VeriAktarimiService {
       const kdvDenetle = async (oran: number) => {
         try { await this.mevzuat?.kdvOranlariniDogrula([oran], new Date()); return null; } catch (e) { return e instanceof Error ? e.message : "KDV oranı geçersiz"; }
       };
-      return stokPlanla(tx, satirlar as TabloSatiri<never>[], kdvDenetle);
+      return this.kotayiUygula(await stokPlanla(tx, satirlar as TabloSatiri<never>[], kdvDenetle), await this.kalanKota("stok"), "stok kartı");
     }
     if (adim === "acilis_stok") return acilisStokPlanla(tx, satirlar as TabloSatiri<never>[], gecis, tarihDenetle);
     if (adim === "kasa_banka") {
@@ -337,7 +373,7 @@ export class VeriAktarimiService {
       const [cari, cariSayisi, stokKartlari, kasaBanka, kasalar, bankalar] = await Promise.all([
         tx.cariHareket.groupBy({ by: ["dovizCinsi", "tip"], where: { tarih: { lte: sinir } }, _sum: { tutar: true, tutarTry: true } }),
         tx.cariHesap.count(),
-        tx.stokKart.findMany({ where: { tip: "urun", aktif: true }, select: { mevcutMiktar: true, ortalamaMaliyet: true } }),
+        tx.stokKart.findMany({ where: { tip: "urun" }, select: { id: true, ortalamaMaliyet: true } }),
         tx.kasaBankaHareket.groupBy({ by: ["kasaId", "bankaHesapId", "dovizCinsi", "tip"], where: { tarih: { lte: sinir }, OR: [{ kasaId: { not: null } }, { bankaHesapId: { not: null } }] }, _sum: { tutar: true } }),
         tx.kasa.findMany({ select: { id: true, ad: true } }),
         tx.bankaHesap.findMany({ select: { id: true, ad: true } }),
@@ -348,7 +384,11 @@ export class VeriAktarimiService {
         const borc = t("borc")?.tutar ?? D(0), alacak = t("alacak")?.tutar ?? D(0);
         return { dovizCinsi: d, borc: borc.toFixed(2), alacak: alacak.toFixed(2), bakiye: borc.sub(alacak).toFixed(2) };
       });
-      const stokDegeri = stokKartlari.reduce((t, k) => t.add(D(k.mevcutMiktar).mul(k.ortalamaMaliyet)), D(0));
+      // Miktar geçiş tarihi itibarıyla (hareket miktarları işaretli saklanır); maliyet kartın güncel ortalamasıdır.
+      const miktarlar = await tx.stokHareket.groupBy({ by: ["stokId"], where: { stokId: { in: stokKartlari.map((k) => k.id) }, tarih: { lte: sinir } }, _sum: { miktar: true } });
+      const miktar = new Map(miktarlar.map((m) => [m.stokId, D(m._sum.miktar ?? 0)]));
+      const sonrakiHareket = await tx.stokHareket.count({ where: { stokId: { in: stokKartlari.map((k) => k.id) }, tarih: { gt: sinir } } });
+      const stokDegeri = stokKartlari.reduce((t, k) => t.add((miktar.get(k.id) ?? D(0)).mul(k.ortalamaMaliyet)), D(0));
       const adlar = new Map([...kasalar.map((k) => [k.id, k.ad] as const), ...bankalar.map((b) => [b.id, b.ad] as const)]);
       const hesaplar = new Map<string, { ad: string; dovizCinsi: string; bakiye: Prisma.Decimal }>();
       for (const k of kasaBanka) {
@@ -361,7 +401,13 @@ export class VeriAktarimiService {
       return {
         tarih: gecis,
         cari: { kartSayisi: cariSayisi, dovizler: cariOzet },
-        stok: { kalemSayisi: stokKartlari.filter((k) => !D(k.mevcutMiktar).isZero()).length, deger: stokDegeri.toFixed(2), not: "Stok değeri bugünkü miktar ve ortalama maliyettir" },
+        stok: {
+          kalemSayisi: stokKartlari.filter((k) => !(miktar.get(k.id) ?? D(0)).isZero()).length,
+          deger: stokDegeri.toFixed(2),
+          not: sonrakiHareket
+            ? "Stok miktarı geçiş tarihi itibarıyla, maliyet kartların bugünkü ortalamasıdır; geçişten sonra stok hareketi olduğu için değer yaklaşıktır"
+            : "Stok miktarı ve değeri geçiş tarihi itibarıyladır",
+        },
         kasaBanka: [...hesaplar.values()].map((h) => ({ ad: h.ad, dovizCinsi: h.dovizCinsi, bakiye: h.bakiye.toFixed(2) })).sort((a, b) => a.ad.localeCompare(b.ad, "tr")),
       };
     });

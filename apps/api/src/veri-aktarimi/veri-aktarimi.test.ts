@@ -138,3 +138,26 @@ describe("açık faturalar adımı (VAK-06)", () => {
     expect(p[2].hatalar.join()).toContain("geçiş tarihinden");
   });
 });
+
+describe("paket kotası (VAK-09)", () => {
+  it("kotayı aşan yeni kart satırları hatalı işaretlenir; güncellemeler etkilenmez; kota okunamazsa dokunulmaz", async () => {
+    const { VeriAktarimiService } = await import("./veri-aktarimi.service");
+    const kur = (kalanLimit: () => Promise<unknown>) => new VeriAktarimiService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, undefined, { kalanLimit } as never) as unknown as {
+      kalanKota(a: string): Promise<{ kalan: number; limit: number; planAdi: string } | null>;
+      kotayiUygula<T>(s: T[], k: unknown, ad: string): T[];
+    };
+    const satirlar = () => [
+      { satir: 2, durum: "yeni", etiket: "A", aciklama: "", hatalar: [] as string[], uyarilar: [] },
+      { satir: 3, durum: "guncelle", etiket: "B", aciklama: "", hatalar: [] as string[], uyarilar: [] },
+      { satir: 4, durum: "yeni", etiket: "C", aciklama: "", hatalar: [] as string[], uyarilar: [] },
+    ];
+    const s = kur(async () => ({ kalan: 1, limit: 100, planAdi: "Başlangıç" }));
+    const sonuc = s.kotayiUygula(satirlar(), await s.kalanKota("stok"), "stok kartı");
+    expect(sonuc.map((x) => x.durum)).toEqual(["yeni", "guncelle", "hatali"]);
+    expect(sonuc[2].hatalar[0]).toContain("en çok 100 stok kartı");
+    const sinirsiz = kur(async () => ({ kalan: null, limit: null, planAdi: "Kurumsal" }));
+    expect(await sinirsiz.kalanKota("stok")).toBeNull();
+    const askida = kur(async () => { throw new Error("Abonelik askıya alınmış"); });
+    expect(askida.kotayiUygula(satirlar(), await askida.kalanKota("cari"), "cari kart").map((x) => x.durum)).toEqual(["yeni", "guncelle", "yeni"]);
+  });
+});
