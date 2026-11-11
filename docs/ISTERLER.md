@@ -1471,6 +1471,24 @@ netleştirilir. Bu teyit kodlamayı beklemez, yayını bekletir.
 | VAK-08 | **Kontrol özeti:** geçiş tarihi itibarıyla cari toplam borç ve alacak (döviz bazında), stok miktar ve değeri, kasa/banka bakiyeleri; kullanıcı bunları eski programın mizanıyla karşılaştırır. Özet Excel olarak indirilebilir. | Z |
 | VAK-09 | **Sınırlar:** dosya başına en çok 5.000 satır; paket kotası (kart sayısı) önizlemede gösterilir, aşan satırlar hatalı işaretlenir; aynı dosyanın tekrar yüklenmesi mükerrer açılış yazmaz (açılış kuralları). | Z |
 
+### 3.25 Genel Onay Akışları (ONY)
+
+**S-01 kapı kararları (2026-11-11, kullanıcı onayı):** ilk sürüm işlemleri ONY-02'deki gibi; mevcut onaylar (satın alma, ödeme talimatı, izin, bütçe, sayım, reçete) tek kutuda listelenir, kararları kendi ekranlarında verilir; görev ayrılığı yalnız tek yöneticili firmada ayarla kapatılabilir. Önceki taslak: KiviERP boşluk analizi ONY-01…07.
+**Dayanak:** asistanın onay talebi altyapısı (AI-27: işlem parametreleriyle saklanır, onayda yürütülür, hedef kayıt değiştiyse uygulanmaz) genel motora örnektir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| ONY-01 | **Onay kuralları:** Ayarlar altında firma kural tanımlar: işlem türü × koşul (TL karşılığı tutar eşiği, iskonto yüzdesi eşiği, risk limiti aşımı) → bir ya da iki sıralı onay adımı; her adım bir rol ya da belirli kullanıcıdır. Bir işleme birden çok kural uyarsa en çok adımlı olan uygulanır. Kural pasife alınabilir. | Z |
+| ONY-02 | **İlk sürüm işlemleri:** satış faturası kesinleştirme, alış faturası kesinleştirme, satış teklifi ve siparişi onaylama, masraf onaylama, kasa/banka ödemesi (tediye). İskonto koşulu fatura, teklif ve siparişte; risk koşulu satış faturası ve siparişte geçerlidir. | Z |
+| ONY-03 | **Akış:** kurala takılan işlem yapılmaz, onay talebi açılır ve kullanıcıya söylenir. Son adım onaylayınca işlem talep edenin adına, aynı yetki ve iş kurallarıyla yürütülür. Talep açıldıktan sonra kayıt değiştiyse (içerik özeti) talep geçersiz olur, işlem yeniden istenir. Yürütme hata verirse talep "hata" olur, hata metni saklanır. Onaylı işlem kuralı yeniden tetiklemez. | Z |
+| ONY-04 | **Görev ayrılığı:** talep eden kendi talebini onaylayamaz, yönetici de dahil. Firmada tek etkin yönetici varsa ayarla kapatılabilir. Aynı kişi iki adımı birden onaylayamaz. | Z |
+| ONY-05 | **Ret ve geri çekme:** ret gerekçe ister (en az 3 karakter); talep eden bekleyen talebini geri çekebilir. | Z |
+| ONY-06 | **Tek onay kutusu:** `/panel/onaylar`, telefonda da kullanılır: onayımı bekleyenler, taleplerim, geçmiş. Mevcut onaylar (satın alma talebi, ödeme talimatı, izin, avans, bütçe, sayım, reçete) aynı listede görünür ve kendi ekranına bağlanır. | Z |
+| ONY-07 | **Bildirim:** talep açılınca onaycılara, karar verilince talep edene bildirim gider; 24 saati aşan bekleyen talep için onaycılara günde bir hatırlatma gider. | Z |
+| ONY-08 | **Satın alma eşiği:** SAT-03'ün `onayEsigi` ayarı onay kuralları ekranında satın alma satırı olarak düzenlenir; satın alma akışının davranışı değişmez. | Z |
+| ONY-09 | **Asistan:** asistanın yürüttüğü işlemler aynı kurallara tabidir; asistan onayından sonra kural onayı ayrıca istenir, asistan talebin açıldığını söyler. | Z |
+| ONY-10 | **Denetim izi:** talep, her karar ve gerekçesi, geri çekme ve yürütme sonucu denetim izine yazılır. | Z |
+
 ### 3.20 Platform Yönetimi (PLT)
 
 Tüm firmaları yöneten TekirExtra ekibinin paneli (`/platform`). Platform rolü kiracı tablolarına doğrudan erişmez; firma bilgisi ve abonelik işlemleri yalnız platform rolüne açılmış dar veritabanı işlevlerinden geçer (MVZ-16 ile aynı ilke). Ayrıntı: `docs/PLATFORM-INCELEME-RAPORU-2026-10-24.md`.
