@@ -25,7 +25,7 @@ import { OdemeTalimatiController } from "./odeme-talimati.controller";
   imports: [AuthModule, EklerModule],
   controllers: [KasaBankaController, BankaWebhookController, KrediKartiController, CekBordroController, OdemeTalimatiController, KrediController],
   providers: [KasaBankaService, DovizIslemService, DovizBaglamaService, EkstreService, EkstreEslestirmeService, BankaEntegrasyonService, BankaSenkronZamanlayiciService, KrediService, OdemeTalimatiService, KrediKartiService, CekBordroService],
-  exports: [KasaBankaService, EkstreService, KrediService],
+  exports: [KasaBankaService, EkstreService, KrediService, EkstreEslestirmeService],
 })
 export class KasaBankaModule implements OnModuleInit {
   onModuleInit() {

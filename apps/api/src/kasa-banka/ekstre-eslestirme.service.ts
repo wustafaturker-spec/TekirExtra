@@ -156,6 +156,50 @@ export class EkstreEslestirmeService {
     });
   }
 
+  // ─── ASİSTAN SORUSU (CNL-09/10) ────────────────────────────────────────────
+
+  /**
+   * CNL-09: beklemedeki, kesin önerisi olmayan satır için soru adayı. Yapay zekâ çağrılmaz;
+   * kural ve ad/IBAN/VKN önerisi yeter. Satır beklemede değilse null.
+   */
+  async soruAdayi(id: string): Promise<{ satir: { id: string; tarih: string; tutar: string; dovizCinsi: string; aciklama: string; karsiUnvan: string | null }; onerilenCari: { id: string; unvan: string; tip: string } | null; tamFatura: { id: string; kalan: string } | null } | null> {
+    const { tenantId } = aktifBaglam();
+    const satir = await this.satirGetir(tenantId, id);
+    if (satir.durum !== "beklemede") return null;
+    const o = await this.temelOneriler(tenantId, satir, !satir.tutar.isNegative(), satir.tutar.abs(), satir.bankaHesap.dovizCinsi);
+    const cari = o.onerilenCari ? await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findUnique({ where: { id: o.onerilenCari!.id }, select: { id: true, unvan: true, tip: true } })) : null;
+    // Kalan tutarı satırla birebir aynı TEK açık fatura varsa eşleştirme onu kapatır.
+    const tam = o.faturalar.filter((f) => f.tamEslesme);
+    return {
+      satir: { id, tarih: o.satir.tarih, tutar: o.satir.tutar, dovizCinsi: o.satir.dovizCinsi, aciklama: o.satir.aciklama, karsiUnvan: o.satir.karsiUnvan },
+      onerilenCari: cari ? { id: cari.id, unvan: cari.unvan, tip: String(cari.tip) } : null,
+      tamFatura: tam.length === 1 ? { id: tam[0].id, kalan: tam[0].kalan } : null,
+    };
+  }
+
+  /** CNL-10: kullanıcının yanıtladığı cari için kalanı satırla birebir aynı tek açık fatura (yoksa null). */
+  async tamFaturaBul(satirId: string, cariId: string): Promise<{ id: string; kalan: string } | null> {
+    const { tenantId } = aktifBaglam();
+    const satir = await this.satirGetir(tenantId, satirId);
+    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => this.acikFaturalar(tx, cariId, !satir.tutar.isNegative(), satir.tutar.abs(), satir.bankaHesap.dovizCinsi));
+    const tam = faturalar.filter((f) => f.tamEslesme);
+    return tam.length === 1 ? { id: tam[0].id, kalan: tam[0].kalan } : null;
+  }
+
+  /**
+   * CNL-10: kullanıcının yanıtı ekstre kuralı olarak hemen öğrenilir (karşı taraf unvanı → cari);
+   * aynı karşı taraftan gelen sonraki satırlar sorulmadan önerilir. Unvan yoksa öğrenilmez.
+   * Eşleştirmenin kendisi (kesin kayıt) onay talebiyle yapılır.
+   */
+  async kuralOgren(satirId: string, cariId: string): Promise<boolean> {
+    const { tenantId } = aktifBaglam();
+    const satir = await this.satirGetir(tenantId, satirId);
+    const anahtar = kuralAnahtari(satir.karsiUnvan ?? "");
+    if (anahtar.length < 3) return false;
+    await this.prisma.tenantIslem(tenantId, (tx) => this.kuralKaydet(tx, tenantId, satir, { tur: "cari", cariId, dagitim: [], kural: { anahtar, tumHesaplar: true } } as EslestirGirdisi));
+    return true;
+  }
+
   // ─── TOPLU ONAY (KSB-33) ───────────────────────────────────────────────────
 
   /**

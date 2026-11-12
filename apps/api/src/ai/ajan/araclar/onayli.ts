@@ -253,6 +253,26 @@ export const ONAYLI_ARACLAR = [
     },
   }),
   arac({
+    ad: "ekstre_satiri_eslestir",
+    aciklama:
+      "Bankadan gelen ve henüz eşleşmemiş bir ekstre satırını cariye bağlar (tahsilat/tediye kaydı üretir); isteğe bağlı açık faturalara dağıtır, kalan cariye avans kalır. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      satirId: uuid("Banka ekstre satırı kimliği"),
+      cariId: uuid("Cari kimliği"),
+      dagitim: z.array(z.object({ faturaId: uuid("Kapatılacak fatura"), tutar: sayiMetni("Faturaya düşen tutar") })).max(10).optional(),
+      kuralAnahtari: z.string().trim().min(3).max(120).optional().describe("Sonraki satırlar için öğrenilecek karşı taraf metni"),
+    }),
+    uc: UC.ekstreSatirEslestir,
+    async ozetle(b, g) {
+      const faturalar = g.dagitim?.length ? ` · ${(await Promise.all(g.dagitim.map(async (d) => `${await faturaTanimi(b, d.faturaId)} (${d.tutar})`))).join(", ")} faturasına` : " · cariye (faturaya dağıtılmadan)";
+      return `Banka ekstre satırı eşleştirme → cari: ${await cariTanimi(b, g.cariId)}${faturalar}${g.kuralAnahtari ? ` · kural: “${g.kuralAnahtari}”` : ""}`;
+    },
+    async calistir(b, g) {
+      return cagir(b, UC.ekstreSatirEslestir, [g.satirId, { tur: "cari", cariId: g.cariId, dagitim: g.dagitim ?? [], ...(g.kuralAnahtari ? { kural: { anahtar: g.kuralAnahtari, tumHesaplar: true } } : {}) }]);
+    },
+  }),
+  arac({
     ad: "cari_olustur",
     aciklama: "Yeni cari kartı açar. Cari kodunu kullanıcıdan al ya da mevcut kod düzenine göre öner. Kullanıcı onayı gerekir.",
     sinif: "onay",
