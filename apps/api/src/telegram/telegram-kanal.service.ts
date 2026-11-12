@@ -340,10 +340,12 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       return void (await yanitla(YARDIM, "bilgi"));
     }
 
+    // Telegram "yazıyor" göstergesini ~5 sn tutar; model yanıtı uzun sürebildiği için yanıt gelene dek yenilenir.
     await this.istemci!.yaziyor(m.chat.id);
+    const yaziyor = setInterval(() => void this.istemci!.yaziyor(m.chat.id), 4_500);
     let yanit: AjanYaniti;
     try {
-      yanit = await baglamlaCalistir(baglam, () => this.ajan.mesajiIsle(metin, guncellemeIstekKimligi(g.update_id), undefined, [], { kanal: "TELEGRAM" }));
+      yanit = await baglamlaCalistir(baglam, () => this.ajan.mesajiIsle(metin, guncellemeIstekKimligi(g.update_id), undefined, [], { kanal: "TELEGRAM" })).finally(() => clearInterval(yaziyor));
     } catch (hata) {
       if (hata instanceof ConflictException) return;
       const sinir = hata instanceof AiSinirHatasi;
