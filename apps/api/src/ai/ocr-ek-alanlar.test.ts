@@ -16,4 +16,11 @@ describe("OCR ek alanları (CNL-21/22) belgeyi düşürmez", () => {
     expect(fisFaturaOcrSonucSemasi.parse({ ...temel, plaka: "X".repeat(40) }).plaka).toBeNull();
     expect(fisFaturaOcrSonucSemasi.parse(temel).plaka ?? null).toBeNull();
   });
+
+  it("güven puanı yüzde yazılırsa 0–1 aralığına çevrilir", () => {
+    expect(fisFaturaOcrSonucSemasi.parse({ ...temel, guvenSkoru: 95 }).guvenSkoru).toBe(0.95);
+    expect(fisFaturaOcrSonucSemasi.parse({ ...temel, guvenSkoru: "0.8" }).guvenSkoru).toBe(0.8);
+    expect(fisFaturaOcrSonucSemasi.parse({ ...temel, guvenSkoru: 500 }).guvenSkoru).toBe(0);
+    expect(fisFaturaOcrSonucSemasi.parse(temel).guvenSkoru).toBe(1);
+  });
 });

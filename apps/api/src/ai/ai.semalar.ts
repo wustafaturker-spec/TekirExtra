@@ -22,6 +22,14 @@ function kartSonDortCoz(v: unknown): string | null {
   return m ? m[1] : null;
 }
 
+/** Modeller güveni bazen yüzde yazar (95): 1–100 arası yüzdeye çevrilir; anlamsız değer düşük güven (0) sayılır. */
+const guvenSkoruAlani = () => z.preprocess((v) => {
+  if (v === undefined || v === null) return undefined;
+  const n = ondalikSayi(v);
+  if (n === null) return 0;
+  return n > 1 && n <= 100 ? n / 100 : n;
+}, z.number().min(0).max(1).default(1)).catch(0);
+
 /**
  * Fiş / Fatura OCR Çıkarım Şeması
  */
@@ -57,7 +65,7 @@ export const fisFaturaOcrSonucSemasi = z.object({
       kdvOrani: z.number().optional().nullable(),
     })
   ).default([]),
-  guvenSkoru: z.number().min(0).max(1).default(1),
+  guvenSkoru: guvenSkoruAlani(),
   // Ek alanlar (CNL-21/22) yardımcıdır: model biçimi tutturamazsa belge düşmez, alan boş kalır.
   /** CNL-21: fişte yazılıysa araç plakası (akaryakıt, otopark…); okunamazsa null. */
   plaka: z.preprocess((v) => (typeof v === "string" && v.trim() ? v.trim() : null), z.string().max(20).nullable()).optional().catch(null),
@@ -97,7 +105,7 @@ export const cariIletisimCikarimSemasi = z.object({
     telefon: z.string().optional().nullable(),
     eposta: z.string().email().optional().nullable(),
   }).optional().nullable(),
-  guvenSkoru: z.number().min(0).max(1).default(1),
+  guvenSkoru: guvenSkoruAlani(),
 });
 
 export type CariIletisimCikarim = z.infer<typeof cariIletisimCikarimSemasi>;
