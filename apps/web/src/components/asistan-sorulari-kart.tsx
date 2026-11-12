@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, Input, Tarih } from "@/components/ui";
 
 interface Soru {
   id: string;
-  tur: "banka_satiri" | "eposta_gonderen" | "taslak_kosul";
+  tur: "banka_satiri" | "eposta_gonderen" | "taslak_kosul" | "masraf_kategori";
   soru: string;
   secenekler: Array<{ kod: string; etiket: string }>;
   serbestYanit: boolean;
@@ -14,7 +14,7 @@ interface Soru {
   createdAt: string;
 }
 
-const TUR_ADI: Record<Soru["tur"], string> = { banka_satiri: "Banka", eposta_gonderen: "E-posta", taslak_kosul: "Taslak" };
+const TUR_ADI: Record<Soru["tur"], string> = { banka_satiri: "Banka", eposta_gonderen: "E-posta", taslak_kosul: "Taslak", masraf_kategori: "Masraf" };
 
 /**
  * CNL-09: asistanın emin olmadığı yerde sorduğu sorular. Aynı sorular Telegram'a da gider;
@@ -73,8 +73,8 @@ export function AsistanSorulariKarti({ onTalepAcildi }: { onTalepAcildi?: () => 
                   onSubmit={(e) => { e.preventDefault(); const m = metinler[s.id]?.trim(); if (m) void yanitla(s, { metin: m }); }}
                 >
                   <Input
-                    aria-label="Cari unvanı ya da kodu"
-                    placeholder="Cari unvanı ya da kodu"
+                    aria-label={s.tur === "masraf_kategori" ? "Kategori adı" : "Cari unvanı ya da kodu"}
+                    placeholder={s.tur === "masraf_kategori" ? "Kategori adı" : "Cari unvanı ya da kodu"}
                     value={metinler[s.id] ?? ""}
                     onChange={(e) => setMetinler((m) => ({ ...m, [s.id]: e.target.value }))}
                     maxLength={200}
