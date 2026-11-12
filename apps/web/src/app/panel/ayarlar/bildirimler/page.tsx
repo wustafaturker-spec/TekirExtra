@@ -140,10 +140,10 @@ export default function BildirimTercihleriSayfasi() {
 
       <Card
         className="mt-1"
-        title={<div><span>SESSİZ SAAT</span><h2>Mesai dışı e-posta</h2></div>}
+        title={<div><span>SESSİZ SAAT</span><h2>Mesai dışı sessizlik</h2></div>}
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          Bu aralıkta bildirim kaydedilir ama e-postası gönderilmez; aralık bittiğinde birikenler gönderilir.
+          Bu aralıkta bildirim kaydedilir ama e-postası, SMS'i ve Telegram mesajı gönderilmez; aralık bittiğinde birikenler gönderilir. Saatler Türkiye saatidir.
           Gece yarısını aşan aralık (22:00–07:00) desteklenir.
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>

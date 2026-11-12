@@ -109,3 +109,11 @@ describe("BildirimEpostaService.bekleyenleriGonder", () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ epostaDurumu: "hata", epostaDenemeSayisi: 5 }) }));
   });
 });
+
+describe("sessiz saat Türkiye saatiyle (sunucu UTC olsa da)", () => {
+  it("UTC 19:30 = TR 22:30 sayılır", async () => {
+    const { trDakika } = await import("./bildirim-eposta.service");
+    expect(trDakika(new Date("2026-11-12T19:30:00Z"))).toBe(22 * 60 + 30);
+    expect(trDakika(new Date("2026-11-12T22:15:00Z"))).toBe(1 * 60 + 15);
+  });
+});

@@ -1,3 +1,4 @@
+import { trSimdi } from "../ai/ai-zaman";
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -23,6 +24,15 @@ export function sessizSaatte(simdiDakika: number, baslangic?: string | null, bit
   const bas = dakikaya(baslangic);
   const bit = dakikaya(bitis);
   return bas <= bit ? simdiDakika >= bas && simdiDakika < bit : simdiDakika >= bas || simdiDakika < bit;
+}
+
+/**
+ * Kullanıcının girdiği sessiz saat Türkiye saatidir. Sunucu saat dilimine (konteynerde UTC)
+ * bakılırsa 22:00–07:00 aralığı Türkiye'de 01:00–10:00 uygulanıyordu (2026-11-12 düzeltildi).
+ */
+export function trDakika(an = new Date()): number {
+  const [s, d] = trSimdi(an).saat.split(":").map(Number);
+  return s * 60 + d;
 }
 
 /**
@@ -54,7 +64,7 @@ export class BildirimEpostaService {
       select: { id: true, userId: true, bildirim: { select: { tur: true, baslik: true } }, kullanici: { select: { telefon: true, bildirimAyari: { select: { sessizBaslangic: true, sessizBitis: true } } } } },
       take: PARTI_BOYU,
     }));
-    const simdi = new Date(), simdiDakika = simdi.getHours() * 60 + simdi.getMinutes();
+    const simdiDakika = trDakika();
     let gonderilen = 0;
     for (const t of adaylar) {
       if (!acik.has(`${t.userId}:${t.bildirim.tur}`) || sessizSaatte(simdiDakika, t.kullanici.bildirimAyari?.sessizBaslangic, t.kullanici.bildirimAyari?.sessizBitis)) continue;
@@ -81,8 +91,7 @@ export class BildirimEpostaService {
       }),
     );
 
-    const simdi = new Date();
-    const simdiDakika = simdi.getHours() * 60 + simdi.getMinutes();
+    const simdiDakika = trDakika();
     let gonderilen = 0;
     let ertelenen = 0;
     let basarisiz = 0;
