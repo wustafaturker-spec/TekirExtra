@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { $Enums, Prisma, type BildirimTuru } from "@prisma/client";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { ozelRolIstegiKapali } from "@tekirextra/shared";
@@ -7,12 +7,21 @@ import { AbonelikErisimService } from "../core/abonelik-erisim.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
+import { tercihCoz } from "./telegram-bildirim.kurallari";
 import { TELEGRAM_MODULU, telegramAyariOku, telegramAyariSemasi, telegramBotAdi, type DusmeNedeni } from "./telegram-ayar";
 
 /** CNL-02: bağlama kodu 10 dakika geçerlidir. */
 export const KOD_SURESI_MS = 10 * 60 * 1000;
 /** CNL-18: kullanıcı başına 10 dakikada en çok bu kadar kod. */
 const KOD_SINIRI = 5;
+
+const TERCIH_SEMASI = z.object({
+  konular: z.array(z.enum(Object.values($Enums.BildirimTuru) as [BildirimTuru, ...BildirimTuru[]])).max(30),
+  minOnem: z.enum(["bilgi", "uyari", "kritik"]),
+  gunlukSinir: z.number().int().min(0).max(20),
+  brifing: z.boolean(),
+  susKaldir: z.boolean().optional(),
+}).strict();
 
 export const kodOzeti = (kod: string) => createHash("sha256").update(kod, "utf8").digest("hex");
 
@@ -95,7 +104,23 @@ export class TelegramService {
       yonetici: rol === "yonetici",
       ...(rol === "yonetici" ? { tutarGoster: ayar.tutarGoster, bagliKullanici: await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.count({ where: { tenantId } })) } : {}),
       bag: gorunenBag ? { kullaniciAdi: gorunenBag.kullaniciAdi, baglandiAt: gorunenBag.createdAt.toISOString() } : null,
+      tercih: await this.tercihGetir(tenantId, userId),
     };
+  }
+
+  private async tercihGetir(tenantId: string, userId: string) {
+    const t = tercihCoz(await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimKullaniciAyari.findUnique({ where: { userId } })));
+    return { konular: t.konular, minOnem: t.minOnem, gunlukSinir: t.gunlukSinir, brifing: t.brifing, susBitis: t.susBitis && t.susBitis > new Date() ? t.susBitis.toISOString() : null };
+  }
+
+  /** CNL-07: kendiliğinden mesajların konuları, en düşük önemi, günlük sınırı ve sabah brifingi; susturmayı kaldırma. */
+  async tercihKaydet(govde: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    const g = TERCIH_SEMASI.safeParse(govde);
+    if (!g.success) throw new BadRequestException("Geçersiz Telegram tercihi.");
+    const veri = { telegramKonular: [...new Set(g.data.konular)] as BildirimTuru[], telegramMinOnem: g.data.minOnem, telegramGunlukSinir: g.data.gunlukSinir, telegramBrifing: g.data.brifing, ...(g.data.susKaldir ? { telegramSusBitis: null } : {}) };
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimKullaniciAyari.upsert({ where: { userId }, create: { tenantId, userId, ...veri }, update: veri }));
+    return this.tercihGetir(tenantId, userId);
   }
 
   /**

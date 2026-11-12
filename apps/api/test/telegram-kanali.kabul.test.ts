@@ -197,6 +197,19 @@ describe("Telegram kanalı — aşama A (CNL-01…05, 13, 17, 18, 20)", () => {
     expect(await say(A, (t) => t.telegramMesaji.count({ where: { yon: "gelen", durum: "hata", hataTuru: "ai_hata" } }))).toBe(1);
   });
 
+  it("sus / bugünlük yeter / devam kullanıcı ayarına yazılır, asistana gitmez (CNL-07)", async () => {
+    const n = gelenler(HESAP_A).length;
+    const cagri = asistanCagrilari.length;
+    mesaj(HESAP_A, "Sus");
+    expect(await yanit(HESAP_A, n)).toMatch(/24 saat/);
+    const sus = await say(A, async (t) => ((await t.bildirimKullaniciAyari.findUnique({ where: { userId: A.kullanici } }))?.telegramSusBitis?.getTime() ?? 0) - Date.now());
+    expect(sus).toBeGreaterThan(23 * 3_600_000);
+    mesaj(HESAP_A, "/devam");
+    expect(await yanit(HESAP_A, n + 1)).toMatch(/yeniden açıldı/);
+    expect(await say(A, async (t) => ((await t.bildirimKullaniciAyari.findUnique({ where: { userId: A.kullanici } }))?.telegramSusBitis ? 1 : 0))).toBe(0);
+    expect(asistanCagrilari.length).toBe(cagri);
+  });
+
   it("aynı güncelleme ikinci kez gelirse yeniden işlenmez", async () => {
     const n = gelenler(HESAP_A).length;
     const cagri = asistanCagrilari.length;
@@ -222,7 +235,7 @@ describe("Telegram kanalı — aşama A (CNL-01…05, 13, 17, 18, 20)", () => {
     n = gelenler(HESAP_B).length;
 
     // B firmasından eski kullanıcıya gönderim: bağ yok, gönderilmez ve iz düşer.
-    expect(await olarak(B, B.kullanici, "muhasebe", () => kanal.firmayaGonder(B.tenant, B.kullanici, null, "deneme", "B verisi"))).toBe(false);
+    expect(await olarak(B, B.kullanici, "muhasebe", () => kanal.firmayaGonder(B.tenant, B.kullanici, null, "deneme", "B verisi"))).toBe("bag_gecersiz");
     expect(await say(B, (t) => t.telegramMesaji.count({ where: { yon: "giden", durum: "gonderilmedi", hataTuru: "bag_gecersiz" } }))).toBe(1);
     // A kullanıcısının eski hesabı (HESAP_A) artık yönerge alır; hesap B şimdi A firmasında konuşur.
     const nA = gelenler(HESAP_A).length;

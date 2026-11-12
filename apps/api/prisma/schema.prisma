@@ -6571,6 +6571,9 @@ model BildirimTeslimati {
   epostaHatasi       String?                @map("eposta_hatasi")
   /// ILT-11: kritik bildirim SMS'i denendiyse dolu; en çok bir kez gider.
   smsGonderildiAt    DateTime?              @map("sms_gonderildi_at")
+  /// CNL-06: Telegram'da işlendi (gönderildi, özete girdi ya da gerekçeyle atlandı); en çok bir kez.
+  telegramIslendiAt  DateTime?              @map("telegram_islendi_at")
+  telegramSonuc      String?                @map("telegram_sonuc") @db.VarChar(16)
   createdAt          DateTime               @default(now()) @map("created_at")
   updatedAt          DateTime               @updatedAt @map("updated_at")
 
@@ -6612,6 +6615,13 @@ model BildirimKullaniciAyari {
   userId          String   @unique @map("user_id") @db.Uuid
   sessizBaslangic String?  @map("sessiz_baslangic")
   sessizBitis     String?  @map("sessiz_bitis")
+  /// CNL-07: kendiliğinden Telegram mesajlarının ritmi. Konular/önem bildirim türü ve önemidir.
+  telegramGunlukSinir Int            @default(5) @map("telegram_gunluk_sinir")
+  telegramMinOnem     BildirimOnemi  @default(uyari) @map("telegram_min_onem")
+  telegramKonular     BildirimTuru[] @default([onay, yapay_zeka, ebelge, donem, vade]) @map("telegram_konular")
+  telegramBrifing     Boolean        @default(true) @map("telegram_brifing")
+  /// CNL-07: "sus" (24 saat) ya da "bugünlük yeter" (gün sonu) bitişi.
+  telegramSusBitis    DateTime?      @map("telegram_sus_bitis")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

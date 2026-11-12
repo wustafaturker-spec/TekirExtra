@@ -12,6 +12,7 @@ import { uzayanKilitle } from "../core/redis-kilit";
 import { DUSME_METNI, telegramAyariOku, telegramBotAdi, type DusmeNedeni } from "./telegram-ayar";
 import { TelegramHatasi, TelegramIstemci, type TelegramGuncelleme, type TelegramMesaj } from "./telegram-istemci";
 import { parcala, telegramSuz } from "./telegram-suzgec";
+import { gunSonu, ritimKomutu } from "./telegram-bildirim.kurallari";
 import { kodOzeti, TelegramService } from "./telegram.service";
 
 /** CNL-13: bir hesaptan dakikada bundan çok mesaj gelirse geçici olarak yanıt verilmez. */
@@ -37,7 +38,7 @@ export function guncellemeIstekKimligi(updateId: number, deneme = 1): string {
 }
 
 const YONERGE = "Merhaba! Bu bot TekirExtra asistanıdır.\n\nKullanmak için TekirExtra panelinde Ayarlar › Bildirimler › Telegram bölümünden “Telegram'ı bağla”ya basın ve açılan bağlantıyla buraya dönün.\n\nBağlantıyı açtığınız hâlde bu mesajı görüyorsanız (Telegram bu sohbet daha önce açıldıysa kodu iletmeyebilir) panelde gösterilen kodu buraya yapıştırıp gönderin.";
-const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
+const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\nsus — 24 saat kendiliğinden mesaj göndermez (bugünlük yeter: gün sonuna dek)\n/devam — kendiliğinden mesajları yeniden açar\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
 
 interface Cozum { tenantId: string; userId: string }
 
@@ -324,6 +325,16 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const yanitla = (yanit: string, yanitTuru: string) => baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, telegramId, yanitTuru, yanit, karar.tutarGoster));
 
     if (karar.neden === "rol_kapali") return void (await yanitla(`Yanıt veremiyorum: ${DUSME_METNI.rol_kapali}.`, "red"));
+    const ritim = m.text ? ritimKomutu(metin) : null;
+    if (ritim) {
+      const simdi = new Date();
+      const bitis = ritim === "sus" ? new Date(simdi.getTime() + 24 * 60 * 60 * 1000) : ritim === "bugunluk" ? gunSonu(simdi) : null;
+      await baglamlaCalistir(baglam, () => this.susAyarla(tenantId, userId, bitis));
+      return void (await yanitla(
+        ritim === "devam" ? "Kendiliğinden mesajlar yeniden açıldı." : ritim === "sus" ? "Tamam, 24 saat boyunca kendiliğinden mesaj göndermeyeceğim. Sorularınızı yanıtlamayı sürdürürüm; yeniden açmak için /devam yazın." : "Tamam, bugün başka kendiliğinden mesaj göndermeyeceğim. Yeniden açmak için /devam yazın.",
+        "komut",
+      ));
+    }
     if (tur === "desteklenmeyen") return void (await yanitla("Şimdilik yalnız yazılı mesajları anlayabiliyorum. Sorunuzu yazarak iletin.", "bilgi"));
     if (tur === "komut") {
       const komut = metin.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
@@ -380,14 +391,14 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
    * etkin, aynı firmaya ve aynı Telegram hesabına ait olduğu yeniden doğrulanır; doğrulanamayan
    * mesaj gönderilmez, kayda geçer.
    */
-  async firmayaGonder(tenantId: string, userId: string, beklenenHesap: bigint | null, tur: string, metin: string, tutarGoster?: boolean): Promise<boolean> {
+  async firmayaGonder(tenantId: string, userId: string, beklenenHesap: bigint | null, tur: string, metin: string, tutarGoster?: boolean): Promise<GonderimSonucu> {
     const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
       bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, telegramKullaniciId: true, sohbetId: true } }),
       ayar: await telegramAyariOku(tx, tenantId),
     }));
     if (!bag || bag.tenantId !== tenantId || !ayar.etkin || (beklenenHesap !== null && bag.telegramKullaniciId !== beklenenHesap)) {
       await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderilmedi", "bag_gecersiz"));
-      return false;
+      return "bag_gecersiz";
     }
     const temiz = telegramSuz(metin, { tutarGoster: tutarGoster ?? ayar.tutarGoster });
     let hataTuru: string | null = null;
@@ -404,9 +415,19 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     }
     if (hataTuru) this.hataSay(hataTuru);
     await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, hataTuru ? "gonderilmedi" : "gonderildi", hataTuru));
-    return !hataTuru;
+    return hataTuru ? "hata" : "gonderildi";
+  }
+
+  /** CNL-07: "sus" / "bugünlük yeter" / "/devam"; kullanıcı ayarına (sessiz saatle aynı kayıt) yazılır. */
+  async susAyarla(tenantId: string, userId: string, bitis: Date | null): Promise<void> {
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimKullaniciAyari.upsert({
+      where: { userId }, create: { tenantId, userId, telegramSusBitis: bitis }, update: { telegramSusBitis: bitis },
+    }));
   }
 }
+
+/** Gönderilmeyen mesajın nedeni: bağ yok/başka hesap (bir daha denenmez) ya da Telegram hatası (yeniden denenebilir). */
+export type GonderimSonucu = "gonderildi" | "bag_gecersiz" | "hata";
 
 /** CNL-04: onay talebi açıldıysa özeti ve panel bağlantısı eklenir; onay/ret Telegram'dan yapılmaz. Panel yolları tam adres olur. */
 export function telegramYaniti(yanit: Pick<AjanYaniti, "cevap" | "onayTalepleri">): string {

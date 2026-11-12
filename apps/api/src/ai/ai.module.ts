@@ -37,6 +37,6 @@ import { TeklifTalebiService } from "./teklif-talebi/teklif-talebi.service";
   imports: [forwardRef(() => BildirimlerModule), EklerModule],
   controllers: [AiController, AiAjanController, SohbetEkController, AiOnayOzetiController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController],
   providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService],
-  exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService],
+  exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService, UcCagirici],
 })
 export class AiModule {}

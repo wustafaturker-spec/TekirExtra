@@ -25,6 +25,11 @@ export class TelegramController {
     return this.telegram.bagKaldir();
   }
 
+  @Put("tercihler")
+  tercihler(@Body() govde: unknown) {
+    return this.telegram.tercihKaydet(govde);
+  }
+
   @Put("urun")
   urun(@Body() govde: unknown) {
     return this.telegram.urunAyarla(govde);

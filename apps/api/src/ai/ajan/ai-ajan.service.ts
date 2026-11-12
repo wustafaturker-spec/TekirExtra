@@ -701,6 +701,20 @@ export class AiAjanService {
     });
   }
 
+  /**
+   * CNL-06/08: kendiliğinden giden Telegram mesajı (brifing, bildirim) sohbet geçmişine yazılır;
+   * kullanıcı "bunun ayrıntısı" diye sorduğunda model neyin gönderildiğini bilir. Geçmiş kullanıcı
+   * mesajıyla başlamak zorunda olduğundan önüne kısa bir işaret satırı konur.
+   */
+  async telegramGecmiseYaz(isaret: string, metin: string): Promise<void> {
+    const { tenantId, userId } = aktifBaglam();
+    const oturum = await this.oturumGetir(tenantId, userId, "TELEGRAM");
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.ajanMesajGecmisi.create({ data: { oturumId: oturum.id, rol: "user", icerik: isaret, kanal: "TELEGRAM" } });
+      await tx.ajanMesajGecmisi.create({ data: { oturumId: oturum.id, rol: "assistant", icerik: metin, kanal: "TELEGRAM" } });
+    });
+  }
+
   /** CNL-03: Telegram'da "/yeni": mevcut Telegram sohbeti arşivlenir, sonraki mesaj yeni sohbet açar. */
   async telegramSohbetiniKapat(): Promise<void> {
     const { tenantId, userId } = aktifBaglam();

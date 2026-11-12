@@ -9,7 +9,7 @@ import { TanimsizAiProvider } from "./tanimsiz-ai.provider";
 import { AiProviderFactory, type TenantAiYapilandirma } from "./ai-provider.factory";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "../ayarlar/ai-aktarim-politikasi";
 import { AiBosYanitHatasi } from './ai-bos-yanit';
-import { AiSinirHatasi, buAyMaliyeti, butceDenetle, kiraciButceKurali, maliyetHesapla, type ButceKurali } from "./ai-butce";
+import { AiSinirHatasi, buAyMaliyeti, butceDenetle, kiraciButceKurali, maliyetHesapla, platformAnahtariMi, type ButceKurali } from "./ai-butce";
 
 /** AI-11: kiracının API anahtarı şifreli saklanır; ekranda yalnız son 4 karakter. */
 export const apiAnahtariSifrele = (anahtar: string | null | undefined) => hassasSifrele(anahtar?.trim() || null);
@@ -215,3 +215,19 @@ function sayacliSar(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi
 }
 
 export const VARSAYILAN_GUNLUK_SINIR = 1000;
+
+/**
+ * CNL-12: firmanın bu ayki yapay zekâ bütçesi dolu mu (model çağırmadan)? Kural çağrı anındaki
+ * denetimin aynısıdır (`butceDenetle`); fiyatı tanımsız bütçe de çağrıyı durdurduğu için dolu sayılır.
+ */
+export async function aiButcesiDoldu(prisma: PrismaService, tenantId: string): Promise<boolean> {
+  return prisma.tenantIslem(tenantId, async (tx) => {
+    const ayar = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
+    const kural = await kiraciButceKurali(tx, tenantId, ayar, platformAnahtariMi(ayar));
+    if (kural.sinirUsd === null) return false;
+    try { butceDenetle(kural, await buAyMaliyeti(tx, tenantId)); return false; } catch (hata) {
+      if (hata instanceof AiSinirHatasi) return true;
+      throw hata;
+    }
+  });
+}
