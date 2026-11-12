@@ -7,6 +7,7 @@ import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
+import { structuredLogger } from "../core/observability/structured-logger";
 import { uzayanKilitle } from "../core/redis-kilit";
 import { DUSME_METNI, telegramAyariOku, telegramBotAdi, type DusmeNedeni } from "./telegram-ayar";
 import { TelegramHatasi, TelegramIstemci, type TelegramGuncelleme, type TelegramMesaj } from "./telegram-istemci";
@@ -26,13 +27,16 @@ const KILIT = "tekir:telegram:yoklama";
 
 const uyu = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
 
+/** CNL-13/17f: gelen güncellemenin yalnız türü günlüğe yazılır; içerik, hesap ve firma kimliği yazılmaz. */
+const olay = (tur: string) => structuredLogger.info("telegram_guncelleme", { tur });
+
 /** Güncelleme numarasından kararlı istek kimliği: aynı mesaj asistanda da iki kez çalışmaz. */
 export function guncellemeIstekKimligi(updateId: number): string {
   const h = createHash("sha256").update(`telegram:${updateId}`).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
-const YONERGE = "Merhaba! Bu bot TekirExtra asistanıdır.\n\nKullanmak için TekirExtra panelinde Ayarlar › Bildirimler › Telegram bölümünden “Telegram'ı bağla”ya basın ve açılan bağlantıyla buraya dönün.";
+const YONERGE = "Merhaba! Bu bot TekirExtra asistanıdır.\n\nKullanmak için TekirExtra panelinde Ayarlar › Bildirimler › Telegram bölümünden “Telegram'ı bağla”ya basın ve açılan bağlantıyla buraya dönün.\n\nBağlantıyı açtığınız hâlde bu mesajı görüyorsanız (Telegram bu sohbet daha önce açıldıysa kodu iletmeyebilir) panelde gösterilen kodu buraya yapıştırıp gönderin.";
 const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
 
 interface Cozum { tenantId: string; userId: string }
@@ -194,11 +198,12 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const hesap = String(m.from.id);
     if (this.sinirda(this.hiz, hesap, DAKIKA_SINIRI, 60_000)) return;
     const metin = (m.text ?? "").trim();
-    const baglama = /^\/start(?:@\w+)?\s+([A-Za-z0-9_-]{16,64})$/.exec(metin);
+    // "/start KOD" (bağlantıdan) ya da yalnız kod (Telegram bağlantıdaki kodu iletmediyse elle yapıştırılır).
+    const baglama = /^\/start(?:@\w+)?\s+([A-Za-z0-9_-]{16,64})$/.exec(metin) ?? /^([A-Za-z0-9_-]{32})$/.exec(metin);
     if (baglama) return this.bagla(g, m, baglama[1]);
     const cozum = await this.coz(BigInt(m.from.id));
     // Bağlı olmayan hesaba yalnız yönerge; hiçbir firma kaydına iz düşmez.
-    if (!cozum) { await this.dogrudanGonder(m.chat.id, YONERGE); return; }
+    if (!cozum) { olay("bagsiz_hesap"); await this.dogrudanGonder(m.chat.id, YONERGE); return; }
     await this.firmaMesaji(g, m, metin, cozum);
   }
 
@@ -227,6 +232,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   private async bagla(g: TelegramGuncelleme, m: TelegramMesaj, kod: string): Promise<void> {
     const hesap = String(m.from!.id);
     if (this.sinirda(this.yanlisKod, hesap, YANLIS_KOD_SINIRI - 1, YANLIS_KOD_PENCERE_MS, false)) {
+      olay("baglama_cok_deneme");
       await this.dogrudanGonder(m.chat.id, "Çok fazla hatalı bağlantı denemesi yapıldı. 15 dakika sonra panelden yeni bir bağlantı alarak deneyin.");
       return;
     }
@@ -234,6 +240,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const ozet = kodOzeti(kod);
     const [kayit] = await this.prisma.$queryRaw<{ tenant_id: string; user_id: string }[]>`SELECT tenant_id::text, user_id::text FROM telegram_kod_coz(${ozet})`;
     if (!kayit) {
+      olay("baglama_kod_gecersiz");
       this.sinirda(this.yanlisKod, hesap, YANLIS_KOD_SINIRI, YANLIS_KOD_PENCERE_MS);
       await this.dogrudanGonder(m.chat.id, "Bu bağlantı geçersiz ya da süresi dolmuş (bağlantılar 10 dakika geçerlidir). Panelden yeni bir bağlantı alın.");
       return;
@@ -243,11 +250,13 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const mevcut = await this.coz(telegramId);
     // CNL-17a: başka bir kullanıcıya (başka firmada olabilir) bağlı hesap önce o bağı kaldırır.
     if (mevcut && mevcut.userId !== userId) {
+      olay("baglama_baska_hesap");
       await this.dogrudanGonder(m.chat.id, "Bu Telegram hesabı başka bir TekirExtra kullanıcısına bağlı. Önce /ayril yazarak o bağı kaldırın, sonra panelden yeni bir bağlantı alın.");
       return;
     }
     const karar = await this.telegram.bagKarari(tenantId, userId, null);
     if (karar.neden) {
+      olay(`baglama_engel_${karar.neden}`);
       await this.dogrudanGonder(m.chat.id, `Bağlanamadı: ${DUSME_METNI[karar.neden]}.`);
       return;
     }
@@ -280,6 +289,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         sonuc = "baska_hesap";
       } else throw hata;
     }
+    olay(sonuc === "gecersiz" ? "baglama_kod_gecersiz" : sonuc === "baska_hesap" ? "baglama_baska_hesap" : "baglandi");
     if (sonuc === "gecersiz") {
       this.sinirda(this.yanlisKod, hesap, YANLIS_KOD_SINIRI, YANLIS_KOD_PENCERE_MS);
       await this.dogrudanGonder(m.chat.id, "Bu bağlantı geçersiz ya da süresi dolmuş. Panelden yeni bir bağlantı alın.");
@@ -296,12 +306,14 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     if (!bag) { await this.dogrudanGonder(m.chat.id, YONERGE); return; }
     const karar = await this.telegram.bagKarari(tenantId, userId, bag);
     if (karar.neden && karar.neden !== "rol_kapali") {
+      olay(`bag_dustu_${karar.neden}`);
       await this.telegram.bagDusur(tenantId, userId, karar.neden);
       await this.dogrudanGonder(m.chat.id, `Telegram bağlantınız kaldırıldı: ${DUSME_METNI[karar.neden]}. Gerekirse panelden yeniden bağlayabilirsiniz.`);
       return;
     }
     const baglam = { tenantId, userId, rol: karar.rol as Rol, ...(karar.ozelRol ? { ozelRol: karar.ozelRol } : {}), paketModulleri: karar.moduller };
     const tur = !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
+    olay(tur);
     // CNL-01: aynı güncelleme ikinci kez gelirse burada elenir.
     try {
       await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "gelen", tur, "alindi", null, g.update_id)));

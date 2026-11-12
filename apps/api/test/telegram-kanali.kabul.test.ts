@@ -223,8 +223,9 @@ describe("Telegram kanalı — aşama A (CNL-01…05, 13, 17, 18, 20)", () => {
   it("ürün çıkarılınca firmanın bütün bağları düşer, geçmiş iz kalır", async () => {
     const yeni = await olarak(A, A.kullanici, "muhasebe", () => telegram.kodUret({ riza: true }));
     const n = gelenler(HESAP_A).length;
-    mesaj(HESAP_A, `/start ${yeni.kod}`);
-    await yanit(HESAP_A, n);
+    // Telegram bağlantıdaki kodu iletmediyse kullanıcı kodu tek başına yapıştırır.
+    mesaj(HESAP_A, yeni.kod);
+    expect(await yanit(HESAP_A, n)).toContain("Bağlantı tamam");
     expect(await say(A, (t) => t.telegramBagi.count())).toBe(1);
     const sonuc = await olarak(A, A.yonetici, "yonetici", () => telegram.urunAyarla({ etkin: false, tutarGoster: true }));
     expect(sonuc.dusenBag).toBe(1);
