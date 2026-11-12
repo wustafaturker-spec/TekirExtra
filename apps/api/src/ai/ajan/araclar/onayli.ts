@@ -86,6 +86,9 @@ const alanListesi = (o: Record<string, unknown>) =>
 const alanFarki = (once: Record<string, unknown>, sonra: Record<string, unknown>) =>
   Object.entries(sonra).filter(([, v]) => v !== undefined).map(([alan, deger]) => ({ alan, once: once[alan], sonra: deger }));
 
+/** Uç içeriden çağrıldığında tarih Date gelir; String(Date) "Wed Nov 11…" verir, gün ISO'ya çevrilir. */
+export const gunAl = (t: unknown): string => (t instanceof Date ? t.toISOString().slice(0, 10) : String(t).slice(0, 10));
+
 export const ONAYLI_ARACLAR = [
   arac({
     ad: "belge_onayla",
@@ -285,11 +288,11 @@ export const ONAYLI_ARACLAR = [
     uc: UC.masrafOnayla,
     async ozetle(b, g) {
       const m = await cagir(b, UC.masrafGetir, [g.masrafId]);
-      const parcalar = [`Masraf onayı: ${m.saticiUnvan ?? m.kategori?.ad ?? "masraf"} · ${para(m.toplam, m.dovizCinsi)} · ${String(m.tarih).slice(0, 10)}`];
+      const parcalar = [`Masraf onayı: ${m.saticiUnvan ?? m.kategori?.ad ?? "masraf"} · ${para(m.toplam, m.dovizCinsi)} · ${gunAl(m.tarih).split("-").reverse().join(".")}`];
       if (g.odeme) {
         const hesaplar = await cagir<any[]>(b, g.odeme.tur === "kasa" ? UC.kasaListe : UC.krediKartiListe, []);
         const h = (Array.isArray(hesaplar) ? hesaplar : (hesaplar as any)?.kartlar ?? []).find((x: any) => x.id === g.odeme!.hesapId);
-        parcalar.push(`ödeme: ${g.odeme.tur === "kasa" ? `kasa ${h?.ad ?? g.odeme.hesapId}` : `kart ${h?.ad ?? ""} •••• ${h?.sonDortHane ?? "?"}`} (tek çekim)`);
+        parcalar.push(`ödeme: ${g.odeme.tur === "kasa" ? `kasa ${h?.ad ?? g.odeme.hesapId}` : `kart ${h?.ad ?? ""}${h?.ad?.includes(h?.sonDortHane) ? "" : ` •••• ${h?.sonDortHane ?? "?"}`}`} (tek çekim)`);
       }
       if (g.arac) {
         const a = await cagir(b, UC.aracGetir, [g.arac.aracId]);
@@ -307,7 +310,7 @@ export const ONAYLI_ARACLAR = [
       if (g.odeme) {
         const m = await cagir(b, UC.masrafGetir, [g.masrafId]);
         const kalan = (Number(m.toplam) - Number(m.stopajTutari ?? 0) - Number(m.odenenTutar ?? 0)).toFixed(2);
-        const gun = g.odeme.tarih ?? String(m.tarih).slice(0, 10);
+        const gun = g.odeme.tarih ?? gunAl(m.tarih);
         await cagir(b, UC.masrafOde, [g.masrafId, {
           kasaId: g.odeme.tur === "kasa" ? g.odeme.hesapId : null, krediKartiId: g.odeme.tur === "kart" ? g.odeme.hesapId : null,
           odemeTarihi: gun, tutar: kalan, taksitSayisi: 1, ...(g.odeme.tur === "kart" ? { ilkTaksitTarihi: gun } : {}), aciklama: "Telegram fişinden",
