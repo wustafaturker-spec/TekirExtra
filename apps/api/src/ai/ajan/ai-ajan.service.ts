@@ -22,6 +22,7 @@ import { UC } from "./araclar/uclar";
 import { EklerService, type YuklenenDosya } from "../../ekler/ekler.service";
 import { ublOzeti } from "./ubl-ozeti";
 import { acikYazmaIstegiVar } from "./yazma-niyeti";
+import { telegramAraclari } from "./telegram-veri-kapisi";
 
 /**
  * AI-82: akışlı yanıtın olayları. Yanıt metni yanıt denetiminden (uydurma
@@ -67,8 +68,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export type AjanKanali = "WEB" | "TELEGRAM";
 const PANEL_KANALLARI: AjanKanali[] = ["WEB", "TELEGRAM"];
 
-/** CNL-05: bordro/maaş tutarı döndüren araçlar Telegram'da modele sunulmaz. */
-export const TELEGRAM_KAPALI_ARACLAR = new Set(["personel_ozeti", "personel_maliyet_raporu", "avans_ozeti"]);
 
 const TELEGRAM_TALIMATI = [
   "",
@@ -390,7 +389,8 @@ export class AiAjanService {
     }
 
     try {
-      const izinli = this.yurutucu.izinliAraclar(rol).filter((a) => !telegram || !TELEGRAM_KAPALI_ARACLAR.has(a.ad));
+      // CNL-05: Telegram'da araçlar veri kapısından geçer (bordro/kişiye ödeme dışarı çıkmaz).
+      const izinli = telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : this.yurutucu.izinliAraclar(rol);
       const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama } = await this.dongu({
         saglayici,
         sistemRol: sistemTalimati(kullanici.adSoyad, rol, ozelTalimatlar) + GRUP_TALIMATI + (telegram ? TELEGRAM_TALIMATI : "") + durumBaglami(gecmis.durumlar) + ekranMetni + ekler.metin,

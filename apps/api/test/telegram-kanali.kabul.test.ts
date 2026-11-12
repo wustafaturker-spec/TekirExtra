@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { ServiceUnavailableException } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AbonelikErisimService } from "../src/core/abonelik-erisim.service";
@@ -50,11 +51,15 @@ async function yanit(hesap: number, onceki: number): Promise<string> {
 }
 
 // --- Asistan taklidi: yalnız bağlamdaki firmanın gördüğünü yazar ---
+const denenenler = new Set<string>();
 const asistanCagrilari: Array<{ tenantId: string; userId: string; kanal?: string; requestId?: string }> = [];
 const ajan = {
-  async mesajiIsle(_m: string, requestId: string, _e: unknown, _ek: unknown, secenek: { kanal?: string }) {
+  async mesajiIsle(m: string, requestId: string, _e: unknown, _ek: unknown, secenek: { kanal?: string; olay?: (e: unknown) => void }) {
     const { tenantId, userId } = aktifBaglam();
     asistanCagrilari.push({ tenantId, userId, kanal: secenek.kanal, requestId });
+    // Sağlayıcı zaman aşımı taklidi: ilk denemede hata; araçtan sonra hata.
+    if (m === "zaman aşımı" && asistanCagrilari.filter((c) => c.requestId === requestId).length === 1 && !denenenler.has(m)) { denenenler.add(m); throw new ServiceUnavailableException("OpenAI yanıt vermedi."); }
+    if (m === "araçtan sonra hata") { secenek.olay?.({ tur: "arac", ad: "belge_taslagi_olustur", etiket: "", durum: "basladi" }); throw new ServiceUnavailableException("OpenAI yanıt vermedi."); }
     const { firma, baglar, izler } = await prisma.tenantIslem(tenantId, async (tx) => ({
       firma: (await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }))?.unvan,
       baglar: await tx.telegramBagi.findMany({ select: { tenantId: true } }),
@@ -173,6 +178,23 @@ describe("Telegram kanalı — aşama A (CNL-01…05, 13, 17, 18, 20)", () => {
     expect(yA).toContain("https://panel.ornek/panel/ai?talep=11111111-1111-4111-8111-111111111111");
     expect(asistanCagrilari.slice(-2).map((c) => [c.tenantId, c.kanal]).sort()).toEqual([[A.tenant, "TELEGRAM"], [B.tenant, "TELEGRAM"]].sort());
     expect(asistanCagrilari.find((c) => c.tenantId === A.tenant)?.userId).toBe(A.kullanici);
+  });
+
+  it("model zaman aşımında araç çalışmadıysa bir kez yeniden dener; araç çalıştıysa denemez", async () => {
+    let n = gelenler(HESAP_A).length;
+    let cagri = asistanCagrilari.length;
+    mesaj(HESAP_A, "zaman aşımı");
+    expect(await yanit(HESAP_A, n)).toContain(`firma=${A.unvan}`);
+    const iki = asistanCagrilari.slice(cagri);
+    expect(iki).toHaveLength(2);
+    expect(iki[0].requestId).not.toBe(iki[1].requestId);
+
+    n = gelenler(HESAP_A).length;
+    cagri = asistanCagrilari.length;
+    mesaj(HESAP_A, "araçtan sonra hata");
+    expect(await yanit(HESAP_A, n)).toMatch(/Şu anda yanıt veremiyorum/);
+    expect(asistanCagrilari.length).toBe(cagri + 1);
+    expect(await say(A, (t) => t.telegramMesaji.count({ where: { yon: "gelen", durum: "hata", hataTuru: "ai_hata" } }))).toBe(1);
   });
 
   it("aynı güncelleme ikinci kez gelirse yeniden işlenmez", async () => {

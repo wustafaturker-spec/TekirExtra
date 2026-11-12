@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { ConflictException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
@@ -31,8 +31,8 @@ const uyu = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
 const olay = (tur: string) => structuredLogger.info("telegram_guncelleme", { tur });
 
 /** Güncelleme numarasından kararlı istek kimliği: aynı mesaj asistanda da iki kez çalışmaz. */
-export function guncellemeIstekKimligi(updateId: number): string {
-  const h = createHash("sha256").update(`telegram:${updateId}`).digest("hex");
+export function guncellemeIstekKimligi(updateId: number, deneme = 1): string {
+  const h = createHash("sha256").update(deneme === 1 ? `telegram:${updateId}` : `telegram:${updateId}:${deneme}`).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
@@ -344,9 +344,23 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     await this.istemci!.yaziyor(m.chat.id);
     const yaziyor = setInterval(() => void this.istemci!.yaziyor(m.chat.id), 4_500);
     let yanit: AjanYaniti;
+    let aracCalisti = false;
+    const sor = (deneme: number) => baglamlaCalistir(baglam, () => this.ajan.mesajiIsle(metin, guncellemeIstekKimligi(g.update_id, deneme), undefined, [], {
+      kanal: "TELEGRAM",
+      olay: (e) => { if (e.tur === "arac") aracCalisti = true; },
+    }));
     try {
-      yanit = await baglamlaCalistir(baglam, () => this.ajan.mesajiIsle(metin, guncellemeIstekKimligi(g.update_id), undefined, [], { kanal: "TELEGRAM" })).finally(() => clearInterval(yaziyor));
+      try {
+        yanit = await sor(1);
+      } catch (hata) {
+        // Model zaman aşımı ya da sağlayıcı hatası: hiçbir araç çalışmadıysa yan etki yoktur, bir kez
+        // yeniden denenir. Araç çalıştıysa (taslak açılmış olabilir) yeniden denemek çift kayıt doğurur.
+        if (!(hata instanceof ServiceUnavailableException) || aracCalisti) throw hata;
+        olay("ai_yeniden_deneme");
+        yanit = await sor(2);
+      }
     } catch (hata) {
+      clearInterval(yaziyor);
       if (hata instanceof ConflictException) return;
       const sinir = hata instanceof AiSinirHatasi;
       if (!sinir) this.logger.error(`Telegram asistan yanıtı üretilemedi: ${hata instanceof Error ? hata.message.split("\n").filter(Boolean).pop() : String(hata)}`);
@@ -356,6 +370,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         : "Şu anda yanıt veremiyorum. Biraz sonra yeniden deneyin.", "hata");
       return;
     }
+    clearInterval(yaziyor);
     await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { guncellemeNo: BigInt(g.update_id) }, data: { durum: "islendi" } })));
     await yanitla(telegramYaniti(yanit), "sohbet");
   }
