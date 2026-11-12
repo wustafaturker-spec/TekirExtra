@@ -150,8 +150,15 @@ Lütfen yanıtı SADECE geçerli bir JSON objesi olarak ve AŞAĞIDAKİ camelCas
   "genelToplam": number,
   "kdvKirilimi": [{ "oran": number, "matrah": number, "kdvTutari": number }],
   "kalemler": [{ "aciklama": string, "miktar": number, "birim": string, "birimFiyat": number, "toplamTutar": number, "kdvOrani": number }],
-  "guvenSkoru": number
+  "guvenSkoru": number,
+  "plaka": string | null,
+  "litre": number | null,
+  "odemeSekli": "nakit" | "kart" | "bilinmiyor",
+  "kartSonDort": string | null
 }
+plaka: fişte yazılı araç plakası (ör. 34ABC123), yoksa null. litre: akaryakıt miktarı (LT), yoksa null.
+odemeSekli: fişte NAKİT yazıyorsa "nakit", kredi/banka kartı (K.KARTI, B.KARTI, kart numarası) varsa "kart", anlaşılmıyorsa "bilinmiyor".
+kartSonDort: maskeli kart numarasının yalnız son 4 hanesi (ör. **** 4893 → "4893"); tam kart numarasını asla yazma.
 ÖNEMLİ KURAL: Alan adlarını kesinlikle snake_case veya İngilizce yapma, tam olarak yukarıda belirtilen Türkçe camelCase formatı kullan.
 `.trim();
 

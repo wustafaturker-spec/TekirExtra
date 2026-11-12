@@ -71,6 +71,11 @@ export const UC = {
 
   masrafKategoriler: uc(MasraflarController, "kategoriListele", "GET /masraflar/kategoriler"),
   masrafOlustur: uc(MasraflarController, "olustur", "POST /masraflar"),
+  /** CNL-22: fişten açılan taslağın onayı, ödemesi ve araç bağı (tek onay talebi). */
+  masrafGetir: uc(MasraflarController, "getir", "GET /masraflar/:id"),
+  masrafOnayla: uc(MasraflarController, "onayla", "POST /masraflar/:id/onayla"),
+  masrafOde: uc(MasraflarController, "ode", "POST /masraflar/:id/ode"),
+  aracGiderBagla: uc(AracTakipController, "giderBagla", "POST /arac-takip/:id/gider"),
 
   kasaListe: uc(KasaBankaController, "kasaListele", "GET /kasa-banka/kasalar"),
   bankaListe: uc(KasaBankaController, "bankaListele", "GET /kasa-banka/bankalar"),

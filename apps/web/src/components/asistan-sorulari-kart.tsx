@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, Input, Tarih } from "@/components/ui";
 
 interface Soru {
   id: string;
-  tur: "banka_satiri" | "eposta_gonderen" | "taslak_kosul" | "masraf_kategori";
+  tur: "banka_satiri" | "eposta_gonderen" | "taslak_kosul" | "masraf_kategori" | "masraf_odeme";
   soru: string;
   secenekler: Array<{ kod: string; etiket: string }>;
   serbestYanit: boolean;
@@ -14,7 +14,7 @@ interface Soru {
   createdAt: string;
 }
 
-const TUR_ADI: Record<Soru["tur"], string> = { banka_satiri: "Banka", eposta_gonderen: "E-posta", taslak_kosul: "Taslak", masraf_kategori: "Masraf" };
+const TUR_ADI: Record<Soru["tur"], string> = { banka_satiri: "Banka", eposta_gonderen: "E-posta", taslak_kosul: "Taslak", masraf_kategori: "Masraf", masraf_odeme: "Ödeme" };
 
 /**
  * CNL-09: asistanın emin olmadığı yerde sorduğu sorular. Aynı sorular Telegram'a da gider;

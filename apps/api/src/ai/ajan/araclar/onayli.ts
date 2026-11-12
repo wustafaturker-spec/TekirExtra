@@ -273,6 +273,55 @@ export const ONAYLI_ARACLAR = [
     },
   }),
   arac({
+    ad: "masraf_tamamla",
+    aciklama:
+      "Taslak masrafı onaylar; istenirse kalan tutarı kasadan ya da şirket kredi kartından tek çekimle öder ve masrafı araca gider olarak bağlar. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      masrafId: uuid("Taslak masraf kimliği"),
+      odeme: z.object({ tur: z.enum(["kasa", "kart"]), hesapId: uuid("Kasa ya da kredi kartı kimliği"), tarih: tarih("Ödeme tarihi").optional() }).optional(),
+      arac: z.object({ aracId: uuid("Araç kimliği"), kategori: z.enum(["akaryakit", "bakim", "lastik", "hgs", "otopark", "sigorta", "mtv", "ceza", "kira", "diger"]), litre: z.number().positive().max(100_000).optional() }).optional(),
+    }),
+    uc: UC.masrafOnayla,
+    async ozetle(b, g) {
+      const m = await cagir(b, UC.masrafGetir, [g.masrafId]);
+      const parcalar = [`Masraf onayı: ${m.saticiUnvan ?? m.kategori?.ad ?? "masraf"} · ${para(m.toplam, m.dovizCinsi)} · ${String(m.tarih).slice(0, 10)}`];
+      if (g.odeme) {
+        const hesaplar = await cagir<any[]>(b, g.odeme.tur === "kasa" ? UC.kasaListe : UC.krediKartiListe, []);
+        const h = (Array.isArray(hesaplar) ? hesaplar : (hesaplar as any)?.kartlar ?? []).find((x: any) => x.id === g.odeme!.hesapId);
+        parcalar.push(`ödeme: ${g.odeme.tur === "kasa" ? `kasa ${h?.ad ?? g.odeme.hesapId}` : `kart ${h?.ad ?? ""} •••• ${h?.sonDortHane ?? "?"}`} (tek çekim)`);
+      }
+      if (g.arac) {
+        const a = await cagir(b, UC.aracGetir, [g.arac.aracId]);
+        parcalar.push(`araç: ${a.plaka} · ${g.arac.kategori}${g.arac.litre ? ` · ${g.arac.litre} L` : ""}`);
+      }
+      return parcalar.join(" · ");
+    },
+    hedefDurumu: async (b, g) => {
+      const m = await cagir(b, UC.masrafGetir, [g.masrafId]);
+      return { durum: m.durum, toplam: m.toplam, dovizCinsi: m.dovizCinsi, tarih: m.tarih, kategoriId: m.kategori?.id ?? m.kategoriId };
+    },
+    async calistir(b, g) {
+      await cagir(b, UC.masrafOnayla, [g.masrafId]);
+      const sonuc: Record<string, unknown> = { masrafId: g.masrafId, onaylandi: true };
+      if (g.odeme) {
+        const m = await cagir(b, UC.masrafGetir, [g.masrafId]);
+        const kalan = (Number(m.toplam) - Number(m.stopajTutari ?? 0) - Number(m.odenenTutar ?? 0)).toFixed(2);
+        const gun = g.odeme.tarih ?? String(m.tarih).slice(0, 10);
+        await cagir(b, UC.masrafOde, [g.masrafId, {
+          kasaId: g.odeme.tur === "kasa" ? g.odeme.hesapId : null, krediKartiId: g.odeme.tur === "kart" ? g.odeme.hesapId : null,
+          odemeTarihi: gun, tutar: kalan, taksitSayisi: 1, ...(g.odeme.tur === "kart" ? { ilkTaksitTarihi: gun } : {}), aciklama: "Telegram fişinden",
+        }]);
+        sonuc.odendi = kalan;
+      }
+      if (g.arac) {
+        await cagir(b, UC.aracGiderBagla, [g.arac.aracId, { masrafId: g.masrafId, kategori: g.arac.kategori, ...(g.arac.litre ? { litre: g.arac.litre } : {}) }]);
+        sonuc.aracaBaglandi = true;
+      }
+      return { ...sonuc, adres: "/panel/masraflar" };
+    },
+  }),
+  arac({
     ad: "cari_olustur",
     aciklama: "Yeni cari kartı açar. Cari kodunu kullanıcıdan al ya da mevcut kod düzenine göre öner. Kullanıcı onayı gerekir.",
     sinif: "onay",

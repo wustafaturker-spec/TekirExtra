@@ -9,13 +9,17 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EklerService, type YuklenenDosya } from "../ekler/ekler.service";
 import type { Secenek } from "./asistan-soru.kurallari";
-import { BELGE_AZAMI_BAYT, kategoriAdlaBul, kategoriSorusu, masrafTaslagi, type MasrafTaslagi } from "./masraf-belge.kurallari";
+import {
+  BELGE_AZAMI_BAYT, kategoriAdlaBul, kategoriSorusu, masrafTaslagi, odemeSorusu, tamamlamaPlani, type FistenOkunan, type MasrafTaslagi, type TamamlamaPlani,
+} from "./masraf-belge.kurallari";
 
 const TASLAK_ARACI = "masraf_taslagi_olustur";
 const UZANTI: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 
-interface KategoriSorusuVerisi { taslak: MasrafTaslagi; uyarilar: string[]; ekId: string; kategoriler: Array<{ id: string; ad: string }> }
-export interface BelgeSonucu { sonuc: string; masrafId?: string; soru?: { id: string; soru: string; secenekler: Secenek[]; serbestYanit: boolean } }
+interface KategoriSorusuVerisi { taslak: MasrafTaslagi; uyarilar: string[]; ekId: string; kategoriler: Array<{ id: string; ad: string }>; okunan?: FistenOkunan }
+interface OdemeSorusuVerisi { masrafId: string; hesaplar: Array<{ id: string; ad: string }>; tur: "kasa" | "kart"; arac?: TamamlamaPlani["arac"] }
+export interface SoruOzeti { id: string; soru: string; secenekler: Secenek[]; serbestYanit: boolean }
+export interface BelgeSonucu { sonuc: string; masrafId?: string; talepId?: string; soru?: SoruOzeti }
 
 /**
  * CNL-16: fiş/fatura görselinden masraf taslağı. Sıra: rol (taslak açabiliyor mu) → içerik ve virüs
@@ -63,14 +67,16 @@ export class MasrafBelgeService {
       throw new BadRequestException(`Belgeden tutar güvenle okunamadı${ocr.dogrulama.hatalar.length ? ` (${ocr.dogrulama.hatalar.join("; ").slice(0, 200)})` : ""}. Daha net bir fotoğraf gönderin ya da panelden girin.`);
     }
     const { taslak, uyarilar } = masrafTaslagi(ocr.dogrulama.veri, ocr.eslesenCari?.id ?? null, not);
+    const v = ocr.dogrulama.veri;
+    const okunan: FistenOkunan = { plaka: v.plaka ?? null, litre: v.litre ?? null, odemeSekli: v.odemeSekli ?? null, kartSonDort: v.kartSonDort ?? null };
     uyarilar.push(...ocr.dogrulama.uyarilar.slice(0, 3));
     const kategoriler = await this.kategoriler();
     if (!kategoriler.length) throw new BadRequestException("Firmada etkin masraf kategorisi yok; önce panelden kategori tanımlayın.");
     const kategoriId = await this.kategoriBul(taslak, ocr.onerilenMasrafKategorisi, kategoriler);
-    if (kategoriId) return this.taslakAc(taslak, kategoriId, ek.id, uyarilar);
+    if (kategoriId) return this.taslakAc(taslak, kategoriId, ek.id, uyarilar, okunan);
 
     const s = kategoriSorusu(taslak, kategoriler);
-    const veri: KategoriSorusuVerisi = { taslak, uyarilar, ekId: ek.id, kategoriler: kategoriler.slice(0, 5) };
+    const veri: KategoriSorusuVerisi = { taslak, uyarilar, ekId: ek.id, kategoriler: kategoriler.slice(0, 5), okunan };
     const soru = await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSorusu.create({ data: {
       tenantId, tur: "masraf_kategori", kaynakId: ek.id, userId, soru: s.soru, secenekler: s.secenekler as unknown as Prisma.InputJsonValue, veri: veri as unknown as Prisma.InputJsonValue, serbestYanit: true,
     } }));
@@ -103,7 +109,7 @@ export class MasrafBelgeService {
     return kategoriAdlaBul(oneri, kategoriler);
   }
 
-  private async taslakAc(t: MasrafTaslagi, kategoriId: string, ekId: string, uyarilar: string[]): Promise<BelgeSonucu> {
+  private async taslakAc(t: MasrafTaslagi, kategoriId: string, ekId: string, uyarilar: string[], okunan: FistenOkunan = {}): Promise<BelgeSonucu> {
     const r = await this.yurutucu.yurut({ ad: TASLAK_ARACI, girdi: { ...t, kategoriId } }, this.izinli(), { kaynak: "asistan" });
     if (r.hata) throw new BadRequestException(`Masraf taslağı açılamadı: ${r.icerik.replace(/^Hata: /, "").slice(0, 200)}`);
     const masraf = JSON.parse(r.icerik) as { id: string; adres?: string };
@@ -117,16 +123,71 @@ export class MasrafBelgeService {
     const kategori = await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => tx.masrafKategori.findUnique({ where: { id: kategoriId }, select: { ad: true } }));
     const tutar = `${t.toplam.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t.dovizCinsi === "TRY" ? "TL" : t.dovizCinsi}`;
     const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
+    // CNL-21/22: plaka, ödeme şekli ve kart son dört hanesi firmanın kayıtlarıyla eşleştirilir.
+    const plan = await this.planHazirla(okunan, t, kategori?.ad ?? "");
     const satirlar = [
       `🧾 Masraf taslağı açıldı: ${t.saticiUnvan ?? "satıcı okunamadı"} · ${t.tarih ? t.tarih.split("-").reverse().join(".") : "bugün"} · ${tutar} (KDV %${t.kdvOrani}) · ${kategori?.ad ?? "kategori"}.`,
       ...uyarilar.map((u) => `⚠️ ${u}`),
-      `Kontrol edip panelden onaylayın: ${panel}${masraf.adres ?? "/panel/masraflar"}`,
+      ...plan.notlar.map((n) => `ℹ️ ${n}`),
     ];
-    return { sonuc: satirlar.join("\n"), masrafId: masraf.id };
+    if (plan.soru) {
+      const s = odemeSorusu(t, plan.soru, okunan.kartSonDort);
+      const veri: OdemeSorusuVerisi = { masrafId: masraf.id, hesaplar: plan.soru.hesaplar, tur: plan.soru.tur, ...(plan.arac ? { arac: plan.arac } : {}) };
+      const { tenantId, userId } = aktifBaglam();
+      const soru = await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSorusu.create({ data: {
+        tenantId, tur: "masraf_odeme", kaynakId: masraf.id, userId, soru: s.soru, secenekler: s.secenekler as unknown as Prisma.InputJsonValue, veri: veri as unknown as Prisma.InputJsonValue, serbestYanit: false,
+      } }));
+      return { sonuc: satirlar.join("\n"), masrafId: masraf.id, soru: { id: soru.id, soru: soru.soru, secenekler: s.secenekler, serbestYanit: false } };
+    }
+    const talep = await this.tamamlamaTalebi(masraf.id, plan);
+    satirlar.push(talep
+      ? `✅ Tek dokunuşla tamamlamak için onay talebi açıldı (${talep.ozet}): ${panel}/panel/ai?talep=${talep.id}`
+      : `Kontrol edip panelden onaylayın: ${panel}${masraf.adres ?? "/panel/masraflar"}`);
+    return { sonuc: satirlar.join("\n"), masrafId: masraf.id, ...(talep ? { talepId: talep.id } : {}) };
+  }
+
+  private async planHazirla(okunan: FistenOkunan, t: MasrafTaslagi, kategoriAdi: string): Promise<TamamlamaPlani> {
+    if (!okunan.plaka && !okunan.odemeSekli) return { notlar: [] };
+    const { tenantId } = aktifBaglam();
+    const [kartlar, kasalar, araclar] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.krediKarti.findMany({ select: { id: true, ad: true, sonDortHane: true, dovizCinsi: true, aktif: true } }),
+      tx.kasa.findMany({ select: { id: true, ad: true, dovizCinsi: true, aktif: true } }),
+      okunan.plaka ? tx.arac.findMany({ select: { id: true, plaka: true, aktif: true } }) : Promise.resolve([]),
+    ]));
+    return tamamlamaPlani(okunan, { cariBagli: !!t.cariId, dovizCinsi: t.dovizCinsi, kategoriAdi }, kartlar.map((k) => ({ ...k, dovizCinsi: String(k.dovizCinsi) })), kasalar.map((k) => ({ ...k, dovizCinsi: String(k.dovizCinsi) })), araclar);
+  }
+
+  /** CNL-22: onay + ödeme + araç bağı tek onay talebi; panelde onaylanınca çalışır. Yapılacak bir şey yoksa null. */
+  private async tamamlamaTalebi(masrafId: string, plan: Pick<TamamlamaPlani, "odeme" | "arac">): Promise<{ id: string; ozet: string } | null> {
+    if (!plan.odeme && !plan.arac) return null;
+    const girdi = {
+      masrafId,
+      ...(plan.odeme ? { odeme: { tur: plan.odeme.tur, hesapId: plan.odeme.hesapId } } : {}),
+      ...(plan.arac ? { arac: { aracId: plan.arac.aracId, kategori: plan.arac.kategori, ...(plan.arac.litre ? { litre: plan.arac.litre } : {}) } } : {}),
+    };
+    const r = await this.yurutucu.yurut({ ad: "masraf_tamamla", girdi }, this.izinli(), { kaynak: "asistan" });
+    if (r.hata || !r.talep) {
+      this.logger.warn(`Masraf tamamlama talebi açılamadı: ${r.icerik.slice(0, 120)}`);
+      return null;
+    }
+    const ozet = [plan.odeme ? `ödeme: ${plan.odeme.ad}` : null, plan.arac ? `araç: ${plan.arac.plaka}${plan.arac.litre ? ` ${plan.arac.litre} L` : ""}` : null].filter(Boolean).join(", ");
+    return { id: r.talep.id, ozet };
+  }
+
+  /** CNL-22: belirsiz ödeme hesabı sorusunun yanıtı; seçimle tamamlama onay talebi açılır. */
+  async odemeSecildi(soru: AsistanSorusu, kod: string | undefined): Promise<{ sonuc: string; talepId?: string }> {
+    const veri = soru.veri as unknown as OdemeSorusuVerisi;
+    const secilen = kod?.startsWith("h") ? veri.hesaplar[Number(kod.slice(1))] : undefined;
+    if (kod !== "sirket_degil" && !secilen) throw new BadRequestException("Geçersiz seçenek.");
+    const plan = { ...(secilen ? { odeme: { tur: veri.tur, hesapId: secilen.id, ad: secilen.ad } } : {}), ...(veri.arac ? { arac: veri.arac } : {}) };
+    const talep = await this.tamamlamaTalebi(veri.masrafId, plan);
+    const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
+    if (!talep) return { sonuc: "Not alındı; ödemeyi panelde masrafın “Öde” düğmesinden seçebilirsiniz." };
+    return { sonuc: `Onay talebi açıldı (${talep.ozet}); panelde tek dokunuşla onaylayın: ${panel}/panel/ai?talep=${talep.id}`, talepId: talep.id };
   }
 
   /** CNL-10: kategori sorusunun yanıtı; seçilen kategori satıcının sonraki belgelerinde kendiliğinden kullanılır. */
-  async kategoriSecildi(soru: AsistanSorusu, kod: string | undefined, metin: string | undefined): Promise<string> {
+  async kategoriSecildi(soru: AsistanSorusu, kod: string | undefined, metin: string | undefined): Promise<BelgeSonucu> {
     const veri = soru.veri as unknown as KategoriSorusuVerisi;
     let kategoriId: string | null = kod?.startsWith("kat") ? veri.kategoriler[Number(kod.slice(3))]?.id ?? null : null;
     if (!kategoriId) {
@@ -134,6 +195,6 @@ export class MasrafBelgeService {
       kategoriId = kategoriAdlaBul(metin, tum);
       if (!kategoriId) throw new BadRequestException(`“${metin ?? ""}” ile tek bir kategori eşleşmedi; kategori adını tam yazın ya da düğmeden seçin.`);
     }
-    return (await this.taslakAc(veri.taslak, kategoriId, veri.ekId, veri.uyarilar)).sonuc;
+    return this.taslakAc(veri.taslak, kategoriId, veri.ekId, veri.uyarilar, veri.okunan ?? {});
   }
 }

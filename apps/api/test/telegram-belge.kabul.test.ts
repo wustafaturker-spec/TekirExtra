@@ -20,7 +20,7 @@ import { TelegramService } from "../src/telegram/telegram.service";
 const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
 const prisma = new PrismaService();
 const T = randomUUID();
-const [MUH, SATIS, AKARYAKIT, KIRTASIYE] = Array.from({ length: 4 }, () => randomUUID());
+const [MUH, SATIS, AKARYAKIT, KIRTASIYE, KART1, KART2, KASA1, KASA2, ARAC] = Array.from({ length: 9 }, () => randomUUID());
 const HESAP_MUH = 960_000_000 + Math.floor(Math.random() * 1e7);
 const HESAP_SATIS = HESAP_MUH + 1;
 const rastgeleNo = () => 1_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
@@ -32,13 +32,13 @@ const dosyalar: Record<string, Buffer> = { png: PNG, metin: Buffer.from("bu bir 
 let sunucu: Server;
 
 // --- OCR, ek deposu ve taslak aracı kayıt tutan sahteler ---
-let ocrYaniti: { satici: string; vkn: string | null; oneri: string | null } = { satici: "", vkn: null, oneri: null };
+let ocrYaniti: { satici: string; vkn: string | null; oneri: string | null; ek?: Record<string, unknown> } = { satici: "", vkn: null, oneri: null };
 const ocrCagrilari: string[] = [];
 const ai = {
   async fisFaturaOcrTara(_t: string, g: { gorselBase64: string }) {
     ocrCagrilari.push(g.gorselBase64.slice(0, 22));
     return {
-      dogrulama: { gecerli: true, hatalar: [], uyarilar: [], veri: { belgeTuru: "FIS", belgeNo: "F-1", tarih: "2026-11-10", saticiUnvan: ocrYaniti.satici, saticiVknTckn: ocrYaniti.vkn, paraBirimi: "TRY", toplamKdv: 200, toplamMatrah: 1000, genelToplam: 1200, kdvKirilimi: [{ oran: 20, matrah: 1000, kdvTutari: 200 }], kalemler: [], guvenSkoru: 0.9 } },
+      dogrulama: { gecerli: true, hatalar: [], uyarilar: [], veri: { belgeTuru: "FIS", belgeNo: "F-1", tarih: "2026-11-10", saticiUnvan: ocrYaniti.satici, saticiVknTckn: ocrYaniti.vkn, paraBirimi: "TRY", toplamKdv: 200, toplamMatrah: 1000, genelToplam: 1200, kdvKirilimi: [{ oran: 20, matrah: 1000, kdvTutari: 200 }], kalemler: [], guvenSkoru: 0.9, ...ocrYaniti.ek } },
       eslesenCari: null, onerilenMasrafKategorisi: ocrYaniti.oneri,
     };
   },
@@ -49,9 +49,16 @@ const ekler = {
   async indir() { return { ek: { dosyaAdi: "fis.png", mimeTip: "image/png" }, icerik: PNG }; },
 };
 const taslaklar: Array<Record<string, unknown>> = [];
+const tamamlamalar: Array<Record<string, unknown>> = [];
 const yurutucu = {
-  izinliAraclar: (rol: string) => (rol === "muhasebe" ? [{ ad: "masraf_taslagi_olustur", sinif: "taslak" }] : []),
-  async yurut(c: { ad: string; girdi: Record<string, unknown> }) { taslaklar.push(c.girdi); return { icerik: JSON.stringify({ id: randomUUID(), durum: "taslak", adres: "/panel/masraflar" }) }; },
+  izinliAraclar: (rol: string) => (rol === "muhasebe" ? [{ ad: "masraf_taslagi_olustur", sinif: "taslak" }, { ad: "masraf_tamamla", sinif: "onay" }] : []),
+  async yurut(c: { ad: string; girdi: Record<string, unknown> }) {
+    if (c.ad === "masraf_tamamla") { tamamlamalar.push(c.girdi); return { icerik: "onay bekliyor", talep: { id: randomUUID() } }; }
+    // Ödeme sorusu masraf taslakken geçerli kalır; testte gerçek bir taslak satırı yazılır.
+    const id = randomUUID();
+    await yonetim.$executeRawUnsafe(`INSERT INTO masraflar (id, tenant_id, kategori_id, belge_turu, tarih, matrah, kdv_tutari, toplam, durum, aciklama, updated_at) VALUES ($1::uuid, $2::uuid, $3::uuid, 'fis', '2026-11-10', 1000, 200, 1200, 'taslak', 'test', now())`, id, T, c.girdi.kategoriId);
+    taslaklar.push(c.girdi); return { icerik: JSON.stringify({ id, durum: "taslak", adres: "/panel/masraflar" }) };
+  },
 };
 const ajan = { async telegramOturumKimligi() { return randomUUID(); }, async telegramGecmiseYaz() {} };
 
@@ -87,6 +94,10 @@ beforeAll(async () => {
     await y.telegramBagi.create({ data: { tenantId: T, userId: id, telegramKullaniciId: BigInt(hesap), sohbetId: BigInt(hesap), oturumSurumu: 0, rizaAt: new Date() } });
   }
   await y.$executeRaw`INSERT INTO masraf_kategorileri (id, tenant_id, ad, updated_at) VALUES (${AKARYAKIT}::uuid, ${T}::uuid, 'Akaryakıt', now()), (${KIRTASIYE}::uuid, ${T}::uuid, 'Kırtasiye', now())`;
+  // CNL-21/22: iki şirket kartı, bir kasa, bir araç.
+  await y.$executeRaw`INSERT INTO kredi_kartlari (id, tenant_id, ad, banka_adi, son_dort_hane, "limit", hesap_kesim_gunu, son_odeme_gunu, updated_at) VALUES (${KART1}::uuid, ${T}::uuid, 'İş Kartı', 'İş Bankası', '1234', 50000, 5, 15, now()), (${KART2}::uuid, ${T}::uuid, 'Garanti Kartı', 'Garanti', '9876', 50000, 10, 20, now())`;
+  await y.$executeRaw`INSERT INTO kasalar (id, tenant_id, ad, updated_at) VALUES (${KASA1}::uuid, ${T}::uuid, 'Merkez Kasa', now())`;
+  await y.$executeRaw`INSERT INTO araclar (id, tenant_id, plaka, updated_at) VALUES (${ARAC}::uuid, ${T}::uuid, '34 TKR 34', now())`;
   await y.modulAyar.create({ data: { tenantId: T, modul: "telegram", ayarlar: { etkin: true, tutarGoster: true } } });
   // Satıcının geçmişi: bu VKN'den daha önce Kırtasiye masrafı girilmiş.
   await y.$executeRawUnsafe(`INSERT INTO masraflar (id, tenant_id, kategori_id, belge_turu, tarih, matrah, kdv_tutari, toplam, durum, aciklama, vkn_tckn, updated_at) VALUES ($1::uuid, $2::uuid, $3::uuid, 'fis', '2026-10-01', 100, 20, 120, 'onaylandi', 'eski', '9876543210', now())`, randomUUID(), T, KIRTASIYE);
@@ -136,6 +147,50 @@ describe("Telegram'dan fiş fotoğrafıyla masraf (CNL-16)", () => {
     expect(ocrCagrilari.length).toBe(once);
     expect(sonMetin(HESAP_MUH)?.text).not.toMatch(/Masraf taslağı açıldı/);
     expect(sonMetin(HESAP_MUH)?.text).not.toMatch(/Invalid|prisma|\/home\//i);
+  });
+
+  it("CNL-21/22: kart son dört hanesi ve plaka eşleşirse tek onay talebi açılır", async () => {
+    ocrYaniti = { satici: "Opet", vkn: null, oneri: "akaryakıt", ek: { plaka: "34tkr34", litre: 30.5, odemeSekli: "kart", kartSonDort: "9876" } };
+    await foto(HESAP_MUH, "png");
+    expect(tamamlamalar.at(-1)).toMatchObject({ odeme: { tur: "kart", hesapId: KART2 }, arac: { aracId: ARAC, kategori: "akaryakit", litre: 30.5 } });
+    expect(sonMetin(HESAP_MUH)?.text).toMatch(/onay talebi açıldı \(ödeme: Garanti Kartı •••• 9876, araç: 34 TKR 34 30\.5 L\)/);
+  });
+
+  it("CNL-22: tek kasa varsa nakit fiş o kasaya; bilinmeyen plaka not olarak yazılır", async () => {
+    ocrYaniti = { satici: "Otopark A.Ş.", vkn: null, oneri: "akaryakıt", ek: { plaka: "06 ZZ 99", odemeSekli: "nakit" } };
+    await foto(HESAP_MUH, "png");
+    expect(tamamlamalar.at(-1)).toEqual({ masrafId: expect.any(String), odeme: { tur: "kasa", hesapId: KASA1 } });
+    expect(sonMetin(HESAP_MUH)?.text).toContain("06ZZ99 plakası araç kartlarında yok");
+  });
+
+  it("CNL-22: eşleşmeyen kart → düğmeli soru; seçimle talep açılır; cevap sonrası soru kapanır", async () => {
+    ocrYaniti = { satici: "Opet", vkn: null, oneri: "akaryakıt", ek: { plaka: "34 TKR 34", odemeSekli: "kart", kartSonDort: "0000" } };
+    const once = tamamlamalar.length;
+    await foto(HESAP_MUH, "png");
+    expect(tamamlamalar.length).toBe(once);
+    const mesajlar = giden.filter((g) => g.yontem === "sendMessage" && g.govde.chat_id === String(HESAP_MUH));
+    expect((mesajlar.at(-2)?.govde as { text: string }).text).toMatch(/^🧾 Masraf taslağı açıldı/);
+    const soru = sonMetin(HESAP_MUH)!;
+    expect(soru.text).toContain("•••• 0000");
+    const dugmeler = soru.reply_markup!.inline_keyboard.flat();
+    expect(dugmeler.map((d) => d.text)).toEqual(["İş Kartı •••• 1234", "Garanti Kartı •••• 9876", "Şirket kartı değil", "Panelde bakacağım"]);
+    await kanal.isle({ update_id: rastgeleNo(), callback_query: { id: "cb2", from: { id: HESAP_MUH }, message: { message_id: 2, chat: { id: HESAP_MUH, type: "private" } }, data: dugmeler[0].callback_data } });
+    expect(tamamlamalar.at(-1)).toMatchObject({ odeme: { tur: "kart", hesapId: KART1 }, arac: { aracId: ARAC, kategori: "akaryakit" } });
+    const yanit = sonMetin(HESAP_MUH)!.text;
+    expect(yanit).toMatch(/^✅ Onay talebi açıldı/);
+    expect(yanit.match(/talep=/g)).toHaveLength(1);
+    const kayit = await prisma.tenantIslem(T, (tx) => tx.asistanSorusu.findFirst({ where: { tur: "masraf_odeme", userId: MUH }, orderBy: { createdAt: "desc" } }));
+    expect(kayit?.durum).toBe("yanitlandi");
+  });
+
+  it("CNL-22: birden çok kasada nakit fiş sorulur; 'Kasadan değil' yalnız aracı bağlar", async () => {
+    await yonetim.$executeRaw`INSERT INTO kasalar (id, tenant_id, ad, updated_at) VALUES (${KASA2}::uuid, ${T}::uuid, 'Şube Kasa', now())`;
+    ocrYaniti = { satici: "Opet", vkn: null, oneri: "akaryakıt", ek: { plaka: "34 TKR 34", odemeSekli: "nakit" } };
+    await foto(HESAP_MUH, "png");
+    const dugmeler = sonMetin(HESAP_MUH)!.reply_markup!.inline_keyboard.flat();
+    expect(dugmeler.map((d) => d.text)).toEqual(["Merkez Kasa", "Şube Kasa", "Kasadan değil", "Panelde bakacağım"]);
+    await kanal.isle({ update_id: rastgeleNo(), callback_query: { id: "cb3", from: { id: HESAP_MUH }, message: { message_id: 3, chat: { id: HESAP_MUH, type: "private" } }, data: dugmeler[2].callback_data } });
+    expect(tamamlamalar.at(-1)).toEqual({ masrafId: expect.any(String), arac: { aracId: ARAC, kategori: "akaryakit" } });
   });
 
   it("masraf taslağı açamayan rol reddedilir; dosya indirilmez", async () => {

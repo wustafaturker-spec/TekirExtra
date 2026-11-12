@@ -5,7 +5,7 @@ import type { Rol } from "@tekirextra/shared";
 import { AiAjanService, type AjanYaniti } from "../ai/ajan/ai-ajan.service";
 import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
 import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-soru.kurallari";
-import { AsistanSoruService, type SoruYaniti } from "../asistan-soru/asistan-soru.service";
+import { AsistanSoruService, type SoruYaniti, type YanitSonucu } from "../asistan-soru/asistan-soru.service";
 import { fikirDugmesi, fikirDugmesiCoz } from "../asistan-soru/fikir.kurallari";
 import { FikirService } from "../asistan-soru/fikir.service";
 import { BELGE_AZAMI_BAYT } from "../asistan-soru/masraf-belge.kurallari";
@@ -360,7 +360,13 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         throw h instanceof TelegramHatasi && h.message === "Dosya çok büyük" ? new BadRequestException("Dosya 6 MB'tan büyük; daha küçük gönderin.") : h;
       });
       const r = await baglamlaCalistir(baglam, () => this.masrafBelge!.belgedenMasraf({ ad, buffer }, m.caption ?? null));
-      if (r.soru) {
+      if (r.soru && r.masrafId) {
+        // CNL-22: taslak açıldı, ödeme hesabı belirsiz; önce sonuç, ardından ödeme sorusu.
+        await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", r.sonuc));
+        const sonuc = await baglamlaCalistir(baglam, () => this.soruGonder(tenantId, userId, r.soru!));
+        if (sonuc === "gonderildi") return;
+        metin = "Ödeme hesabı sorusunu gönderemedim; panelde Asistan › Sorular kutusundan yanıtlayabilirsiniz.";
+      } else if (r.soru) {
         const sonuc = await baglamlaCalistir(baglam, () => this.soruGonder(tenantId, userId, r.soru!));
         if (sonuc === "gonderildi") return;
         metin = "Belgeyi okudum ama kategori sorusunu gönderemedim; panelde Asistan › Sorular kutusundan yanıtlayabilirsiniz.";
@@ -410,10 +416,13 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   private async soruYanitla(baglam: IstekBaglami, soruId: string, yanit: SoruYaniti, sohbetId: number, mesajId: number, dugmeId?: string): Promise<void> {
     const { tenantId, userId } = baglam;
     let metin: string;
+    let sonraki: YanitSonucu["sonrakiSoru"];
     try {
       const r = await baglamlaCalistir(baglam, () => this.sorular!.yanitla(soruId, yanit, "telegram"));
       const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
-      metin = `✅ ${r.sonuc}${r.talepId ? `\n${panel}/panel/ai?talep=${r.talepId}` : ""}`;
+      const bag = r.talepId && !r.sonuc.includes(`talep=${r.talepId}`) ? `\n${panel}/panel/ai?talep=${r.talepId}` : "";
+      metin = `✅ ${r.sonuc}${bag}`;
+      sonraki = r.sonrakiSoru;
       await this.istemci!.klavyeKaldir(sohbetId, mesajId).catch(() => undefined);
       await baglamlaCalistir(baglam, () => this.klavyeKaldirildi(tenantId, soruId, userId));
       if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, "Yanıtınız alındı.");
@@ -423,6 +432,11 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       metin = `Yanıtınızı işleyemedim: ${neden}`;
     }
     await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "soru_sonuc", metin));
+    if (sonraki) {
+      const s = sonraki;
+      const g = await baglamlaCalistir(baglam, () => this.soruGonder(tenantId, userId, s));
+      if (g !== "gonderildi") await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "soru_sonuc", "Ödeme hesabı sorusunu gönderemedim; panelde Asistan › Sorular kutusundan yanıtlayabilirsiniz."));
+    }
   }
 
   /**

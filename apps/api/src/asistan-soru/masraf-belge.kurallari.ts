@@ -73,3 +73,72 @@ export function kategoriSorusu(t: MasrafTaslagi, kategoriler: Array<{ id: string
     secenekler: [...kategoriler.slice(0, 5).map((k, i) => ({ kod: `kat${i}`, etiket: k.ad.slice(0, 40) })), PANEL_SECENEGI],
   };
 }
+
+// ─── CNL-21/22: ödeme hesabı ve araç planı ─────────────────────────────────
+
+export interface FistenOkunan { plaka?: string | null; litre?: number | null; odemeSekli?: "nakit" | "kart" | "bilinmiyor" | null; kartSonDort?: string | null }
+export interface HesapSecenegi { id: string; ad: string }
+export interface TamamlamaPlani {
+  odeme?: { tur: "kasa" | "kart"; hesapId: string; ad: string };
+  arac?: { aracId: string; plaka: string; kategori: "akaryakit" | "otopark" | "hgs" | "diger"; litre?: number };
+  notlar: string[];
+  /** Belirsizlikte sorulacak hesaplar (CNL-09); seçenek kodu `h<i>`, ayrıca `sirket_degil`. */
+  soru?: { tur: "kasa" | "kart"; hesaplar: HesapSecenegi[] };
+}
+
+const plakaSade = (p: string) => p.toLocaleUpperCase("tr-TR").replace(/[^A-Z0-9ÇĞİÖŞÜ]/g, "");
+
+/**
+ * CNL-21/22: fişten okunan plaka, litre ve ödeme bilgisi firmanın kayıtlarıyla eşleştirilir.
+ * Yalnız tek eşleşme kesindir; kart/kasa belirsizse soru, plaka eşleşmezse not üretir.
+ */
+export function tamamlamaPlani(
+  o: FistenOkunan,
+  b: { cariBagli: boolean; dovizCinsi: string; kategoriAdi: string },
+  kartlar: Array<{ id: string; ad: string; sonDortHane: string; dovizCinsi: string; aktif: boolean }>,
+  kasalar: Array<{ id: string; ad: string; dovizCinsi: string; aktif: boolean }>,
+  araclar: Array<{ id: string; plaka: string; aktif: boolean }>,
+): TamamlamaPlani {
+  const plan: TamamlamaPlani = { notlar: [] };
+  if (o.plaka) {
+    const p = plakaSade(o.plaka);
+    const arac = araclar.find((a) => a.aktif && plakaSade(a.plaka) === p);
+    const kat = sade(b.kategoriAdi);
+    const kategori = o.litre || kat.includes("akaryak") ? "akaryakit" : kat.includes("otopark") ? "otopark" : kat.includes("hgs") || kat.includes("köprü") || kat.includes("otoyol") ? "hgs" : "diger";
+    if (arac) plan.arac = { aracId: arac.id, plaka: arac.plaka, kategori, ...(kategori === "akaryakit" && o.litre ? { litre: Math.round(o.litre * 100) / 100 } : {}) };
+    else plan.notlar.push(`Fişteki ${p} plakası araç kartlarında yok; araca bağlanmadı.`);
+  }
+  if (b.cariBagli) {
+    plan.notlar.push("Satıcı cari olarak kayıtlı; ödeme cari tediyesinden yapılır.");
+    return plan;
+  }
+  const uygunKart = kartlar.filter((k) => k.aktif && k.dovizCinsi === b.dovizCinsi);
+  const uygunKasa = kasalar.filter((k) => k.aktif && k.dovizCinsi === b.dovizCinsi);
+  if (o.odemeSekli === "kart") {
+    const eslesen = o.kartSonDort ? uygunKart.filter((k) => k.sonDortHane === o.kartSonDort) : [];
+    if (eslesen.length === 1) plan.odeme = { tur: "kart", hesapId: eslesen[0].id, ad: `${eslesen[0].ad} •••• ${eslesen[0].sonDortHane}` };
+    else if (uygunKart.length) plan.soru = { tur: "kart", hesaplar: uygunKart.slice(0, 5).map((k) => ({ id: k.id, ad: `${k.ad} •••• ${k.sonDortHane}` })) };
+    else plan.notlar.push(`Kartla ödenmiş${o.kartSonDort ? ` (•••• ${o.kartSonDort})` : ""} ama tanımlı şirket kartı yok; ödemeyi panelde seçin.`);
+  } else if (o.odemeSekli === "nakit") {
+    if (uygunKasa.length === 1) plan.odeme = { tur: "kasa", hesapId: uygunKasa[0].id, ad: uygunKasa[0].ad };
+    else if (uygunKasa.length > 1) plan.soru = { tur: "kasa", hesaplar: uygunKasa.slice(0, 5).map((k) => ({ id: k.id, ad: k.ad })) };
+    else plan.notlar.push("Nakit ödenmiş ama bu dövizde kasa yok; ödemeyi panelde seçin.");
+  } else {
+    plan.notlar.push("Ödeme şekli fişten okunamadı; ödemeyi panelde seçin.");
+  }
+  return plan;
+}
+
+export function odemeSorusu(t: MasrafTaslagi, s: NonNullable<TamamlamaPlani["soru"]>, kartSonDort: string | null | undefined): { soru: string; secenekler: Secenek[] } {
+  const neden = s.tur === "kart"
+    ? `Fiş kartla ödenmiş${kartSonDort ? ` (•••• ${kartSonDort})` : ""} ama hangi şirket kartı olduğunu kesin bulamadım.`
+    : "Fiş nakit ödenmiş; birden çok kasa var.";
+  return {
+    soru: `${t.saticiUnvan ?? "Masraf"} — ${t.toplam.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t.dovizCinsi === "TRY" ? "TL" : t.dovizCinsi}: ${neden} Ödeme hangisinden yapıldı?`,
+    secenekler: [
+      ...s.hesaplar.map((h, i) => ({ kod: `h${i}`, etiket: h.ad.slice(0, 40) })),
+      { kod: "sirket_degil", etiket: s.tur === "kart" ? "Şirket kartı değil" : "Kasadan değil" },
+      PANEL_SECENEGI,
+    ],
+  };
+}

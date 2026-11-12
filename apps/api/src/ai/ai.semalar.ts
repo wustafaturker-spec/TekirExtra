@@ -36,6 +36,13 @@ export const fisFaturaOcrSonucSemasi = z.object({
     })
   ).default([]),
   guvenSkoru: z.number().min(0).max(1).default(1),
+  /** CNL-21: fişte yazılıysa araç plakası (akaryakıt, otopark…); okunamazsa null. */
+  plaka: z.string().max(20).optional().nullable(),
+  /** CNL-21: akaryakıt fişinde litre. */
+  litre: z.number().positive().max(100_000).optional().nullable(),
+  /** CNL-22: ödeme şekli ve kartla ödendiyse kartın son dört hanesi (tam numara okunmaz/saklanmaz). */
+  odemeSekli: z.enum(["nakit", "kart", "bilinmiyor"]).optional().nullable(),
+  kartSonDort: z.string().regex(/^\d{4}$/).optional().nullable(),
 });
 
 export type FisFaturaOcrSonuc = z.infer<typeof fisFaturaOcrSonucSemasi>;

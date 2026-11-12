@@ -7,7 +7,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EkstreEslestirmeService } from "../kasa-banka/ekstre-eslestirme.service";
 import { ImapService } from "../tenant/imap.service";
-import { MasrafBelgeService } from "./masraf-belge.service";
+import { MasrafBelgeService, type SoruOzeti } from "./masraf-belge.service";
 import {
   bankaSorusu, epostaSorusu, gunFarki, maasSatiriMi, PANEL_SECENEGI, TARAMA_SORU_SINIRI, taslakSapmasi, taslakSorusu, type Secenek, type SoruTuru, type TaslakSapmasi,
 } from "./asistan-soru.kurallari";
@@ -18,7 +18,7 @@ const FINANS_ROLLERI: Rol[] = ["yonetici", "muhasebe"];
 const SATIS_ROLLERI: Rol[] = ["yonetici", "muhasebe", "satis"];
 
 export interface SoruYaniti { kod?: string; metin?: string }
-export interface YanitSonucu { sonuc: string; talepId?: string }
+export interface YanitSonucu { sonuc: string; talepId?: string; /** Yanıt yeni bir soru doğurduysa (ör. fişin ödeme hesabı). */ sonrakiSoru?: SoruOzeti }
 
 type BankaVerisi = { onerilenCariId: string | null; karsiUnvan: string | null };
 type EpostaVerisi = { gonderenEposta: string; adaylar: Array<{ cariId: string; unvan: string }> };
@@ -177,13 +177,15 @@ export class AsistanSoruService {
       const acik = await tx.asistanSorusu.findMany({ where: { durum: "acik" }, select: { id: true, tur: true, kaynakId: true } });
       if (!acik.length) return;
       const idler = (tur: string) => acik.filter((s) => s.tur === tur).map((s) => s.kaynakId);
-      const [satirlar, epostalar, faturalar] = await Promise.all([
+      const [satirlar, epostalar, faturalar, masraflar] = await Promise.all([
         tx.bankaEkstreSatir.findMany({ where: { id: { in: idler("banka_satiri") }, durum: "beklemede" }, select: { id: true } }),
         tx.gelenEposta.findMany({ where: { id: { in: idler("eposta_gonderen") }, durum: "yeni", cariId: null }, select: { id: true } }),
         tx.fatura.findMany({ where: { id: { in: idler("taslak_kosul") }, durum: "taslak" }, select: { id: true } }),
+        // Fişin ödeme sorusu (CNL-22) masraf taslakken geçerlidir; panelden onaylanıp ödendiyse kapanır.
+        tx.masraf.findMany({ where: { id: { in: idler("masraf_odeme") }, durum: "taslak" }, select: { id: true } }),
       ]);
       // Fiş kategorisi sorusu (CNL-16) kullanıcı yanıtlayana dek açık kalır; kaynağı sohbet ekidir.
-      const gecerli = new Set([...satirlar, ...epostalar, ...faturalar].map((x) => x.id).concat(acik.filter((s) => s.tur === "masraf_kategori").map((s) => s.kaynakId)));
+      const gecerli = new Set([...satirlar, ...epostalar, ...faturalar, ...masraflar].map((x) => x.id).concat(acik.filter((s) => s.tur === "masraf_kategori").map((s) => s.kaynakId)));
       const kapanacak = acik.filter((s) => !gecerli.has(s.kaynakId)).map((s) => s.id);
       if (kapanacak.length) await tx.asistanSorusu.updateMany({ where: { id: { in: kapanacak }, durum: "acik" }, data: { durum: "gecersiz", sonuc: "Kayıt başka yoldan işlendi; soru kapandı." } });
     });
@@ -230,7 +232,8 @@ export class AsistanSoruService {
     }));
     if (alindi.count !== 1) throw new BadRequestException("Bu soru zaten yanıtlandı.");
     try {
-      const sonuc = soru.tur === "masraf_kategori" ? { sonuc: await this.masrafBelge.kategoriSecildi(soru, yanit.kod, metin) }
+      const sonuc: YanitSonucu = soru.tur === "masraf_kategori" ? await this.masrafBelge.kategoriSecildi(soru, yanit.kod, metin).then((r) => ({ sonuc: r.sonuc, ...(r.talepId ? { talepId: r.talepId } : {}), ...(r.soru ? { sonrakiSoru: r.soru } : {}) }))
+        : soru.tur === "masraf_odeme" ? await this.masrafBelge.odemeSecildi(soru, yanit.kod)
         : soru.tur === "banka_satiri" ? await this.bankaYaniti(soru, yanit.kod, metin)
         : soru.tur === "eposta_gonderen" ? await this.epostaYaniti(soru, yanit.kod, metin)
           : await this.taslakYaniti(soru, yanit.kod!);
