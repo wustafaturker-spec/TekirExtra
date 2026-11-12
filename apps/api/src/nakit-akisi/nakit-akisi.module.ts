@@ -7,5 +7,5 @@ import { NakitPozisyonuService } from "./nakit-pozisyonu.service";
 import { NakitUyariService } from "./nakit-uyari.service";
 
 // CNL-06: bugün/yarın eksiye düşen nakit bildirim taramasına eklenir.
-@Module({ imports: [DovizModule, BildirimlerModule], controllers: [NakitAkisiController], providers: [NakitAkisiService, NakitPozisyonuService, NakitUyariService] })
+@Module({ imports: [DovizModule, BildirimlerModule], controllers: [NakitAkisiController], providers: [NakitAkisiService, NakitPozisyonuService, NakitUyariService], exports: [NakitAkisiService] })
 export class NakitAkisiModule {}

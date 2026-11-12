@@ -15,7 +15,7 @@ const TARAMA_PARTISI = 20;
 
 interface YazGirdisi {
   tur: HafizaTuru; anahtar: string; kaynak: HafizaKaynagi; durum?: HafizaDurumu;
-  cariId?: string | null; stokId?: string | null; varyantId?: string | null; metin?: string | null; etiket?: "teklif" | "teklif_degil" | null;
+  cariId?: string | null; stokId?: string | null; varyantId?: string | null; metin?: string | null; etiket?: "teklif" | "teklif_degil" | "yarar" | "yaramaz" | "getirme" | null;
   kaynakEpostaId?: string | null;
 }
 
@@ -113,6 +113,25 @@ export class HafizaService {
     const anahtar = ifadeAnahtari(g.ifade);
     if (!anahtar) return Promise.resolve(null);
     return this.yaz({ tur: "urun_eslesme", anahtar, cariId: g.cariId, stokId: g.stokId, varyantId: g.varyantId, metin: g.ifade.slice(0, 200), kaynak: g.kaynak, kaynakEpostaId: g.kaynakEpostaId });
+  }
+
+  /**
+   * CNL-11: haftalık fikre verilen işaret. "getirme" türün tamamı içindir (anahtar `<tür>:*`);
+   * "yarar"/"yaramaz" o kayda. Kullanıcı hafıza ekranından kapatırsa etkisi kalkar.
+   */
+  fikirIsaretle(g: { tur: string; varlikId: string | null; isaret: "yarar" | "yaramaz" | "getirme"; baslik: string }) {
+    const anahtar = `${g.tur}:${g.isaret === "getirme" ? "*" : g.varlikId ?? "-"}`;
+    return this.yaz({ tur: "fikir_isareti", anahtar, metin: g.baslik.slice(0, 200), etiket: g.isaret, kaynak: "kullanici" });
+  }
+
+  /** CNL-11: etkin fikir işaretleri (seçime girer). */
+  async fikirIsaretleri(): Promise<Array<{ tur: string; varlikId: string | null; isaret: string; at: Date }>> {
+    const { tenantId } = aktifBaglam();
+    const l = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHafiza.findMany({ where: { tenantId, tur: "fikir_isareti", durum: "aktif" }, select: { anahtar: true, etiket: true, updatedAt: true }, take: 500 }));
+    return l.map((k) => {
+      const [tur, varlik] = k.anahtar.split(":");
+      return { tur, varlikId: varlik === "*" || varlik === "-" ? null : varlik, isaret: k.etiket ?? "", at: k.updatedAt };
+    });
   }
 
   /** AI-62: kullanıcının seçtiği cari, gönderen adresi için hatırlanır. */

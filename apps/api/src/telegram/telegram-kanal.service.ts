@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { ConflictException, HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
@@ -6,6 +6,8 @@ import { AiAjanService, type AjanYaniti } from "../ai/ajan/ai-ajan.service";
 import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
 import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-soru.kurallari";
 import { AsistanSoruService, type SoruYaniti } from "../asistan-soru/asistan-soru.service";
+import { fikirDugmesi, fikirDugmesiCoz } from "../asistan-soru/fikir.kurallari";
+import { FikirService } from "../asistan-soru/fikir.service";
 import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
@@ -73,6 +75,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     private readonly ajan: AiAjanService,
     private readonly telegram: TelegramService,
     @Optional() private readonly sorular?: AsistanSoruService,
+    @Optional() private readonly fikirler?: FikirService,
   ) {}
 
   onModuleInit(): void {
@@ -346,6 +349,18 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const { baglam, karar } = hazir;
     if (!(await this.gelenIz(baglam, g.update_id, "soru_yanit"))) return;
     olay("soru_yanit");
+    const f = fikirDugmesiCoz(d.data ?? "");
+    if (f && this.fikirler && karar.neden !== "rol_kapali") {
+      let metin: string;
+      try {
+        metin = (await baglamlaCalistir(baglam, () => this.fikirler!.isaretle(f.fikirId, f.isaret))).sonuc;
+      } catch (hata) {
+        metin = this.kullaniciHatasi(hata, "İşaret kaydedilemedi; biraz sonra yeniden deneyin.");
+      }
+      await this.istemci!.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
+      await this.istemci!.dugmeYanitla(d.id, metin);
+      return;
+    }
     const v = dugmeCoz(d.data ?? "");
     if (!v || !this.sorular || karar.neden === "rol_kapali") { await this.istemci!.dugmeYanitla(d.id, "Bu düğme artık geçerli değil."); return; }
     if (v.kod === PANEL_SECENEGI.kod) {
@@ -369,11 +384,25 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       await baglamlaCalistir(baglam, () => this.klavyeKaldirildi(tenantId, soruId, userId));
       if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, "Yanıtınız alındı.");
     } catch (hata) {
-      const neden = hata instanceof Error ? hata.message : "Yanıt işlenemedi.";
+      const neden = this.kullaniciHatasi(hata, "Yanıt işlenemedi; biraz sonra yeniden deneyin ya da panelden yanıtlayın.");
       if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, neden);
       metin = `Yanıtınızı işleyemedim: ${neden}`;
     }
     await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "soru_sonuc", metin));
+  }
+
+  /**
+   * Kullanıcıya yalnız bilerek yazılmış iletiler (HTTP istisnaları) gider; veritabanı ve iç hatalar
+   * sunucu yolu ya da sorgu içerebileceği için genel iletiye çevrilir ve günlüğe türüyle yazılır.
+   */
+  private kullaniciHatasi(hata: unknown, genel: string): string {
+    if (hata instanceof HttpException) {
+      const yanit = hata.getResponse();
+      const m = typeof yanit === "string" ? yanit : (yanit as { message?: unknown }).message;
+      return String(Array.isArray(m) ? m.join(" ") : m ?? genel).slice(0, 300);
+    }
+    this.logger.error(`Telegram yanıtı işlenemedi: ${hata instanceof Prisma.PrismaClientKnownRequestError ? `Prisma ${hata.code}` : hata instanceof Error ? hata.name : "bilinmeyen"}`);
+    return genel;
   }
 
   private klavyeKaldirildi(tenantId: string, soruId: string, userId: string) {
@@ -406,6 +435,31 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       const tur = hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen";
       this.hataSay(tur);
       await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "soru", "gonderilmedi", tur));
+      return "hata";
+    }
+  }
+
+  /** CNL-11: fikir üç işaret düğmesiyle gider; dayandığı rapor ya da ekran bağlantısıyla. */
+  async fikirGonder(tenantId: string, userId: string, fikir: { id: string; baslik: string; metin: string; hedefYol: string }): Promise<GonderimSonucu> {
+    const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, sohbetId: true } }),
+      ayar: await telegramAyariOku(tx, tenantId),
+    }));
+    if (!bag || bag.tenantId !== tenantId || !ayar.etkin) {
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "fikir", "gonderilmedi", "bag_gecersiz"));
+      return "bag_gecersiz";
+    }
+    const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
+    const metin = telegramSuz(`💡 ${fikir.baslik}\n\n${fikir.metin}\n\n${panel}${fikir.hedefYol}`, { tutarGoster: ayar.tutarGoster });
+    const klavye = [[{ text: "👍 İşe yarar", callback_data: fikirDugmesi(fikir.id, "yarar") }, { text: "👎 İşe yaramaz", callback_data: fikirDugmesi(fikir.id, "yaramaz") }], [{ text: "🚫 Bu konuyu bir daha getirme", callback_data: fikirDugmesi(fikir.id, "getirme") }]];
+    try {
+      await this.istemci!.klavyeliGonder(bag.sohbetId, parcala(metin)[0], klavye);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "fikir", "gonderildi"));
+      return "gonderildi";
+    } catch (hata) {
+      const tur = hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen";
+      this.hataSay(tur);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "fikir", "gonderilmedi", tur));
       return "hata";
     }
   }

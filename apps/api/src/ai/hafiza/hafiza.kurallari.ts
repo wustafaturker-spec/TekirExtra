@@ -4,11 +4,11 @@
  * kullanıcıdan/e-postadan gelir; isteme yalnız veri olarak girer.
  */
 
-export type HafizaTuru = "urun_eslesme" | "cari_eslesme" | "musteri_tercihi" | "siniflandirma" | "susturma";
+export type HafizaTuru = "urun_eslesme" | "cari_eslesme" | "musteri_tercihi" | "siniflandirma" | "susturma" | "fikir_isareti";
 export type HafizaKaynagi = "kullanici" | "otomatik" | "ai_onerisi";
 export type HafizaDurumu = "aktif" | "oneri" | "pasif";
 
-export const HAFIZA_TURLERI: HafizaTuru[] = ["urun_eslesme", "cari_eslesme", "musteri_tercihi", "siniflandirma", "susturma"];
+export const HAFIZA_TURLERI: HafizaTuru[] = ["urun_eslesme", "cari_eslesme", "musteri_tercihi", "siniflandirma", "susturma", "fikir_isareti"];
 /** Sınıflandırma istemine giden son örnek sayısı ve örnek metni sınırı. */
 export const ORNEK_SAYISI = 6;
 export const ORNEK_METNI = 300;

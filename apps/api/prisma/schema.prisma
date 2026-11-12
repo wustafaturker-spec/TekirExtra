@@ -124,6 +124,7 @@ enum DuzeltmeTuru {
 
 model Tenant {
   iletiSablonlari      IletiSablonu[]
+  asistanFikirleri       AsistanFikri[]
   asistanSorulari        AsistanSorusu[]
   asistanSoruGonderimleri AsistanSoruGonderimi[]
   telegramBaglamaKodlari TelegramBaglamaKodu[]
@@ -609,6 +610,7 @@ model AbonelikSaglayiciAyari {
 
 model User {
   duyuruAlicilari PlatformDuyuruAlicisi[]
+  isaretledigiFikirler   AsistanFikri[]
   asistanSorulari        AsistanSorusu[]        @relation("SoruHedefi")
   yanitladigiSorular     AsistanSorusu[]        @relation("SoruYanitlayan")
   asistanSoruGonderimleri AsistanSoruGonderimi[]
@@ -8633,4 +8635,35 @@ model AsistanSoruGonderimi {
   @@unique([soruId, userId])
   @@index([tenantId, userId])
   @@map("asistan_soru_gonderimleri")
+}
+
+/// CNL-11: haftalık fikir; rakamlar rapordan hesaplanır, model yalnız anlatır (model_anlatti).
+model AsistanFikri {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  /// ISO hafta: 2026-W46
+  hafta             String    @db.VarChar(8)
+  /// marj | yavas_stok | gec_odeme | erken_odeme
+  tur               String    @db.VarChar(16)
+  varlikId          String?   @map("varlik_id") @db.Uuid
+  baslik            String    @db.VarChar(200)
+  metin             String    @db.Text
+  /// Hesaplanmış olgular; anlatımdaki her sayı burada bulunmak zorundadır.
+  olgular           Json
+  raporKodu         String?   @map("rapor_kodu") @db.VarChar(60)
+  hedefYol          String    @map("hedef_yol") @db.VarChar(300)
+  etkiTl            Decimal   @map("etki_tl") @db.Decimal(15, 2)
+  modelAnlatti      Boolean   @default(false) @map("model_anlatti")
+  /// yarar | yaramaz | getirme
+  isaret            String?   @db.VarChar(10)
+  isaretleyenUserId String?   @map("isaretleyen_user_id") @db.Uuid
+  isaretAt          DateTime? @map("isaret_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  isaretleyen User?  @relation(fields: [isaretleyenUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, hafta, tur])
+  @@index([tenantId, createdAt])
+  @@map("asistan_fikirleri")
 }

@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import type { Rol } from "@tekirextra/shared";
 import { AiAjanService } from "../ai/ajan/ai-ajan.service";
 import { UcCagirici } from "../ai/ajan/uc-cagirici";
@@ -10,14 +11,18 @@ import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
 import { ACIK_SORU_SINIRI, TELEGRAM_SORU_OMRU_MS } from "../asistan-soru/asistan-soru.kurallari";
+import { FIKIR_BASLANGIC, FIKIR_BITIS } from "../asistan-soru/fikir.kurallari";
+import { FikirService } from "../asistan-soru/fikir.service";
 import { telegramAyariOku } from "./telegram-ayar";
 import {
-  bildirimMesaji, brifingMaddeleri, brifingZamaniMi, gunBasi, TELEGRAM_BILDIRIM_PENCERESI_MS, teslimatlariSec, tercihCoz, type AdayTeslimat, type TelegramTercihi,
+  bildirimMesaji, brifingMaddeleri, brifingZamaniMi, gunBasi, isGunuMu, TELEGRAM_BILDIRIM_PENCERESI_MS, teslimatlariSec, tercihCoz, type AdayTeslimat, type TelegramTercihi,
 } from "./telegram-bildirim.kurallari";
 import { TelegramKanalService } from "./telegram-kanal.service";
 import { TelegramService } from "./telegram.service";
 
 const ARALIK_MS = 60_000;
+/** Günlük/sağlık kaydına yalnız hata türü ve Prisma kodu (ör. P2002) yazılır; içerik yazılmaz (CNL-17f). */
+const hataTuru = (h: unknown) => (h instanceof Prisma.PrismaClientKnownRequestError ? `Prisma ${h.code}` : h instanceof Error ? h.name : "bilinmeyen");
 const ADAY_SINIRI = 50;
 /** Günlük sınıra sayılan kendiliğinden mesaj türleri (brifing ayrıdır). */
 const SAYILAN_TURLER = ["bildirim", "ozet", "soru"];
@@ -38,6 +43,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
     private readonly kanal: TelegramKanalService,
     private readonly ajan: AiAjanService,
     private readonly uc: UcCagirici,
+    @Optional() private readonly fikirler?: FikirService,
   ) {}
 
   onModuleInit(): void {
@@ -57,7 +63,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
         await this.firmaTara(tenantId, simdi);
       } catch (hata) {
         // Hata metni firma verisi içermez; sistem sağlığında yalnız tür görünür (CNL-17f).
-        this.logger.error(`Telegram kendiliğinden mesaj taraması bir firmada başarısız: ${hata instanceof Error ? hata.name : "bilinmeyen"}`);
+        this.logger.error(`Telegram kendiliğinden mesaj taraması bir firmada başarısız: ${hataTuru(hata)}`);
       }
     }
   }
@@ -74,7 +80,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
       try {
         await this.kullaniciTara(tenantId, bag, simdi, butceDolu);
       } catch (hata) {
-        this.logger.error(`Telegram kendiliğinden mesajı bir kullanıcıda işlenemedi: ${hata instanceof Error ? hata.name : "bilinmeyen"}`);
+        this.logger.error(`Telegram kendiliğinden mesajı bir kullanıcıda işlenemedi: ${hataTuru(hata)}`);
       }
     }
   }
@@ -91,6 +97,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
       await this.bildirimleriGonder(tenantId, userId, bag.createdAt, t, simdi, butceDolu);
       await this.sorulariGonder(tenantId, userId, karar.rol as Rol, t, simdi, butceDolu);
       await this.brifingGonder(tenantId, userId, t, simdi, butceDolu);
+      await this.fikirleriGonder(tenantId, userId, t, simdi, butceDolu);
     });
   }
 
@@ -174,6 +181,25 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
     const metin = brifingMaddeleri(brifingMetni(veri));
     const sonuc = await this.kanal.firmayaGonder(tenantId, userId, null, "brifing", metin);
     if (sonuc === "gonderildi") await this.ajan.telegramGecmiseYaz("[Sabah brifingi]", metin).catch(() => undefined);
+  }
+
+  /**
+   * CNL-11: haftanın fikirleri iş günü 10:00–12:00 arasında, haftada bir kez; sessiz saat ve "sus"
+   * dışında. Haftalık ritmi kendisidir, günlük sınıra sayılmaz; bütçe dolunca gitmez (CNL-12).
+   */
+  private async fikirleriGonder(tenantId: string, userId: string, t: TelegramTercihi, simdi: Date, butceDolu: () => Promise<boolean>): Promise<void> {
+    if (!this.fikirler) return;
+    const s = trSimdi(simdi);
+    if (!isGunuMu(s.gun, s.haftaGunu) || s.saat < FIKIR_BASLANGIC || s.saat >= FIKIR_BITIS) return;
+    if ((t.susBitis && t.susBitis > simdi) || sessizSaatte(trDakika(simdi), t.sessizBaslangic, t.sessizBitis)) return;
+    const haftaBasi = new Date(gunBasi(simdi).getTime() - (s.haftaGunu - 1) * 86_400_000);
+    if (await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.count({ where: { userId, yon: "giden", tur: "fikir", durum: "gonderildi", createdAt: { gte: haftaBasi } } }))) return;
+    const fikirler = await this.fikirler.haftaninFikirleri(simdi);
+    if (!fikirler.length || (await butceDolu())) return;
+    for (const f of fikirler) {
+      if ((await this.kanal.fikirGonder(tenantId, userId, f)) !== "gonderildi") break;
+      await this.ajan.telegramGecmiseYaz("[Haftalık fikir]", `${f.baslik}\n${f.metin}`).catch(() => undefined);
+    }
   }
 
   private async butceBildirimiBirKez(tenantId: string, userId: string, simdi: Date): Promise<void> {

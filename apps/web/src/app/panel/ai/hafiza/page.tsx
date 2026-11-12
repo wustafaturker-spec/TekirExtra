@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Badge, Button, Card, PageHeader, Select, Table } from "@/components/ui";
 
-type Tur = "urun_eslesme" | "cari_eslesme" | "musteri_tercihi" | "siniflandirma" | "susturma";
+type Tur = "urun_eslesme" | "cari_eslesme" | "musteri_tercihi" | "siniflandirma" | "susturma" | "fikir_isareti";
 type Durum = "aktif" | "oneri" | "pasif";
 interface Kayit {
   id: string; tur: Tur; anahtar: string; metin: string | null; etiket: string | null; kaynak: "kullanici" | "otomatik" | "ai_onerisi"; durum: Durum;
@@ -21,6 +21,7 @@ const TUR_ADI: Record<Tur, string> = {
   musteri_tercihi: "Müşteri tercihi",
   siniflandirma: "Sınıflandırma örneği",
   susturma: "Susturulan gönderen",
+  fikir_isareti: "Fikir işareti",
 };
 const KAYNAK_ADI = { kullanici: "Kullanıcı", otomatik: "Onaylı tekliften", ai_onerisi: "AI önerisi" } as const;
 const DURUM: Record<Durum, { ad: string; varyant: "success" | "warning" | "neutral" }> = {

@@ -7,6 +7,7 @@ import { Alert, Card, PageHeader, Segmented } from "@/components/ui";
 import { AsistanSohbet, TalepKarti, type OnayTalebi } from "@/components/asistan-sohbet";
 import { McpAnahtarlariKart } from "@/components/mcp-anahtarlari-kart";
 import { AsistanSorulariKarti } from "@/components/asistan-sorulari-kart";
+import { AsistanFikirleriKarti } from "@/components/asistan-fikirleri-kart";
 
 /**
  * AI-04/AI-05: asistan sohbeti ve kullanıcının onay talepleri. MCP'den gelen
@@ -55,6 +56,9 @@ function AsistanGorunumu() {
       </div>
       <div style={{ marginTop: "1rem" }}>
         <AsistanSorulariKarti onTalepAcildi={yukle} />
+      </div>
+      <div style={{ marginTop: "1rem" }}>
+        <AsistanFikirleriKarti />
       </div>
       <div style={{ marginTop: "1rem" }}>
         <McpAnahtarlariKart />
