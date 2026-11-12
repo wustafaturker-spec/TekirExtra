@@ -30,6 +30,10 @@ describe("OCR'dan masraf taslağı (CNL-16)", () => {
     expect(kategoriAdlaBul("temsil", k)).toBeNull();
     expect(kategoriAdlaBul("", k)).toBeNull();
     expect(kategoriAdlaBul("kırtasiye", k)).toBeNull();
+    // 2026-11-12 gerçek fiş: OCR "Akaryakıt / Ulaşım", kategori "Akaryakıt ve Ulaşım".
+    expect(kategoriAdlaBul("Akaryakıt / Ulaşım", [{ id: "x", ad: "Akaryakıt ve Ulaşım" }, { id: "y", ad: "Kırtasiye" }])).toBe("x");
+    expect(kategoriAdlaBul("Akaryakıt / Ulaşım", [{ id: "x", ad: "Akaryakıt" }, { id: "y", ad: "Ulaşım" }])).toBeNull();
+    expect(kategoriAdlaBul("Yemek / Temsil Ağırlama", [{ id: "x", ad: "Temsil ve Ağırlama Giderleri" }])).toBe("x");
   });
 
   it("kategori sorusu en çok beş kategori ve panel seçeneği sunar", () => {
