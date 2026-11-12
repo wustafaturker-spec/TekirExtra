@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Injectable, BadRequestException, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { PrismaService } from "../core/prisma.service";
 import {
@@ -196,6 +197,8 @@ ${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
         where: { id: denetimId }, data: { durum: "basarili", sureMs: Date.now() - baslangic, tamamlandiAt: new Date(), saglayici: t.saglayici.saglayiciAdi, model: t.saglayici.modelAdi ?? null },
       }));
     } catch (hata) {
+      // Şema hatasında yalnız alan yolu ve kod günlüğe yazılır (belge içeriği yazılmaz).
+      if (hata instanceof z.ZodError) this.logger.warn(`OCR şema hatası: ${hata.issues.slice(0, 5).map((i) => `${i.path.join(".")}:${i.code}`).join(", ")}`);
       if (denetimId) await this.prisma.tenantIslem(tenantId, (tx) => tx.aiOcrDenetim.update({
         where: { id: denetimId }, data: { durum: "hata", sureMs: Date.now() - baslangic, hataSinifi: hata instanceof Error ? hata.name.slice(0, 100) : "BilinmeyenHata", tamamlandiAt: new Date() },
       }));

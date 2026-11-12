@@ -1,5 +1,27 @@
 import { z } from "zod";
 
+function ondalikSayi(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const m = /\d+(?:[.,]\d+)?/.exec(v.replace(/\s/g, ""));
+  return m ? Number(m[0].replace(",", ".")) : null;
+}
+
+function odemeSekliCoz(v: unknown): "nakit" | "kart" | "bilinmiyor" | null {
+  if (typeof v !== "string") return null;
+  const k = v.toLocaleLowerCase("tr-TR");
+  if (/nakit|cash|peşin/.test(k)) return "nakit";
+  if (/kart|kredi|card|pos|banka|visa|master|troy/.test(k)) return "kart";
+  return "bilinmiyor";
+}
+
+/** "**** 1234", "1234", "5521 **** **** 1234" → "1234"; numara hiçbir zaman tam saklanmaz. */
+function kartSonDortCoz(v: unknown): string | null {
+  if (typeof v !== "string" && typeof v !== "number") return null;
+  const m = /(\d{4})\D*$/.exec(String(v).trim());
+  return m ? m[1] : null;
+}
+
 /**
  * Fiş / Fatura OCR Çıkarım Şeması
  */
@@ -36,13 +58,14 @@ export const fisFaturaOcrSonucSemasi = z.object({
     })
   ).default([]),
   guvenSkoru: z.number().min(0).max(1).default(1),
+  // Ek alanlar (CNL-21/22) yardımcıdır: model biçimi tutturamazsa belge düşmez, alan boş kalır.
   /** CNL-21: fişte yazılıysa araç plakası (akaryakıt, otopark…); okunamazsa null. */
-  plaka: z.string().max(20).optional().nullable(),
-  /** CNL-21: akaryakıt fişinde litre. */
-  litre: z.number().positive().max(100_000).optional().nullable(),
+  plaka: z.preprocess((v) => (typeof v === "string" && v.trim() ? v.trim() : null), z.string().max(20).nullable()).optional().catch(null),
+  /** CNL-21: akaryakıt fişinde litre ("41,23" gibi metin de kabul edilir). */
+  litre: z.preprocess(ondalikSayi, z.number().positive().max(100_000).nullable()).optional().catch(null),
   /** CNL-22: ödeme şekli ve kartla ödendiyse kartın son dört hanesi (tam numara okunmaz/saklanmaz). */
-  odemeSekli: z.enum(["nakit", "kart", "bilinmiyor"]).optional().nullable(),
-  kartSonDort: z.string().regex(/^\d{4}$/).optional().nullable(),
+  odemeSekli: z.preprocess(odemeSekliCoz, z.enum(["nakit", "kart", "bilinmiyor"]).nullable()).optional().catch(null),
+  kartSonDort: z.preprocess(kartSonDortCoz, z.string().regex(/^\d{4}$/).nullable()).optional().catch(null),
 });
 
 export type FisFaturaOcrSonuc = z.infer<typeof fisFaturaOcrSonucSemasi>;
