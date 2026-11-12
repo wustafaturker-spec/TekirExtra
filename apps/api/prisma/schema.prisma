@@ -124,6 +124,8 @@ enum DuzeltmeTuru {
 
 model Tenant {
   iletiSablonlari      IletiSablonu[]
+  asistanSorulari        AsistanSorusu[]
+  asistanSoruGonderimleri AsistanSoruGonderimi[]
   telegramBaglamaKodlari TelegramBaglamaKodu[]
   telegramBaglari        TelegramBagi[]
   telegramMesajlari      TelegramMesaji[]
@@ -607,6 +609,9 @@ model AbonelikSaglayiciAyari {
 
 model User {
   duyuruAlicilari PlatformDuyuruAlicisi[]
+  asistanSorulari        AsistanSorusu[]        @relation("SoruHedefi")
+  yanitladigiSorular     AsistanSorusu[]        @relation("SoruYanitlayan")
+  asistanSoruGonderimleri AsistanSoruGonderimi[]
   telegramBaglamaKodlari TelegramBaglamaKodu[]
   telegramBagi           TelegramBagi?
   telegramMesajlari      TelegramMesaji[]
@@ -8574,4 +8579,58 @@ model TelegramMesaji {
 
   @@index([tenantId, createdAt])
   @@map("telegram_mesajlari")
+}
+
+/// CNL-09/10: asistanın tahmin yürütmek yerine sorduğu soru. Hedef bir kişi (userId) ya da roller.
+model AsistanSorusu {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  /// banka_satiri | eposta_gonderen | taslak_kosul
+  tur              String    @db.VarChar(20)
+  kaynakId         String    @map("kaynak_id") @db.Uuid
+  userId           String?   @map("user_id") @db.Uuid
+  roller           Rol[]     @default([])
+  soru             String    @db.Text
+  /// [{ kod, etiket, ... }]: düğmeli seçenekler; işlem yanıtta kod üzerinden çözülür.
+  secenekler       Json
+  serbestYanit     Boolean   @default(false) @map("serbest_yanit")
+  /// Yanıtı işlemek için gereken bağlam (ör. cari, öneri, vade).
+  veri             Json      @default("{}")
+  /// acik | yanitlandi | gecersiz
+  durum            String    @default("acik") @db.VarChar(12)
+  yanit            Json?
+  yanitlayanUserId String?   @map("yanitlayan_user_id") @db.Uuid
+  yanitKanali      String?   @map("yanit_kanali") @db.VarChar(10)
+  sonuc            String?   @db.Text
+  yanitAt          DateTime? @map("yanit_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hedef       User?                  @relation("SoruHedefi", fields: [userId], references: [id], onDelete: SetNull)
+  yanitlayan  User?                  @relation("SoruYanitlayan", fields: [yanitlayanUserId], references: [id], onDelete: SetNull)
+  gonderimler AsistanSoruGonderimi[]
+
+  @@unique([tenantId, tur, kaynakId])
+  @@index([tenantId, durum])
+  @@map("asistan_sorulari")
+}
+
+/// CNL-09: Telegram'a giden soru mesajı; yanıt panelden gelse de düğmeler bu kayıtla kaldırılır.
+model AsistanSoruGonderimi {
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  soruId             String    @map("soru_id") @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  sohbetId           BigInt    @map("sohbet_id")
+  telegramMesajId    BigInt    @map("telegram_mesaj_id")
+  klavyeKaldirildiAt DateTime? @map("klavye_kaldirildi_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  soru   AsistanSorusu @relation(fields: [soruId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([soruId, userId])
+  @@index([tenantId, userId])
+  @@map("asistan_soru_gonderimleri")
 }

@@ -11,8 +11,13 @@ export interface TelegramMesaj {
   chat: { id: number; type: "private" | "group" | "supergroup" | "channel" };
   from?: TelegramKullanici;
   text?: string;
+  /** CNL-09: kullanıcı bir soru mesajını yanıtlayarak serbest yanıt verir. */
+  reply_to_message?: { message_id: number };
 }
-export interface TelegramGuncelleme { update_id: number; message?: TelegramMesaj }
+/** CNL-09: satır içi düğmeye basma. `data` en çok 64 bayt. */
+export interface TelegramDugme { id: string; from: TelegramKullanici; message?: { message_id: number; chat: TelegramMesaj["chat"] }; data?: string }
+export interface TelegramGuncelleme { update_id: number; message?: TelegramMesaj; callback_query?: TelegramDugme }
+export type Klavye = Array<Array<{ text: string; callback_data: string }>>;
 
 /** Telegram'ın yanıtı: ağ hatası, sunucu reddi ya da hız sınırı. Mesaj anahtar içermez. */
 export class TelegramHatasi extends Error {
@@ -61,7 +66,7 @@ export class TelegramIstemci {
 
   /** Uzun yoklama: `beklemeSn` boyunca yeni mesaj bekler. `offset` önceki güncellemeleri sunucuda onaylar. */
   guncellemeler(offset: number | undefined, beklemeSn = 25): Promise<TelegramGuncelleme[]> {
-    return this.cagir("getUpdates", { ...(offset !== undefined ? { offset } : {}), timeout: beklemeSn, allowed_updates: ["message"] }, (beklemeSn + 15) * 1000);
+    return this.cagir("getUpdates", { ...(offset !== undefined ? { offset } : {}), timeout: beklemeSn, allowed_updates: ["message", "callback_query"] }, (beklemeSn + 15) * 1000);
   }
 
   ben(): Promise<TelegramKullanici> {
@@ -71,6 +76,21 @@ export class TelegramIstemci {
   /** Düz metin (biçimlendirme yok: model çıktısındaki işaretler biçim enjeksiyonu yapamaz), bağlantı önizlemesi kapalı. */
   async gonder(sohbetId: bigint | number, metin: string): Promise<void> {
     await this.cagir("sendMessage", { chat_id: String(sohbetId), text: metin.slice(0, MESAJ_SINIRI), link_preview_options: { is_disabled: true } }, 15_000);
+  }
+
+  /** CNL-09: satır içi düğmeli mesaj; düğmeler sonradan kaldırılabilsin diye mesaj kimliği döner. */
+  async klavyeliGonder(sohbetId: bigint | number, metin: string, klavye: Klavye): Promise<number> {
+    const m = await this.cagir<{ message_id: number }>("sendMessage", { chat_id: String(sohbetId), text: metin.slice(0, MESAJ_SINIRI), link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: klavye } }, 15_000);
+    return m.message_id;
+  }
+
+  async klavyeKaldir(sohbetId: bigint | number, mesajId: bigint | number): Promise<void> {
+    await this.cagir("editMessageReplyMarkup", { chat_id: String(sohbetId), message_id: Number(mesajId), reply_markup: { inline_keyboard: [] } }, 10_000);
+  }
+
+  /** Düğmeye basıldığını Telegram'a bildirir (istemcideki bekleme göstergesi kapanır). */
+  async dugmeYanitla(dugmeId: string, metin?: string): Promise<void> {
+    await this.cagir("answerCallbackQuery", { callback_query_id: dugmeId, ...(metin ? { text: metin.slice(0, 190) } : {}) }, 10_000).catch(() => undefined);
   }
 
   async yaziyor(sohbetId: bigint | number): Promise<void> {

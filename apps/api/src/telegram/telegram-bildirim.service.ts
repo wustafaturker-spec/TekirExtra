@@ -9,6 +9,7 @@ import { sessizSaatte, trDakika } from "../bildirimler/bildirim-eposta.service";
 import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
+import { ACIK_SORU_SINIRI, TELEGRAM_SORU_OMRU_MS } from "../asistan-soru/asistan-soru.kurallari";
 import { telegramAyariOku } from "./telegram-ayar";
 import {
   bildirimMesaji, brifingMaddeleri, brifingZamaniMi, gunBasi, TELEGRAM_BILDIRIM_PENCERESI_MS, teslimatlariSec, tercihCoz, type AdayTeslimat, type TelegramTercihi,
@@ -19,7 +20,7 @@ import { TelegramService } from "./telegram.service";
 const ARALIK_MS = 60_000;
 const ADAY_SINIRI = 50;
 /** Günlük sınıra sayılan kendiliğinden mesaj türleri (brifing ayrıdır). */
-const SAYILAN_TURLER = ["bildirim", "ozet"];
+const SAYILAN_TURLER = ["bildirim", "ozet", "soru"];
 
 /**
  * CNL-06/07/08/12: kendiliğinden Telegram mesajları. Yalnız Telegram sürecinde ve süreçler arası
@@ -88,6 +89,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.bildirimKullaniciAyari.findUnique({ where: { userId } }));
       const t = tercihCoz(kayit);
       await this.bildirimleriGonder(tenantId, userId, bag.createdAt, t, simdi, butceDolu);
+      await this.sorulariGonder(tenantId, userId, karar.rol as Rol, t, simdi, butceDolu);
       await this.brifingGonder(tenantId, userId, t, simdi, butceDolu);
     });
   }
@@ -133,6 +135,30 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
     if (sonuc === "hata") return;
     await this.isaretle(tenantId, gidecek.map((x) => x.id), sonuc === "gonderildi" ? (tur === "ozet" ? "ozet" : "gonderildi") : "bagsiz");
     if (sonuc === "gonderildi") await this.ajan.telegramGecmiseYaz(tur === "ozet" ? "[Bildirim özeti]" : "[Bildirim]", metin).catch(() => undefined);
+  }
+
+  /**
+   * CNL-09: kişiye aynı anda en çok üç açık soru; üç günden eski soru Telegram'a gitmez (panelde kalır).
+   * Sorular kendiliğinden mesajdır: sessiz saat, "sus", günlük sınır ve bütçe freni geçerlidir.
+   */
+  private async sorulariGonder(tenantId: string, userId: string, rol: Rol, t: TelegramTercihi, simdi: Date, butceDolu: () => Promise<boolean>): Promise<void> {
+    await this.kanal.klavyeleriTemizle(tenantId, userId);
+    if ((t.susBitis && t.susBitis > simdi) || sessizSaatte(trDakika(simdi), t.sessizBaslangic, t.sessizBitis)) return;
+    const [acikGiden, adaylar, bugun] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.asistanSoruGonderimi.count({ where: { userId, klavyeKaldirildiAt: null, soru: { durum: "acik" } } }),
+      tx.asistanSorusu.findMany({
+        where: { durum: "acik", createdAt: { gt: new Date(simdi.getTime() - TELEGRAM_SORU_OMRU_MS) }, gonderimler: { none: { userId } }, OR: [{ userId }, { userId: null, roller: { has: rol } }] },
+        select: { id: true, soru: true, secenekler: true, serbestYanit: true }, orderBy: { createdAt: "asc" }, take: ACIK_SORU_SINIRI,
+      }),
+      tx.telegramMesaji.count({ where: { userId, yon: "giden", durum: "gonderildi", tur: { in: SAYILAN_TURLER }, createdAt: { gte: gunBasi(simdi) } } }),
+    ]));
+    const kalan = Math.min(ACIK_SORU_SINIRI - acikGiden, t.gunlukSinir - bugun);
+    if (kalan <= 0 || !adaylar.length || (await butceDolu())) return;
+    for (const soru of adaylar.slice(0, kalan)) {
+      const sonuc = await this.kanal.soruGonder(tenantId, userId, { ...soru, secenekler: soru.secenekler as Array<{ kod: string; etiket: string }> });
+      if (sonuc !== "gonderildi") break;
+      await this.ajan.telegramGecmiseYaz("[Asistan sorusu]", soru.soru).catch(() => undefined);
+    }
   }
 
   /** CNL-08: iş günü sabahı en çok beş maddelik brifing; günde bir kez, sessiz saat ve "sus" dışında. */

@@ -1,16 +1,18 @@
-import { ConflictException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from "@nestjs/common";
+import { ConflictException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
 import { AiAjanService, type AjanYaniti } from "../ai/ajan/ai-ajan.service";
 import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
-import { baglamlaCalistir } from "../core/istek-baglami";
+import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-soru.kurallari";
+import { AsistanSoruService, type SoruYaniti } from "../asistan-soru/asistan-soru.service";
+import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
 import { structuredLogger } from "../core/observability/structured-logger";
 import { uzayanKilitle } from "../core/redis-kilit";
 import { DUSME_METNI, telegramAyariOku, telegramBotAdi, type DusmeNedeni } from "./telegram-ayar";
-import { TelegramHatasi, TelegramIstemci, type TelegramGuncelleme, type TelegramMesaj } from "./telegram-istemci";
+import { TelegramHatasi, TelegramIstemci, type TelegramDugme, type TelegramGuncelleme, type TelegramMesaj } from "./telegram-istemci";
 import { parcala, telegramSuz } from "./telegram-suzgec";
 import { gunSonu, ritimKomutu } from "./telegram-bildirim.kurallari";
 import { kodOzeti, TelegramService } from "./telegram.service";
@@ -70,6 +72,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly ajan: AiAjanService,
     private readonly telegram: TelegramService,
+    @Optional() private readonly sorular?: AsistanSoruService,
   ) {}
 
   onModuleInit(): void {
@@ -160,7 +163,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
 
   /** Sohbet başına sıralı kuyruk; sohbetler birbirini beklemez, toplam eşzamanlılık sınırlıdır. */
   sirala(g: TelegramGuncelleme): Promise<void> {
-    const anahtar = String(g.message?.chat.id ?? `g${g.update_id}`);
+    const anahtar = String(g.message?.chat.id ?? g.callback_query?.message?.chat.id ?? `g${g.update_id}`);
     const onceki = this.kuyruklar.get(anahtar) ?? Promise.resolve();
     const sonraki = onceki.then(() => this.sinirli(() => this.isleGuvenli(g)));
     this.kuyruklar.set(anahtar, sonraki);
@@ -193,6 +196,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   }
 
   async isle(g: TelegramGuncelleme): Promise<void> {
+    if (g.callback_query) return this.dugmeIsle(g, g.callback_query);
     const m = g.message;
     // CNL-01: yalnız bire bir sohbet; grup ve kanal mesajlarına yanıt verilmez.
     if (!m || m.chat.type !== "private" || !m.from || m.from.is_bot) return;
@@ -301,27 +305,129 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async firmaMesaji(g: TelegramGuncelleme, m: TelegramMesaj, metin: string, { tenantId, userId }: Cozum): Promise<void> {
-    const telegramId = BigInt(m.from!.id);
+  /**
+   * Bağ bu an geçerli mi (CNL-02/17)? Değilse bağ düşer, kullanıcıya söylenir ve null döner.
+   * Geçerliyse kullanıcının güncel rolü, özel rolü ve paket modülleriyle bağlam döner.
+   */
+  private async baglamHazirla(tenantId: string, userId: string, telegramId: bigint, sohbetId: number) {
     const bag = await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.findFirst({ where: { tenantId, userId, telegramKullaniciId: telegramId }, select: { oturumSurumu: true } }));
-    if (!bag) { await this.dogrudanGonder(m.chat.id, YONERGE); return; }
+    if (!bag) { await this.dogrudanGonder(sohbetId, YONERGE); return null; }
     const karar = await this.telegram.bagKarari(tenantId, userId, bag);
     if (karar.neden && karar.neden !== "rol_kapali") {
       olay(`bag_dustu_${karar.neden}`);
       await this.telegram.bagDusur(tenantId, userId, karar.neden);
-      await this.dogrudanGonder(m.chat.id, `Telegram bağlantınız kaldırıldı: ${DUSME_METNI[karar.neden]}. Gerekirse panelden yeniden bağlayabilirsiniz.`);
+      await this.dogrudanGonder(sohbetId, `Telegram bağlantınız kaldırıldı: ${DUSME_METNI[karar.neden]}. Gerekirse panelden yeniden bağlayabilirsiniz.`);
+      return null;
+    }
+    const baglam: IstekBaglami = { tenantId, userId, rol: karar.rol as Rol, ...(karar.ozelRol ? { ozelRol: karar.ozelRol } : {}), paketModulleri: karar.moduller };
+    return { baglam, karar };
+  }
+
+  /** Aynı güncelleme ikinci kez gelirse false (CNL-01). */
+  private async gelenIz(baglam: IstekBaglami, guncellemeNo: number, tur: string): Promise<boolean> {
+    try {
+      await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(baglam.tenantId, (tx) => this.iz(tx, baglam.tenantId, baglam.userId, "gelen", tur, "alindi", null, guncellemeNo)));
+      return true;
+    } catch (hata) {
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") return false;
+      throw hata;
+    }
+  }
+
+  /** CNL-09: soru düğmesi. "Panelde bakacağım" yalnız Telegram'daki düğmeleri kaldırır; soru panelde açık kalır. */
+  private async dugmeIsle(g: TelegramGuncelleme, d: TelegramDugme): Promise<void> {
+    const m = d.message;
+    if (!m || m.chat.type !== "private" || d.from.is_bot) { await this.istemci!.dugmeYanitla(d.id); return; }
+    if (this.sinirda(this.hiz, String(d.from.id), DAKIKA_SINIRI, 60_000)) return;
+    const cozum = await this.coz(BigInt(d.from.id));
+    if (!cozum) { await this.istemci!.dugmeYanitla(d.id, "Bu Telegram hesabı TekirExtra'ya bağlı değil."); return; }
+    const hazir = await this.baglamHazirla(cozum.tenantId, cozum.userId, BigInt(d.from.id), m.chat.id);
+    if (!hazir) { await this.istemci!.dugmeYanitla(d.id); return; }
+    const { baglam, karar } = hazir;
+    if (!(await this.gelenIz(baglam, g.update_id, "soru_yanit"))) return;
+    olay("soru_yanit");
+    const v = dugmeCoz(d.data ?? "");
+    if (!v || !this.sorular || karar.neden === "rol_kapali") { await this.istemci!.dugmeYanitla(d.id, "Bu düğme artık geçerli değil."); return; }
+    if (v.kod === PANEL_SECENEGI.kod) {
+      await this.istemci!.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
+      await baglamlaCalistir(baglam, () => this.klavyeKaldirildi(baglam.tenantId, v.soruId, baglam.userId));
+      await this.istemci!.dugmeYanitla(d.id, "Soru panelde Asistan › Sorular kutusunda bekliyor.");
       return;
     }
-    const baglam = { tenantId, userId, rol: karar.rol as Rol, ...(karar.ozelRol ? { ozelRol: karar.ozelRol } : {}), paketModulleri: karar.moduller };
+    await this.soruYanitla(baglam, v.soruId, { kod: v.kod }, m.chat.id, m.message_id, d.id);
+  }
+
+  /** Yanıt soru servisine gider; sonuç ve (açıldıysa) onay talebinin panel bağlantısı sohbete yazılır. */
+  private async soruYanitla(baglam: IstekBaglami, soruId: string, yanit: SoruYaniti, sohbetId: number, mesajId: number, dugmeId?: string): Promise<void> {
+    const { tenantId, userId } = baglam;
+    let metin: string;
+    try {
+      const r = await baglamlaCalistir(baglam, () => this.sorular!.yanitla(soruId, yanit, "telegram"));
+      const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
+      metin = `✅ ${r.sonuc}${r.talepId ? `\n${panel}/panel/ai?talep=${r.talepId}` : ""}`;
+      await this.istemci!.klavyeKaldir(sohbetId, mesajId).catch(() => undefined);
+      await baglamlaCalistir(baglam, () => this.klavyeKaldirildi(tenantId, soruId, userId));
+      if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, "Yanıtınız alındı.");
+    } catch (hata) {
+      const neden = hata instanceof Error ? hata.message : "Yanıt işlenemedi.";
+      if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, neden);
+      metin = `Yanıtınızı işleyemedim: ${neden}`;
+    }
+    await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "soru_sonuc", metin));
+  }
+
+  private klavyeKaldirildi(tenantId: string, soruId: string, userId: string) {
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.updateMany({ where: { soruId, userId, klavyeKaldirildiAt: null }, data: { klavyeKaldirildiAt: new Date() } }));
+  }
+
+  /**
+   * CNL-09: soru düğmelerle gönderilir; alıcı ve bağ diğer gönderimler gibi yeniden doğrulanır
+   * (CNL-17d). Gönderim kaydı, yanıt panelden gelse de düğmelerin kaldırılabilmesi içindir.
+   */
+  async soruGonder(tenantId: string, userId: string, soru: { id: string; soru: string; secenekler: Array<{ kod: string; etiket: string }>; serbestYanit: boolean }): Promise<GonderimSonucu> {
+    const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, sohbetId: true } }),
+      ayar: await telegramAyariOku(tx, tenantId),
+    }));
+    if (!bag || bag.tenantId !== tenantId || !ayar.etkin) {
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "soru", "gonderilmedi", "bag_gecersiz"));
+      return "bag_gecersiz";
+    }
+    const metin = telegramSuz(`❓ ${soru.soru}${soru.serbestYanit ? "\n\nDüğmelerden seçin ya da bu mesajı yanıtlayarak yazın." : ""}`, { tutarGoster: ayar.tutarGoster });
+    const klavye = soru.secenekler.map((s) => [{ text: s.etiket.slice(0, 60), callback_data: dugmeVerisi(soru.id, s.kod) }]);
+    try {
+      const mesajId = await this.istemci!.klavyeliGonder(bag.sohbetId, parcala(metin)[0], klavye);
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await tx.asistanSoruGonderimi.create({ data: { tenantId, soruId: soru.id, userId, sohbetId: bag.sohbetId, telegramMesajId: BigInt(mesajId) } });
+        await this.iz(tx, tenantId, userId, "giden", "soru", "gonderildi");
+      });
+      return "gonderildi";
+    } catch (hata) {
+      const tur = hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen";
+      this.hataSay(tur);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "soru", "gonderilmedi", tur));
+      return "hata";
+    }
+  }
+
+  /** Yanıtlanmış ya da geçersizleşmiş sorunun Telegram'daki düğmeleri kaldırılır (yanıt panelden geldiyse). */
+  async klavyeleriTemizle(tenantId: string, userId: string): Promise<void> {
+    const eski = await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.findMany({ where: { userId, klavyeKaldirildiAt: null, soru: { durum: { not: "acik" } } }, select: { id: true, sohbetId: true, telegramMesajId: true }, take: 20 }));
+    for (const e of eski) {
+      await this.istemci!.klavyeKaldir(e.sohbetId, e.telegramMesajId).catch(() => undefined);
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.update({ where: { id: e.id }, data: { klavyeKaldirildiAt: new Date() } }));
+    }
+  }
+
+  private async firmaMesaji(g: TelegramGuncelleme, m: TelegramMesaj, metin: string, { tenantId, userId }: Cozum): Promise<void> {
+    const telegramId = BigInt(m.from!.id);
+    const hazir = await this.baglamHazirla(tenantId, userId, telegramId, m.chat.id);
+    if (!hazir) return;
+    const { baglam, karar } = hazir;
     const tur = !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
     olay(tur);
     // CNL-01: aynı güncelleme ikinci kez gelirse burada elenir.
-    try {
-      await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "gelen", tur, "alindi", null, g.update_id)));
-    } catch (hata) {
-      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") return;
-      throw hata;
-    }
+    if (!(await this.gelenIz(baglam, g.update_id, tur))) return;
     const yanitla = (yanit: string, yanitTuru: string) => baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, telegramId, yanitTuru, yanit, karar.tutarGoster));
 
     if (karar.neden === "rol_kapali") return void (await yanitla(`Yanıt veremiyorum: ${DUSME_METNI.rol_kapali}.`, "red"));
@@ -349,6 +455,12 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       }
       if (komut === "/start") return void (await yanitla(`Hesabınız bağlı. ${YARDIM}`, "bilgi"));
       return void (await yanitla(YARDIM, "bilgi"));
+    }
+
+    // CNL-09: bir soru mesajına yanıt olarak yazılan metin soruya gider, asistana değil.
+    if (m.reply_to_message && this.sorular) {
+      const gonderim = await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.findFirst({ where: { userId, sohbetId: BigInt(m.chat.id), telegramMesajId: BigInt(m.reply_to_message!.message_id) }, select: { soruId: true } })));
+      if (gonderim) return this.soruYanitla(baglam, gonderim.soruId, { metin }, m.chat.id, m.reply_to_message.message_id);
     }
 
     // Telegram "yazıyor" göstergesini ~5 sn tutar; model yanıtı uzun sürebildiği için yanıt gelene dek yenilenir.
