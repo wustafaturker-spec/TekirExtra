@@ -13,6 +13,11 @@ export interface TelegramMesaj {
   text?: string;
   /** CNL-09: kullanıcı bir soru mesajını yanıtlayarak serbest yanıt verir. */
   reply_to_message?: { message_id: number };
+  /** CNL-16: fotoğraf (boyutlara göre sıralı; sonuncu en büyük) ya da belge; açıklama `caption`. */
+  photo?: Array<{ file_id: string; file_size?: number; width: number; height: number }>;
+  document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+  caption?: string;
+  voice?: { file_id: string };
 }
 /** CNL-09: satır içi düğmeye basma. `data` en çok 64 bayt. */
 export interface TelegramDugme { id: string; from: TelegramKullanici; message?: { message_id: number; chat: TelegramMesaj["chat"] }; data?: string }
@@ -91,6 +96,26 @@ export class TelegramIstemci {
   /** Düğmeye basıldığını Telegram'a bildirir (istemcideki bekleme göstergesi kapanır). */
   async dugmeYanitla(dugmeId: string, metin?: string): Promise<void> {
     await this.cagir("answerCallbackQuery", { callback_query_id: dugmeId, ...(metin ? { text: metin.slice(0, 190) } : {}) }, 10_000).catch(() => undefined);
+  }
+
+  /**
+   * CNL-16: Telegram sunucusundaki dosyayı indirir (getFile + dosya adresi). Boyut sınırı indirmeden
+   * önce ve indirirken uygulanır; adres anahtar içerdiği için hata metinlerinden ayıklanır.
+   */
+  async dosyaIndir(dosyaId: string, azamiBayt: number): Promise<Buffer> {
+    const d = await this.cagir<{ file_path?: string; file_size?: number }>("getFile", { file_id: dosyaId }, 10_000);
+    if (!d.file_path) throw new TelegramHatasi("red", "Dosya Telegram'da bulunamadı");
+    if ((d.file_size ?? 0) > azamiBayt) throw new TelegramHatasi("red", "Dosya çok büyük");
+    let yanit: Response;
+    try {
+      yanit = await fetch(`${this.taban}/file/bot${this.anahtar}/${d.file_path}`, { signal: AbortSignal.timeout(30_000) });
+    } catch (hata) {
+      throw new TelegramHatasi("ag", `Dosya indirilemedi: ${this.temizle(hata instanceof Error ? hata.message : String(hata))}`);
+    }
+    if (!yanit.ok) throw new TelegramHatasi("ag", `Dosya indirilemedi: HTTP ${yanit.status}`);
+    const tampon = Buffer.from(await yanit.arrayBuffer());
+    if (tampon.length > azamiBayt) throw new TelegramHatasi("red", "Dosya çok büyük");
+    return tampon;
   }
 
   async yaziyor(sohbetId: bigint | number): Promise<void> {

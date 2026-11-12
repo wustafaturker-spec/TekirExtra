@@ -715,6 +715,12 @@ export class AiAjanService {
     });
   }
 
+  /** CNL-16: Telegram'dan gelen belgenin sohbet eki olarak bağlanacağı Telegram oturumu. */
+  async telegramOturumKimligi(): Promise<string> {
+    const { tenantId, userId } = aktifBaglam();
+    return (await this.oturumGetir(tenantId, userId, "TELEGRAM")).id;
+  }
+
   /** CNL-03: Telegram'da "/yeni": mevcut Telegram sohbeti arşivlenir, sonraki mesaj yeni sohbet açar. */
   async telegramSohbetiniKapat(): Promise<void> {
     const { tenantId, userId } = aktifBaglam();

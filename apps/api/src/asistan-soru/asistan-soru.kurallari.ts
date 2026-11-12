@@ -3,7 +3,7 @@
  * kayıttan belirlenimci kurulur (model kullanılmaz). Seçenek kodu yanıtta işlemi belirler.
  */
 
-export type SoruTuru = "banka_satiri" | "eposta_gonderen" | "taslak_kosul";
+export type SoruTuru = "banka_satiri" | "eposta_gonderen" | "taslak_kosul" | "masraf_kategori";
 export interface Secenek { kod: string; etiket: string }
 
 /** CNL-09: bir kişiye aynı anda en çok bu kadar açık soru gider (Telegram). */

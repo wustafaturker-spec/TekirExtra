@@ -49,7 +49,7 @@ const yurutucu = {
 
 const hafiza = new HafizaService(prisma);
 const ekstre = new EkstreEslestirmeService(prisma, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
-const sorular = new AsistanSoruService(prisma, ekstre, new ImapService(prisma, {} as never, {} as never, {} as never), hafiza, yurutucu as never);
+const sorular = new AsistanSoruService(prisma, ekstre, new ImapService(prisma, {} as never, {} as never, {} as never), hafiza, yurutucu as never, {} as never);
 const telegram = new TelegramService(prisma, new AbonelikErisimService(prisma), new KullaniciDurumService(prisma));
 const ajan = { async telegramGecmiseYaz() {} };
 const kanal = new TelegramKanalService(prisma, ajan as never, telegram, sorular);

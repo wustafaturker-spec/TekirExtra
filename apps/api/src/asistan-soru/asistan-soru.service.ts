@@ -7,6 +7,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { EkstreEslestirmeService } from "../kasa-banka/ekstre-eslestirme.service";
 import { ImapService } from "../tenant/imap.service";
+import { MasrafBelgeService } from "./masraf-belge.service";
 import {
   bankaSorusu, epostaSorusu, gunFarki, maasSatiriMi, PANEL_SECENEGI, TARAMA_SORU_SINIRI, taslakSapmasi, taslakSorusu, type Secenek, type SoruTuru, type TaslakSapmasi,
 } from "./asistan-soru.kurallari";
@@ -47,6 +48,7 @@ export class AsistanSoruService {
     private readonly imap: ImapService,
     private readonly hafiza: HafizaService,
     private readonly yurutucu: AracYurutucu,
+    private readonly masrafBelge: MasrafBelgeService,
     @Optional() uretici?: BildirimUreticiService,
   ) {
     uretici?.ekTaramaKaydet("asistan soruları", () => this.tara());
@@ -180,7 +182,8 @@ export class AsistanSoruService {
         tx.gelenEposta.findMany({ where: { id: { in: idler("eposta_gonderen") }, durum: "yeni", cariId: null }, select: { id: true } }),
         tx.fatura.findMany({ where: { id: { in: idler("taslak_kosul") }, durum: "taslak" }, select: { id: true } }),
       ]);
-      const gecerli = new Set([...satirlar, ...epostalar, ...faturalar].map((x) => x.id));
+      // Fiş kategorisi sorusu (CNL-16) kullanıcı yanıtlayana dek açık kalır; kaynağı sohbet ekidir.
+      const gecerli = new Set([...satirlar, ...epostalar, ...faturalar].map((x) => x.id).concat(acik.filter((s) => s.tur === "masraf_kategori").map((s) => s.kaynakId)));
       const kapanacak = acik.filter((s) => !gecerli.has(s.kaynakId)).map((s) => s.id);
       if (kapanacak.length) await tx.asistanSorusu.updateMany({ where: { id: { in: kapanacak }, durum: "acik" }, data: { durum: "gecersiz", sonuc: "Kayıt başka yoldan işlendi; soru kapandı." } });
     });
@@ -227,7 +230,8 @@ export class AsistanSoruService {
     }));
     if (alindi.count !== 1) throw new BadRequestException("Bu soru zaten yanıtlandı.");
     try {
-      const sonuc = soru.tur === "banka_satiri" ? await this.bankaYaniti(soru, yanit.kod, metin)
+      const sonuc = soru.tur === "masraf_kategori" ? { sonuc: await this.masrafBelge.kategoriSecildi(soru, yanit.kod, metin) }
+        : soru.tur === "banka_satiri" ? await this.bankaYaniti(soru, yanit.kod, metin)
         : soru.tur === "eposta_gonderen" ? await this.epostaYaniti(soru, yanit.kod, metin)
           : await this.taslakYaniti(soru, yanit.kod!);
       await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSorusu.update({ where: { id }, data: { sonuc: sonuc.sonuc } }));

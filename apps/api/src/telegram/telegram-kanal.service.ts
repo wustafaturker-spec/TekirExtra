@@ -1,4 +1,4 @@
-import { ConflictException, HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ConflictException, HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
@@ -8,6 +8,8 @@ import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-s
 import { AsistanSoruService, type SoruYaniti } from "../asistan-soru/asistan-soru.service";
 import { fikirDugmesi, fikirDugmesiCoz } from "../asistan-soru/fikir.kurallari";
 import { FikirService } from "../asistan-soru/fikir.service";
+import { BELGE_AZAMI_BAYT } from "../asistan-soru/masraf-belge.kurallari";
+import { MasrafBelgeService } from "../asistan-soru/masraf-belge.service";
 import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
@@ -42,7 +44,7 @@ export function guncellemeIstekKimligi(updateId: number, deneme = 1): string {
 }
 
 const YONERGE = "Merhaba! Bu bot TekirExtra asistanıdır.\n\nKullanmak için TekirExtra panelinde Ayarlar › Bildirimler › Telegram bölümünden “Telegram'ı bağla”ya basın ve açılan bağlantıyla buraya dönün.\n\nBağlantıyı açtığınız hâlde bu mesajı görüyorsanız (Telegram bu sohbet daha önce açıldıysa kodu iletmeyebilir) panelde gösterilen kodu buraya yapıştırıp gönderin.";
-const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\nsus — 24 saat kendiliğinden mesaj göndermez (bugünlük yeter: gün sonuna dek)\n/devam — kendiliğinden mesajları yeniden açar\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
+const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\nFiş ya da fatura fotoğrafı gönderirseniz masraf taslağı açarım.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\nsus — 24 saat kendiliğinden mesaj göndermez (bugünlük yeter: gün sonuna dek)\n/devam — kendiliğinden mesajları yeniden açar\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
 
 interface Cozum { tenantId: string; userId: string }
 
@@ -76,6 +78,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     private readonly telegram: TelegramService,
     @Optional() private readonly sorular?: AsistanSoruService,
     @Optional() private readonly fikirler?: FikirService,
+    @Optional() private readonly masrafBelge?: MasrafBelgeService,
   ) {}
 
   onModuleInit(): void {
@@ -337,6 +340,37 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * CNL-16: fiş/fatura fotoğrafı ya da PDF'i masraf taslağına çevrilir. En büyük fotoğraf boyutu 6 MB
+   * sınırını aşıyorsa sığan en büyüğü alınır. Kategori belirsizse asistan düğmeli soru sorar.
+   */
+  private async belgeIsle(baglam: IstekBaglami, m: TelegramMesaj): Promise<void> {
+    const { tenantId, userId } = baglam;
+    if (!this.masrafBelge) return void (await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "bilgi", "Belge işleme şu anda kullanılamıyor.")));
+    const foto = [...(m.photo ?? [])].reverse().find((p) => !p.file_size || p.file_size <= BELGE_AZAMI_BAYT);
+    const dosyaId = m.document?.file_id ?? foto?.file_id;
+    const ad = m.document?.file_name ?? `telegram-${m.message_id}`;
+    let metin: string;
+    try {
+      if (!dosyaId) throw new BadRequestException("Fotoğraf 6 MB'tan büyük; daha küçük gönderin.");
+      if (m.document?.mime_type && !/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(m.document.mime_type)) throw new BadRequestException("Yalnız JPEG, PNG, WebP fotoğraf ya da PDF gönderebilirsiniz.");
+      await baglamlaCalistir(baglam, async () => this.masrafBelge!.yetkiDenetle());
+      await this.istemci!.yaziyor(m.chat.id);
+      const buffer = await this.istemci!.dosyaIndir(dosyaId, BELGE_AZAMI_BAYT).catch((h: unknown) => {
+        throw h instanceof TelegramHatasi && h.message === "Dosya çok büyük" ? new BadRequestException("Dosya 6 MB'tan büyük; daha küçük gönderin.") : h;
+      });
+      const r = await baglamlaCalistir(baglam, () => this.masrafBelge!.belgedenMasraf({ ad, buffer }, m.caption ?? null));
+      if (r.soru) {
+        const sonuc = await baglamlaCalistir(baglam, () => this.soruGonder(tenantId, userId, r.soru!));
+        if (sonuc === "gonderildi") return;
+        metin = "Belgeyi okudum ama kategori sorusunu gönderemedim; panelde Asistan › Sorular kutusundan yanıtlayabilirsiniz.";
+      } else metin = r.sonuc;
+    } catch (hata) {
+      metin = this.kullaniciHatasi(hata, "Belgeyi işleyemedim; biraz sonra yeniden deneyin ya da panelden yükleyin.");
+    }
+    await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", metin));
+  }
+
   /** CNL-09: soru düğmesi. "Panelde bakacağım" yalnız Telegram'daki düğmeleri kaldırır; soru panelde açık kalır. */
   private async dugmeIsle(g: TelegramGuncelleme, d: TelegramDugme): Promise<void> {
     const m = d.message;
@@ -478,7 +512,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const hazir = await this.baglamHazirla(tenantId, userId, telegramId, m.chat.id);
     if (!hazir) return;
     const { baglam, karar } = hazir;
-    const tur = !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
+    const belge = m.photo?.length || m.document;
+    const tur = belge ? "belge" : !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
     olay(tur);
     // CNL-01: aynı güncelleme ikinci kez gelirse burada elenir.
     if (!(await this.gelenIz(baglam, g.update_id, tur))) return;
@@ -495,7 +530,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         "komut",
       ));
     }
-    if (tur === "desteklenmeyen") return void (await yanitla("Şimdilik yalnız yazılı mesajları anlayabiliyorum. Sorunuzu yazarak iletin.", "bilgi"));
+    if (tur === "belge") return this.belgeIsle(baglam, m);
+    if (tur === "desteklenmeyen") return void (await yanitla(m.voice ? "Sesli mesajları henüz anlayamıyorum; sorunuzu yazarak iletin." : "Bu tür mesajı anlayamıyorum. Soru yazabilir ya da fiş/fatura fotoğrafı gönderebilirsiniz.", "bilgi"));
     if (tur === "komut") {
       const komut = metin.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
       if (komut === "/ayril") {
