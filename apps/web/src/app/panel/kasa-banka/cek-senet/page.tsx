@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
@@ -68,6 +68,7 @@ interface CekSenet {
   olaylar?: { id:string; oncekiDurum:string|null; yeniDurum:string; islemTarihi:string; aciklama:string|null; createdAt:string; geriAlindi?:boolean; geriAlma?:boolean; bordro?: { id: string; no: string; tur: string } | null }[];
 }
 
+interface CekSayfasi { kayitlar: CekSenet[]; sonrakiImlec: string | null; adet: number }
 interface PortfoyOzet { acik:{adet:number;toplamTry:string;dovizler:Record<string,string>}; geciken:{adet:number;toplamTry:string}; yaklasan:{adet:number;toplamTry:string}; bankada:{adet:number;toplamTry:string}; ciro:{adet:number;toplamTry:string}; karsiliksiz:{adet:number;toplamTry:string} }
 
 type TurFiltre = "hepsi" | "cek" | "senet";
@@ -140,6 +141,15 @@ function vadeyeKalanGun(vade: string): number {
 
 export default function CekSenetSayfasi() {
   const [kayitlar, setKayitlar] = useState<CekSenet[]>([]);
+  // V-2: portföy sunucuda sayfalanır (vade sırası); "Daha fazla" sonraki sayfayı ekler.
+  const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null); const [toplamAdet, setToplamAdet] = useState(0); const [dahaYukleniyor, setDahaYukleniyor] = useState(false);
+  const sorguRef = useRef("");
+  async function dahaFazla() {
+    if (!sonrakiImlec) return;
+    setDahaYukleniyor(true);
+    try { const s = await api<CekSayfasi>(`/kasa-banka/cek-senet-sayfa?${sorguRef.current}&imlec=${sonrakiImlec}`); setKayitlar((k) => [...k, ...s.kayitlar]); setSonrakiImlec(s.sonrakiImlec); setToplamAdet(s.adet); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Çek/senet listesi yüklenemedi"); } finally { setDahaYukleniyor(false); }
+  }
   const [sadeceAcik, setSadeceAcik] = useState(false);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [kasalar, setKasalar] = useState<Hesap[]>([]);
@@ -169,8 +179,9 @@ export default function CekSenetSayfasi() {
       if (arama.trim()) qs.set("arama", arama.trim());
       if (vadeBaslangic) qs.set("baslangic", vadeBaslangic);
       if (vadeBitis) qs.set("bitis", vadeBitis);
-      const [liste, yeniOzet] = await Promise.all([api<CekSenet[]>(`/kasa-banka/cek-senet?${qs}`), api<PortfoyOzet>(`/kasa-banka/cek-senet-ozet?yon=${yon}`)]);
-      setKayitlar(liste); setOzet(yeniOzet);
+      qs.set("adet", "100");
+      const [liste, yeniOzet] = await Promise.all([api<CekSayfasi>(`/kasa-banka/cek-senet-sayfa?${qs}`), api<PortfoyOzet>(`/kasa-banka/cek-senet-ozet?yon=${yon}`)]);
+      setKayitlar(liste.kayitlar); setSonrakiImlec(liste.sonrakiImlec); setToplamAdet(liste.adet); sorguRef.current = qs.toString(); setOzet(yeniOzet);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Çek/senet listesi yüklenemedi");
     }
@@ -281,7 +292,7 @@ export default function CekSenetSayfasi() {
         />
       )}
 
-      <Card className="cheque-filter"><div className="cheque-filter__head"><div><span>OPERASYON FİLTRELERİ</span><strong>Portföy görünümünü daraltın</strong></div><small>{kayitlar.length} kayıt gösteriliyor</small></div><div className="cheque-filter__grid">
+      <Card className="cheque-filter"><div className="cheque-filter__head"><div><span>OPERASYON FİLTRELERİ</span><strong>Portföy görünümünü daraltın</strong></div><small>{kayitlar.length < toplamAdet ? `${kayitlar.length} / ${toplamAdet} kayıt gösteriliyor` : `${toplamAdet} kayıt`}</small></div><div className="cheque-filter__grid">
         <Input aria-label="Çek senet ara" value={arama} onChange={(e)=>setArama(e.target.value)} placeholder="Portföy, çek no, cari, keşideci veya banka ara…" style={{minWidth:280}}/>
         <Segmented<TurFiltre>
           value={tur}
@@ -405,6 +416,7 @@ export default function CekSenetSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiImlec && <div style={{ display: "flex", justifyContent: "center", padding: "0.75rem" }}><Button disabled={dahaYukleniyor} onClick={() => void dahaFazla()}>{dahaYukleniyor ? "Yükleniyor…" : `Daha fazla göster (${kayitlar.length} / ${toplamAdet})`}</Button></div>}
       </Card>
 
       {detay && (() => {

@@ -12,6 +12,12 @@ const vergiSatiri = (ek: Record<string, unknown>) => ({ yukumluluk: "kdv1", ad: 
 // Vade sayısı raporla aynı fonksiyondan gelir (vadesiGecenleriHesapla); testler onu rapor.vadesiGecenler üzerinden ayarlar.
 const vadeHesap = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock("../rapor/rapor.service", () => ({ RaporService: class {}, vadesiGecenleriHesapla: (...a: unknown[]) => vadeHesap.fn(...a) }));
+// V-2: mutabakat gün özetlerini SQL'de çıkarır; testte aynı hesap sahte tablolardaki satırlarla (bellekte) yapılır.
+vi.mock("../kasa-banka/ekstre-mutabakat", async (orijinal) => {
+  const m = await orijinal<typeof import("../kasa-banka/ekstre-mutabakat")>();
+  type Tx = { bankaEkstreSatir: { findMany: () => Promise<never[]> }; kasaBankaHareket: { findMany: () => Promise<never[]> } };
+  return { ...m, mutabakatOku: async (tx: Tx) => ({ ...m.mutabakatHesapla(await tx.bankaEkstreSatir.findMany(), await tx.kasaBankaHareket.findMany()), bakiyeSutunuVar: true }) };
+});
 
 interface TxSecenekleri {
   /** EBLG-133: e-Belge bağlantılarının (düz JSON) ayarları. */

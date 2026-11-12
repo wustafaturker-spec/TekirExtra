@@ -7,6 +7,7 @@ import { api, tokenAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { bugunTR } from "@tekirextra/shared";
 
+interface EmirSayfasi { kayitlar: Emir[]; sonrakiImlec: string | null; adet: number }
 interface Uretilebilir {
   id: string;
   ciktiMiktari: string;
@@ -100,6 +101,17 @@ export default function UretimSayfasi() {
   const { depolar, varsayilan } = useDepolar();
   const [urunler, setUrunler] = useState<Uretilebilir[]>([]);
   const [emirler, setEmirler] = useState<Emir[]>([]);
+  // V-2: emir listesi sunucuda sayfalanır; "Daha fazla" sonraki sayfayı ekler.
+  const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null); const [emirAdedi, setEmirAdedi] = useState(0); const [dahaYukleniyor, setDahaYukleniyor] = useState(false);
+  async function dahaFazla() {
+    if (!sonrakiImlec) return;
+    setDahaYukleniyor(true);
+    try {
+      const q = new URLSearchParams(emirSorgusu().slice(1)); q.set("imlec", sonrakiImlec);
+      const s = await api<EmirSayfasi>(`/uretim/emirler?${q}`);
+      setEmirler((e) => [...e, ...s.kayitlar]); setSonrakiImlec(s.sonrakiImlec); setEmirAdedi(s.adet);
+    } catch (h) { setHata(h instanceof Error ? h.message : "Üretim emirleri yüklenemedi"); } finally { setDahaYukleniyor(false); }
+  }
   const [ozet, setOzet] = useState<UretimOzeti | null>(null);
   const [satisIhtiyaclari, setSatisIhtiyaclari] = useState<SatisIhtiyaci[]>([]);
   const [donemKilitleri, setDonemKilitleri] = useState<DonemKilidi[]>([]);
@@ -138,13 +150,13 @@ export default function UretimSayfasi() {
   async function yukle() {
     const [u, e, o, s, k] = await Promise.all([
       api<Uretilebilir[]>("/uretim/urunler"),
-      api<Emir[]>(`/uretim/emirler${emirSorgusu()}`),
+      api<EmirSayfasi>(`/uretim/emirler${emirSorgusu()}`),
       api<UretimOzeti>("/uretim/ozet"),
       api<SatisIhtiyaci[]>("/uretim/satis-siparisleri"),
       api<DonemKilidi[]>("/uretim/donem-kilitleri"),
     ]);
     setUrunler(u);
-    setEmirler(e);
+    setEmirler(e.kayitlar); setSonrakiImlec(e.sonrakiImlec); setEmirAdedi(e.adet);
     setOzet(o);
     setSatisIhtiyaclari(s);
     setDonemKilitleri(k);
@@ -652,6 +664,11 @@ export default function UretimSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiImlec && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "0.75rem" }}>
+            <Button disabled={dahaYukleniyor} onClick={() => void dahaFazla()}>{dahaYukleniyor ? "Yükleniyor…" : `Daha fazla göster (${emirler.length} / ${emirAdedi})`}</Button>
+          </div>
+        )}
       </Card>
     </div>
   );

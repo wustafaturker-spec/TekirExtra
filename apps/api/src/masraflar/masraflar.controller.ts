@@ -25,6 +25,7 @@ export class MasraflarController {
     if (typeof (g as { aktif?: unknown })?.aktif !== "boolean") throw new BadRequestException("aktif alanı boolean olmalıdır");
     return this.service.kiraSozlesmeAktiflik(id, (g as { aktif: boolean }).aktif);
   }
+  @Get("sayfa") @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") sayfa(@Query() q: Record<string, string>) { return this.service.sayfa(q); }
   @Get() @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") listele(@Query() q: Record<string, string>) { return this.service.listele(q); }
   @Get(":id") @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") getir(@Param("id") id: string) { return this.service.getir(id); }
   @Post() @Roller("muhasebe") olustur(@Body() g: unknown) { return this.service.olustur(ayristir(masrafOlusturSemasi, g)); }

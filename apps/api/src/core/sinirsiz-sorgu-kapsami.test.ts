@@ -20,14 +20,14 @@ const TAVAN: Record<string, number> = {
   "duzeltmeler/duzeltmeler.service.ts": 3,
   "ebelge/ebelge.service.ts": 3, "ebelge/eirsaliye.service.ts": 3,
   "fatura/denklestirme.ts": 4, "fatura/kur-farki-karsilik.ts": 1, "fatura/fatura.raporlar.ts": 4, "fatura/fatura.service.ts": 4, "fatura/kdv-beyan.ts": 1, "fatura/mahsup.ts": 1, "fatura/teslim-yeri.ts": 1, "fatura/vergi.raporlar.ts": 1,
-  "kasa-banka/cek-bordro.service.ts": 1, "kasa-banka/ekstre.service.ts": 2, "kasa-banka/kasa-banka.raporlar.ts": 3, "kasa-banka/kasa-banka.service.ts": 4,
+  "kasa-banka/cek-bordro.service.ts": 1, "kasa-banka/kasa-banka.raporlar.ts": 3, "kasa-banka/kasa-banka.service.ts": 3,
   "mali-musavir/mali-musavir.service.ts": 2, "mali-musavir/muhasebe/fis-okuyucu.ts": 8,
   "nakit-akisi/nakit-akisi.service.ts": 5,
   "pazaryeri/pazaryeri.service.ts": 4, "personel/bordro-pusula.service.ts": 1, "personel/personel-rapor.service.ts": 2, "personel/personel.service.ts": 3, "personel/self-servis.service.ts": 1,
   "pesin-vergi/pesin-vergi-kaynaklari.ts": 1, "projeler/projeler.service.ts": 2,
   "rapor/rapor.service.ts": 3, "rapor/tahakkuk.ts": 3,
   "stok/stok-maliyet.service.ts": 1, "stok/stok.raporlar.ts": 2, "stok/urun-hareket.raporlar.ts": 1,
-  "uretim/uretim.service.ts": 3, "vergi-takvimi/vergi-takvimi.okuma.ts": 3,
+  "uretim/uretim.service.ts": 2, "vergi-takvimi/vergi-takvimi.okuma.ts": 3,
 };
 
 function sinirsizSorgular(kok: string): Map<string, string[]> {

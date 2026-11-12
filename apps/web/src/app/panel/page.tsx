@@ -62,7 +62,7 @@ export default function PanelSayfasi() {
         api<DovizKurlari>("/doviz-kurlari?tip=satis"),
         ...(finansalErisim ? [
           api<FinansOzet>("/rapor/ozet"), api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"),
-          api<{ ozet: { adet: number } }>("/ebelge/gelen/sayfa?durum=beklemede&adet=1"), api<CekSenet[]>("/kasa-banka/cek-senet"), api<VadesiGecenler>("/rapor/vadesi-gecenler"),
+          api<{ ozet: { adet: number } }>("/ebelge/gelen/sayfa?durum=beklemede&adet=1"), api<CekSenet[]>("/kasa-banka/cek-senet?acik=1"), api<VadesiGecenler>("/rapor/vadesi-gecenler"),
         ] : []),
       ]);
       if (sonuclar[0]?.status === "fulfilled") setFatura(sonuclar[0].value as FaturaKuyrukOzeti);

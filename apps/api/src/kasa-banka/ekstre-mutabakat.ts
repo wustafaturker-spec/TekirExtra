@@ -52,10 +52,30 @@ export function gunSonuBakiyesi(satirlar: MutabakatSatiri[]): Prisma.Decimal | n
   return bakiyeler[bakiyeler.length - 1];
 }
 
-export function mutabakatHesapla(satirlar: MutabakatSatiri[], hareketler: MutabakatHareketi[]) {
+/** Bir ekstre gününün özeti: gün sonu bakiyesi (bakiye sütunu yoksa null) ve o günün bekleyen/yoksayılan toplamı. */
+export interface MutabakatGunOzeti {
+  tarih: string;
+  banka: Prisma.Decimal | null;
+  bekleyen: Prisma.Decimal;
+  yoksayilan: Prisma.Decimal;
+}
+
+/** Satırlardan gün özetleri (bellekte); veritabanı karşılığı `gunlukEkstreOzetleri`. */
+export function gunOzetleri(satirlar: MutabakatSatiri[]): MutabakatGunOzeti[] {
   const gunler = new Map<string, MutabakatSatiri[]>();
   for (const s of satirlar) gunler.set(gun(s.tarih), [...(gunler.get(gun(s.tarih)) ?? []), s]);
-  const sirali = [...gunler.keys()].sort();
+  return [...gunler.keys()].sort().map((g) => {
+    const l = gunler.get(g)!;
+    const topla = (durum: MutabakatSatiri["durum"]) => l.filter((s) => s.durum === durum).reduce((t, s) => t.add(s.tutar), D(0));
+    return { tarih: g, banka: gunSonuBakiyesi(l), bekleyen: topla("beklemede"), yoksayilan: topla("yoksayildi") };
+  });
+}
+
+export function mutabakatHesapla(satirlar: MutabakatSatiri[], hareketler: MutabakatHareketi[]) {
+  return mutabakatGunlerden(gunOzetleri(satirlar), hareketler);
+}
+
+export function mutabakatGunlerden(gunler: MutabakatGunOzeti[], hareketler: MutabakatHareketi[]) {
   const hareketSirali = [...hareketler].sort((a, b) => a.tarih.getTime() - b.tarih.getTime());
 
   const sonuc: MutabakatGunu[] = [];
@@ -63,19 +83,16 @@ export function mutabakatHesapla(satirlar: MutabakatSatiri[], hareketler: Mutaba
   let h = 0;
   let bekleyen = D(0);
   let yoksayilan = D(0);
-  for (const g of sirali) {
-    while (h < hareketSirali.length && gun(hareketSirali[h].tarih) <= g) {
+  for (const g of gunler) {
+    while (h < hareketSirali.length && gun(hareketSirali[h].tarih) <= g.tarih) {
       const x = hareketSirali[h++];
       sistem = giris(x.tip) ? sistem.add(x.tutar) : sistem.sub(x.tutar);
     }
-    const gunSatirlari = gunler.get(g)!;
-    for (const s of gunSatirlari) {
-      if (s.durum === "beklemede") bekleyen = bekleyen.add(s.tutar);
-      if (s.durum === "yoksayildi") yoksayilan = yoksayilan.add(s.tutar);
-    }
-    const banka = gunSonuBakiyesi(gunSatirlari);
+    bekleyen = bekleyen.add(g.bekleyen);
+    yoksayilan = yoksayilan.add(g.yoksayilan);
+    const banka = g.banka;
     if (!banka) continue;
-    sonuc.push({ tarih: g, banka: banka.toFixed(2), sistem: sistem.toFixed(2), fark: banka.sub(sistem).toFixed(2), bekleyen: bekleyen.toFixed(2), yoksayilan: yoksayilan.toFixed(2) });
+    sonuc.push({ tarih: g.tarih, banka: banka.toFixed(2), sistem: sistem.toFixed(2), fark: banka.sub(sistem).toFixed(2), bekleyen: bekleyen.toFixed(2), yoksayilan: yoksayilan.toFixed(2) });
   }
 
   const son = sonuc.at(-1) ?? null;
@@ -115,3 +132,42 @@ export async function gunlukHareketNetleri(tx: Prisma.TransactionClient, tenantI
     return { tarih: s.tarih, tip: net.isNegative() ? "tediye" : "tahsilat", tutar: net.abs() };
   });
 }
+
+/**
+ * V-2: gün özetleri veritabanında çıkarılır (ekstrenin bütün satırları belleğe alınmaz). Gün sonu
+ * kuralı `gunSonuBakiyesi` ile aynıdır: satırlar (oluşturulma, kimlik) sırasıyla denenir; satırın
+ * bakiyesi − tutarı + günün toplamı günün başka bir bakiyesine eşitse gün sonu odur; yoksa son bakiye.
+ */
+export async function gunlukEkstreOzetleri(tx: Prisma.TransactionClient, tenantId: string, bankaHesapId: string): Promise<MutabakatGunOzeti[]> {
+  const satirlar = await tx.$queryRaw<Array<{ tarih: Date; banka: string | null; bekleyen: string; yoksayilan: string }>>`
+    WITH s AS (
+      SELECT tarih, tutar, bakiye, durum::text AS durum,
+             row_number() OVER (PARTITION BY tarih ORDER BY created_at, id) AS sira,
+             sum(tutar) OVER (PARTITION BY tarih) AS gun_toplami
+      FROM banka_ekstre_satirlari
+      WHERE tenant_id = ${tenantId}::uuid AND banka_hesap_id = ${bankaHesapId}::uuid
+    ), aday AS (
+      SELECT DISTINCT ON (a.tarih) a.tarih, a.bakiye - a.tutar + a.gun_toplami AS gun_sonu
+      FROM s a
+      WHERE a.bakiye IS NOT NULL AND EXISTS (SELECT 1 FROM s b WHERE b.tarih = a.tarih AND b.bakiye = a.bakiye - a.tutar + a.gun_toplami)
+      ORDER BY a.tarih, a.sira
+    ), son AS (
+      SELECT DISTINCT ON (tarih) tarih, bakiye FROM s WHERE bakiye IS NOT NULL ORDER BY tarih, sira DESC
+    ), gunler AS (
+      SELECT tarih,
+             coalesce(sum(tutar) FILTER (WHERE durum = 'beklemede'), 0) AS bekleyen,
+             coalesce(sum(tutar) FILTER (WHERE durum = 'yoksayildi'), 0) AS yoksayilan
+      FROM s GROUP BY tarih
+    )
+    SELECT g.tarih, coalesce(aday.gun_sonu, son.bakiye)::text AS banka, g.bekleyen::text AS bekleyen, g.yoksayilan::text AS yoksayilan
+    FROM gunler g LEFT JOIN aday USING (tarih) LEFT JOIN son USING (tarih)
+    ORDER BY g.tarih`;
+  return satirlar.map((r) => ({ tarih: gun(r.tarih), banka: r.banka === null ? null : D(r.banka), bekleyen: D(r.bekleyen), yoksayilan: D(r.yoksayilan) }));
+}
+
+/** Hesabın mutabakatı; ekstre ve hareket tarafı gün başına veritabanında toplanır. */
+export async function mutabakatOku(tx: Prisma.TransactionClient, tenantId: string, bankaHesapId: string) {
+  const [gunler, hareketler] = await Promise.all([gunlukEkstreOzetleri(tx, tenantId, bankaHesapId), gunlukHareketNetleri(tx, tenantId, bankaHesapId)]);
+  return { ...mutabakatGunlerden(gunler, hareketler), bakiyeSutunuVar: gunler.some((g) => g.banka !== null) };
+}
+

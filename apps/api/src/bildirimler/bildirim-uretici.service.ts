@@ -14,7 +14,7 @@ import { RaporService, vadesiGecenleriHesapla } from "../rapor/rapor.service";
 import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
 import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { CEKILEN_SAGLAYICILAR } from "../kasa-banka/banka-saglayici-kaydi";
-import { mutabakatHesapla } from "../kasa-banka/ekstre-mutabakat";
+import { mutabakatOku } from "../kasa-banka/ekstre-mutabakat";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
 import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
@@ -764,11 +764,7 @@ export class BildirimUreticiService {
     for (const hesap of hesaplar) {
       // Bir hesabın hesabı başarısız olursa diğer bildirimler (ve tarama) sürer.
       try {
-      const [satirlar, hareketler] = await this.oku(tenantId, (tx) => Promise.all([
-        tx.bankaEkstreSatir.findMany({ where: { bankaHesapId: hesap.id }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
-        tx.kasaBankaHareket.findMany({ where: { bankaHesapId: hesap.id }, select: { tarih: true, tip: true, tutar: true } }),
-      ]));
-      const m = mutabakatHesapla(satirlar, hareketler);
+      const m = await this.oku(tenantId, (tx) => mutabakatOku(tx, tenantId, hesap.id));
       if (!m.son || Number(m.aciklanmayanFark) === 0) continue;
       const tutar = (v: string) => Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       girdiler.push({

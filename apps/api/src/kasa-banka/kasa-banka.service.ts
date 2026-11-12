@@ -12,6 +12,7 @@ import { bugunTR, GIRIS_KUR_TIPI, hareketKurTipi } from "@tekirextra/shared";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
+import { sayfaAdedi } from "../core/sayfalama";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { cekVadeAnalizi, CEK_VADE_ACIK_DURUMLARI } from "./cek-vade-analizi";
 import { metinNormalize } from "@tekirextra/shared";
@@ -1202,27 +1203,25 @@ export class KasaBankaService {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cekSenet.findMany({
-        where: {
-          tur: tur || undefined,
-          durum: yalnizAcik ? { in: [...CEK_VADE_ACIK_DURUMLARI] } : durum ? (durum as CekSenetDurum) : undefined,
-          yon: yon ? (yon as CekSenetYon) : undefined,
-          vadeTarihi: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) },
-          ...(arama ? { OR: [
-            { portfoyNo: { contains: arama, mode: "insensitive" } },
-            { cekNo: { contains: arama, mode: "insensitive" } },
-            { borclu: { contains: arama, mode: "insensitive" } },
-            { banka: { contains: arama, mode: "insensitive" } },
-            { cari: { aramaNormal: { contains: metinNormalize(arama) } } },
-          ] } : {}),
-        },
+        where: cekSenetKosulu(tur, durum, yon, arama, baslangic, bitis, yalnizAcik),
         orderBy: { vadeTarihi: "asc" },
-        include: {
-          cari: { select: { id: true, kod: true, unvan: true } },
-          ciroCari: { select: { id: true, kod: true, unvan: true } },
-          bankaHesap: { select: { id: true, ad: true } },
-        },
+        include: CEK_LISTE_ILISKILERI,
       }),
     );
+  }
+
+  /** V-2: çek/senet portföy ekranı imleçli sayfa okur (vade sırası); süzgeçler listeyle aynıdır. */
+  async cekSenetSayfa(s: { tur?: "cek" | "senet"; durum?: string; yon?: string; arama?: string; baslangic?: string; bitis?: string; acik?: boolean; imlec?: string; adet?: string }) {
+    const { tenantId } = aktifBaglam();
+    const adet = sayfaAdedi(s.adet, 100);
+    const where = cekSenetKosulu(s.tur, s.durum, s.yon, s.arama, s.baslangic, s.bitis, !!s.acik);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [kayitlar, toplam] = await Promise.all([
+        tx.cekSenet.findMany({ where, take: adet + 1, ...(s.imlec ? { cursor: { id: s.imlec }, skip: 1 } : {}), orderBy: [{ vadeTarihi: "asc" }, { id: "asc" }], include: CEK_LISTE_ILISKILERI }),
+        tx.cekSenet.count({ where }),
+      ]);
+      return { kayitlar: kayitlar.slice(0, adet), sonrakiImlec: kayitlar.length > adet ? kayitlar[adet - 1].id : null, adet: toplam };
+    });
   }
 
   async cekSenetGetir(id: string) {
@@ -1252,27 +1251,36 @@ export class KasaBankaService {
     return cekVadeAnalizi(kayitlar, bugun);
   }
 
+  /** V-2: portföy özeti veritabanında toplanır (kapanmış evrak geçmişi büyüdükçe belleğe alınmaz). */
   async cekSenetOzet(yon?: string) {
     const { tenantId } = aktifBaglam();
-    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cekSenet.findMany({
-      where: { yon: yon ? (yon as CekSenetYon) : undefined },
-      select: { durum: true, vadeTarihi: true, tutarTry: true, dovizCinsi: true, tutar: true },
-    }));
-    const bugun = new Date(`${bugunTR()}T00:00:00Z`);
-    const otuzGun = new Date(bugun); otuzGun.setUTCDate(otuzGun.getUTCDate() + 30);
+    const yonKosulu = yon === "alinan" || yon === "verilen" ? Prisma.sql`AND yon::text = ${yon}` : Prisma.empty;
     const acikDurumlar = yon === "verilen" ? ["verildi"] : yon === "alinan" ? ["portfoyde", "tahsile_verildi", "teminata_verildi"] : [...CEK_VADE_ACIK_DURUMLARI];
-    const acik = kayitlar.filter((k) => acikDurumlar.includes(k.durum));
-    const toplam = (liste: typeof kayitlar) => liste.reduce((t, k) => t.add(k.tutarTry), D(0)).toFixed(2);
-    const dovizler = Object.fromEntries([...new Set(["TRY", ...acik.map((k) => k.dovizCinsi)])].map((d) => [d, acik.filter((k) => k.dovizCinsi === d).reduce((t, k) => t.add(k.tutar), D(0)).toFixed(2)]));
+    const bugun = bugunTR();
+    const otuzGun = new Date(`${bugun}T00:00:00Z`); otuzGun.setUTCDate(otuzGun.getUTCDate() + 30);
+    const otuz = otuzGun.toISOString().slice(0, 10);
+    type Satir = { grup: string; adet: bigint; toplam: Prisma.Decimal | null };
+    const [gruplar, dovizSatirlari] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.$queryRaw<Satir[]>`
+        WITH k AS (SELECT durum::text AS durum, vade_tarihi, tutar_try, durum::text = ANY(${acikDurumlar}) AS acik FROM cek_senetler WHERE tenant_id = ${tenantId}::uuid ${yonKosulu})
+        SELECT 'acik' AS grup, count(*) AS adet, sum(tutar_try) AS toplam FROM k WHERE acik
+        UNION ALL SELECT 'geciken', count(*), sum(tutar_try) FROM k WHERE acik AND vade_tarihi < ${bugun}::date
+        UNION ALL SELECT 'yaklasan', count(*), sum(tutar_try) FROM k WHERE acik AND vade_tarihi >= ${bugun}::date AND vade_tarihi <= ${otuz}::date
+        UNION ALL SELECT 'bankada', count(*), sum(tutar_try) FROM k WHERE durum IN ('tahsile_verildi', 'teminata_verildi')
+        UNION ALL SELECT 'ciro', count(*), sum(tutar_try) FROM k WHERE durum = 'ciro_edildi'
+        UNION ALL SELECT 'karsiliksiz', count(*), sum(tutar_try) FROM k WHERE durum = 'karsiliksiz'`,
+      tx.$queryRaw<Array<{ doviz: string; toplam: Prisma.Decimal | null }>>`
+        SELECT doviz_cinsi::text AS doviz, sum(tutar) AS toplam FROM cek_senetler
+        WHERE tenant_id = ${tenantId}::uuid ${yonKosulu} AND durum::text = ANY(${acikDurumlar}) GROUP BY 1`,
+    ]));
+    const g = (ad: string) => { const x = gruplar.find((r) => r.grup === ad); return { adet: Number(x?.adet ?? 0), toplamTry: D(x?.toplam ?? 0).toFixed(2) }; };
+    const dovizler = Object.fromEntries([["TRY", "0.00"], ...dovizSatirlari.map((d) => [d.doviz, D(d.toplam ?? 0).toFixed(2)])]);
     return {
-      acik: { adet: acik.length, toplamTry: toplam(acik), dovizler },
-      geciken: { adet: acik.filter((k) => k.vadeTarihi < bugun).length, toplamTry: toplam(acik.filter((k) => k.vadeTarihi < bugun)) },
-      yaklasan: { adet: acik.filter((k) => k.vadeTarihi >= bugun && k.vadeTarihi <= otuzGun).length, toplamTry: toplam(acik.filter((k) => k.vadeTarihi >= bugun && k.vadeTarihi <= otuzGun)) },
-      bankada: { adet: kayitlar.filter((k) => ["tahsile_verildi", "teminata_verildi"].includes(k.durum)).length, toplamTry: toplam(kayitlar.filter((k) => ["tahsile_verildi", "teminata_verildi"].includes(k.durum))) },
-      ciro: { adet: kayitlar.filter((k) => k.durum === "ciro_edildi").length, toplamTry: toplam(kayitlar.filter((k) => k.durum === "ciro_edildi")) },
-      karsiliksiz: { adet: kayitlar.filter((k) => k.durum === "karsiliksiz").length, toplamTry: toplam(kayitlar.filter((k) => k.durum === "karsiliksiz")) },
+      acik: { ...g("acik"), dovizler },
+      geciken: g("geciken"), yaklasan: g("yaklasan"), bankada: g("bankada"), ciro: g("ciro"), karsiliksiz: g("karsiliksiz"),
     };
   }
+
 
   async cekSenetOlustur(girdi: z.infer<typeof cekSenetOlusturSemasi>) {
     const { tenantId, userId } = aktifBaglam();
@@ -1907,3 +1915,26 @@ export class KasaBankaService {
     );
   }
 }
+
+const CEK_LISTE_ILISKILERI = {
+  cari: { select: { id: true, kod: true, unvan: true } },
+  ciroCari: { select: { id: true, kod: true, unvan: true } },
+  bankaHesap: { select: { id: true, ad: true } },
+} satisfies Prisma.CekSenetInclude;
+
+function cekSenetKosulu(tur?: "cek" | "senet", durum?: string, yon?: string, arama?: string, baslangic?: string, bitis?: string, yalnizAcik = false): Prisma.CekSenetWhereInput {
+  return {
+    tur: tur || undefined,
+    durum: yalnizAcik ? { in: [...CEK_VADE_ACIK_DURUMLARI] } : durum ? (durum as CekSenetDurum) : undefined,
+    yon: yon ? (yon as CekSenetYon) : undefined,
+    vadeTarihi: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) },
+    ...(arama ? { OR: [
+      { portfoyNo: { contains: arama, mode: "insensitive" } },
+      { cekNo: { contains: arama, mode: "insensitive" } },
+      { borclu: { contains: arama, mode: "insensitive" } },
+      { banka: { contains: arama, mode: "insensitive" } },
+      { cari: { aramaNormal: { contains: metinNormalize(arama) } } },
+    ] } : {}),
+  };
+}
+

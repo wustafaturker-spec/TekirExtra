@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor, type RaporFiltreDegerleri } from "../core/raporlar/rapor-kayit";
 import { kurBul } from "../doviz/kur-coz";
-import { mutabakatHesapla } from "./ekstre-mutabakat";
+import { gunlukHareketNetleri, mutabakatHesapla } from "./ekstre-mutabakat";
 import { girisMi } from "./hesap-ekstresi";
 
 /**
@@ -257,7 +257,7 @@ registerRapor({
     { alan: "fark", baslik: "Fark", tip: "para", dovizAlani: "dovizCinsi" },
     { alan: "durum", baslik: "Durum", tip: "metin" },
   ],
-  async calistir(girdi, { tx }) {
+  async calistir(girdi, { tx, tenantId }) {
     const f = girdi.filtreler ?? {};
     const hesaplar = (await hesaplariGetir(tx, f.hesap)).filter((h) => h.tur === "banka" && (h.aktif || f.hesap));
     const satirTarihi = tarihKosulu(f);
@@ -269,7 +269,7 @@ registerRapor({
           orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
           select: { tarih: true, tutar: true, bakiye: true, durum: true },
         }),
-        tx.kasaBankaHareket.findMany({ where: { bankaHesapId: h.id }, select: { tarih: true, tip: true, tutar: true } }),
+        gunlukHareketNetleri(tx, tenantId, h.id),
       ]);
       const say = (durum: string) => satirlar.filter((s) => s.durum === durum);
       // Sistem bakiyesi tüm hareketlerden yürür; süzgeç yalnız ekstre satırlarını daraltır.

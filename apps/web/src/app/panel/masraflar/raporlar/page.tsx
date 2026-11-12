@@ -16,8 +16,9 @@ const ayAdi = (ay: string) => new Date(`${ay}-01T00:00:00`).toLocaleDateString("
 export default function MasrafRaporlariSayfasi() {
   const [masraflar, setMasraflar] = useState<Masraf[]>([]); const [kategoriler, setKategoriler] = useState<Kategori[]>([]); const [hata, setHata] = useState("");
   const [baslangic, setBaslangic] = useState(yilBasi); const [bitis, setBitis] = useState(bugun); const [kategori, setKategori] = useState(""); const [belge, setBelge] = useState(""); const [durum, setDurum] = useState("aktif"); const [odeme, setOdeme] = useState("");
-  const yukle = useCallback(async () => { try { const [m, k] = await Promise.all([api<Masraf[]>("/masraflar"), api<Kategori[]>("/masraflar/kategoriler")]); setMasraflar(m); setKategoriler(k); } catch (e) { setHata(e instanceof Error ? e.message : "Rapor verileri yüklenemedi"); } }, []);
-  useEffect(() => { if (tokenAl()) void yukle(); }, [yukle]);
+  // V-2: rapor dönemi sunucuya gider (en çok iki yıl); dönem değişince yeniden yüklenir.
+  const yukle = useCallback(async () => { if (!baslangic || !bitis) return; try { setHata(""); const [m, k] = await Promise.all([api<Masraf[]>(`/masraflar?baslangic=${baslangic}&bitis=${bitis}`), api<Kategori[]>("/masraflar/kategoriler")]); setMasraflar(m); setKategoriler(k); } catch (e) { setHata(e instanceof Error ? e.message : "Rapor verileri yüklenemedi"); } }, [baslangic, bitis]);
+  useEffect(() => { if (!tokenAl()) return; const t = setTimeout(() => void yukle(), 300); return () => clearTimeout(t); }, [yukle]);
   const filtreli = useMemo(() => masraflar.filter((m) => m.tarih.slice(0, 10) >= baslangic && m.tarih.slice(0, 10) <= bitis && (!kategori || m.kategori.id === kategori) && (!belge || m.belgeTuru === belge) && (durum === "tumu" || (durum === "aktif" ? m.durum !== "iptal" : m.durum === durum)) && (!odeme || m.odemeDurumu === odeme)), [masraflar, baslangic, bitis, kategori, belge, durum, odeme]);
   // Masraf kendi kurunu taşıdığı için dövizli kayıt dışarıda bırakılmaz;
   // her tutar belge kuruyla TL karşılığına çevrilip toplanır.

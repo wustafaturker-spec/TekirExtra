@@ -137,6 +137,9 @@ export const uretimEmriListeSemasi = z.object({
   durum: z.enum(["taslak", "planlandi", "malzeme_bekliyor", "hazir", "uretimde", "kismen_tamamlandi", "kalite_bekliyor", "beklemede", "durduruldu", "tamamlandi", "iptal_talebi", "iptal"]).optional(),
   arama: z.string().trim().max(100).optional(),
   geciken: z.enum(["true", "false"]).optional(),
+  /** V-2: imleçli sayfa. */
+  imlec: z.string().uuid().optional(),
+  adet: z.string().regex(/^\d{1,3}$/).optional(),
 });
 
 export const uretimTamamlaSemasi = z.object({

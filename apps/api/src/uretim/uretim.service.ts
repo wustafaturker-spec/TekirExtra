@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
+import { sayfaAdedi } from "../core/sayfalama";
 import { bugunTR, metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { CalismaTakvimiService } from "../calisma-takvimi/calisma-takvimi.service";
@@ -354,7 +355,15 @@ export class UretimService {
     // ARA-01: stok tarafı aksansız `arama_normal` kolonundan aranır.
     if (sorgu.arama) where.OR = [{ no: { contains: sorgu.arama, mode: "insensitive" } }, { stok: { aramaNormal: { contains: metinNormalize(sorgu.arama) } } }];
     if (sorgu.geciken === "true") where.AND = [gecikmeKosulu(), { durum: { notIn: ["tamamlandi", "iptal"] } }];
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findMany({ where, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true, takipTipi: true } }, varyant: { select: { id: true, kod: true, ad: true } }, hedefDepo: { select: { id: true, kod: true, ad: true } }, satisSiparisSatiri: { select: { belge: { select: { id: true, no: true } } } }, _count: { select: { kalemler: true } } } }));
+    // V-2: imleçli sayfa; toplam adet süzgeçle sayılır.
+    const adet = sayfaAdedi(sorgu.adet, 100);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [kayitlar, toplam] = await Promise.all([
+        tx.uretimEmri.findMany({ where, take: adet + 1, ...(sorgu.imlec ? { cursor: { id: sorgu.imlec }, skip: 1 } : {}), orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }], include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true, takipTipi: true } }, varyant: { select: { id: true, kod: true, ad: true } }, hedefDepo: { select: { id: true, kod: true, ad: true } }, satisSiparisSatiri: { select: { belge: { select: { id: true, no: true } } } }, _count: { select: { kalemler: true } } } }),
+        tx.uretimEmri.count({ where }),
+      ]);
+      return { kayitlar: kayitlar.slice(0, adet), sonrakiImlec: kayitlar.length > adet ? kayitlar[adet - 1].id : null, adet: toplam };
+    });
   }
 
   async emirGetir(id: string) {

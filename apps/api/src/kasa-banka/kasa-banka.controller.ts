@@ -430,6 +430,14 @@ export class KasaBankaController {
     return this.service.cekSenetListele(tur, durum, yon, arama, baslangic, bitis, acik === "1");
   }
 
+  /** V-2: portföy ekranının imleçli listesi. */
+  @Get("cek-senet-sayfa")
+  async cekSenetSayfa(@Query() q: Record<string, string | undefined>) {
+    if (q.acik !== undefined && q.acik !== "1" && q.acik !== "0") throw new BadRequestException("Geçersiz açık evrak filtresi");
+    if (q.tur !== undefined && q.tur !== "cek" && q.tur !== "senet") throw new BadRequestException("Geçersiz evrak türü");
+    return this.service.cekSenetSayfa({ ...q, tur: q.tur as "cek" | "senet" | undefined, acik: q.acik === "1" });
+  }
+
   @Get("cek-senet-ozet")
   async cekSenetOzet(@Query("yon") yon?: string) {
     return this.service.cekSenetOzet(yon);

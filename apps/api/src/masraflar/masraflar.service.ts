@@ -4,6 +4,7 @@ import { BadRequestException, Injectable, NotFoundException, Optional } from "@n
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
+import { sayfaAdedi } from "../core/sayfalama";
 import { PrismaService } from "../core/prisma.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { DovizService } from "../doviz/doviz.service";
@@ -90,18 +91,61 @@ export class MasraflarService {
     });
   }
 
+  /**
+   * Rapor listesi (V-2): dönemle sınırlıdır. Dönem verilmezse yıl başından bugüne; en çok
+   * RAPOR_AZAMI_GUN gün. Ödeme ayrıntısı rapora gerekmediği için yüklenmez.
+   */
   async listele(sorgu: { baslangic?: string; bitis?: string; kategoriId?: string; durum?: string; odemeDurumu?: string }) {
     const { tenantId } = aktifBaglam();
+    const bugun = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
+    const bitis = gunMu(sorgu.bitis) ? sorgu.bitis! : bugun;
+    const baslangic = gunMu(sorgu.baslangic) ? sorgu.baslangic! : `${bitis.slice(0, 4)}-01-01`;
+    const gun = (Date.parse(bitis) - Date.parse(baslangic)) / 86_400_000;
+    if (gun < 0) throw new BadRequestException("Başlangıç tarihi bitişten sonra olamaz.");
+    if (gun > RAPOR_AZAMI_GUN) throw new BadRequestException("Masraf raporu dönemi en çok iki yıl olabilir; dönemi daraltın.");
     return this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.findMany({
       where: {
-        ...(sorgu.baslangic || sorgu.bitis ? { tarih: { ...(sorgu.baslangic ? { gte: new Date(sorgu.baslangic) } : {}), ...(sorgu.bitis ? { lte: new Date(sorgu.bitis) } : {}) } } : {}),
+        tarih: { gte: new Date(baslangic), lte: new Date(bitis) },
         ...(sorgu.kategoriId ? { kategoriId: sorgu.kategoriId } : {}),
         ...(sorgu.durum ? { durum: sorgu.durum as never } : {}),
         ...(sorgu.odemeDurumu ? { odemeDurumu: sorgu.odemeDurumu as never } : {}),
       },
-      include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, krediKarti: { select: { id: true, ad: true, sonDortHane: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } },
+      include: { kategori: true, cari: { select: { id: true, unvan: true } } },
       orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
     }));
+  }
+
+  /**
+   * Masraf defteri (V-2): imleçli sayfa; arama ve süzgeçler sunucuda. Özet kartları (toplam,
+   * ödenecek bakiye, kira, taslak) bütün geçerli masraflar üzerinden veritabanında toplanır.
+   */
+  async sayfa(sorgu: { imlec?: string; adet?: string; arama?: string; durum?: string; kategoriId?: string }) {
+    const { tenantId } = aktifBaglam();
+    const adet = sayfaAdedi(sorgu.adet);
+    const where = masrafDefteriKosulu(sorgu);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [kayitlar, filtreAdet, ozet] = await Promise.all([
+        tx.masraf.findMany({
+          where, take: adet + 1, ...(sorgu.imlec ? { cursor: { id: sorgu.imlec }, skip: 1 } : {}),
+          include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } } },
+          orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+        }),
+        tx.masraf.count({ where }),
+        tx.$queryRaw<Array<{ toplam: Prisma.Decimal | null; odenmemis: Prisma.Decimal | null; kira: Prisma.Decimal | null; taslak: bigint }>>`
+          SELECT sum(toplam * kur) AS toplam,
+                 sum(greatest(0, (toplam - coalesce(stopaj_tutari, 0) - odenen_tutar) * kur)) AS odenmemis,
+                 sum(toplam * kur) FILTER (WHERE belge_turu = 'kira') AS kira,
+                 count(*) FILTER (WHERE durum = 'taslak') AS taslak
+          FROM masraflar WHERE tenant_id = ${tenantId}::uuid AND durum <> 'iptal'`,
+      ]);
+      const o = ozet[0];
+      return {
+        kayitlar: kayitlar.slice(0, adet),
+        sonrakiImlec: kayitlar.length > adet ? kayitlar[adet - 1].id : null,
+        adet: filtreAdet,
+        ozet: { toplam: Number(o?.toplam ?? 0), odenmemis: Number(o?.odenmemis ?? 0), kira: Number(o?.kira ?? 0), taslak: Number(o?.taslak ?? 0) },
+      };
+    });
   }
 
   async getir(id: string) {
@@ -336,3 +380,24 @@ export class MasraflarService {
     });
   }
 }
+
+/** Rapor dönemi üst sınırı (iki yıl). */
+export const RAPOR_AZAMI_GUN = 731;
+const gunMu = (g: string | undefined) => !!g && /^\d{4}-\d{2}-\d{2}$/.test(g) && !Number.isNaN(Date.parse(g));
+
+/** Masraf defteri süzgeci; durum: aktif (iptal hariç), odenmedi (bakiyesi olan), taslak, onaylandi, iptal, tumu. */
+export function masrafDefteriKosulu(s: { arama?: string; durum?: string; kategoriId?: string }): Prisma.MasrafWhereInput {
+  const durum = s.durum || "aktif";
+  const kosul: Prisma.MasrafWhereInput[] = [];
+  if (durum === "aktif") kosul.push({ durum: { not: "iptal" } });
+  else if (durum === "odenmedi") kosul.push({ durum: { not: "iptal" }, odemeDurumu: { not: "odendi" } });
+  else if (["taslak", "onaylandi", "iptal"].includes(durum)) kosul.push({ durum: durum as never });
+  if (s.kategoriId && /^[0-9a-f-]{36}$/i.test(s.kategoriId)) kosul.push({ kategoriId: s.kategoriId });
+  const a = s.arama?.trim().slice(0, 100);
+  if (a) {
+    const ic = { contains: a, mode: "insensitive" as const };
+    kosul.push({ OR: [{ saticiUnvan: ic }, { belgeNo: ic }, { aciklama: ic }, { vknTckn: ic }, { cari: { unvan: ic } }, { kategori: { ad: ic } }] });
+  }
+  return kosul.length ? { AND: kosul } : {};
+}
+
