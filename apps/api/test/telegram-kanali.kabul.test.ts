@@ -256,6 +256,12 @@ describe("Telegram kanalı — aşama A (CNL-01…05, 13, 17, 18, 20)", () => {
     expect(gorunen.every((x) => x.tenantId === B.tenant)).toBe(true);
   });
 
+  it("Telegram süreci nabız tablosuna kendi türüyle yazabilir (CNL-14)", async () => {
+    const id = randomUUID();
+    await yonetim.sistemSureci.create({ data: { id, tur: "telegram", makine: "kabul", pid: 1 } });
+    await yonetim.sistemSureci.delete({ where: { id } });
+  });
+
   it("panel durumu: bot adı yoksa özellik görünmez", async () => {
     const ad = process.env.TELEGRAM_BOT_ADI;
     delete process.env.TELEGRAM_BOT_ADI;
