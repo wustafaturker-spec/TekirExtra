@@ -124,6 +124,9 @@ enum DuzeltmeTuru {
 
 model Tenant {
   iletiSablonlari      IletiSablonu[]
+  telegramBaglamaKodlari TelegramBaglamaKodu[]
+  telegramBaglari        TelegramBagi[]
+  telegramMesajlari      TelegramMesaji[]
   pesinVergiMahsuplari PesinVergiMahsup[]
   vergiTakvimiAyari    VergiTakvimiAyari?
   smsGonderimleri      SmsGonderim[]
@@ -604,6 +607,9 @@ model AbonelikSaglayiciAyari {
 
 model User {
   duyuruAlicilari PlatformDuyuruAlicisi[]
+  telegramBaglamaKodlari TelegramBaglamaKodu[]
+  telegramBagi           TelegramBagi?
+  telegramMesajlari      TelegramMesaji[]
   tahsilatSorumluluklari TahsilatTakibi[]
   verdigiDestekIzinleri    DestekIzni[]    @relation("DestekIzniVeren")
   geriAldigiDestekIzinleri DestekIzni[]    @relation("DestekIzniGeriAlan")
@@ -7217,6 +7223,8 @@ model AjanMesajGecmisi {
   geriBildirim     String?   @map("geri_bildirim") @db.VarChar(12)
   geriBildirimNotu String?   @map("geri_bildirim_notu") @db.VarChar(500)
   geriBildirimAt   DateTime? @map("geri_bildirim_at")
+  /// CNL-03/05: mesajın yazıldığı kanal; Telegram'a giden geçmiş panelde yazılanı taşımaz.
+  kanal            String    @default("WEB") @db.VarChar(12)
   createdAt        DateTime  @default(now()) @map("created_at")
 
   oturum AjanOturumu @relation(fields: [oturumId], references: [id], onDelete: Cascade)
@@ -8499,4 +8507,61 @@ model PlatformYedekAjan {
   surum          String?
 
   @@map("platform_yedek_ajan")
+}
+
+/// CNL-02/18: panelde üretilen tek kullanımlık Telegram bağlama kodu; yalnız SHA-256 özeti saklanır.
+model TelegramBaglamaKodu {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  kodOzeti      String    @unique @map("kod_ozeti") @db.Char(64)
+  sonGecerlilik DateTime  @map("son_gecerlilik")
+  kullanildiAt  DateTime? @map("kullanildi_at")
+  rizaAt        DateTime  @map("riza_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, createdAt])
+  @@map("telegram_baglama_kodlari")
+}
+
+/// CNL-02/17: kullanıcı ↔ Telegram hesabı bağı. Bir hesap bütün platformda tek bağ taşır
+/// (telegram_kullanici_id benzersiz); firmalar arası çözüm yalnız telegram_bag_coz işlevindedir.
+model TelegramBagi {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  userId              String   @unique @map("user_id") @db.Uuid
+  telegramKullaniciId BigInt   @unique @map("telegram_kullanici_id")
+  sohbetId            BigInt   @map("sohbet_id")
+  kullaniciAdi        String?  @map("kullanici_adi") @db.VarChar(64)
+  oturumSurumu        Int      @map("oturum_surumu")
+  rizaAt              DateTime @map("riza_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("telegram_baglari")
+}
+
+/// CNL-13: gelen/giden Telegram mesajlarının izi (içerik tutulmaz); guncelleme_no tekrar korumasıdır.
+model TelegramMesaji {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  yon          String   @db.VarChar(6)
+  tur          String   @db.VarChar(20)
+  durum        String   @db.VarChar(16)
+  hataTuru     String?  @map("hata_turu") @db.VarChar(40)
+  guncellemeNo BigInt?  @unique @map("guncelleme_no")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@map("telegram_mesajlari")
 }

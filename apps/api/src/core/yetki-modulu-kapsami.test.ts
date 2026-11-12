@@ -21,6 +21,7 @@ const MODULSUZ: Record<string, string> = {
   mevzuat: "yürürlükteki ortak mevzuat",
   platform: "platform ekibi, kiracı rolü değil",
   "self-servis": "çalışanın kendi kartı",
+  telegram: "kullanıcının kendi Telegram bağı; asistan yetkisi mesaj başına uygulanır, ürün ayarı yalnız yönetici (CNL-02/20)",
   tenant: "firma kaydı",
 };
 

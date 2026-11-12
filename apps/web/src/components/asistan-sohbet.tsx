@@ -44,7 +44,7 @@ interface Secim {
   adaylar: Array<{ id?: string; kod?: string; no?: string; unvan?: string; ad?: string; durum?: string; cari?: { unvan?: string } }>;
 }
 
-interface SohbetOzeti { id: string; baslik: string | null; sonEtkilesim: string; createdAt: string }
+interface SohbetOzeti { id: string; baslik: string | null; kanal?: string; sonEtkilesim: string; createdAt: string }
 
 interface AjanYaniti {
   kaynaklar?: FinansKaynagi[];
@@ -563,7 +563,8 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       <div className="asistan__sohbet-araclari">
         <select aria-label="Sohbet seç" value={aktifSohbetId ?? ""} onChange={(e) => e.target.value && void sohbetAc(e.target.value)}>
           <option value="">Yeni/boş sohbet</option>
-          {sohbetler.map((s) => <option value={s.id} key={s.id}>{s.baslik || "Adsız sohbet"}</option>)}
+          {/* CNL-03: Telegram'dan yürüyen sohbetler de burada görünür ve sürdürülebilir. */}
+          {sohbetler.map((s) => <option value={s.id} key={s.id}>{s.kanal === "TELEGRAM" ? "Telegram · " : ""}{s.baslik || "Adsız sohbet"}</option>)}
         </select>
         <Button size="sm" onClick={() => void yeniSohbet()}>Yeni sohbet</Button>
         <Button size="sm" disabled={!aktifSohbetId} onClick={() => void sohbetiArsivle()}>Arşivle</Button>

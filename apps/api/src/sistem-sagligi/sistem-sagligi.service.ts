@@ -37,7 +37,8 @@ export class SistemSagligiService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    if (process.env.TEKIR_WORKER === "1" || !process.env.DATABASE_URL_PLATFORM || process.env.NABIZ_KAPALI === "1" || process.env.NODE_ENV === "test") return;
+    // CNL-01: Telegram süreci AppModule yükler ama alarm denetimini yalnız API yapar.
+    if (process.env.TEKIR_WORKER === "1" || process.env.TEKIR_TELEGRAM === "1" || !process.env.DATABASE_URL_PLATFORM || process.env.NABIZ_KAPALI === "1" || process.env.NODE_ENV === "test") return;
     // İlk denetim süreçler nabız yazdıktan sonra.
     setTimeout(() => void this.alarmDenetle(), 60_000).unref();
     this.zamanlayici = setInterval(() => void this.alarmDenetle(), BES_DAKIKA_MS);

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Button, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
+import { TelegramKarti } from "@/components/telegram-kart";
 
 const TURLER = [
   { deger: "duzeltme", ad: "Düzeltme kayıtları", aciklama: "Kritik düzeltme ve SLA aşımı" },
@@ -158,6 +159,8 @@ export default function BildirimTercihleriSayfasi() {
           <Button onClick={() => void sessizSaatKaydet(true)} type="button">Sessiz saati kaldır</Button>
         </div>
       </Card>
+
+      <TelegramKarti />
     </div>
   );
 }

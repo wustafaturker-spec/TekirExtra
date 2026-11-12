@@ -39,7 +39,7 @@ export class NabizService implements OnModuleInit, OnModuleDestroy {
     const veri = { rssMb: mb(bellek.rss), heapMb: mb(bellek.heapUsed), heapSinirMb: mb(getHeapStatistics().heap_size_limit), sonNabizAt: new Date() };
     try {
       if (ilk) {
-        await this.prisma.sistemSureci.create({ data: { id: this.surecId, tur: process.env.TEKIR_WORKER === "1" ? "worker" : "api", makine: hostname().slice(0, 120), pid: process.pid, ...veri } });
+        await this.prisma.sistemSureci.create({ data: { id: this.surecId, tur: process.env.TEKIR_WORKER === "1" ? "worker" : process.env.TEKIR_TELEGRAM === "1" ? "telegram" : "api", makine: hostname().slice(0, 120), pid: process.pid, ...veri } });
         // 30 günden eski süreç satırları atılır.
         await this.prisma.sistemSureci.deleteMany({ where: { basladiAt: { lt: new Date(Date.now() - 30 * 86_400_000) } } });
       } else {
