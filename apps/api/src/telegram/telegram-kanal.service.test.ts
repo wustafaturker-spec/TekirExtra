@@ -16,6 +16,12 @@ describe("Telegram kanalı yardımcıları", () => {
     expect(metin).toBe("Hazırladım.\n\nPanelde onayınızı bekleyen işlem:\n• FTR001 kesinleştir\n  https://panel.ornek/panel/ai?talep=t1");
     expect(telegramYaniti({ cevap: "Tamam.", onayTalepleri: [] })).toBe("Tamam.");
   });
+
+  it("asistanın göreli panel yollarını tam adrese çevirir; tam adrese dokunmaz", () => {
+    process.env.APP_URL = "https://panel.ornek";
+    const cevap = "Panelde görüntüleyin: /panel/personel/a5b0\n(ayrıntı: /panel/cari/1) zaten tam: https://panel.ornek/panel/x";
+    expect(telegramYaniti({ cevap, onayTalepleri: [] })).toBe("Panelde görüntüleyin: https://panel.ornek/panel/personel/a5b0\n(ayrıntı: https://panel.ornek/panel/cari/1) zaten tam: https://panel.ornek/panel/x");
+  });
 });
 
 describe("Telegram kanalı giriş süzgeci", () => {

@@ -393,11 +393,13 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-/** CNL-04: onay talebi açıldıysa özeti ve panel bağlantısı eklenir; onay/ret Telegram'dan yapılmaz. */
+/** CNL-04: onay talebi açıldıysa özeti ve panel bağlantısı eklenir; onay/ret Telegram'dan yapılmaz. Panel yolları tam adres olur. */
 export function telegramYaniti(yanit: Pick<AjanYaniti, "cevap" | "onayTalepleri">): string {
   const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
+  // Asistan panel için göreli yol yazar (/panel/...); Telegram'da tıklanabilsin diye tam adrese çevrilir.
+  const cevap = yanit.cevap.replace(/(^|[\s(“"'])(\/panel\/[^\s)”"'<>]*)/g, (_e, on: string, yol: string) => `${on}${panel}${yol}`);
   const talepler = yanit.onayTalepleri.map((t) => `• ${t.ozet.replace(/\s+/g, " ").slice(0, 300)}\n  ${panel}/panel/ai?talep=${t.id}`);
-  return talepler.length ? `${yanit.cevap}\n\nPanelde onayınızı bekleyen işlem:\n${talepler.join("\n")}` : yanit.cevap;
+  return talepler.length ? `${cevap}\n\nPanelde onayınızı bekleyen işlem:\n${talepler.join("\n")}` : cevap;
 }
 
 export type { DusmeNedeni };
