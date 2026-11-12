@@ -19,7 +19,8 @@ from pathlib import Path
 KOK = Path(__file__).resolve().parent.parent
 ADAYLAR = KOK / ".release-candidates"
 PROJE = "tekir-yerel-pilot-20261019"
-SERVISLER = ["api", "worker", "soz-hatirlatma", "web", "yedekleme"]
+SERVISLER = ["api", "worker", "soz-hatirlatma", "telegram", "web", "yedekleme"]
+TELEGRAM = "telegram"
 POSTGRES, REDIS = "tekirextra-postgres-1", "tekirextra-redis-1"
 KUYRUKLAR = ["tekirextra-ebelge", "tekirextra-ileti"]
 AD_KALIBI = re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
@@ -278,11 +279,36 @@ def hazirla(ad, api=True, web=True):
         metin = metin.replace(str(calisan["runtime"]), str(paket / "runtime"))
     if web:
         metin = metin.replace(str(calisan["web"]), str(paket / "web"))
-    (paket / "ops/compose.json").write_text(metin, encoding="utf-8")
+    (paket / "ops/compose.json").write_text(telegram_servisi(metin), encoding="utf-8")
     calistir(["docker", "compose", "-f", str(paket / "ops/compose.json"), "config", "--quiet"], env=anahtarlar())
     (paket / "manifest.json").write_text(json.dumps(ozet, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     adim(f"Paket hazır: {paket}")
     return paket
+
+
+def telegram_servisi(metin):
+    """
+    CNL-01: Telegram süreci compose'da yoksa worker tanımından türetilir (aynı imaj, aynı paket).
+    Bot anahtarı (.env'deki TELEGRAM_BOT_TOKEN) yalnız bu sürece verilir; ötekilerde boşaltılır.
+    """
+    d = json.loads(metin)
+    servisler = d["services"]
+    if TELEGRAM not in servisler:
+        t = json.loads(json.dumps(servisler["worker"]))
+        ortam = {k: v for k, v in t.get("environment", {}).items() if k not in {"TEKIR_WORKER", "PLAYWRIGHT_BROWSERS_PATH", "WORKER_METRICS_PORT", "WORKER_METRICS_HOST"}}
+        ortam.update({"TEKIR_TELEGRAM": "1", "TELEGRAM_SAGLIK_PORTU": "9468", "TELEGRAM_SAGLIK_HOST": "127.0.0.1"})
+        t.update({"command": ["apps/api/dist/main.telegram.js"], "environment": ortam, "mem_limit": "768m"})
+        t["volumes"] = [v for v in t.get("volumes", []) if isinstance(v, dict) and v.get("target") == "/runtime"]
+        t["healthcheck"] = {**t.get("healthcheck", {}), "test": ["CMD", "node", "-e", "fetch('http://127.0.0.1:9468/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]}
+        servisler[TELEGRAM] = t
+    for ad, servis in servisler.items():
+        if ad != TELEGRAM and servis.get("env_file"):
+            servis.setdefault("environment", {})["TELEGRAM_BOT_TOKEN"] = ""
+    return json.dumps(d, indent=2, ensure_ascii=False) + "\n"
+
+
+def compose_servisleri(compose):
+    return set(json.loads(Path(compose).read_text(encoding="utf-8"))["services"])
 
 
 def bekleyen_gocler():
@@ -330,8 +356,12 @@ def kuyruklari_bekle(ortam, sure=90):
 
 
 def gecir(compose, ortam):
+    tanimli = compose_servisleri(compose)
     calistir(["docker", "compose", "-f", str(compose), "up", "-d", "--no-deps", "--no-build", "--pull", "never",
-              "--wait", "--wait-timeout", "180", *SERVISLER], env=ortam)
+              "--wait", "--wait-timeout", "180", *[s for s in SERVISLER if s in tanimli]], env=ortam)
+    # Telegram'dan önceki pakete dönüşte süreç yeni kodla çalışır kalmasın.
+    if TELEGRAM not in tanimli:
+        subprocess.run(["docker", "rm", "-f", konteyner(TELEGRAM)], capture_output=True)
 
 
 def saglik(paket, ozet):
@@ -345,7 +375,7 @@ def saglik(paket, ozet):
             if y.status != 200:
                 raise RuntimeError(f"{adres} {y.status}")
     time.sleep(8)
-    for servis in ["api", "worker", "soz-hatirlatma"]:
+    for servis in ["api", "worker", "soz-hatirlatma", TELEGRAM]:
         gunluk = subprocess.run(["docker", "logs", "--since", "2m", konteyner(servis)], capture_output=True, text=True)
         kotu = [s for s in (gunluk.stdout + gunluk.stderr).splitlines() if re.search(r"Nest can't resolve|does not exist in the current database|permission denied for", s)]
         if kotu:

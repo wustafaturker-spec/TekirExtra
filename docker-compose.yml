@@ -146,6 +146,27 @@ services:
         condition: service_healthy
     profiles: ["app"]
 
+  # CNL-01: Telegram kanalı ayrı süreçte; asistan yükü worker'ı etkilemez. Anahtar yalnız burada.
+  telegram:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: node apps/api/dist/main.telegram.js
+    env_file: .env.docker
+    environment:
+      TELEGRAM_SAGLIK_HOST: 0.0.0.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9468/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    profiles: ["app"]
+
   # PLT-110: yedek servisi. API'ye Docker erişimi verilmez; bu servis talepleri veritabanından alır.
   yedekleme:
     image: postgres:16-alpine
