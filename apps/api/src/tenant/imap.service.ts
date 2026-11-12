@@ -1,3 +1,4 @@
+import { ocrGirdisiOlustur } from "../ai/ai.semalar";
 import {
   BadRequestException,
   Injectable,
@@ -437,15 +438,12 @@ export class ImapService {
     if (!ek) throw new NotFoundException("Ek dosya bulunamadı");
 
     const dosyaBuffer = await this.depoService.indir(ek.minioAnahtari);
-    const base64 = dosyaBuffer.toString("base64");
+    // OCR doğrulaması data URL bekler; tür e-postanın beyanından değil dosyanın imzasından okunur
+    // (eskiden çıplak base64 gidiyor, PNG/WebP de "image/jpeg" sayılıyordu: her ek reddediliyordu).
+    const girdi = ocrGirdisiOlustur(dosyaBuffer);
+    if (!girdi) throw new BadRequestException("Bu ek OCR ile okunamaz; yalnız JPEG, PNG, WebP ve PDF desteklenir.");
 
-    const mimeTuru = ek.mimeTuru.toLowerCase().includes("pdf") ? "application/pdf" : "image/jpeg";
-
-    const ocrSonucu = await this.aiService.fisFaturaOcrTara(tenantId, {
-      gorselBase64: base64,
-      mimeType: mimeTuru,
-      belgeTipi: "fis_fatura",
-    });
+    const ocrSonucu = await this.aiService.fisFaturaOcrTara(tenantId, { ...girdi, belgeTipi: "fis_fatura" });
 
     // Çıkarılan veriyi ek kaydına sakla
     await this.prisma.tenantIslem(tenantId, (tx) =>

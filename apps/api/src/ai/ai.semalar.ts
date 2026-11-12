@@ -96,6 +96,15 @@ const MIME_IMZALARI: Record<Exclude<AiBelgeGirdi["mimeType"], undefined>, (b: Bu
   "application/pdf": (b) => b.length >= 5 && b.subarray(0, 5).toString("ascii") === "%PDF-",
 };
 
+/**
+ * Saklanan bir dosyadan (ör. e-posta eki) OCR girdisi: tür beyan edilen MIME'den değil dosyanın
+ * imzasından belirlenir. Desteklenmeyen türde null döner.
+ */
+export function ocrGirdisiOlustur(dosya: Buffer): { gorselBase64: string; mimeType: NonNullable<AiBelgeGirdi["mimeType"]> } | null {
+  const tur = (Object.keys(MIME_IMZALARI) as Array<NonNullable<AiBelgeGirdi["mimeType"]>>).find((m) => MIME_IMZALARI[m](dosya));
+  return tur ? { gorselBase64: `data:${tur};base64,${dosya.toString("base64")}`, mimeType: tur } : null;
+}
+
 /** Beyan edilen MIME yerine dosyanın imzasını denetler; sağlayıcıya yalnız doğrulanmış veri gider. */
 export interface OcrDosyaBilgisi {
   mimeType: AiBelgeGirdi["mimeType"];
