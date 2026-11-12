@@ -148,6 +148,8 @@ export async function kiraciSaglayicisi(
     derin?: boolean;
     /** Ekonomik yönlendirmeyi atlar; ekonomik özelliğin ana modelle yapılması gereken çağrısı için. */
     anaModel?: boolean;
+    /** Özellik ne olursa olsun ekonomik model (yoksa ana model); ör. OCR'da güçlü model görsel okuyamazsa. */
+    ekonomikModel?: boolean;
   },
 ): Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null; derin?: boolean }> {
   const ayar = await prisma.tenantIslem(tenantId, async (tx) => {
@@ -161,6 +163,7 @@ export async function kiraciSaglayicisi(
   const yonlendirilmisModel = !ayar ? undefined
     : secenek.derin ? ayar.gucluModelAdi?.trim() || ayar.modelAdi
     : secenek.anaModel ? ayar.modelAdi
+    : secenek.ekonomikModel ? ayar.ekonomikModelAdi?.trim() || ayar.modelAdi
     : ozellikModeli(ayar, secenek.ozellik);
   const temel = ayar
     ? AiProviderFactory.uret({ ...ayardanYapilandirma(ayar), ...(yonlendirilmisModel ? { modelAdi: yonlendirilmisModel } : {}) })

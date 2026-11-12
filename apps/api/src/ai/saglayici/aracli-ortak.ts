@@ -1,9 +1,19 @@
 import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { lookup } from "node:dns/promises";
 import { disFetch, ozelIpMi } from "../../core/guvenlik/dis-istek";
 import { SAGLAYICI_ZAMAN_ASIMI_MS } from "./ai-provider.interface";
 
 const logger = new Logger("AiSaglayici");
+
+/**
+ * Çağrıya özel, varsayılandan kısa zaman aşımı (ör. OCR'da güçlü model denemesi). Sağlayıcıların
+ * imzası değişmesin diye bağlamla taşınır; bütün sağlayıcılar `saglayiciIstegi`'nden geçer.
+ */
+const zamanAsimiBaglami = new AsyncLocalStorage<number>();
+export function zamanAsimiyla<T>(ms: number, is: () => Promise<T>): Promise<T> {
+  return zamanAsimiBaglami.run(ms, is);
+}
 
 export async function dnsAdresiniDogrula(url: string): Promise<void> {
   const anaMakine = new URL(url).hostname.replace(/^\[|\]$/g, "");
@@ -23,7 +33,7 @@ export async function saglayiciIstegi(ad: string, url: string, basliklar: Record
       method: "POST",
       headers: { "Content-Type": "application/json", ...basliklar },
       body: JSON.stringify(govde),
-      signal: AbortSignal.timeout(SAGLAYICI_ZAMAN_ASIMI_MS),
+      signal: AbortSignal.timeout(zamanAsimiBaglami.getStore() ?? SAGLAYICI_ZAMAN_ASIMI_MS),
       redirect: "manual",
     });
   } catch (hata) {
