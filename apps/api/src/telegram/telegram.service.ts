@@ -8,7 +8,8 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { KullaniciDurumService } from "../core/kullanici-durum.service";
 import { PrismaService } from "../core/prisma.service";
 import { tercihCoz } from "./telegram-bildirim.kurallari";
-import { TELEGRAM_MODULU, telegramAyariOku, telegramAyariSemasi, telegramBotAdi, type DusmeNedeni } from "./telegram-ayar";
+import { TELEGRAM_MODULU, telegramAyarGirdisiSemasi, telegramAyariOku, telegramBotAdi, type DusmeNedeni, type TelegramAyari } from "./telegram-ayar";
+import { sesKullanilabilir } from "./ses-yazi";
 
 /** CNL-02: bağlama kodu 10 dakika geçerlidir. */
 export const KOD_SURESI_MS = 10 * 60 * 1000;
@@ -102,7 +103,7 @@ export class TelegramService {
       botAdi,
       urunEkli: ayar.etkin,
       yonetici: rol === "yonetici",
-      ...(rol === "yonetici" ? { tutarGoster: ayar.tutarGoster, bagliKullanici: await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.count({ where: { tenantId } })) } : {}),
+      ...(rol === "yonetici" ? { tutarGoster: ayar.tutarGoster, sesEtkin: ayar.sesEtkin, sesOnayAt: ayar.sesOnayAt, sesKullanilabilir: sesKullanilabilir(), bagliKullanici: await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.count({ where: { tenantId } })) } : {}),
       bag: gorunenBag ? { kullaniciAdi: gorunenBag.kullaniciAdi, baglandiAt: gorunenBag.createdAt.toISOString() } : null,
       tercih: await this.tercihGetir(tenantId, userId),
     };
@@ -163,24 +164,31 @@ export class TelegramService {
   async urunAyarla(govde: unknown) {
     const { tenantId, userId, rol } = aktifBaglam();
     if (rol !== "yonetici") throw new ForbiddenException("Telegram kanalını yalnız yönetici ekleyip çıkarabilir.");
-    const girdi = telegramAyariSemasi.safeParse(govde);
+    const girdi = telegramAyarGirdisiSemasi.safeParse(govde);
     if (!girdi.success) throw new BadRequestException("Geçersiz Telegram ayarı.");
     if (!telegramBotAdi() || !(await this.planAcik(tenantId))) throw new ForbiddenException("Telegram kanalı kullanılamıyor.");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`telegram-urun:${tenantId}`}, 0))::text`;
       const onceki = await telegramAyariOku(tx, tenantId);
+      const sesEtkin = girdi.data.sesEtkin ?? onceki.sesEtkin;
+      if (sesEtkin && !onceki.sesEtkin && !sesKullanilabilir()) throw new BadRequestException("Sesli mesaj platformda henüz açık değil.");
+      const yeni: TelegramAyari = {
+        etkin: girdi.data.etkin, tutarGoster: girdi.data.tutarGoster, sesEtkin,
+        // CNL-15: onay anı yalnız kapalıdan açığa geçişte yazılır; kapatınca silinir.
+        sesOnayAt: !sesEtkin ? null : onceki.sesEtkin ? onceki.sesOnayAt : new Date().toISOString(),
+      };
       await tx.modulAyar.upsert({
         where: { tenantId_modul: { tenantId, modul: TELEGRAM_MODULU } },
-        create: { tenantId, modul: TELEGRAM_MODULU, ayarlar: girdi.data as Prisma.InputJsonValue },
-        update: { ayarlar: girdi.data as Prisma.InputJsonValue },
+        create: { tenantId, modul: TELEGRAM_MODULU, ayarlar: yeni as Prisma.InputJsonValue },
+        update: { ayarlar: yeni as Prisma.InputJsonValue },
       });
       let dusenBag = 0;
       if (!girdi.data.etkin) {
         dusenBag = (await tx.telegramBagi.deleteMany({ where: { tenantId } })).count;
         await tx.telegramBaglamaKodu.updateMany({ where: { tenantId, kullanildiAt: null, sonGecerlilik: { gt: new Date() } }, data: { sonGecerlilik: new Date() } });
       }
-      await tx.auditLog.create({ data: { tenantId, userId, islem: "telegram_urun_guncellendi", varlik: "modul_ayar", varlikId: TELEGRAM_MODULU, detay: { onceki, yeni: girdi.data, dusenBag } } });
-      return { ...girdi.data, dusenBag };
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "telegram_urun_guncellendi", varlik: "modul_ayar", varlikId: TELEGRAM_MODULU, detay: { onceki, yeni, dusenBag } } });
+      return { ...yeni, dusenBag };
     });
   }
 }

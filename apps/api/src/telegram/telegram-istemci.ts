@@ -17,7 +17,9 @@ export interface TelegramMesaj {
   photo?: Array<{ file_id: string; file_size?: number; width: number; height: number }>;
   document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
   caption?: string;
-  voice?: { file_id: string };
+  /** CNL-15: sesli mesaj (ogg/opus) ve ses dosyası; süre saniye. */
+  voice?: { file_id: string; duration?: number; mime_type?: string; file_size?: number };
+  audio?: { file_id: string; duration?: number; mime_type?: string; file_size?: number };
 }
 /** CNL-09: satır içi düğmeye basma. `data` en çok 64 bayt. */
 export interface TelegramDugme { id: string; from: TelegramKullanici; message?: { message_id: number; chat: TelegramMesaj["chat"] }; data?: string }

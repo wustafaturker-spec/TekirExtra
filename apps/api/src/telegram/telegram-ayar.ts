@@ -6,10 +6,16 @@ import { z } from "zod";
  * ürün çıkarılırken bağların aynı işlemde düşmesi gerekir ve bu yalnız TelegramService'ten yapılır.
  */
 export const TELEGRAM_MODULU = "telegram";
-export const telegramAyariSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean() }).strict();
+/**
+ * CNL-15: `sesEtkin` sesli mesajın OpenAI'ye (yurt dışı) gönderilmesine yöneticinin açık onayıdır;
+ * onay anı `sesOnayAt` olarak saklanır. Varsayılan kapalı.
+ */
+export const telegramAyariSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean(), sesEtkin: z.boolean(), sesOnayAt: z.string().nullable() }).strict();
 export type TelegramAyari = z.infer<typeof telegramAyariSemasi>;
+/** Panelden gelen ayar: ses alanı isteğe bağlıdır (gönderilmezse önceki değer kalır); onay anını sunucu yazar. */
+export const telegramAyarGirdisiSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean(), sesEtkin: z.boolean().optional() }).strict();
 /** CNL-20: varsayılan ekli değil; CNL-05: tutarlar varsayılan olarak gösterilir. */
-export const TELEGRAM_VARSAYILAN: TelegramAyari = { etkin: false, tutarGoster: true };
+export const TELEGRAM_VARSAYILAN: TelegramAyari = { etkin: false, tutarGoster: true, sesEtkin: false, sesOnayAt: null };
 
 export async function telegramAyariOku(tx: Prisma.TransactionClient, tenantId: string): Promise<TelegramAyari> {
   const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: TELEGRAM_MODULU } }, select: { ayarlar: true } });

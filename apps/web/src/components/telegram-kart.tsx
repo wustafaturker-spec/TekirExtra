@@ -11,6 +11,9 @@ type TelegramDurumu =
       urunEkli: boolean;
       yonetici: boolean;
       tutarGoster?: boolean;
+      sesEtkin?: boolean;
+      sesOnayAt?: string | null;
+      sesKullanilabilir?: boolean;
       bagliKullanici?: number;
       bag: { kullaniciAdi: string | null; baglandiAt: string } | null;
       tercih: Tercih;
@@ -81,9 +84,9 @@ export function TelegramKarti() {
       setDurum({ ...durum, tercih: kayit });
     }, basari);
 
-  const urunKaydet = (etkin: boolean, tutarGoster: boolean, basari: string) =>
+  const urunKaydet = (etkin: boolean, tutarGoster: boolean, basari: string, sesEtkin?: boolean) =>
     islem(async () => {
-      await api("/telegram/urun", { method: "PUT", body: JSON.stringify({ etkin, tutarGoster }) });
+      await api("/telegram/urun", { method: "PUT", body: JSON.stringify({ etkin, tutarGoster, ...(sesEtkin === undefined ? {} : { sesEtkin }) }) });
       setKod(null);
       await yukle();
     }, basari);
@@ -213,6 +216,26 @@ export function TelegramKarti() {
                 />
                 <span>Tutarları Telegram'da göster</span>
               </label>
+              {(durum.sesKullanilabilir || durum.sesEtkin) && (
+                <div className="mt-1">
+                  <label style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={durum.sesEtkin ?? false}
+                      disabled={isleniyor}
+                      onChange={(e) => {
+                        const ac = e.target.checked;
+                        if (ac && !window.confirm("Sesli mesajlar yazıya çevrilmek için OpenAI'ye (ABD) gönderilir. Ses kaydı TekirExtra'da saklanmaz; çeviri ücreti firmanın aylık yapay zekâ bütçesinden düşer. Onaylıyor musunuz?")) return;
+                        void urunKaydet(true, durum.tutarGoster ?? true, ac ? "Sesli mesaj açıldı." : "Sesli mesaj kapatıldı.", ac);
+                      }}
+                    />
+                    <span>Sesli mesajı yazıya çevir (OpenAI, yurt dışı)</span>
+                  </label>
+                  {durum.sesEtkin && durum.sesOnayAt && (
+                    <p className="muted" style={{ margin: "0.25rem 0 0" }}>Onay: <Tarih deger={durum.sesOnayAt} saatli /> · en çok 2 dakikalık mesaj</p>
+                  )}
+                </div>
+              )}
               <div className="mt-1">
                 <Button variant="danger" disabled={isleniyor} onClick={() => {
                   if (!window.confirm("Telegram kanalı firmanızdan çıkarılacak; bütün kullanıcıların bağlantısı kalkar. Devam edilsin mi?")) return;

@@ -10,6 +10,7 @@ import { fikirDugmesi, fikirDugmesiCoz } from "../asistan-soru/fikir.kurallari";
 import { FikirService } from "../asistan-soru/fikir.service";
 import { BELGE_AZAMI_BAYT } from "../asistan-soru/masraf-belge.kurallari";
 import { MasrafBelgeService } from "../asistan-soru/masraf-belge.service";
+import { SES_AZAMI_BAYT, SES_AZAMI_SANIYE, SesHatasi, sesiYaziyaCevir, sesKullanilabilir } from "./ses-yazi";
 import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
@@ -521,13 +522,50 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * CNL-15: sesli mesaj yazıya çevrilir; anlaşılan metin kullanıcıya gösterilir ve soru olarak işlenir.
+   * Firmada ses açık değilse, süre/boyut sınırı aşılırsa ya da çeviri olmazsa null (yanıt burada verilir).
+   */
+  private async sesIsle(baglam: IstekBaglami, m: TelegramMesaj, ses: NonNullable<TelegramMesaj["voice"]>): Promise<string | null> {
+    const { tenantId, userId } = baglam;
+    const yanitla = (metin: string, tur: string) => baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, tur, metin));
+    const ayar = await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => telegramAyariOku(tx, tenantId)));
+    if (!ayar.sesEtkin || !sesKullanilabilir()) {
+      await yanitla("Sesli mesaj firmanızda açık değil; yöneticiniz Ayarlar › Bildirimler › Telegram bölümünden açabilir. Sorunuzu yazarak iletebilirsiniz.", "bilgi");
+      return null;
+    }
+    if ((ses.duration ?? 0) > SES_AZAMI_SANIYE || (ses.file_size ?? 0) > SES_AZAMI_BAYT) {
+      await yanitla(`Sesli mesaj en çok ${SES_AZAMI_SANIYE / 60} dakika olabilir; daha kısa gönderin ya da yazın.`, "bilgi");
+      return null;
+    }
+    try {
+      await this.istemci!.yaziyor(m.chat.id);
+      const tampon = await this.istemci!.dosyaIndir(ses.file_id, SES_AZAMI_BAYT);
+      const yazi = await baglamlaCalistir(baglam, () => sesiYaziyaCevir(this.prisma, { tenantId, userId }, { tampon, mime: ses.mime_type, saniye: ses.duration ?? 0 }));
+      if (yazi.length < 2) {
+        await yanitla("Sesli mesajda anlaşılır bir konuşma bulamadım; yeniden deneyin ya da yazın.", "bilgi");
+        return null;
+      }
+      await yanitla(`🎙️ Anladığım: «${yazi.slice(0, 1000)}»`, "ses_yazi");
+      return yazi.slice(0, 2000);
+    } catch (hata) {
+      const metin = hata instanceof AiSinirHatasi
+        ? "Bu ayın yapay zekâ kullanım sınırına ulaşıldı; sesli mesaj şu anda çevrilemiyor."
+        : hata instanceof SesHatasi ? `${hata.message} Sorunuzu yazarak iletebilirsiniz.` : this.kullaniciHatasi(hata, "Sesli mesajı işleyemedim; sorunuzu yazarak iletebilirsiniz.");
+      if (!(hata instanceof AiSinirHatasi || hata instanceof SesHatasi)) this.logger.warn(`Sesli mesaj işlenemedi: ${hata instanceof Error ? hata.name : "bilinmeyen"}`);
+      await yanitla(metin, "hata");
+      return null;
+    }
+  }
+
   private async firmaMesaji(g: TelegramGuncelleme, m: TelegramMesaj, metin: string, { tenantId, userId }: Cozum): Promise<void> {
     const telegramId = BigInt(m.from!.id);
     const hazir = await this.baglamHazirla(tenantId, userId, telegramId, m.chat.id);
     if (!hazir) return;
     const { baglam, karar } = hazir;
     const belge = m.photo?.length || m.document;
-    const tur = belge ? "belge" : !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
+    const ses = m.voice ?? m.audio;
+    const tur = belge ? "belge" : ses ? "ses" : !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
     olay(tur);
     // CNL-01: aynı güncelleme ikinci kez gelirse burada elenir.
     if (!(await this.gelenIz(baglam, g.update_id, tur))) return;
@@ -545,7 +583,12 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       ));
     }
     if (tur === "belge") return this.belgeIsle(baglam, m);
-    if (tur === "desteklenmeyen") return void (await yanitla(m.voice ? "Sesli mesajları henüz anlayamıyorum; sorunuzu yazarak iletin." : "Bu tür mesajı anlayamıyorum. Soru yazabilir ya da fiş/fatura fotoğrafı gönderebilirsiniz.", "bilgi"));
+    if (tur === "desteklenmeyen") return void (await yanitla("Bu tür mesajı anlayamıyorum. Soru yazabilir, sesli mesaj ya da fiş/fatura fotoğrafı gönderebilirsiniz.", "bilgi"));
+    if (tur === "ses") {
+      const yazi = await this.sesIsle(baglam, m, ses!);
+      if (!yazi) return;
+      metin = yazi;
+    }
     if (tur === "komut") {
       const komut = metin.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
       if (komut === "/ayril") {
