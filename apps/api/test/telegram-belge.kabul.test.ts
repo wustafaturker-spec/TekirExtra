@@ -60,7 +60,7 @@ const yurutucu = {
     taslaklar.push(c.girdi); return { icerik: JSON.stringify({ id, durum: "taslak", adres: "/panel/masraflar" }) };
   },
 };
-const ajan = { async telegramOturumKimligi() { return randomUUID(); }, async telegramGecmiseYaz() {} };
+const ajan = { async belgeOturumKimligi() { return randomUUID(); }, async telegramGecmiseYaz() {} };
 
 const masrafBelge = new MasrafBelgeService(prisma, ai as never, ekler as never, yurutucu as never, ajan as never);
 const sorular = new AsistanSoruService(prisma, {} as never, {} as never, {} as never, yurutucu as never, masrafBelge);

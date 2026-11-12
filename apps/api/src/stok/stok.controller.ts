@@ -110,7 +110,8 @@ export class StokController {
   }
 
   @Post("sayimlar")
-  @Roller("muhasebe")
+  // SAH-04: depo personeli sahada taslak sayım açar; onay muhasebede kalır.
+  @Roller("muhasebe", "depo")
   async sayimOlustur(@Body() govde: unknown) {
     const ayristirma = sayimOlusturSemasi.safeParse(govde);
     if (!ayristirma.success) {

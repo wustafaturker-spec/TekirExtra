@@ -1,22 +1,21 @@
 {
-  "name": "TekirExtra Mobil Asistan",
+  "name": "TekirExtra Saha",
   "short_name": "TekirExtra",
-  "description": "Yapay Zeka Destekli Kurumsal ERP ve Finans Asistanı",
-  "start_url": "/mobil/asistan",
+  "description": "Sahada barkodla sayım ve masraf fişi; asistan",
+  "id": "/saha",
+  "start_url": "/saha",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#090d16",
-  "theme_color": "#10b981",
+  "background_color": "#f7f8fa",
+  "theme_color": "#e8792b",
   "orientation": "portrait",
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Barkodla sayım", "url": "/saha/sayim" },
+    { "name": "Masraf fişi", "url": "/saha/masraf" },
+    { "name": "Asistan", "url": "/mobil/asistan" }
   ]
 }

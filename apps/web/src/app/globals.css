@@ -4601,6 +4601,40 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .asistan-talep__fark > span { text-transform: capitalize; color: var(--text-muted); }
 .asistan-talep__fark del { color: var(--danger); }
 @media (max-width: 700px) { .asistan__mesaj { max-width: 100%; } .asistan-ocr__alanlar { grid-template-columns: 1fr; } }
+/* SAH-01/10: saha ekranları — telefon için sade kabuk, en az 44 px dokunma alanı. */
+.saha { min-height: 100dvh; background: var(--bg); color: var(--text); }
+.saha__baslik { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem 16px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: .9rem; }
+.saha__baslik a { min-height: 44px; display: inline-flex; align-items: center; color: var(--accent-text); text-decoration: none; font-weight: 600; }
+.saha__durum { font-size: .75rem; padding: .2rem .55rem; border-radius: var(--radius-pill); white-space: nowrap; }
+.saha__durum.is-cevrimici { background: var(--success-soft); color: var(--success); }
+.saha__durum.is-cevrimdisi { background: var(--warning-soft); color: var(--warning); }
+.saha__icerik { max-width: 40rem; margin: 0 auto; padding: 1rem 16px 2rem; display: grid; gap: 1rem; }
+.saha__icerik h1 { font-size: 1.25rem; margin: 0; }
+.saha-kutular { display: grid; gap: .75rem; }
+.saha-kutu { display: grid; grid-template-columns: 2.5rem 1fr; grid-template-rows: auto auto; column-gap: .75rem; align-items: center; padding: 1rem; min-height: 72px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--text); text-decoration: none; }
+.saha-kutu span { grid-row: 1 / 3; font-size: 1.6rem; text-align: center; }
+.saha-kutu small { color: var(--text-muted); }
+.saha-kutu:active { border-color: var(--accent); box-shadow: var(--ring); }
+.saha-kart { display: grid; gap: .75rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.saha-kart > header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.saha-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.saha-liste li { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .6rem 0; border-top: 1px solid var(--border); }
+.saha-liste li > div:first-child { display: grid; gap: .15rem; min-width: 0; }
+.saha-liste small { color: var(--text-muted); overflow-wrap: anywhere; }
+.saha-liste__eylem { display: flex; gap: .4rem; flex-shrink: 0; }
+.saha-okut { display: grid; grid-template-columns: 1fr 4.5rem auto; gap: .5rem; }
+.saha-okut__adet { text-align: right; max-width: 6rem; }
+.saha .btn, .saha input, .saha select { min-height: 44px; }
+.saha-secenekler { display: grid; gap: .5rem; }
+.saha-form { display: grid; gap: .5rem; }
+.saha-kamera { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); background: var(--surface-2); }
+.saha-foto { display: grid; place-items: center; min-height: 180px; border: 2px dashed var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-2); cursor: pointer; overflow: hidden; color: var(--text-muted); font-weight: 600; }
+.saha-foto input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.saha-foto img { width: 100%; max-height: 50vh; object-fit: contain; }
+.saha-metin { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.saha-metin a { color: var(--accent-text); font-weight: 600; }
+.saha-baglanti { background: none; border: 0; padding: 0 .25rem; color: var(--accent-text); font: inherit; text-decoration: underline; cursor: pointer; }
+.saha-alt { display: flex; justify-content: center; }
 .mobil-asistan { max-width: 48rem; margin: 0 auto; padding: .5rem 16px; background: var(--bg); min-height: 100dvh; }
 .mobil-asistan__baslik { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0 .75rem; font-size: .9rem; }
 /* AI-08: yönetici özeti kartı. */

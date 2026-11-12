@@ -42,6 +42,7 @@ import { VeriAktarimiModule } from "./veri-aktarimi/veri-aktarimi.module";
 import { OnayModule } from "./onay/onay.module";
 import { TelegramModule } from "./telegram/telegram.module";
 import { AsistanSoruModule } from "./asistan-soru/asistan-soru.module";
+import { SahaModule } from "./saha/saha.module";
 import { AracTakipModule } from "./arac-takip/arac-takip.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
@@ -86,6 +87,7 @@ import { SistemSagligiModule } from "./sistem-sagligi/sistem-sagligi.module";
     VeriAktarimiModule,
     OnayModule,
     AsistanSoruModule,
+    SahaModule,
     TelegramModule,
     AracTakipModule,
     DuzeltmelerModule,

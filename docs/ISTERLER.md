@@ -1521,6 +1521,25 @@ netleştirilir. Bu teyit kodlamayı beklemez, yayını bekletir.
 | CNL-21 | ✅ **Fişten araç (plaka ve litre):** OCR fişteki araç plakasını ve akaryakıt litresini okur. Plaka firmanın etkin araç kartıyla (normalize edilmiş plaka) eşleşirse masraf onaylanınca o araca gider olarak (akaryakıtta litresiyle) bağlanır; bağ CNL-22'deki tek onay talebinin parçasıdır, çünkü araç bağı yalnız onaylı masrafa yapılır. Plaka araç kartlarında yoksa yanıtta söylenir, araç uydurulmaz. (Kullanıcı onayı 2026-11-12. Bitti 2026-11-12; `masraf-belge.kurallari.ts tamamlamaPlani`, onay aracı `masraf_tamamla`; litre varsa ya da kategori adı akaryakıt içeriyorsa akaryakıt, otopark/HGS kategoriden.) | Y |
 | CNL-22 | ✅ **Fişten ödeme hesabı ve tek onay talebi:** OCR ödeme şeklini (nakit/kart) ve kartın son dört hanesini okur. Kart son dört hanesi firmanın etkin, aynı dövizdeki tek şirket kartıyla eşleşirse o kart; nakitte aynı dövizdeki tek etkin kasa varsa o kasa ödeme hesabı olur. Kart eşleşmezse ya da birden çok kasa varsa asistan tahmin etmez, kartları/kasaları düğmeyle sorar ("şirket kartı değil" seçeneğiyle; CNL-09). Taslak hemen açılır; onay, ödeme (tek çekim, fiş tarihinde, kalan tutar) ve araç bağı tek onay talebiyle panelde birlikte yapılır — Telegram'dan para hareketi yapılmaz (değişmez sınır). Cari bağlı masrafta ödeme cari tediyesinden yapıldığı için ödeme önerilmez. Okunamayan ödeme şeklinde ödeme önerilmez. (Kullanıcı onayı 2026-11-12: tek onay talebi; belirsizlikte düğmeli soru. Bitti 2026-11-12; soru türü `masraf_odeme`, göç `20261112200000_asistan_soru_odeme`; soru masraf taslakken geçerli, onaylanırsa kapanır; tam kart numarası okunmaz/yazılmaz.) | Y |
 
+### 3.27 Mobil Saha Ekranları (SAH) — taslak, onay bekliyor
+
+**Kaynak:** uygulama incelemesi 2026-11-10, M-4. Ayrı yerel uygulama yapılmaz; panelin içinde telefona göre tasarlanmış, ana ekrana eklenebilen (PWA) dar ekranlar.
+**Dayanak:** barkodla ürün bulma (STK-15), sayım (STK-07/29…31), POS ödeme bağlantısı (KSB-35…), fiş OCR ve masraf taslağı (CNL-16 hattı), onay akışları (ONY).
+**Değişmez sınır:** sahadan kesinleştirme yapılmaz; sayım ve masraf taslak olarak gider, onay panelde verilir. Para hareketi yalnız rolün zaten izinli olduğu işlemlerle ve çevrimiçiyken yapılır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| SAH-01 | **Kurulabilir saha kabuğu:** `/saha` adresinde telefon ekranına göre ana sayfa; rolün açabildiği işler kutucuk olarak görünür (sayım, mal kabul, tahsilat, masraf fişi). Ana ekrana eklenebilir (manifest, simgeler, servis işçisi); oturum panelle aynıdır. | Z |
+| SAH-02 | **Çevrimdışı kuyruk:** bağlantı yokken sayım okumaları ve masraf fişi fotoğrafları cihazda (IndexedDB) kuyruğa alınır; bağlantı gelince tekrar korumalı (idempotency anahtarı) gönderilir. Bekleyen ve gönderilemeyen kayıtlar sayıyla görünür, kullanıcı yeniden dener ya da siler. Para hareketi kuyruğa alınmaz. | Z |
+| SAH-03 | **Barkodla sayım:** depo seçilir; ürün kamerayla (tarayıcının barkod okuyucusu; yoksa elle ya da harici okuyucuyla) okutulur, aynı ürün tekrar okutulunca miktar artar, miktar elle düzeltilir. Varyant barkodu varyantı bulur; lot/seri takipli üründe lot/seri sorulur. Tanınmayan barkod listede ayrı gösterilir. Bitince taslak sayım olarak gönderilir; onay panelde (STK-29…31 kuralları aynen). | Z |
+| SAH-04 | **Depo rolü taslak sayım açabilir:** sayımı sahada depo personeli yapar; bugün yalnız muhasebe açabiliyor. Depo rolü yalnız taslak açar, onaylayamaz. | Z |
+| SAH-05 | **Çevrimdışı ürün listesi:** barkodla bulma bağlantısız da çalışsın diye deponun ürün kodu, adı, birimi ve barkodları cihaza alınır (fiyat ve maliyet alınmaz); çıkışta silinir. | Y |
+| SAH-06 | **Mal kabul:** açık satın alma siparişi ya da gelen e-İrsaliye seçilir; gelen ürünler barkodla okutulur, beklenen/okunan farkı satır satır gösterilir; sonuç alış irsaliyesi taslağı olur (kesinleştirme panelde). | Y |
+| SAH-07 | **Sahada tahsilat:** cari unvan/kodla aranır; bakiye ve vadesi geçenler görünür; POS ödeme bağlantısı SMS, e-posta ya da ekranda karekodla (müşteri kendi telefonuyla okutur) verilir. Yalnız tahsilat yetkisi olan roller; çevrimiçi. | Y |
+| SAH-08 | **Masraf fişi:** kamerayla fiş çekilir; OCR ile masraf taslağı açılır (kategori, plaka ve ödeme hesabı CNL-16/21/22 kurallarıyla). Bağlantı yoksa fotoğraf kuyruğa girer. | Y |
+| SAH-09 | **Cihaz güvenliği:** cihazdaki önbellek ve kuyruk kullanıcıya ve firmaya bağlıdır; çıkışta ya da başka kullanıcı girince silinir; kuyruktaki kayıt en çok 7 gün tutulur. Fotoğraf yalnız gönderilene dek saklanır. | Z |
+| SAH-10 | **Kullanılabilirlik:** 360 px genişlikte yatay kaydırma yok, düğmeler en az 44 px, tek elle kullanım; okutma sonrası titreşim/ses geri bildirimi; açık ve koyu tema. | Y |
+
 ### 3.20 Platform Yönetimi (PLT)
 
 Tüm firmaları yöneten TekirExtra ekibinin paneli (`/platform`). Platform rolü kiracı tablolarına doğrudan erişmez; firma bilgisi ve abonelik işlemleri yalnız platform rolüne açılmış dar veritabanı işlevlerinden geçer (MVZ-16 ile aynı ilke). Ayrıntı: `docs/PLATFORM-INCELEME-RAPORU-2026-10-24.md`.

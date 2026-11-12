@@ -48,7 +48,7 @@ export class MasrafBelgeService {
     if (!this.izinli().has(TASLAK_ARACI)) throw new ForbiddenException("Rolünüz ya da paketiniz masraf taslağı açmaya izin vermiyor; belgeyi panelden yükleyin.");
   }
 
-  async belgedenMasraf(dosya: { ad: string; buffer: Buffer }, not: string | null): Promise<BelgeSonucu> {
+  async belgedenMasraf(dosya: { ad: string; buffer: Buffer }, not: string | null, kanal: "TELEGRAM" | "WEB" = "TELEGRAM"): Promise<BelgeSonucu> {
     const { tenantId, userId } = aktifBaglam();
     this.yetkiDenetle();
     if (dosya.buffer.length > BELGE_AZAMI_BAYT) throw new BadRequestException("Dosya 6 MB'tan büyük; daha küçük bir fotoğraf gönderin.");
@@ -60,7 +60,7 @@ export class MasrafBelgeService {
     const yuklenen: YuklenenDosya = { originalname: ad, mimetype: girdi.mimeType, size: dosya.buffer.length, buffer: dosya.buffer };
     // Model sağlayıcısına dosya gitmeden önce içerik imzası ve virüs taraması.
     await dosyaIceriginiDogrula(yuklenen, "belge");
-    const ek = await this.ekler.yukle("ai_sohbet", await this.ajan.telegramOturumKimligi(), yuklenen);
+    const ek = await this.ekler.yukle("ai_sohbet", await this.ajan.belgeOturumKimligi(kanal), yuklenen);
 
     const ocr = await this.ai.fisFaturaOcrTara(tenantId, { ...girdi, belgeTipi: "fis_fatura" });
     if (!ocr.dogrulama.gecerli || ocr.dogrulama.hatalar.length || !(ocr.dogrulama.veri.genelToplam > 0)) {

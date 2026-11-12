@@ -15,7 +15,9 @@ import { OTURUM_ISARETI_COOKIE, PLATFORM_OTURUM_ISARETI_COOKIE, oturumIsaretiGec
 export async function middleware(istek: NextRequest) {
   const yol = istek.nextUrl.pathname;
   const devam = guvenliDevam(istek);
-  if (yol !== "/panel" && !yol.startsWith("/panel/") && yol !== "/platform" && !yol.startsWith("/platform/")) return devam();
+  // SAH-01: saha ekranları panelle aynı oturum işaretiyle korunur.
+  const saha = yol === "/saha" || yol.startsWith("/saha/");
+  if (!saha && yol !== "/panel" && !yol.startsWith("/panel/") && yol !== "/platform" && !yol.startsWith("/platform/")) return devam();
   const platform = yol === "/platform" || yol.startsWith("/platform/");
   // PLT-07: davet sayfası oturumsuz açılır (bağlantıdaki tek kullanımlık anahtarla).
   if (platform && (yol === "/platform/giris" || yol === "/platform/davet")) return devam();
