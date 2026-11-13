@@ -132,6 +132,20 @@ describe("faturaUblUret", () => {
     expect(sade).toContain("<cbc:Name>Ürün</cbc:Name>");
   });
 
+  it("ETC-05: nihai tüketici e-Arşiv müşterisi olur; TCKN yoksa 11111111111, e-Fatura kanalında yok sayılır", () => {
+    const perakende = { ...earsivFaturasi, nihaiAliciAdSoyad: "Ayşe Nur Kaya", nihaiAliciTckn: null, nihaiAliciAdres: "Atatürk Cd. 1", nihaiAliciIl: "İstanbul", nihaiAliciIlce: "Kadıköy", nihaiAliciPostaKodu: "34710" };
+    const musteri = faturaUblUret(perakende as never, saglayici, { tur: "earsiv" }).match(/<cac:AccountingCustomerParty>[\s\S]*?<\/cac:AccountingCustomerParty>/)![0];
+    expect(musteri).toContain('<cbc:ID schemeID="TCKN">11111111111</cbc:ID>');
+    expect(musteri).toContain("<cbc:FirstName>Ayşe Nur</cbc:FirstName>");
+    expect(musteri).toContain("<cbc:FamilyName>Kaya</cbc:FamilyName>");
+    expect(musteri).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(musteri).toContain("<cbc:CitySubdivisionName>Kadıköy</cbc:CitySubdivisionName>");
+    const tcknli = faturaUblUret({ ...perakende, nihaiAliciTckn: "12345678901" } as never, saglayici, { tur: "earsiv" });
+    expect(tcknli).toContain('<cbc:ID schemeID="TCKN">12345678901</cbc:ID>');
+    const efatura = faturaUblUret(perakende as never, saglayici, { tur: "efatura" }).match(/<cac:AccountingCustomerParty>[\s\S]*?<\/cac:AccountingCustomerParty>/)![0];
+    expect(efatura).not.toContain("Ayşe Nur");
+  });
+
   it("e-Arşiv kanalında EARSIVFATURA profilini ve gönderim şeklini yazar", () => {
     const xml = faturaUblUret(earsivFaturasi as never, saglayici, { tur: "earsiv" });
 

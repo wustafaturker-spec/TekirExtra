@@ -1885,7 +1885,8 @@ export class FaturaService {
         "Taslak fatura gönderilemez; önce kesinleştirin",
       );
     }
-    let alici = aliciEposta;
+    // ETC-05: varsayılan cariye kesilen internet satışında belge asıl alıcıya gider.
+    let alici = aliciEposta ?? (fatura as { nihaiAliciEposta?: string | null }).nihaiAliciEposta ?? undefined;
     if (!alici) {
       const { tenantId } = aktifBaglam();
       const cari = await this.prisma.tenantIslem(tenantId, (tx) =>

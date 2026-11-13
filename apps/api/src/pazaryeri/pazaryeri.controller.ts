@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
+import { YAKINDA_KODLARI } from "@tekirextra/shared";
 import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi, pazaryeriKesintiSinifSemasi, pazaryeriFaturaVknSemasi, pazaryeriKesintiEslestirSemasi, pazaryeriKesintiMasrafSemasi, pazaryeriGiderGeriAlSemasi, pazaryeriCariSemasi, pazaryeriHakedisSemasi, pazaryeriOtomatikSemasi } from "./pazaryeri.semalar";
 import { PazaryeriOtomatikService } from "./pazaryeri-otomatik.service";
 import { PazaryeriHakedisService } from "./pazaryeri-hakedis.service";
@@ -36,6 +37,17 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException("Geçersiz bağlantı");
     return this.service.senkronizeEt(sonuc.data.baglantiId);
   }
+  /** ETC-02: firmanın "Yakında" platformlara verdiği "İlgileniyorum" talepleri. */
+  @Get("entegrasyon-talepleri") @Roller("yonetici", "muhasebe")
+  talepler() { return this.service.entegrasyonTalepleri(); }
+
+  @Post("entegrasyon-talepleri") @Roller("yonetici", "muhasebe")
+  talepEt(@Body() govde: unknown) {
+    const sonuc = z.object({ saglayici: z.enum(YAKINDA_KODLARI as [string, ...string[]]) }).safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException("Bu platform için talep alınmıyor");
+    return this.service.entegrasyonTalebiEkle(sonuc.data.saglayici);
+  }
+
   /** ETC-13: canlı bağlantı sınaması (kimlik + son sipariş okunur, kayıt yazılmaz). */
   @Post("baglantilar/:id/sina") @Roller("yonetici")
   baglantiSina(@Param("id") id: string) {
@@ -157,6 +169,15 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
     return this.hakedis.pazaryeriCarisiAyarla(id, sonuc.data.cariId);
+  }
+
+  /** ETC-05: e-ticaret bağlantısının varsayılan alıcı carisi. */
+  @Post("baglantilar/:id/varsayilan-alici") @Roller("yonetici", "muhasebe")
+  varsayilanAliciAyarla(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = pazaryeriCariSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.hakedis.varsayilanAliciAyarla(id, sonuc.data.cariId);
   }
 
   /** PZR-13: hakediş olabilecek bekleyen banka girişleri. */

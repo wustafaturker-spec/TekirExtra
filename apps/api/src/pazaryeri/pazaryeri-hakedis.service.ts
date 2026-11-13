@@ -17,10 +17,22 @@ export class PazaryeriHakedisService {
   async baglantilar() {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const baglantilar = await tx.baglanti.findMany({ where: { aile: "pazaryeri" }, select: { id: true, saglayici: true, faturaKesenVkn: true, pazaryeriCariId: true, pazaryeriCari: { select: { id: true, unvan: true } } }, orderBy: { createdAt: "asc" } });
+      const baglantilar = await tx.baglanti.findMany({ where: { aile: "pazaryeri" }, select: { id: true, saglayici: true, faturaKesenVkn: true, pazaryeriCariId: true, pazaryeriCari: { select: { id: true, unvan: true } }, varsayilanAliciCariId: true, varsayilanAliciCari: { select: { id: true, unvan: true } } }, orderBy: { createdAt: "asc" } });
       const vknler = baglantilar.map((b) => b.faturaKesenVkn).filter((v): v is string => Boolean(v));
       const cariler = vknler.length ? await tx.cariHesap.findMany({ where: { vknTckn: { in: vknler }, aktif: true }, select: { id: true, unvan: true, vknTckn: true } }) : [];
       return baglantilar.map((b) => ({ ...b, cariOnerisi: b.pazaryeriCariId ? null : cariler.find((c) => c.vknTckn === b.faturaKesenVkn) ?? null }));
+    });
+  }
+
+  /** ETC-05: e-ticaret bağlantısında bireysel alıcının faturalandığı varsayılan cari (ör. Perakende Müşteri). */
+  async varsayilanAliciAyarla(baglantiId: string, cariId: string | null) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const b = await tx.baglanti.findFirst({ where: { id: baglantiId, aile: "pazaryeri" }, select: { id: true, saglayici: true } });
+      if (!b) throw new NotFoundException("Bağlantı bulunamadı");
+      if (cariId && !(await tx.cariHesap.findFirst({ where: { id: cariId, aktif: true }, select: { id: true } }))) throw new BadRequestException("Aktif cari hesap bulunamadı");
+      await tx.baglanti.update({ where: { id: baglantiId }, data: { varsayilanAliciCariId: cariId } });
+      return { baglantiId, varsayilanAliciCariId: cariId };
     });
   }
 

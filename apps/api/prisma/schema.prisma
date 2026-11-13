@@ -123,6 +123,7 @@ enum DuzeltmeTuru {
 }
 
 model Tenant {
+  entegrasyonTalepleri EntegrasyonTalebi[]
   iletiSablonlari      IletiSablonu[]
   asistanFikirleri       AsistanFikri[]
   asistanSorulari        AsistanSorusu[]
@@ -609,6 +610,7 @@ model AbonelikSaglayiciAyari {
 }
 
 model User {
+  entegrasyonTalepleri EntegrasyonTalebi[]
   duyuruAlicilari PlatformDuyuruAlicisi[]
   isaretledigiFikirler   AsistanFikri[]
   asistanSorulari        AsistanSorusu[]        @relation("SoruHedefi")
@@ -1409,6 +1411,9 @@ model Baglanti {
   /// PZR-13: hakedişin kapandığı pazaryeri carisi (komisyon faturaları ve kesinti masrafları da burada).
   pazaryeriCariId      String?        @map("pazaryeri_cari_id") @db.Uuid
   pazaryeriCari        CariHesap?     @relation("BaglantiPazaryeriCarisi", fields: [pazaryeriCariId], references: [id], onDelete: SetNull)
+  /// ETC-05: e-ticaret sitesinde VKN'siz (bireysel) alıcının siparişi bu cariye faturalanır; alıcı bilgisi faturaya nihai tüketici olarak yazılır.
+  varsayilanAliciCariId String?       @map("varsayilan_alici_cari_id") @db.Uuid
+  varsayilanAliciCari   CariHesap?    @relation("BaglantiVarsayilanAlici", fields: [varsayilanAliciCariId], references: [id], onDelete: SetNull)
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
@@ -2093,6 +2098,7 @@ model CariHesap {
 
   pazaryeriHakedisleri PazaryeriHakedis[] @relation("HakedisPazaryeriCarisi")
   pazaryeriBaglantilari Baglanti[] @relation("BaglantiPazaryeriCarisi")
+  varsayilanAliciBaglantilari Baglanti[] @relation("BaglantiVarsayilanAlici")
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
   @@index([tenantId, grupId])
@@ -3713,6 +3719,15 @@ model Fatura {
   internetOdemeTarihi   DateTime?             @map("internet_odeme_tarihi") @db.Date
   internetOdemeAracisi  String?               @map("internet_odeme_aracisi")
   internetTasiyiciUnvan String?               @map("internet_tasiyici_unvan")
+  /// ETC-05: varsayılan (perakende) cariye kesilen internet satışında asıl alıcı. Doluysa
+  /// e-Arşiv belgesinde müşteri bu kişidir (TCKN yoksa nihai tüketici 11111111111).
+  nihaiAliciAdSoyad     String?               @map("nihai_alici_ad_soyad")
+  nihaiAliciTckn        String?               @map("nihai_alici_tckn") @db.VarChar(11)
+  nihaiAliciAdres       String?               @map("nihai_alici_adres")
+  nihaiAliciIl          String?               @map("nihai_alici_il")
+  nihaiAliciIlce        String?               @map("nihai_alici_ilce")
+  nihaiAliciPostaKodu   String?               @map("nihai_alici_posta_kodu")
+  nihaiAliciEposta      String?               @map("nihai_alici_eposta")
   internetTasiyiciVkn   String?               @map("internet_tasiyici_vkn")
   internetGonderiTarihi DateTime?             @map("internet_gonderi_tarihi") @db.Date
   /// EBLG-60: ihraç kayıtlı satış kodu (701/702). Doluysa KDV hesaplanır ama
@@ -8676,4 +8691,19 @@ model AsistanFikri {
   @@unique([tenantId, hafta, tur])
   @@index([tenantId, createdAt])
   @@map("asistan_fikirleri")
+}
+
+/// ETC-02: katalogdaki "Yakında" platform için firma talebi (firma başına platform başına bir).
+model EntegrasyonTalebi {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  saglayici String   @db.VarChar(40)
+  userId    String?  @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, saglayici])
+  @@map("entegrasyon_talepleri")
 }

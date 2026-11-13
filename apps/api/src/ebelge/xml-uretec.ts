@@ -62,6 +62,8 @@ import {
   varyantliKod,
 } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
+/** GİB: TCKN'si bilinmeyen nihai tüketiciye e-Arşiv faturasında kullanılan kimlik. */
+export const NIHAI_TUKETICI_TCKN = "11111111111";
 import { faturaTeslimYeri } from "../fatura/teslim-yeri";
 
 /*
@@ -172,7 +174,14 @@ export function faturaUblUret(
    * `belgeAdresiSec` kuralına göre seçilir ve ihracat kanalı kararı da aynı
    * adresin ülkesinden gelir.
    */
-  const aliciAdres = ublAdresi(fatura.cari.adresler);
+  /*
+   * ETC-05: varsayılan (perakende) cariye kesilen internet satışında e-Arşiv müşterisi asıl alıcıdır:
+   * ad soyad, TCKN (bilinmiyorsa GİB'in nihai tüketici numarası) ve siparişteki fatura adresi.
+   */
+  const nihai = earsiv && !yurtDisiIstisna && fatura.nihaiAliciAdSoyad?.trim() ? fatura : null;
+  const aliciAdres = nihai && nihai.nihaiAliciIl?.trim() && nihai.nihaiAliciIlce?.trim()
+    ? ublAdresi([{ tip: "fatura", adres: nihai.nihaiAliciAdres, il: nihai.nihaiAliciIl, ilce: nihai.nihaiAliciIlce, postaKodu: nihai.nihaiAliciPostaKodu, ulke: "TR" }])
+    : ublAdresi(fatura.cari.adresler);
   /**
    * Menşei ülkesinin adı. UBL-TR `cac:OriginCountry` içinde **`cbc:Name` arar**;
    * yalnız kod yazılan belge şemadan döner (NES, 2026-09-18:
@@ -441,9 +450,9 @@ ${girinti}</cac:TaxSubtotal>
    * unvandan tahmin edilir.
    */
   /** Belgeye yazılan alıcı kimliği; yurt dışı e-Arşiv'de kartta ne yazarsa yazsın GİB'in ortak numarası. */
-  const aliciKimligi = yurtDisiIstisna ? YURT_DISI_ALICI_VKN : fatura.cari.vknTckn;
+  const aliciKimligi = yurtDisiIstisna ? YURT_DISI_ALICI_VKN : nihai ? (/^\d{11}$/.test(nihai.nihaiAliciTckn ?? "") ? nihai.nihaiAliciTckn! : NIHAI_TUKETICI_TCKN) : fatura.cari.vknTckn;
   const aliciTckn = aliciKimligi?.length === 11;
-  const { ad: aliciAd, soyad: aliciSoyad } = adSoyadCoz(fatura.cari);
+  const { ad: aliciAd, soyad: aliciSoyad } = adSoyadCoz(nihai ? { unvan: nihai.nihaiAliciAdSoyad! } : fatura.cari);
 
   /**
    * Tevkifat, fatura düzeyinde `WithholdingTaxTotal` olarak bildirilir; vergi

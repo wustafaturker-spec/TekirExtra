@@ -15,6 +15,7 @@ import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
 import { adaptorCoz, ADAPTORLU_SAGLAYICILAR } from "./adaptor";
+import { eticaretCarisi, eticaretMi, magazaWebAdresi, nihaiAlici } from "./eticaret-alici";
 import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
@@ -43,7 +44,9 @@ export class PazaryeriService {
       if (mevcut) {
         if (mevcut.faturaId) return mevcut;
         const iptal = /cancel|iptal|cancelled|canceled/i.test(girdi.hariciDurum ?? "");
-        return tx.pazaryeriSiparis.update({ where: { id: mevcut.id }, data: { hariciDurum: girdi.hariciDurum, siparisTarihi: new Date(girdi.siparisTarihi), musteriUnvani: girdi.musteriUnvani, musteriEposta: girdi.musteriEposta, musteriTelefon: girdi.musteriTelefon, vknTckn: girdi.vknTckn, toplam: girdi.toplam, teslimatAdresi: girdi.teslimatAdresi as never, hamVeri: girdi as never, ...(iptal ? { durum: "iptal", hataMesaji: null } : {}) }, include: { satirlar: true } });
+        // ETC-05: e-ticaret siparişinde cari henüz yoksa kurala göre belirlenir.
+        const cariId = mevcut.cariId ?? await eticaretCarisi(tx, tenantId, baglanti, girdi);
+        return tx.pazaryeriSiparis.update({ where: { id: mevcut.id }, data: { cariId, hariciDurum: girdi.hariciDurum, siparisTarihi: new Date(girdi.siparisTarihi), musteriUnvani: girdi.musteriUnvani, musteriEposta: girdi.musteriEposta, musteriTelefon: girdi.musteriTelefon, vknTckn: girdi.vknTckn, toplam: girdi.toplam, teslimatAdresi: girdi.teslimatAdresi as never, hamVeri: girdi as never, ...(iptal ? { durum: "iptal", hataMesaji: null } : {}) }, include: { satirlar: true } });
       }
 
       const eslenen = await Promise.all(girdi.satirlar.map(async (satir) => {
@@ -53,8 +56,9 @@ export class PazaryeriService {
         return { ...satir, stokId: stok?.id ?? null, varyantId: null };
       }));
       const tumuEslesti = eslenen.every((s) => s.stokId);
+      const cariId = await eticaretCarisi(tx, tenantId, baglanti, girdi);
       return tx.pazaryeriSiparis.create({ data: {
-        tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId, siparisNo: girdi.siparisNo,
+        tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId, siparisNo: girdi.siparisNo, cariId,
         hariciDurum: girdi.hariciDurum, siparisTarihi: new Date(girdi.siparisTarihi), musteriUnvani: girdi.musteriUnvani,
         musteriEposta: girdi.musteriEposta, musteriTelefon: girdi.musteriTelefon, vknTckn: girdi.vknTckn,
         dovizCinsi: girdi.dovizCinsi, toplam: girdi.toplam, teslimatAdresi: girdi.teslimatAdresi as never,
@@ -86,7 +90,7 @@ export class PazaryeriService {
     for (const istek of siparisler) {
       try {
         const siparis = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({
-          where: { id: istek.siparisId }, include: { satirlar: { include: { stok: { select: { anaBirim: true, kdvOrani: true } } } } },
+          where: { id: istek.siparisId }, include: { satirlar: { include: { stok: { select: { anaBirim: true, kdvOrani: true } } } }, baglanti: { select: { saglayici: true, varsayilanAliciCariId: true, sifreliConfig: true } } },
         }));
         if (!siparis) throw new NotFoundException("Sipariş bulunamadı");
         if (siparis.faturaId) { sonuclar.push({ siparisId: siparis.id, faturaId: siparis.faturaId }); continue; }
@@ -106,9 +110,20 @@ export class PazaryeriService {
           tip: "satis", tarih: siparis.siparisTarihi.toISOString().slice(0, 10), cariId: istek.cariId,
           dovizCinsi: siparis.dovizCinsi, kur: kur.toString(), genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
           // PZR-01: KDV satır yuvarlamasından doğan kuruş farkı açıklamada belirtilir.
-          aciklama: `Pazaryeri siparişi ${siparis.siparisNo}` + (Number(net.fark) ? ` · Pazaryeri tahsilatı ${new Prisma.Decimal(siparis.toplam).toFixed(2)}; KDV satır yuvarlaması farkı ${net.fark}` : ""),
+          aciklama: `${eticaretMi(siparis.baglanti?.saglayici ?? "") ? "Web siparişi" : "Pazaryeri siparişi"} ${siparis.siparisNo}` + (Number(net.fark) ? ` · Pazaryeri tahsilatı ${new Prisma.Decimal(siparis.toplam).toFixed(2)}; KDV satır yuvarlaması farkı ${net.fark}` : ""),
           satirlar: siparis.satirlar.map((s, i) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: s.stok?.anaBirim ?? "adet", birimFiyat: net.satirlar[i].birimFiyat, iskontoOrani: "0", kdvOrani: net.satirlar[i].kdvOrani })),
         });
+        // ETC-05: e-ticaret satışı internet satışıdır; bireysel alıcı varsayılan cariye kesildiyse asıl alıcı
+        // nihai tüketici olarak faturaya yazılır (e-Arşiv müşterisi bu kişi olur).
+        if (siparis.baglanti && eticaretMi(siparis.baglanti.saglayici)) {
+          const bireysel = istek.cariId === siparis.baglanti.varsayilanAliciCariId;
+          let web: string | null = null;
+          try { web = magazaWebAdresi(siparis.baglanti.saglayici, JSON.parse(coz(siparis.baglanti.sifreliConfig)) as PazaryeriConfig); } catch { web = null; }
+          await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.update({ where: { id: fatura.id }, data: {
+            internetSatisi: true, internetWebAdresi: web, internetOdemeTarihi: siparis.siparisTarihi,
+            ...(bireysel ? nihaiAlici(siparis) : {}),
+          } }));
+        }
         await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.update({ where: { id: siparis.id }, data: { cariId: istek.cariId, faturaId: fatura.id, durum: "faturalandi", hataMesaji: null } }));
         sonuclar.push({ siparisId: siparis.id, faturaId: fatura.id });
       } catch (hata) {
@@ -182,6 +197,21 @@ export class PazaryeriService {
       }
     }
     return { sonuclar };
+  }
+
+  async entegrasyonTalepleri() {
+    const { tenantId } = aktifBaglam();
+    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.entegrasyonTalebi.findMany({ select: { saglayici: true, createdAt: true } }));
+    return satirlar.map((s) => ({ saglayici: s.saglayici, tarih: s.createdAt }));
+  }
+
+  /** ETC-02: firma başına platform başına bir talep; tekrar basmak kaydı değiştirmez. */
+  async entegrasyonTalebiEkle(saglayici: string) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.entegrasyonTalebi.upsert({
+      where: { tenantId_saglayici: { tenantId, saglayici } }, update: {}, create: { tenantId, saglayici, userId },
+    }));
+    return { saglayici, kaydedildi: true };
   }
 
   /** ETC-13: bağlantı sınaması; kimlik doğrulanır ve son sipariş okunur, kayıt yazılmaz. */
