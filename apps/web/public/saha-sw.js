@@ -3,8 +3,8 @@
  * dosyalardır; API yanıtları ve kişisel veri önbelleğe alınmaz (çevrimdışı veri IndexedDB'de,
  * kullanıcıya bağlı tutulur). Sayfalar ağdan, ağ yoksa son kopyadan; durağan dosyalar önbellekten.
  */
-const SURUM = "saha-v2";
-const SAYFALAR = ["/saha", "/saha/sayim", "/saha/masraf"];
+const SURUM = "saha-v3";
+const SAYFALAR = ["/saha", "/saha/sayim", "/saha/masraf", "/saha/mal-kabul", "/saha/tahsilat"];
 
 // Kurulum saha sayfasından, oturum açıkken olur; ilk açılan sayfa işçi devreye girmeden yüklendiği
 // için sayfalar burada indirilir. Giriş sayfasına yönlendirilen yanıt saklanmaz.

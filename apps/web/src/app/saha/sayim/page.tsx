@@ -1,18 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bugunTR } from "@tekirextra/shared";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
-import { api } from "@/lib/api";
-import type { DepoOzet } from "@/lib/depolar";
-import { kuyrugaEkle, kvOku, kvSil, kvYaz, type UrunListesi } from "@/lib/saha-depo";
+import { kuyrugaEkle, kvOku, kvSil, kvYaz } from "@/lib/saha-depo";
 import { miktarEkle, miktarYaz, okutulaniCoz, partiSil, sayimGovdesi, type SayimSatiri } from "@/lib/saha-sayim";
 import { useSaha } from "../saha-baglam";
-
-/** Tarayıcının yerleşik barkod okuyucusu (Chrome/Android); türleri TS kitaplığında yok. */
-interface BarkodOkuyucu { detect(kaynak: CanvasImageSource): Promise<Array<{ rawValue: string }>> }
-type BarkodOkuyucuSinifi = new (s?: { formats?: string[] }) => BarkodOkuyucu;
-const okuyucuSinifi = (): BarkodOkuyucuSinifi | null => (typeof window !== "undefined" && "BarcodeDetector" in window ? (window as unknown as { BarcodeDetector: BarkodOkuyucuSinifi }).BarcodeDetector : null);
+import { KameraOkuyucu } from "../kamera";
+import { useUrunListesi } from "../urun-listesi";
 
 interface Taslak { depoId: string; satirlar: SayimSatiri[]; tanimsiz: string[] }
 type Bekleyen = { tur: "varyant"; urunId: string; katsayi: number } | { tur: "parti"; urunId: string; varyantId: string | null; katsayi: number };
@@ -20,46 +15,25 @@ type Bekleyen = { tur: "varyant"; urunId: string; katsayi: number } | { tur: "pa
 /** SAH-03/05: barkodla sayım; ürün listesi cihazda, sayım taslağı her okutmada cihaza yazılır. */
 export default function SahaSayimSayfasi() {
   const { sahip, cevrimici, gonder, kuyrukYenile } = useSaha();
-  const [liste, setListe] = useState<UrunListesi | null>(null);
-  const [depolar, setDepolar] = useState<DepoOzet[]>([]);
+  const { liste, depolar, listeyiIndir, hata: listeHatasi } = useUrunListesi(sahip, cevrimici);
   const [taslak, setTaslak] = useState<Taslak>({ depoId: "", satirlar: [], tanimsiz: [] });
   const [girdi, setGirdi] = useState("");
   const [adet, setAdet] = useState("1");
   const [bekleyen, setBekleyen] = useState<Bekleyen | null>(null);
   const [lotNo, setLotNo] = useState(""); const [seriNo, setSeriNo] = useState("");
   const [hata, setHata] = useState(""); const [bilgi, setBilgi] = useState("");
-  const [kamera, setKamera] = useState(false);
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const girdiRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Cihazdaki ürün listesi, depolar ve yarım kalan sayım.
+  // Yarım kalan sayım cihazdan okunur.
   useEffect(() => {
     if (!sahip) return;
-    void (async () => {
-      const [l, d, t] = await Promise.all([kvOku<UrunListesi>("urunler"), kvOku<DepoOzet[]>("depolar"), kvOku<Taslak>("sayim-taslak")]);
-      if (l?.sahip === sahip) setListe(l);
-      if (d) setDepolar(d);
-      if (t) setTaslak(t);
-    })().catch(() => undefined);
+    void kvOku<Taslak>("sayim-taslak").then((t) => { if (t) setTaslak(t); }).catch(() => undefined);
   }, [sahip]);
-
-  const listeyiIndir = useCallback(async () => {
-    if (!sahip) return;
-    setHata("");
-    try {
-      const [l, d] = await Promise.all([api<Omit<UrunListesi, "sahip">>("/saha/urunler"), api<DepoOzet[]>("/depo?yalnizAktif=true")]);
-      const yeni = { ...l, sahip };
-      await Promise.all([kvYaz("urunler", yeni), kvYaz("depolar", d)]);
-      setListe(yeni); setDepolar(d);
-      setTaslak((t) => (t.depoId ? t : { ...t, depoId: (d.find((x) => x.varsayilan) ?? d[0])?.id ?? "" }));
-    } catch (e) { setHata(e instanceof Error ? e.message : "Ürün listesi indirilemedi"); }
-  }, [sahip]);
-  // İlk açılışta liste yoksa ya da bir günden eskiyse ve bağlantı varsa indirilir.
+  // Depo seçilmemişse varsayılan depo.
   useEffect(() => {
-    if (!sahip || !cevrimici) return;
-    if (!liste || Date.now() - Date.parse(liste.alindi) > 86_400_000) void listeyiIndir();
-  }, [sahip, cevrimici, liste, listeyiIndir]);
+    if (depolar.length) setTaslak((t) => (t.depoId ? t : { ...t, depoId: (depolar.find((x) => x.varsayilan) ?? depolar[0])?.id ?? "" }));
+  }, [depolar]);
 
   const kaydet = (t: Taslak) => { setTaslak(t); void kvYaz("sayim-taslak", t).catch(() => undefined); };
   const geriBildirim = (basarili: boolean) => { try { navigator.vibrate?.(basarili ? 40 : [60, 40, 60]); } catch { /* titreşim isteğe bağlı */ } };
@@ -92,29 +66,6 @@ export default function SahaSayimSayfasi() {
     girdiRef.current?.focus();
   }
 
-  // Kamera: yerleşik okuyucu saniyede birkaç kare tarar; aynı barkod 1,5 sn içinde tekrar sayılmaz.
-  useEffect(() => {
-    if (!kamera) return;
-    const Sinif = okuyucuSinifi();
-    if (!Sinif) { setKamera(false); return; }
-    let akis: MediaStream | null = null; let dur = false; let son = { kod: "", an: 0 };
-    const okuyucu = new Sinif({ formats: ["ean_13", "ean_8", "code_128", "code_39", "upc_a", "upc_e", "qr_code", "itf"] });
-    void (async () => {
-      try {
-        akis = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = akis; await videoRef.current.play();
-        while (!dur) {
-          const bulunan = await okuyucu.detect(videoRef.current).catch(() => []);
-          const kod = bulunan[0]?.rawValue;
-          if (kod && (kod !== son.kod || Date.now() - son.an > 1500)) { son = { kod, an: Date.now() }; okutRef.current(kod); }
-          await new Promise((r) => setTimeout(r, 250));
-        }
-      } catch { setHata("Kamera açılamadı; izin verin ya da kodu elle yazın."); setKamera(false); }
-    })();
-    return () => { dur = true; akis?.getTracks().forEach((t) => t.stop()); };
-  }, [kamera]);
-  const okutRef = useRef(okut); okutRef.current = okut;
 
   async function gonderSayim() {
     if (!sahip || !taslak.satirlar.length) return;
@@ -133,12 +84,11 @@ export default function SahaSayimSayfasi() {
   }
 
   const bekleyenUrun = bekleyen ? liste?.urunler.find((u) => u.id === bekleyen.urunId) : undefined;
-  const okuyucuVar = typeof window !== "undefined" && Boolean(okuyucuSinifi());
 
   return (
     <div className="saha-sayim">
       <h1>Barkodla sayım</h1>
-      {hata && <Alert tone="error">{hata}</Alert>}
+      {(hata || listeHatasi) && <Alert tone="error">{hata || listeHatasi}</Alert>}
       {bilgi && !hata && <Alert tone="success">{bilgi}</Alert>}
 
       <section className="saha-kart">
@@ -179,12 +129,7 @@ export default function SahaSayimSayfasi() {
             <Input aria-label="Adet" className="saha-okut__adet" value={adet} onChange={(e) => setAdet(e.target.value)} inputMode="decimal" />
             <Button variant="primary" type="submit" disabled={!liste}>Ekle</Button>
           </form>
-          {okuyucuVar ? (
-            <Button block onClick={() => setKamera((k) => !k)} disabled={!liste}>{kamera ? "Kamerayı kapat" : "📷 Kamerayla okut"}</Button>
-          ) : (
-            <small className="muted">Bu tarayıcıda kamera okuyucusu yok; barkod okuyucu tabancası ya da elle giriş kullanın.</small>
-          )}
-          {kamera && <video ref={videoRef} className="saha-kamera" playsInline muted />}
+          <KameraOkuyucu etkin={Boolean(liste)} onOkut={okut} onHata={setHata} />
         </section>
       )}
 

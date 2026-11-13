@@ -33,7 +33,7 @@ import { GecikenSozZamanlayiciService } from "./geciken-soz-zamanlayici.service"
   // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/...", "cari/mutabakatlar/...", "cari/mukerrer/..." `:id` kalıplarına düşmesin.
   controllers: [TahsilatTakibiController, OdemeSozuController, VadeHatirlatmaController, CariTopluController, CariBirlestirmeController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariMahsupController, CariController],
   providers: [GecikenSozZamanlayiciService, TahsilatTakibiService, OdemeSozuService, TahsilatRiskiService, CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariBirlestirmeService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
-  exports: [CariService, CariIceAktarmaService],
+  exports: [CariService, CariIceAktarmaService, TahsilatRiskiService],
 })
 export class CariModule implements OnModuleInit {
   onModuleInit() {

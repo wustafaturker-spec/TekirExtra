@@ -12,6 +12,8 @@
   --seri-3: #1baf7a;
   --bg: #f7f8fa;
   --surface: #ffffff;
+  /* Karekod her temada beyaz zeminde okunur. */
+  --karekod-zemin: #ffffff;
   --surface-2: #f8fafc;
   --sidebar-bg: #09090b;
   --border: #e6e9ee;
@@ -4635,6 +4637,18 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .saha-metin a { color: var(--accent-text); font-weight: 600; }
 .saha-baglanti { background: none; border: 0; padding: 0 .25rem; color: var(--accent-text); font: inherit; text-decoration: underline; cursor: pointer; }
 .saha-alt { display: flex; justify-content: center; }
+.saha-okut--iki { grid-template-columns: 1fr auto; }
+.saha-sekmeler { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+/* SAH-06: beklenen/okunan farkı. */
+.saha-fark { flex-shrink: 0; font-variant-numeric: tabular-nums; font-weight: 600; padding: .15rem .5rem; border-radius: var(--radius); }
+.saha-fark--tamam { color: var(--success); background: var(--success-soft); }
+.saha-fark--eksik { color: var(--warning); background: var(--warning-soft); }
+.saha-uyari { margin: 0; color: var(--warning); font-size: .88rem; overflow-wrap: anywhere; }
+/* SAH-07: tahsilat. */
+.saha-tutar { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.saha-kanallar { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.saha-karekod { display: grid; place-items: center; gap: .5rem; text-align: center; }
+.saha-karekod img { width: min(72vw, 280px); height: auto; background: var(--karekod-zemin); padding: .5rem; border-radius: var(--radius); }
 .mobil-asistan { max-width: 48rem; margin: 0 auto; padding: .5rem 16px; background: var(--bg); min-height: 100dvh; }
 .mobil-asistan__baslik { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0 .75rem; font-size: .9rem; }
 /* AI-08: yönetici özeti kartı. */

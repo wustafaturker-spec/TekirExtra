@@ -7,6 +7,9 @@ import { kuyruktanSil } from "@/lib/saha-depo";
 import { useSaha } from "./saha-baglam";
 
 const SAYIM_ROLLERI = ["yonetici", "muhasebe", "depo"];
+const MAL_KABUL_ROLLERI = ["yonetici", "muhasebe", "satis", "depo"];
+/** SAH-07: POS bağlantısı açabilen roller. */
+const TAHSILAT_ROLLERI = ["yonetici", "muhasebe"];
 const MASRAF_DISI = ["calisan", "b2b_bayi"];
 
 /** SAH-01: rolün açabildiği saha işleri ve cihazdaki bekleyen kuyruk. */
@@ -26,6 +29,12 @@ export default function SahaAnaSayfa() {
       <nav className="saha-kutular" aria-label="Saha işleri">
         {SAYIM_ROLLERI.includes(rol) && (
           <Link className="saha-kutu" href="/saha/sayim"><span aria-hidden>▦</span><strong>Barkodla sayım</strong><small>Depoda okut, taslak sayım gönder</small></Link>
+        )}
+        {MAL_KABUL_ROLLERI.includes(rol) && (
+          <Link className="saha-kutu" href="/saha/mal-kabul"><span aria-hidden>⇩</span><strong>Mal kabul</strong><small>Sipariş ya da e-İrsaliyeyi okutarak teslim al</small></Link>
+        )}
+        {TAHSILAT_ROLLERI.includes(rol) && (
+          <Link className="saha-kutu" href="/saha/tahsilat"><span aria-hidden>₺</span><strong>Tahsilat</strong><small>Bakiye gör, ödeme bağlantısı gönder</small></Link>
         )}
         {rol && !MASRAF_DISI.includes(rol) && (
           <Link className="saha-kutu" href="/saha/masraf"><span aria-hidden>🧾</span><strong>Masraf fişi</strong><small>Fotoğrafını çek, taslak açılsın</small></Link>

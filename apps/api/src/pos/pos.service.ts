@@ -13,6 +13,7 @@ import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { bugunTR, posAcikTaksitler, posAzamiTaksit } from "@tekirextra/shared";
 import { saglayiciKesintiAlanlari, tahminiKomisyonAlanlari, taksitTablosu } from "./taksit";
 import { BildirimService } from "../bildirimler/bildirim.service";
+import { odemeKarekodu } from "./karekod";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { aktarimPlani } from "./aktarim-plani";
 import { PrismaService } from "../core/prisma.service";
@@ -135,7 +136,7 @@ export class PosService {
     });
   }
 
-  async baslat(girdi: { posHesapId: string; cariId: string; faturaId?: string; tutar: string; oncekiniIptalEt?: boolean }) {
+  async baslat(girdi: { posHesapId: string; cariId: string; faturaId?: string; tutar: string; oncekiniIptalEt?: boolean; bildirim?: boolean }) {
     const { tenantId } = aktifBaglam();
     const tutar = new Prisma.Decimal(girdi.tutar);
     const kaynak = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -221,8 +222,9 @@ export class PosService {
         const tamamlanan = await this.prisma.tenantIslem(tenantId, (tx) =>
           tx.posTahsilat.update({ where: { id: kayit.id }, data: { saglayiciToken: sonuc.id, odemeSayfasiUrl: sonuc.link } }),
         );
-        await this.odemeLinkiEpostala(tenantId, tamamlanan.id, cari.eposta, cari.unvan, sonuc.link, girdi.faturaId).catch(() => undefined);
-        if (cari.telefon)
+        // SAH-07: sahada kanal kullanıcı seçer (bildirim: false); bağlantı ayrıca gönderilir ya da karekodla gösterilir.
+        if (girdi.bildirim !== false) await this.odemeLinkiEpostala(tenantId, tamamlanan.id, cari.eposta, cari.unvan, sonuc.link, girdi.faturaId).catch(() => undefined);
+        if (girdi.bildirim !== false && cari.telefon)
           await this.odemeLinkiSmsGonder(tenantId, tamamlanan.id, cari.telefon, cari.unvan, sonuc.link, girdi.faturaId).catch(
             () => undefined,
           );
@@ -271,10 +273,10 @@ export class PosService {
       const tamamlanan = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.posTahsilat.update({ where: { id: kayit.id }, data: { saglayiciToken: sonuc.token, odemeSayfasiUrl: sonuc.odemeSayfasiUrl } }),
       );
-      await this.odemeLinkiEpostala(tenantId, tamamlanan.id, cari.eposta, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(
+      if (girdi.bildirim !== false) await this.odemeLinkiEpostala(tenantId, tamamlanan.id, cari.eposta, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(
         () => undefined,
       );
-      if (cari.telefon)
+      if (girdi.bildirim !== false && cari.telefon)
         await this.odemeLinkiSmsGonder(tenantId, tamamlanan.id, cari.telefon, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(
           () => undefined,
         );
@@ -933,6 +935,14 @@ export class PosService {
       throw new BadRequestException("Gönderilebilir ödeme bağlantısı veya cari telefonu bulunamadı");
     await this.odemeLinkiSmsGonder(tenantId, kayit.id, kayit.cari.telefon, kayit.cari.unvan, kayit.odemeSayfasiUrl, kayit.faturaId);
     return { basarili: true };
+  }
+
+  /** SAH-07: açık ödeme bağlantısının karekodu (müşteri kendi telefonuyla okutur). */
+  async karekod(id: string): Promise<string> {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findUnique({ where: { id }, select: { odemeSayfasiUrl: true, durum: true } }));
+    if (!kayit?.odemeSayfasiUrl || kayit.durum !== "baslatildi") throw new BadRequestException("Gösterilebilir açık ödeme bağlantısı bulunamadı");
+    return odemeKarekodu(kayit.odemeSayfasiUrl);
   }
 
   async yenidenDene(id: string) {

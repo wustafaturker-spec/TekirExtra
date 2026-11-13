@@ -60,6 +60,11 @@ export class PosController {
   @Post("tahsilatlar/:id/sms") @Roller("yonetici", "muhasebe") smsYenidenGonder(@Param("id") id: string) {
     return this.service.smsYenidenGonder(id);
   }
+  /** SAH-07 */
+  @Get("tahsilatlar/:id/karekod") @Roller("yonetici", "muhasebe") @Header("Cache-Control", "no-store")
+  async karekod(@Param("id", ParseUUIDPipe) id: string) {
+    return { svg: await this.service.karekod(id) };
+  }
   @Post("tahsilatlar/:id/yeniden-dene") @Roller("yonetici", "muhasebe") yenidenDene(@Param("id") id: string) {
     return this.service.yenidenDene(id);
   }

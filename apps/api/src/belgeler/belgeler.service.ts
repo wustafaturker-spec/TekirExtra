@@ -39,7 +39,7 @@ import { cariIslemDenetle, riskAsimiVarMi, riskLimitiDenetle, type BelgeTuru } f
 import { belgeGuncelTry } from "../cari/doviz-degerleme";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
 import { tedarikciKodlariniOgren } from "../ebelge/stok-eslesme";
-import { belgeOlusturSemasi } from "./belgeler.semalar";
+import { belgeOlusturSemasi, type PartiGirdisi } from "./belgeler.semalar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, odemeOzetiGorunumu } from "../fatura/odeme-durumu";
 import type {
   belgeGuncelleSemasi,
@@ -1234,7 +1234,11 @@ export class BelgelerService {
   async donustur(
     id: string,
     hedef: "siparis" | "irsaliye" | "fatura",
-    girdi?: { kalemler?: { satirId: string; miktar: string }[] },
+    girdi?: {
+      kalemler?: { satirId: string; miktar: string }[];
+      /** SAH-06: mal kabulde okutulan lot/seri, kaynak satırın parti bilgisinin yerine (satır biriminde). */
+      partiler?: Map<string, PartiGirdisi[]>;
+    },
   ) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -1353,7 +1357,7 @@ export class BelgelerService {
             kaynakSatirId: s.id,
             stokId: s.stokId,
             varyantId: s.varyantId,
-            partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
+            partiBilgileri: (girdi?.partiler?.get(s.id) as Prisma.InputJsonValue | undefined) ?? s.partiBilgileri ?? Prisma.JsonNull,
             miktar: miktarlar.get(s.id)!,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -1622,7 +1626,15 @@ export class BelgelerService {
    * irsaliye numarası `tedarikciBelgeNo`'ya yazılır; fiyat tedarikçi/kart alış
    * fiyatıdır. Reddedilen ya da firmanın kendi sevki olan belgeden oluşmaz.
    */
-  async gelenEirsaliyedenAlisIrsaliyesi(gelenId: string, girdi: z.infer<typeof gelenIrsaliyeIsleSemasi>) {
+  async gelenEirsaliyedenAlisIrsaliyesi(
+    gelenId: string,
+    girdi: z.infer<typeof gelenIrsaliyeIsleSemasi>,
+    /**
+     * SAH-06: sahada mal kabul. `taslak` onaylamaz; `miktarlar` okutulan miktarlardır (belge birimiyle,
+     * verilmeyen satır gelmemiş sayılır ve irsaliyeye girmez); `partiler` okutulan lot/seri.
+     */
+    secenekler: { taslak?: boolean; miktarlar?: Map<number, string>; partiler?: Map<number, PartiGirdisi[]> } = {},
+  ) {
     const { tenantId } = aktifBaglam();
     const hazirlik = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id: gelenId }, include: { alisIrsaliyesi: { select: { no: true } } } });
@@ -1635,7 +1647,9 @@ export class BelgelerService {
       if (ubl.satirlar.length === 0) throw new BadRequestException("Belgede irsaliye satırı bulunamadı");
       const eslesme = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.stokId]));
       const varyantlar = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.varyantId ?? null]));
-      const eksik = ubl.satirlar.map((s, i) => ({ sira: i + 1, ad: s.ad })).filter((s) => !eslesme.get(s.sira));
+      const alinacak = (sira: number) => !secenekler.miktarlar || secenekler.miktarlar.has(sira);
+      if (secenekler.miktarlar && ![...secenekler.miktarlar.keys()].some((k) => k >= 1 && k <= ubl.satirlar.length)) throw new BadRequestException("Kabul edilen satır yok");
+      const eksik = ubl.satirlar.map((s, i) => ({ sira: i + 1, ad: s.ad })).filter((s) => alinacak(s.sira) && !eslesme.get(s.sira));
       if (eksik.length > 0) throw new BadRequestException(`Şu satırlar bir stok kartıyla eşleştirilmedi: ${eksik.map((s) => `${s.sira}. ${s.ad}`).join(", ")}`);
 
       const mevcutCari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: kayit.gonderenVkn }, select: { id: true } });
@@ -1644,23 +1658,27 @@ export class BelgelerService {
       }
       const cariId = mevcutCari?.id ?? await tedarikciCariBulVeyaOlustur(tx, tenantId, kayit.gonderenVkn, kayit.gonderenUnvan);
       const satirlar = [];
+      const saticiKodlari: (string | null)[] = [];
       for (const [i, s] of ubl.satirlar.entries()) {
+        if (!alinacak(i + 1)) continue;
         const stokId = eslesme.get(i + 1) as string;
         const kart = await tx.stokKart.findUnique({ where: { id: stokId }, select: { anaBirim: true, kdvOrani: true } });
         if (!kart) throw new BadRequestException(`${i + 1}. satırın stok kartı bulunamadı`);
         satirlar.push({
           stokId,
           varyantId: varyantlar.get(i + 1),
-          miktar: String(Number(s.miktar) || 0),
+          miktar: secenekler.miktarlar?.get(i + 1) ?? String(Number(s.miktar) || 0),
+          ...(secenekler.partiler?.get(i + 1)?.length ? { partiBilgileri: secenekler.partiler.get(i + 1) } : {}),
           // Belgenin birimi (koli, kg…) kartta tanımlı olmalı; yoksa kaydetme söyler (STK-10).
           birim: s.birimAdi || kart.anaBirim,
           birimFiyat: await irsaliyeAlisFiyati(tx, stokId, cariId),
           kdvOrani: kart.kdvOrani.toString(),
         });
+        saticiKodlari.push(s.saticiUrunKodu ?? null);
       }
       // Birimi kartta olmayan satır burada durur; işlem geri alınır, yeni cari de açılmamış olur.
       await satirBirimleriniDogrula(tx, satirlar);
-      return { kayit, cariId, satirlar, saticiKodlari: ubl.satirlar.map((s) => s.saticiUrunKodu ?? null) };
+      return { kayit, cariId, satirlar, saticiKodlari };
     });
 
     const { kayit } = hazirlik;
@@ -1683,7 +1701,7 @@ export class BelgelerService {
     }
     let onayli;
     try {
-      onayli = await this.onayla(belge.id);
+      onayli = secenekler.taslak ? belge : await this.onayla(belge.id);
     } catch (hata) {
       await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.update({ where: { id: belge.id }, data: { gelenEirsaliyeId: null } })).catch(() => undefined);
       await this.sil(belge.id).catch(() => undefined);
