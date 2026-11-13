@@ -7415,7 +7415,7 @@ model BelgeOcrKaydi {
   id             String    @id @default(uuid()) @db.Uuid
   tenantId       String    @map("tenant_id") @db.Uuid
   dosyaYolu      String?   @map("dosya_yolu")
-  belgeTuru      String // "FIS_FATURA", "KARTVIZIT", "CEK"
+  belgeTuru      String    @map("belge_turu") // "FIS_FATURA", "KARTVIZIT", "CEK"
   hamMetin       String?   @map("ham_metin") @db.Text
   cikarilanVeri  Json      @map("cikarilan_veri")
   durum          String    @default("BEKLIYOR") // "BEKLIYOR", "ISLENDI", "REDDEDILDI"
