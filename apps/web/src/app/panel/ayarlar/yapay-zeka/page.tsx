@@ -307,7 +307,7 @@ export default function YapayZekaAyarlariSayfasi() {
               onChange={(e) => setOzelTalimatlar(e.target.value)}
             />
             <p style={{ margin: "6px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>
-              💡 Bu talimatlar sistemdeki tüm yapay zeka ajanlarına, WhatsApp asistanına ve teklif motoruna zorunlu güvenlik kuralı olarak enjekte edilir.
+              💡 Bu talimatlar sistemdeki tüm yapay zeka ajanlarına, Telegram asistanına ve teklif motoruna zorunlu güvenlik kuralı olarak enjekte edilir.
             </p>
           </div>
 
