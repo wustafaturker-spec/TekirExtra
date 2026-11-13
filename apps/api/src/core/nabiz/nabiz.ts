@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { ConsoleLogger } from "@nestjs/common";
 import { structuredLogger } from "../observability/structured-logger";
+import { gunlukHatasiniKaydet, isHatasiniKaydet } from "../observability/surec-hatalari";
 import { pencereIsareti, uzayanKilitle } from "../redis-kilit";
 
 /**
@@ -9,7 +10,7 @@ import { pencereIsareti, uzayanKilitle } from "../redis-kilit";
  * zamanlayıcı hatayı yakalayıp yalnız loglar) o çalışma hatalı sayılır.
  * Sonuç kayıtçıya iletilir; kayıtçı yoksa (testler, betikler) iş aynen çalışır.
  */
-interface Calisma { hatalar: string[] }
+interface Calisma { hatalar: string[]; ad?: string }
 
 const calismaBaglami = new AsyncLocalStorage<Calisma>();
 
@@ -35,6 +36,8 @@ export function nabizHatasi(mesaj: unknown) {
 export class NabizLogger extends ConsoleLogger {
   override error(message: unknown, ...rest: unknown[]) {
     nabizHatasi(message);
+    // PLT-123: hata ayrıca uygulama hataları gruplamasına düşer (iş içindeyse iş adıyla).
+    gunlukHatasiniKaydet(message, rest, calismaBaglami.getStore()?.ad ?? null);
     super.error(message, ...(rest as [string?]));
   }
 }
@@ -89,12 +92,13 @@ export async function nabizla<T>(ad: string, is: () => Promise<T>, aralikMs?: nu
     if (kilit.durum === "suruyor" && kaydedici) await kaydedici({ ad, baslangic, bitis: baslangic, hata: null, aralikMs, atlandi: true }).catch(() => undefined);
     return undefined;
   }
-  const c: Calisma = { hatalar: [] };
+  const c: Calisma = { hatalar: [], ad };
   let sonuc: T | undefined;
   try {
     sonuc = await calismaBaglami.run(c, is);
   } catch (hata) {
     c.hatalar.push(metin(hata));
+    isHatasiniKaydet(hata, ad);
   } finally {
     surenIsler.delete(ad);
     await kilit.birak();

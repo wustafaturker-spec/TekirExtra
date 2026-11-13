@@ -1,5 +1,7 @@
 import "reflect-metadata";
 import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
+import { surecHataKaydediciAyarla, yakalanmamisHatalariDinle } from "./core/observability/surec-hatalari";
+import { HataKayitService } from "./core/observability/hata-kayit";
 import { NestFactory } from "@nestjs/core";
 import { createServer } from "node:http";
 import { AppModule } from "./app.module";
@@ -9,11 +11,15 @@ import { metrikErisimi } from "./core/observability/observability.controller";
 
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();
+// PLT-124: yakalanmamış söz reddi ve istisna kaydedilir (kaydedici uygulama açılınca kurulur).
+yakalanmamisHatalariDinle();
 
 /** Ayrı süreçte kalıcı BullMQ işleyicilerini çalıştırır. */
 async function bootstrap(): Promise<void> {
   process.env.TEKIR_WORKER = "1";
   const app = await NestFactory.createApplicationContext(AppModule, { logger: new NabizLogger() });
+  // PLT-123: süreç dışı hatalar da uygulama hataları gruplamasına düşer.
+  { const hataKayit = app.get(HataKayitService); surecHataKaydediciAyarla({ kaynak: "worker", yalnizArkaPlan: false, kaydet: (g) => hataKayit.kaydet(g) }); }
   app.enableShutdownHooks();
   const metrics = app.get(MetricsService);
   const metrikPortu = Number(process.env.WORKER_METRICS_PORT || 9464);

@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
+import { surecHataKaydediciAyarla, yakalanmamisHatalariDinle } from "./core/observability/surec-hatalari";
 import { trustProxyDegeri } from "./core/guvenlik/proxy-guveni";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -20,9 +21,13 @@ import { XML_YUKLEME_SINIRI_MB, XML_YUKLEME_YOLLARI } from "./core/govde-sinirla
 
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();
+// PLT-124: yakalanmamış söz reddi ve istisna kaydedilir (kaydedici uygulama açılınca kurulur).
+yakalanmamisHatalariDinle();
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false, logger: new NabizLogger() });
+  // PLT-123: süreç dışı hatalar da uygulama hataları gruplamasına düşer.
+  { const hataKayit = app.get(HataKayitService); surecHataKaydediciAyarla({ kaynak: "api", yalnizArkaPlan: true, kaydet: (g) => hataKayit.kaydet(g) }); }
   const trustProxy = trustProxyDegeri(process.env.TRUST_PROXY);
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
   // SEC-04: istemciler gövdeyi sıkıştırmaz; sıkıştırılmış gövde (gzip bombası ve

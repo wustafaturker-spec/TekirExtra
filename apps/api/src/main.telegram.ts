@@ -1,5 +1,7 @@
 import "reflect-metadata";
 import { uretimSirlariniDenetle } from "./core/guvenlik/uretim-sirlari";
+import { surecHataKaydediciAyarla, yakalanmamisHatalariDinle } from "./core/observability/surec-hatalari";
+import { HataKayitService } from "./core/observability/hata-kayit";
 import { NestFactory } from "@nestjs/core";
 import { createServer } from "node:http";
 import { AppModule } from "./app.module";
@@ -7,6 +9,8 @@ import { NabizLogger } from "./core/nabiz/nabiz";
 
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();
+// PLT-124: yakalanmamış söz reddi ve istisna kaydedilir (kaydedici uygulama açılınca kurulur).
+yakalanmamisHatalariDinle();
 
 /**
  * CNL-01: Telegram kanalının ayrı süreci. Asistan araçları uygulamanın uçlarını süreç içinden
@@ -18,6 +22,8 @@ async function bootstrap(): Promise<void> {
   process.env.TEKIR_TELEGRAM = "1";
   delete process.env.TEKIR_WORKER;
   const app = await NestFactory.createApplicationContext(AppModule, { logger: new NabizLogger() });
+  // PLT-123: süreç dışı hatalar da uygulama hataları gruplamasına düşer.
+  { const hataKayit = app.get(HataKayitService); surecHataKaydediciAyarla({ kaynak: "telegram", yalnizArkaPlan: false, kaydet: (g) => hataKayit.kaydet(g) }); }
   app.enableShutdownHooks();
   const port = Number(process.env.TELEGRAM_SAGLIK_PORTU || 9468);
   const sunucu = createServer((istek, yanit) => {

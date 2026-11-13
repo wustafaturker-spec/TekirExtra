@@ -1798,6 +1798,21 @@ Gerekçe: NFR-09 (günlük otomatik yedek) ve EBLG-09 (10 yıl saklama) karşıl
 | PLT-116 | ✅ **Geri yükleme:** ayda bir ve istendiğinde yedek geçici veritabanına açılır, tablo sayısı ve kritik tabloların satır sayısı künyeyle karşılaştırılır, MinIO arşivi doğrulanır, geçici veritabanı silinir. Canlı veritabanına geri yükleme ekrandan yapılmaz; belgeli komutla, önce yeni bir yedek alınarak yapılır (NFR-09). | Z |
 | PLT-117 | ✅ **Alarm ve iz:** son başarılı yedek 26 saatten eskiyse, yedek ya da dış kopya başarısızsa, disk azaldıysa Sistem Sağlığı'nda görünür ve mevcut alarm e-postası gider. Elle yedek, koruma ve deneme işlemleri platform olay kaydına yazılır. | Z |
 
+#### Uygulama hataları (PLT-118…125)
+
+Kaynak: uygulama incelemesi 2026-11-10, O-6. Hatalar kendi veritabanımızda gruplanır (dış servis yok; mesajlarda firma verisi olabilir). PLT-118…122 2026-11-11'de (229f6c8) yapıldı, bu bölüme 2026-11-13'te işlendi; PLT-123…125 kullanıcı onayıyla 2026-11-13.
+
+| No | İster | Öncelik |
+|---|---|---|
+| PLT-118 | ✅ **API hataları:** her 5xx yanıtı parmak iziyle (hata adı, mesaj kalıbı, ilk uygulama satırı, rota kalıbı) gruplanır; sayı, ilk/son görülme, son istek, firma sayısı ve sürüm tutulur. E-posta, VKN/TCKN, IBAN ve telefon gizlenir; istek gövdesi saklanmaz; kayıt isteği düşürmez. | Z |
+| PLT-119 | ✅ **Tarayıcı hataları:** yakalanmamış hata, karşılanmamış söz ve panel hata sınırı `POST /istemci-hata` ile bildirilir (yalnız oturumlu, kullanıcı başına dakikada 20, sorgu dizesi atılır). | Z |
+| PLT-120 | ✅ **Platform kartı:** Sistem Sağlığı'nda açık gruplar, ayrıntı ve "çözüldü" işareti; çözülen grup tekrar görülürse açılır. | Z |
+| PLT-121 | ✅ **Alarm:** yeni grup ya da bir saatte 20 tekrar Sistem Sağlığı alarmı olur (mevcut e-posta kanalı, anahtar başına saatte bir). | Z |
+| PLT-122 | ✅ **Saklama:** grup son görülmesinden 90 gün sonra silinir. | Z |
+| PLT-123 | ✅ **Arka plan hataları:** worker (zamanlayıcı ve kuyruk işleri), Telegram ve ödeme sözü süreçlerinde günlüğe hata olarak yazılan ve işin fırlattığı hatalar aynı gruplamaya düşer; kaynak `worker`/`telegram`, konum iş adı (`is:<ad>`) ya da günlük bağlamı (`log:<sınıf>`), firma bağlamdan. API sürecinde yalnız arka plan işlerindeki hatalar alınır (HTTP hataları PLT-118'de). Süreç başına dakikada en çok 60 kayıt; kayıt hiçbir işi durdurmaz. (2026-11-13; `core/observability/surec-hatalari.ts`, `NabizLogger`, dört `main*.ts`.) | Z |
+| PLT-124 | ✅ **Yakalanmamış hatalar:** dört süreçte yakalanmamış söz reddi kaydedilir ve süreç sürer; yakalanmamış istisna kaydedilir (en çok 2 sn beklenir), ardından süreç kapanır ve Docker yeniden başlatır. (2026-11-13.) | Z |
+| PLT-125 | ✅ **Kaynak etiketi ve süzgeç:** platform kartında API, Tarayıcı, Worker, Telegram etiketi ve kaynağa göre süzgeç. (2026-11-13.) | Y |
+
 Diğer ihtiyaç adayları [ayrı yol haritasında](PLATFORM-KURUMSAL-YONETIM-YOL-HARITASI-2026-10-31.md) korunur; 2 Kasım programında açıkça kapsanan işler yeni programın teslim sırasıyla izlenir.
 
 ## 4. Fonksiyonel Olmayan İsterler

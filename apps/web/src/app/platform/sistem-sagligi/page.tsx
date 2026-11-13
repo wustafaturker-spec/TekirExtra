@@ -2,14 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Activity } from "lucide-react";
-import { Alert, Badge, Button, Card, PageHeader, Stat, StatGrid, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, Card, PageHeader, Select, Stat, StatGrid, TableWrap } from "@/components/ui";
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
 
 interface Surec { basladiAt: string; sonNabizAt: string; rssMb: number | null; heapMb: number | null; heapSinirMb: number | null; makine?: string | null }
 interface Is { isAdi: string; sonBaslangic: string | null; sonSureMs: number | null; sonBasariAt: string | null; sonHata: string | null; sonHataAt: string | null; ardisikHata: number; calismaSayisi: number; aralikMs: number | null; ardisikUzun: number; saatlikAtlama: number }
 interface OluIs { id: string; tenantId: string; unvan: string; isTuru: string; hata: string; zaman: string }
 /** PLT-120: gruplu uygulama hatası; firma kimliği gelmez, yalnız kaç firmada görüldüğü. */
-interface HataGrubu { parmakIzi: string; kaynak: "api" | "web"; ad: string; mesaj: string; yigin: string | null; konum: string; sayi: number; saatSayi: number; ilkGorulme: string; sonGorulme: string; surum: string | null; sonIstekId: string | null; firmaSayisi: number; cozulduAt: string | null; acik: boolean }
+/** PLT-125: hata kaynağı etiketi. */
+type HataKaynagi = "api" | "web" | "worker" | "telegram";
+const KAYNAK_ETIKETI: Record<HataKaynagi, { ad: string; ton: "danger" | "warning" | "info" | "neutral" }> = {
+  api: { ad: "API", ton: "danger" }, web: { ad: "Tarayıcı", ton: "warning" }, worker: { ad: "Worker", ton: "info" }, telegram: { ad: "Telegram", ton: "neutral" },
+};
+interface HataGrubu { parmakIzi: string; kaynak: HataKaynagi; ad: string; mesaj: string; yigin: string | null; konum: string; sayi: number; saatSayi: number; ilkGorulme: string; sonGorulme: string; surum: string | null; sonIstekId: string | null; firmaSayisi: number; cozulduAt: string | null; acik: boolean }
 interface Alarm { anahtar: string; tur: string; acik: boolean; ozet: string; ilkAt: string; sonBildirimAt: string | null; kapandiAt: string | null }
 interface Saglik {
   zaman: string;
@@ -41,6 +46,7 @@ export default function PlatformSistemSagligi() {
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState("");
   const [tumHatalar, setTumHatalar] = useState(false);
+  const [kaynakSuzgeci, setKaynakSuzgeci] = useState<HataKaynagi | "">("");
 
   const yukle = useCallback(async () => {
     kontrol.current?.abort();
@@ -80,7 +86,8 @@ export default function PlatformSistemSagligi() {
   const acikAlarmlar = v?.alarmlar.filter((a) => a.acik) ?? [];
   const hatalar = v?.hatalar ?? [];
   const acikHatalar = hatalar.filter((h) => h.acik);
-  const gorunenHatalar = tumHatalar ? hatalar : acikHatalar;
+  const gorunenHatalar = (tumHatalar ? hatalar : acikHatalar).filter((h) => !kaynakSuzgeci || h.kaynak === kaynakSuzgeci);
+  const kaynaklar = [...new Set(hatalar.map((h) => h.kaynak))];
   const nabizGec = v?.worker.nabizGecikmesiDk !== null && v?.worker.nabizGecikmesiDk !== undefined && v.worker.nabizGecikmesiDk > v.esikler.workerNabizDk;
   const bellekOrani = v?.worker.son?.heapMb !== null && v?.worker.son?.heapMb !== undefined && v.worker.son.heapSinirMb ? Math.round((v.worker.son.heapMb / v.worker.son.heapSinirMb) * 100) : null;
 
@@ -104,14 +111,17 @@ export default function PlatformSistemSagligi() {
         <Stat label="Açık uygulama hatası (7 gün)" value={acikHatalar.length} tone={acikHatalar.length ? "danger" : undefined} />
       </StatGrid>
 
-      <Card title="Uygulama hataları" pad={false} actions={hatalar.length > acikHatalar.length ? <Button size="sm" onClick={() => setTumHatalar((d) => !d)}>{tumHatalar ? "Yalnız açıkları göster" : `Çözülenleri de göster (${hatalar.length - acikHatalar.length})`}</Button> : undefined}>
-        <p className="subtle" style={{ padding: "0 1.25rem", margin: "0 0 0.75rem" }}>API'nin 500 yanıtları ve kullanıcı ekranlarındaki yakalanmamış hatalar, aynı hata tek satırda toplanarak. Mesajlarda e-posta, VKN/TCKN, IBAN ve telefon gizlenir. Son 7 gün; kayıtlar 90 gün saklanır.</p>
+      <Card title="Uygulama hataları" pad={false} actions={<div className="row-tight">
+        {kaynaklar.length > 1 && <Select aria-label="Hata kaynağı" value={kaynakSuzgeci} onChange={(e) => setKaynakSuzgeci(e.target.value as HataKaynagi | "")}><option value="">Tüm kaynaklar</option>{kaynaklar.map((k) => <option key={k} value={k}>{KAYNAK_ETIKETI[k]?.ad ?? k}</option>)}</Select>}
+        {hatalar.length > acikHatalar.length && <Button size="sm" onClick={() => setTumHatalar((d) => !d)}>{tumHatalar ? "Yalnız açıkları göster" : `Çözülenleri de göster (${hatalar.length - acikHatalar.length})`}</Button>}
+      </div>}>
+        <p className="subtle" style={{ padding: "0 1.25rem", margin: "0 0 0.75rem" }}>API'nin 500 yanıtları, kullanıcı ekranlarındaki yakalanmamış hatalar ve worker ile Telegram süreçlerinin hataları (iş adıyla), aynı hata tek satırda toplanarak. Mesajlarda e-posta, VKN/TCKN, IBAN ve telefon gizlenir. Son 7 gün; kayıtlar 90 gün saklanır.</p>
         <TableWrap className="platform-responsive-table platform-health-table">
           <thead><tr><th>Son görülme</th><th>Kaynak</th><th>Hata</th><th className="num">Tekrar</th><th className="num">Firma</th><th>İşlem</th></tr></thead>
           <tbody>
             {gorunenHatalar.map((h) => <tr key={h.parmakIzi}>
               <td data-label="Son görülme" className="subtle">{zaman(h.sonGorulme)}<div>ilk: {zaman(h.ilkGorulme)}</div></td>
-              <td data-label="Kaynak"><Badge variant={h.kaynak === "api" ? "danger" : "warning"}>{h.kaynak === "api" ? "API" : "Tarayıcı"}</Badge></td>
+              <td data-label="Kaynak"><Badge variant={KAYNAK_ETIKETI[h.kaynak]?.ton ?? "neutral"}>{KAYNAK_ETIKETI[h.kaynak]?.ad ?? h.kaynak}</Badge></td>
               <td data-label="Hata">
                 <div className="mono" style={{ fontSize: "0.8rem" }}>{h.konum}</div>
                 <div><strong>{h.ad}</strong>: {h.mesaj}</div>
@@ -124,7 +134,7 @@ export default function PlatformSistemSagligi() {
                 ? <Button size="sm" disabled={Boolean(islem)} onClick={() => void hataCozuldu(h.parmakIzi)}>{islem === h.parmakIzi ? "İşaretleniyor…" : "Çözüldü"}</Button>
                 : <Badge variant="success">Çözüldü {h.cozulduAt ? zaman(h.cozulduAt) : ""}</Badge>}</td>
             </tr>)}
-            {!gorunenHatalar.length && <tr><td colSpan={6} className="empty">{hatalar.length ? "Açık hata yok." : "Son 7 günde uygulama hatası kaydı yok."}</td></tr>}
+            {!gorunenHatalar.length && <tr><td colSpan={6} className="empty">{kaynakSuzgeci ? "Bu kaynakta hata yok." : hatalar.length ? "Açık hata yok." : "Son 7 günde uygulama hatası kaydı yok."}</td></tr>}
           </tbody>
         </TableWrap>
       </Card>

@@ -8,7 +8,8 @@ import { PrismaService } from "../prisma.service";
  * PLT-118/119: uygulama hatalarının gruplu kaydı. Kendi veritabanımızda tutulur (dış
  * servis yok; mesajlarda firma verisi olabilir). Kayıt hiçbir zaman isteği düşürmez.
  */
-export type HataKaynagi = "api" | "web";
+/** PLT-123: worker, Telegram ve ödeme sözü süreçleri de yazar (ödeme sözü "worker" sayılır). */
+export type HataKaynagi = "api" | "web" | "worker" | "telegram";
 
 export interface HataGirdisi {
   kaynak: HataKaynagi;
