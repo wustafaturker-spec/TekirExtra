@@ -46,12 +46,10 @@ export default function SahaAnaSayfa() {
             {kuyruk.map((k) => (
               <li key={k.id}>
                 <div><strong>{k.tur === "sayim" ? "Sayım" : "Masraf fişi"}</strong> · {k.baslik}<small>{new Date(k.olusturma).toLocaleString("tr-TR")}{k.durum === "hata" ? ` · ${k.hata}` : ""}</small></div>
-                {k.durum === "hata" && (
-                  <div className="saha-liste__eylem">
-                    <Button size="sm" disabled={!cevrimici || isleniyor} onClick={() => void hepsiniGonder(k.id)}>Yeniden dene</Button>
-                    <Button size="sm" variant="danger" onClick={() => { if (window.confirm("Bu kayıt cihazdan silinsin mi? Sunucuya gönderilmeyecek.")) void kuyruktanSil(k.id).then(kuyrukYenile); }}>Sil</Button>
-                  </div>
-                )}
+                <div className="saha-liste__eylem">
+                  {k.durum === "hata" && <Button size="sm" disabled={!cevrimici || isleniyor} onClick={() => void hepsiniGonder(k.id)}>Yeniden dene</Button>}
+                  <Button size="sm" variant="danger" disabled={isleniyor} onClick={() => { if (window.confirm("Bu kayıt cihazdan silinsin mi? Sunucuya gönderilmeyecek.")) void kuyruktanSil(k.id).then(kuyrukYenile); }}>Sil</Button>
+                </div>
               </li>
             ))}
           </ul>

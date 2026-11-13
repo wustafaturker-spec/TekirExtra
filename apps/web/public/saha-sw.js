@@ -3,10 +3,16 @@
  * dosyalardır; API yanıtları ve kişisel veri önbelleğe alınmaz (çevrimdışı veri IndexedDB'de,
  * kullanıcıya bağlı tutulur). Sayfalar ağdan, ağ yoksa son kopyadan; durağan dosyalar önbellekten.
  */
-const SURUM = "saha-v1";
+const SURUM = "saha-v2";
+const SAYFALAR = ["/saha", "/saha/sayim", "/saha/masraf"];
 
-// Sayfalar önceden indirilmez (oturum yoksa giriş sayfası önbelleğe girerdi); açılan sayfa saklanır.
-self.addEventListener("install", () => self.skipWaiting());
+// Kurulum saha sayfasından, oturum açıkken olur; ilk açılan sayfa işçi devreye girmeden yüklendiği
+// için sayfalar burada indirilir. Giriş sayfasına yönlendirilen yanıt saklanmaz.
+self.addEventListener("install", (olay) => {
+  olay.waitUntil(caches.open(SURUM).then((c) => Promise.all(SAYFALAR.map((s) =>
+    fetch(s, { credentials: "same-origin" }).then((y) => (y.ok && !y.redirected ? c.put(s, y) : undefined)).catch(() => undefined),
+  ))).then(() => self.skipWaiting()));
+});
 
 self.addEventListener("activate", (olay) => {
   olay.waitUntil(caches.keys().then((adlar) => Promise.all(adlar.filter((a) => a !== SURUM).map((a) => caches.delete(a)))).then(() => self.clients.claim()));
