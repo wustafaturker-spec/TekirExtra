@@ -6,6 +6,9 @@ const firma = { tenantId: id, unvan: "Takip Test Firması", vkn: "1234567890", p
 const ilkTakip = { sorumluId: null, sorumluAdi: null, sorumluUygun: null, durum: "acik", sonrakiGorusme: null, surum: 0, gecikti: false, guncelleyen: null, updatedAt: null };
 const liste = (kayitlar: unknown[] = []) => ({ kayitlar, toplam: kayitlar.length, sayfa: 1, sayfaBoyutu: 25 });
 test.beforeEach(async ({ page }) => {
+  // Taklit edilmeyen istek gerçek API'ye gidip 401 alırsa sayfa girişe yönlenir; önce kaydedilen bu işleyici
+  // en düşük önceliklidir ve sonradan eklenen bölümleri (duyuru, istisna, ek hacim) boş yanıtla karşılar.
+  await page.route("**/api/v1/**", (r) => r.fulfill({ status: 404, json: {} }));
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "cerez"));
   await page.route("**/api/v1/platform/auth/ben", (r) => r.fulfill({ json: { eposta: "ekip@example.test", rol: "yonetici" } }));
   await page.route("**/api/v1/platform/firmalar/sayfali?*", (r) => r.fulfill({ json: { ...liste([firma]), sayilar: { toplam: 1, talep: 0, askiyaAlinacak: 0, askida: 0, iptal: 0 } } }));

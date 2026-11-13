@@ -16,9 +16,10 @@ async function mockla(page: Page) {
     ] };
     else if (yol.endsWith("/ai/cek/oku")) json = { veri: { belgeTuru: "CEK", cekNo: "00123", banka: "Test Banka", sube: "Merkez", hesapNo: "000123",
       borclu: "Test AŞ", kesideYeri: "İstanbul", tarih: "2026-12-31", tutar: "100.01", paraBirimi: "TRY", yaziylaTutar: null, guvenSkoru: 0.9 }, uyarilar: ["Bilgileri görüntüyle karşılaştırın."] };
+    else if (yol.endsWith("/kasa-banka/cek-senet-sayfa")) { listeIstekleri.push(url.search); json = { kayitlar: [], sonrakiImlec: null, adet: 0 }; }
     else if (yol.endsWith("/kasa-banka/cek-senet")) {
       if (route.request().method() === "POST") { yazma++; json = { id: "cek1" }; }
-      else { listeIstekleri.push(url.search); json = []; }
+      else json = [];
     } else if (yol.endsWith("/cari")) json = { kayitlar: [], sonrakiImlec: null };
     else if (yol.endsWith("/kasalar") || yol.endsWith("/bankalar")) json = [];
     await route.fulfill({ json });

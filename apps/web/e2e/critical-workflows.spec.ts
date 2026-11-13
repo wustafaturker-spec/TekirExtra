@@ -773,6 +773,7 @@ test("çek senet formu tüm cari sayfalarını seçime yükler", async ({ page }
   const bos = { adet: 0, toplamTry: "0" };
   await page.route("**/api/v1/kasa-banka/cek-senet**", (route) => {
     const yol = new URL(route.request().url()).pathname;
+    if (yol.endsWith("/cek-senet-sayfa")) return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null, adet: 0 } });
     return route.fulfill(yol.endsWith("/cek-senet-ozet")
       ? { json: { acik: { ...bos, dovizler: {} }, geciken: bos, yaklasan: bos, bankada: bos, ciro: bos, karsiliksiz: bos } }
       : ortakYanit(yol) ?? { json: [] });
