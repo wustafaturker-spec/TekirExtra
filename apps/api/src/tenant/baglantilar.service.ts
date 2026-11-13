@@ -11,7 +11,7 @@ import {
   type EntegratorAdapter,
   type EntegratorConfig,
 } from "@tekirextra/baglanti";
-import { BAGLANTI_AILELERI, BANKA_SAGLAYICILARI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI, SMS_SAGLAYICILARI } from "@tekirextra/shared";
+import { BAGLANTI_AILELERI, BANKA_SAGLAYICILARI, EBELGE_SAGLAYICILARI, ETICARET_SAGLAYICILARI, eticaretKimlikHatasi, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI, SMS_SAGLAYICILARI } from "@tekirextra/shared";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { disAdresHatasi, disFetch } from "../core/guvenlik/dis-istek";
@@ -61,7 +61,8 @@ export const baglantiOlusturSemasi = z.object({
   aile: z.enum(BAGLANTI_AILELERI),
   saglayici: z.string(),
   config: z.object({
-    kullaniciAdi: z.string().min(1),
+    // ETC-11: Ticimax'ta kullanıcı adı yoktur; diğer sağlayıcılarda aşağıda zorunlu tutulur.
+    kullaniciAdi: z.string().default(""),
     parola: z.string().optional(),
     apiAnahtari: z.string().optional(),
     servisAdresi: z.string().optional(),
@@ -85,6 +86,11 @@ export const baglantiOlusturSemasi = z.object({
 }).superRefine((girdi, ctx) => {
   const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : girdi.aile === "sms" ? SMS_SAGLAYICILARI : girdi.aile === "banka" ? BANKA_SAGLAYICILARI : [];
   if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
+  const eticaret = (ETICARET_SAGLAYICILARI as readonly string[]).includes(girdi.saglayici);
+  if (!eticaret && !girdi.config.kullaniciAdi.trim()) ctx.addIssue({ code: "custom", path: ["config", "kullaniciAdi"], message: "Kullanıcı adı zorunludur" });
+  // ETC-08…11: e-ticaret sitesi kimliği; site adresi ayrıca https ve herkese açık adres olarak denetlenir (ETC-07).
+  const eticaretHatasi = eticaret ? eticaretKimlikHatasi(girdi.saglayici, girdi.config) : null;
+  if (eticaretHatasi) ctx.addIssue({ code: "custom", path: ["config"], message: eticaretHatasi });
   const adresHatasi = servisAdresiHatasi(girdi.saglayici, girdi.config);
   if (adresHatasi) ctx.addIssue({ code: "custom", path: ["config"], message: adresHatasi });
   // GİB e-Fatura ve e-Arşiv serilerinin farklı olmasını ister; aynı önek
@@ -376,7 +382,9 @@ export class BaglantilarService {
     if (!kayit) throw new NotFoundException("Bağlantı bulunamadı");
 
     const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string; apiAnahtari?: string; gondericiAdi?: string };
-    const pazaryeriKimligiGecerli = kayit.saglayici === "amazon_tr"
+    const pazaryeriKimligiGecerli = (ETICARET_SAGLAYICILARI as readonly string[]).includes(kayit.saglayici)
+      ? !eticaretKimlikHatasi(kayit.saglayici, config)
+      : kayit.saglayici === "amazon_tr"
       ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.saticiId && config.magazaId)
       : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
     const posKimligiGecerli = kayit.saglayici === "paytr" ? Boolean(config.kullaniciAdi && config.parola && config.magazaId) : Boolean(config.kullaniciAdi && config.parola && (config.servisAdresi === "https://sandbox-api.iyzipay.com" || config.servisAdresi === "https://api.iyzipay.com"));

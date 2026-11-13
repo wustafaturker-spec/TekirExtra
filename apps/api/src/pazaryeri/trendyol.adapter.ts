@@ -19,7 +19,11 @@ export interface NormalizeSiparis {
   satirlar: { hariciSatirId: string; sku: string; barkod?: string; urunAdi: string; miktar: number; birimFiyat: number; kdvOrani: number | null }[];
 }
 export interface PazaryeriStokFiyat {
-  sku: string; barkod: string; miktar: number; fiyat: number;
+  sku: string; barkod: string; miktar: number;
+  /** Stok kartının satış fiyatı (KDV hariç). */
+  fiyat: number;
+  /** ETC-06: kartın KDV oranı; e-ticaret sitelerine fiyat KDV dahil gönderilir. */
+  kdvOrani?: number;
 }
 export interface NormalizeKesinti {
   hariciId: string; siparisNo?: string; tur: string; aciklama?: string; tarih: string;

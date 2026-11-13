@@ -14,6 +14,7 @@ import { kilitle } from "../core/redis-kilit";
 import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
+import { adaptorCoz, ADAPTORLU_SAGLAYICILAR } from "./adaptor";
 import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
@@ -129,9 +130,10 @@ export class PazaryeriService {
     for (const baglanti of baglantilar) sonuclar.push(await this.otomatikIsle(tenantId, baglanti, "siparis", async () => {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
-        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : baglanti.saglayici === "n11" ? new N11Adapter() : baglanti.saglayici === "amazon_tr" ? new AmazonAdapter() : null;
+        // ETC-03: adaptör ortak kayıttan seçilir.
+        const adapter = adaptorCoz(baglanti.saglayici);
         if (!adapter) throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
-        let imlec = baglanti.senkronImleci; let eklenen = 0; let alinan = 0; let sayfaSayisi = 0;
+        let imlec = baglanti.senkronImleci; let eklenen = 0; let alinan = 0; let sayfaSayisi = 0; let devam = false;
         do {
           const sayfa = await adapter.siparisleriCek(config, imlec); sayfaSayisi += 1; alinan += sayfa.siparisler.length;
           for (const siparis of sayfa.siparisler) {
@@ -139,9 +141,11 @@ export class PazaryeriService {
             await this.iceAktar({ ...siparis, baglantiId: baglanti.id }); if (!once) eklenen += 1;
           }
           imlec = sayfa.sonrakiImlec;
+          // ETC-04: zaman tabanlı imleç son sayfada da saklanır; devam bilgisi ayrıca gelir.
+          devam = sayfa.devamVar ?? Boolean(imlec);
           await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { senkronImleci: imlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
-        } while (imlec && sayfaSayisi < 50);
-        return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi, devamImleci: Boolean(imlec) };
+        } while (devam && sayfaSayisi < 50);
+        return { baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi, devamImleci: devam };
       } catch (hata) {
         const mesaj = hata instanceof Error ? hata.message : "Senkronizasyon hatası";
         await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: mesaj } }));
@@ -154,30 +158,45 @@ export class PazaryeriService {
   async stokFiyatSenkronizeEt(baglantiId?: string) {
     const { tenantId } = aktifBaglam();
     const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({
-      where: { aile: "pazaryeri", durum: "aktif", saglayici: { in: ["trendyol", "hepsiburada", "n11", "amazon_tr"] }, ...(baglantiId ? { id: baglantiId } : {}) },
+      where: { aile: "pazaryeri", durum: "aktif", saglayici: { in: ADAPTORLU_SAGLAYICILAR }, ...(baglantiId ? { id: baglantiId } : {}) },
     }));
     if (baglantiId && !baglantilar.length) throw new NotFoundException("Stok/fiyat destekli aktif pazaryeri bağlantısı bulunamadı");
     const stoklar = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokKart.findMany({
       where: { aktif: true, tip: "urun" },
-      select: { kod: true, barkod: true, satisFiyati: true, mevcutMiktar: true, rezerveMiktar: true, varyantlar: { where: { aktif: true }, select: { kod: true, barkod: true, satisFiyati: true, mevcutMiktar: true, rezerveMiktar: true } } },
+      select: { kod: true, barkod: true, satisFiyati: true, kdvOrani: true, mevcutMiktar: true, rezerveMiktar: true, varyantlar: { where: { aktif: true }, select: { kod: true, barkod: true, satisFiyati: true, mevcutMiktar: true, rezerveMiktar: true } } },
     }));
     const kalemler = stoklar.flatMap((stok) => {
       const kaynaklar = stok.varyantlar.length ? stok.varyantlar : [stok];
-      return kaynaklar.map((k) => ({ sku: k.kod, barkod: k.barkod ?? "", miktar: Math.max(0, Number(k.mevcutMiktar) - Number(k.rezerveMiktar)), fiyat: Number(k.satisFiyati ?? stok.satisFiyati ?? 0) }));
+      return kaynaklar.map((k) => ({ sku: k.kod, barkod: k.barkod ?? "", miktar: Math.max(0, Number(k.mevcutMiktar) - Number(k.rezerveMiktar)), fiyat: Number(k.satisFiyati ?? stok.satisFiyati ?? 0), kdvOrani: Number(stok.kdvOrani) }));
     });
     const sonuclar = [];
     for (const baglanti of baglantilar) {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
-        const gecerli = kalemler.filter((k) => k.fiyat > 0 && (baglanti.saglayici !== "trendyol" || k.barkod));
-        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : baglanti.saglayici === "n11" ? new N11Adapter() : new AmazonAdapter();
+        const adapter = adaptorCoz(baglanti.saglayici)!;
+        const gecerli = kalemler.filter((k) => k.fiyat > 0 && (!adapter.barkodZorunlu || k.barkod));
         const sonuc = await adapter.stokFiyatGonder(config, gecerli);
         sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, ...sonuc, atlanan: kalemler.length - gecerli.length });
       } catch (hata) {
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, gonderilen: 0, islemIdleri: [], atlanan: kalemler.filter((k) => k.fiyat <= 0 || (baglanti.saglayici === "trendyol" && !k.barkod)).length, hata: hata instanceof Error ? hata.message : "Stok/fiyat senkronizasyon hatası" });
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, gonderilen: 0, islemIdleri: [], atlanan: kalemler.filter((k) => k.fiyat <= 0 || (adaptorCoz(baglanti.saglayici)?.barkodZorunlu && !k.barkod)).length, hata: hata instanceof Error ? hata.message : "Stok/fiyat senkronizasyon hatası" });
       }
     }
     return { sonuclar };
+  }
+
+  /** ETC-13: bağlantı sınaması; kimlik doğrulanır ve son sipariş okunur, kayıt yazılmaz. */
+  async baglantiSina(baglantiId: string) {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findFirst({ where: { id: baglantiId, aile: "pazaryeri" } }));
+    if (!baglanti) throw new NotFoundException("Bağlantı bulunamadı");
+    const adapter = adaptorCoz(baglanti.saglayici);
+    if (!adapter?.sina) return { basarili: true, mesaj: "Bu sağlayıcıda canlı sınama yok; bilgiler biçim olarak geçerli." };
+    try {
+      const r = await adapter.sina(JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig);
+      return { basarili: true, mesaj: r.mesaj };
+    } catch (hata) {
+      return { basarili: false, mesaj: hata instanceof Error ? hata.message : "Bağlantı sınanamadı" };
+    }
   }
 
   async kesintileriListele(durum?: string) {

@@ -1,3 +1,4 @@
+import { PAZARYERI_SAGLAYICILARI } from "@tekirextra/shared";
 /**
  * PZR-18: pazaryeri otomatik çekim kuralları (saf). Kararlar 2026-11-07:
  * varsayılan sipariş 60 dk, finans günde bir; stok/fiyat (PZR-19) zamanlanmaz.
@@ -12,7 +13,8 @@ export const HATA_ESIGI = 3;
 export const FINANS_SAGLAYICILARI = ["amazon_tr", "trendyol", "hepsiburada"];
 
 export function isUygun(saglayici: string, is: OtomatikIs): boolean {
-  return is === "siparis" ? ["trendyol", "hepsiburada", "n11", "amazon_tr"].includes(saglayici) : FINANS_SAGLAYICILARI.includes(saglayici);
+  // ETC-04: e-ticaret siteleri de siparişte pazaryeriyle aynı otomatik çekimi kullanır.
+  return is === "siparis" ? (PAZARYERI_SAGLAYICILARI as readonly string[]).includes(saglayici) : FINANS_SAGLAYICILARI.includes(saglayici);
 }
 
 export function varsayilanAralik(is: OtomatikIs): number {

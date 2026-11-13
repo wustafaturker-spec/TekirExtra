@@ -36,6 +36,13 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException("Geçersiz bağlantı");
     return this.service.senkronizeEt(sonuc.data.baglantiId);
   }
+  /** ETC-13: canlı bağlantı sınaması (kimlik + son sipariş okunur, kayıt yazılmaz). */
+  @Post("baglantilar/:id/sina") @Roller("yonetici")
+  baglantiSina(@Param("id") id: string) {
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.service.baglantiSina(id);
+  }
+
   @Post("stok-fiyat/senkronize") @Roller("yonetici")
   stokFiyatSenkronize(@Body() govde: unknown) {
     const sonuc = z.object({ baglantiId: z.string().uuid().optional() }).safeParse(govde ?? {});

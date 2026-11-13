@@ -1541,6 +1541,29 @@ netleştirilir. Bu teyit kodlamayı beklemez, yayını bekletir.
 | SAH-09 | ✅ **Cihaz güvenliği:** cihazdaki önbellek ve kuyruk kullanıcıya ve firmaya bağlıdır; çıkışta ya da başka kullanıcı girince silinir; kuyruktaki kayıt en çok 7 gün tutulur. Fotoğraf yalnız gönderilene dek saklanır. | Z (Bitti 2026-11-13.) |
 | SAH-10 | ✅ **Kullanılabilirlik:** 360 px genişlikte yatay kaydırma yok, düğmeler en az 44 px, tek elle kullanım; okutma sonrası titreşim/ses geri bildirimi; açık ve koyu tema. | Y (Bitti 2026-11-13; 360 px turu.) |
 
+### 3.28 E-ticaret Sitesi Entegrasyonları (ETC) — taslak, onay bekliyor
+
+**Kaynak:** uygulama incelemesi 2026-11-10, M-2; örnek yapı BizimHesap entegrasyon kataloğu (kullanıcının paylaştığı ekran görüntüleri, 2026-11-13).
+**Kullanıcı kararları (2026-11-13):** platformlar WooCommerce, Shopify, ikas, Ticimax, İdeasoft, T-Soft; desteklenmeyenler katalogda "Yakında" + talep; VKN'li alıcıya cari, bireysel alıcıya bağlantının varsayılan carisi; kartlarda resmi logolar.
+**Dayanak:** pazaryeri sipariş akışı (PZR, `pazaryeri/`), bağlantı şifrelemesi (`Baglanti.sifreliConfig`), otomatik iş zamanlayıcısı (BLD-17).
+**Değişmez sınır:** sipariş satış faturası **taslağı** olur, kesinleştirme ve e-Belge gönderimi panelde; siteye yazma yalnız stok ve fiyattır (sipariş durumu, iade, kargo bu aşamada yazılmaz).
+
+| No | İster | Öncelik |
+|---|---|---|
+| ETC-01 | **Entegrasyon kataloğu:** Ayarlar'daki pazaryeri ekranı katalog olur. Kategoriler: Pazaryeri, E-ticaret sitesi (yalnız içinde kart olan kategori gösterilir), arama; her kart resmi logo, ad ve durum (bağlı ✓, bağlı değil, Yakında). Karta tıklayınca bağlantı penceresi açılır: platforma özgü alanlar, "Anahtarı nereden alırım" kısa anlatımı, Bağla / Sına / Kaldır. | Z |
+| ETC-02 | **Yakında + talep:** desteklenmeyen platformlar (ör. Çiçeksepeti, Pazarama, Temu, PttAVM) soluk kartla ve "İlgileniyorum" düğmesiyle görünür; talep firma ve kullanıcıyla kaydedilir (firma başına platform başına bir kez). Platform ekranında platform başına talep sayısı listelenir. | Y |
+| ETC-03 | **Ortak adaptör yapısı:** pazaryeri ve site adaptörleri tek arayüzü (sipariş çek, stok/fiyat gönder, bağlantı sına) uygular ve tek kayıttan seçilir; bugünkü `if` dalları kalkar. Yeni platform eklemek yalnız adaptör + katalog kaydıdır. | Z |
+| ETC-04 | **Siparişler:** siteden gelen siparişler pazaryeri siparişleri ekranına kanal etiketiyle düşer; ürün eşleme (SKU/barkod → stok kartı/varyant), faturalaştırma ve otomatik çekme aralıkları pazaryerleriyle aynıdır. İptal edilen sipariş faturalanmaz. Kur: TL dışı siparişte belge tarihindeki kur. | Z |
+| ETC-05 | **Alıcı carisi:** VKN'li (kurumsal) alıcı VKN ile mevcut cariyle eşleşir, yoksa fatura adresinden cari açılır. Bireysel alıcı bağlantıda seçilen varsayılan cariye (ör. "Perakende Müşteri") gider; alıcı adı, TCKN (varsa), adres ve e-posta faturaya alıcı bilgisi olarak taşınır. Cari siparişte elle değiştirilebilir. | Z |
+| ETC-06 | **Stok ve fiyat gönderimi:** pazaryerleri gibi elle ("Stok/fiyat gönder"); kullanılabilir miktar (mevcut − rezerve) ve satış fiyatı, eşleşen SKU/barkod üzerinden. Siteye yalnız eşleşen ürün yazılır, yeni ürün açılmaz. | Y |
+| ETC-07 | **Bağlantı güvenliği:** anahtarlar şifreli saklanır, ekranda maskelenir. Firmanın girdiği site adresi (WooCommerce, Ticimax, T-Soft) yalnız HTTPS ve herkese açık adres olabilir; iç ağ, yerel ve özel IP adreslerine istek atılmaz (her istekte çözümlenen IP denetlenir). Shopify yalnız `*.myshopify.com`, ikas yalnız `*.myikas.com`. | Z |
+| ETC-08 | **WooCommerce:** site adresi + REST anahtarı (consumer key/secret, okuma-yazma). Siparişler `wc/v3/orders` (değişiklik tarihine göre, sayfalı); stok/fiyat ürün ve varyasyon güncellemesi. | Z |
+| ETC-09 | **Shopify:** mağaza adresi + Admin API erişim anahtarı (eski özel uygulama) ya da Dev Dashboard istemci kimliği/sırrı (anahtar istemci kimliğiyle alınır, süresi dolunca yenilenir). GraphQL Admin API: siparişler güncellenme tarihine göre; stok `inventorySetQuantities`, fiyat varyant güncellemesi. | Z |
+| ETC-10 | **ikas:** mağaza adı + özel uygulama istemci kimliği/sırrı (client credentials, 4 saatlik anahtar yenilenir). GraphQL `listOrder` (`updatedAt` süzgeci, sayfalı); stok `saveProductStockLocations`, fiyat `saveVariantPrices`. | Z |
+| ETC-11 | **Ticimax:** site adresi + web servis yetki kodu (`UyeKodu`). SOAP `SiparisServis.SelectSiparis` (tarih aralığı, sayfalı) + `SelectSiparisUrun`; stok/fiyat `UrunServis.SaveUrun` (yalnız stok ve satış fiyatı güncelle ayarlarıyla). | Z |
+| ETC-12 | **İdeasoft ve T-Soft (aşama 2):** güncel API belgeleri herkese açık değil (İdeasoft Admin API OAuth2 yetkilendirme akışı; T-Soft web servis kullanıcısıyla REST). Belge ya da deneme mağazası erişimi sağlanınca adaptör yazılır; o zamana kadar katalogda "Yakında" kartıdır. | Y |
+| ETC-13 | **Deneme ve izleme:** her adaptörün sipariş dönüştürmesi belgedeki örnek yanıtlarla birim testinde sınanır; gerçek mağazayla ilk bağlantıda "Sına" son 1 siparişi okur ve sonucu gösterir. Çekme hataları PLT-123 hata kaydına ve bağlantının otomatik iş durumuna düşer. | Z |
+
 ### 3.20 Platform Yönetimi (PLT)
 
 Tüm firmaları yöneten TekirExtra ekibinin paneli (`/platform`). Platform rolü kiracı tablolarına doğrudan erişmez; firma bilgisi ve abonelik işlemleri yalnız platform rolüne açılmış dar veritabanı işlevlerinden geçer (MVZ-16 ile aynı ilke). Ayrıntı: `docs/PLATFORM-INCELEME-RAPORU-2026-10-24.md`.
