@@ -1,5 +1,5 @@
 import type { PazaryeriAdaptoru, SiparisSayfasi } from "./adaptor";
-import { doviz, enGec, kdvDahilFiyat, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, jsonVeyaHata, KARGO_SKU, kurus, onbellekliAnahtar, sayi, vknTcknBul } from "./eticaret-ortak";
+import { doviz, enGec, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, jsonVeyaHata, KARGO_SKU, kurus, onbellekliAnahtar, sayi, vknTcknBul } from "./eticaret-ortak";
 import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 /**
@@ -101,7 +101,7 @@ export class IkasAdapter implements PazaryeriAdaptoru {
       const parca = eslesen.slice(i, i + 200);
       await this.graphql(config, `mutation($input:SaveStockLocationsInput!){saveProductStockLocations(input:$input)}`, { input: { productStockLocationInputs: parca.map(({ k, v }) => ({ productId: v.productId, variantId: v.id, stockCount: Math.max(0, Math.floor(k.miktar)), stockLocationId: konum })) } });
       const fiyatli = parca.filter(({ k }) => k.fiyat > 0);
-      if (fiyatli.length) await this.graphql(config, `mutation($input:SaveVariantPricesInput!){saveVariantPrices(input:$input)}`, { input: { variantPriceInputs: fiyatli.map(({ k, v }) => ({ productId: v.productId, variantId: v.id, price: { sellPrice: kdvDahilFiyat(k) } })) } });
+      if (fiyatli.length) await this.graphql(config, `mutation($input:SaveVariantPricesInput!){saveVariantPrices(input:$input)}`, { input: { variantPriceInputs: fiyatli.map(({ k, v }) => ({ productId: v.productId, variantId: v.id, price: { sellPrice: k.fiyat } })) } });
     }
     return { gonderilen: eslesen.length, islemIdleri: [], bulunamayan: kalemler.length - eslesen.length };
   }

@@ -37,9 +37,9 @@ export function enGec(a: string | undefined, b: string | null | undefined): stri
 
 export const kurus = (n: number) => Math.round(n * 100) / 100;
 
-/** ETC-06: kartın satış fiyatı KDV hariçtir; sitelerde fiyat KDV dahil gösterilir. */
-export function kdvDahilFiyat(k: { fiyat: number; kdvOrani?: number }): number {
-  return kurus(k.fiyat * (1 + (k.kdvOrani ?? 0) / 100));
+/** Kartın satış fiyatı KDV hariçtir; pazaryeri ve sitelere KDV dahil gönderilir. */
+export function kdvDahilFiyat(fiyat: number, kdvOrani: number): number {
+  return kurus(fiyat * (1 + kdvOrani / 100));
 }
 const sayi = (v: unknown) => { const n = typeof v === "number" ? v : Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 export { sayi };

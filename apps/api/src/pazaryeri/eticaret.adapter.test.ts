@@ -222,7 +222,7 @@ describe("Ticimax (ETC-11)", () => {
   it("stok stok koduyla, fiyat KDV dahil ve barkodla", async () => {
     const a = adaptorCoz("ticimax")!;
     yanitlar.push(xml("<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><StokAdediGuncelleResponse/></s:Body></s:Envelope>"), xml("<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><UpdateUrunFiyatResponse/></s:Body></s:Envelope>"));
-    const r = await a.stokFiyatGonder({ kullaniciAdi: "", apiAnahtari: "KOD", servisAdresi: "https://www.magaza.example.com" }, [{ sku: "KLM-1", barkod: "8691", miktar: 7.9, fiyat: 100, kdvOrani: 20 }]);
+    const r = await a.stokFiyatGonder({ kullaniciAdi: "", apiAnahtari: "KOD", servisAdresi: "https://www.magaza.example.com" }, [{ sku: "KLM-1", barkod: "8691", miktar: 7.9, fiyat: 120 }]);
     expect(r.gonderilen).toBe(1);
     expect(String(istekler[0].init.body)).toContain("<a:StokAdedi>7</a:StokAdedi><a:StokKodu>KLM-1</a:StokKodu>");
     expect(String(istekler[1].init.body)).toContain("<a:SatisFiyati>120.00</a:SatisFiyati>");

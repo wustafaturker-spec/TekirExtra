@@ -16,6 +16,7 @@ import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
 import { adaptorCoz, ADAPTORLU_SAGLAYICILAR } from "./adaptor";
 import { eticaretCarisi, eticaretMi, magazaWebAdresi, nihaiAlici } from "./eticaret-alici";
+import { kdvDahilFiyat } from "./eticaret-ortak";
 import { Prisma } from "@prisma/client";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
@@ -182,7 +183,7 @@ export class PazaryeriService {
     }));
     const kalemler = stoklar.flatMap((stok) => {
       const kaynaklar = stok.varyantlar.length ? stok.varyantlar : [stok];
-      return kaynaklar.map((k) => ({ sku: k.kod, barkod: k.barkod ?? "", miktar: Math.max(0, Number(k.mevcutMiktar) - Number(k.rezerveMiktar)), fiyat: Number(k.satisFiyati ?? stok.satisFiyati ?? 0), kdvOrani: Number(stok.kdvOrani) }));
+      return kaynaklar.map((k) => ({ sku: k.kod, barkod: k.barkod ?? "", miktar: Math.max(0, Number(k.mevcutMiktar) - Number(k.rezerveMiktar)), fiyat: kdvDahilFiyat(Number(k.satisFiyati ?? stok.satisFiyati ?? 0), Number(stok.kdvOrani)) }));
     });
     const sonuclar = [];
     for (const baglanti of baglantilar) {

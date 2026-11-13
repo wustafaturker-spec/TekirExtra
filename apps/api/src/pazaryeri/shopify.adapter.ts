@@ -1,5 +1,5 @@
 import type { PazaryeriAdaptoru, SiparisSayfasi } from "./adaptor";
-import { doviz, enGec, kdvDahilFiyat, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, jsonVeyaHata, KARGO_SKU, kurus, onbellekliAnahtar, sayi, vknTcknBul } from "./eticaret-ortak";
+import { doviz, enGec, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, jsonVeyaHata, KARGO_SKU, kurus, onbellekliAnahtar, sayi, vknTcknBul } from "./eticaret-ortak";
 import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 /**
@@ -122,7 +122,7 @@ export class ShopifyAdapter implements PazaryeriAdaptoru {
       if (r.inventorySetQuantities.userErrors.length) throw new Error(`Shopify stok: ${r.inventorySetQuantities.userErrors.map((e) => e.message).join("; ").slice(0, 300)}`);
     }
     const urunBasina = new Map<string, Array<{ id: string; price: string }>>();
-    for (const { k, v } of eslesen) if (k.fiyat > 0) urunBasina.set(v.product.id, [...(urunBasina.get(v.product.id) ?? []), { id: v.id, price: kdvDahilFiyat(k).toFixed(2) }]);
+    for (const { k, v } of eslesen) if (k.fiyat > 0) urunBasina.set(v.product.id, [...(urunBasina.get(v.product.id) ?? []), { id: v.id, price: k.fiyat.toFixed(2) }]);
     for (const [productId, variants] of urunBasina) {
       const r = await this.graphql<{ productVariantsBulkUpdate: { userErrors: Array<{ message: string }> } }>(config, `mutation($productId:ID!,$variants:[ProductVariantsBulkInput!]!){productVariantsBulkUpdate(productId:$productId,variants:$variants){userErrors{message}}}`, { productId, variants });
       if (r.productVariantsBulkUpdate.userErrors.length) throw new Error(`Shopify fiyat: ${r.productVariantsBulkUpdate.userErrors.map((e) => e.message).join("; ").slice(0, 300)}`);

@@ -1,5 +1,5 @@
 import type { PazaryeriAdaptoru, SiparisSayfasi } from "./adaptor";
-import { doviz, EK_UCRET_SKU, kdvDahilFiyat, enGec, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, jsonVeyaHata, KARGO_SKU, kdvOraniTuret, kurus, sayi, siteKoku, vknTcknBul } from "./eticaret-ortak";
+import { doviz, EK_UCRET_SKU, enGec, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, jsonVeyaHata, KARGO_SKU, kdvOraniTuret, kurus, sayi, siteKoku, vknTcknBul } from "./eticaret-ortak";
 import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 /**
@@ -95,7 +95,7 @@ export class WooCommerceAdapter implements PazaryeriAdaptoru {
       const urunler = await jsonVeyaHata<Array<{ id: number; parent_id?: number; type: string }>>(await guvenliIstek(aranan.toString(), { headers: baslik }), "WooCommerce ürün araması");
       const u = urunler[0];
       if (!u) { bulunamayan++; continue; }
-      const govde = JSON.stringify({ manage_stock: true, stock_quantity: Math.max(0, Math.floor(k.miktar)), ...(k.fiyat > 0 ? { regular_price: kdvDahilFiyat(k).toFixed(2) } : {}) });
+      const govde = JSON.stringify({ manage_stock: true, stock_quantity: Math.max(0, Math.floor(k.miktar)), ...(k.fiyat > 0 ? { regular_price: k.fiyat.toFixed(2) } : {}) });
       const yol = u.type === "variation" && u.parent_id ? `products/${u.parent_id}/variations/${u.id}` : `products/${u.id}`;
       await jsonVeyaHata(await guvenliIstek(`${kok}/wp-json/wc/v3/${yol}`, { method: "PUT", headers: baslik, body: govde }), "WooCommerce stok/fiyat");
       gonderilen++;

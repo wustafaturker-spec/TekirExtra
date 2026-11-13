@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import type { PazaryeriAdaptoru, SiparisSayfasi } from "./adaptor";
-import { doviz, enGec, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, KARGO_SKU, kdvDahilFiyat, kurus, sayi, siteKoku, vknTcknBul } from "./eticaret-ortak";
+import { doviz, enGec, guvenliIstek, imlecOku, imlecYaz, IPTAL_DURUMU, KARGO_SKU, kurus, sayi, siteKoku, vknTcknBul } from "./eticaret-ortak";
 import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 /**
@@ -102,7 +102,7 @@ export class TicimaxAdapter implements PazaryeriAdaptoru {
     }
     const fiyatli = kalemler.filter((k) => k.barkod && k.fiyat > 0);
     for (let i = 0; i < fiyatli.length; i += 100) {
-      const parca = fiyatli.slice(i, i + 100).map((k) => `<a:UpdateUrunFiyat><a:Barkod>${kac(k.barkod)}</a:Barkod><a:Fiyatlar><a:KDVDahil>true</a:KDVDahil><a:SatisFiyati>${kdvDahilFiyat(k).toFixed(2)}</a:SatisFiyati></a:Fiyatlar></a:UpdateUrunFiyat>`).join("");
+      const parca = fiyatli.slice(i, i + 100).map((k) => `<a:UpdateUrunFiyat><a:Barkod>${kac(k.barkod)}</a:Barkod><a:Fiyatlar><a:KDVDahil>true</a:KDVDahil><a:SatisFiyati>${k.fiyat.toFixed(2)}</a:SatisFiyati></a:Fiyatlar></a:UpdateUrunFiyat>`).join("");
       const ayar = `<ayar xmlns:a="${NS_DC}"><a:BarkodKodunaGoreGuncelle>true</a:BarkodKodunaGoreGuncelle><a:IndirimliFiyatGuncelle>false</a:IndirimliFiyatGuncelle><a:KDVDahilGuncelle>true</a:KDVDahilGuncelle><a:KdvOraniGuncelle>false</a:KdvOraniGuncelle><a:PiyasaFiyatiGuncelle>false</a:PiyasaFiyatiGuncelle><a:VaryasyonGuncelle>true</a:VaryasyonGuncelle></ayar>`;
       await this.cagir(config, "UrunServis", "UpdateUrunFiyat", zarf(`<UpdateUrunFiyat xmlns="http://tempuri.org/"><UyeKodu>${kac(config.apiAnahtari ?? "")}</UyeKodu><request xmlns:a="${NS_DC}">${parca}</request>${ayar}</UpdateUrunFiyat>`));
     }

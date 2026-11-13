@@ -20,10 +20,11 @@ export interface NormalizeSiparis {
 }
 export interface PazaryeriStokFiyat {
   sku: string; barkod: string; miktar: number;
-  /** Stok kartının satış fiyatı (KDV hariç). */
+  /**
+   * KDV dahil satış fiyatı. Stok kartındaki fiyat KDV hariçtir; servis kartın oranıyla KDV dahile
+   * çevirir, adaptörler olduğu gibi gönderir (pazaryerleri ve siteler müşteriye görünen fiyatı ister).
+   */
   fiyat: number;
-  /** ETC-06: kartın KDV oranı; e-ticaret sitelerine fiyat KDV dahil gönderilir. */
-  kdvOrani?: number;
 }
 export interface NormalizeKesinti {
   hariciId: string; siparisNo?: string; tur: string; aciklama?: string; tarih: string;
