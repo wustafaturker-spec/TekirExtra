@@ -4638,6 +4638,27 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .saha-baglanti { background: none; border: 0; padding: 0 .25rem; color: var(--accent-text); font: inherit; text-decoration: underline; cursor: pointer; }
 .saha-alt { display: flex; justify-content: center; }
 .saha-okut--iki { grid-template-columns: 1fr auto; }
+/* ETC-01/02: entegrasyon kataloğu. */
+.entegrasyon-arac { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
+.entegrasyon-arac > .input { flex: 1 1 220px; max-width: 360px; }
+.entegrasyon-suzgec { display: flex; flex-wrap: wrap; gap: .4rem; }
+.entegrasyon-suzgec button { min-height: 40px; padding: 0 1rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-size: .88rem; cursor: pointer; }
+.entegrasyon-suzgec button.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.entegrasyon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.entegrasyon-kart { position: relative; display: grid; grid-template-rows: auto 1fr; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; transition: box-shadow .15s ease, border-color .15s ease; }
+.entegrasyon-kart:hover { box-shadow: var(--shadow-md); }
+.entegrasyon-kart.is-bagli { border-color: var(--success); }
+.entegrasyon-kart.is-yakinda .entegrasyon-kart__logo { opacity: .55; filter: grayscale(.6); }
+.entegrasyon-kart__logo { display: grid; place-items: center; height: 110px; padding: 1rem 1.25rem; border: 0; border-bottom: 1px solid var(--border); background: var(--karekod-zemin); cursor: pointer; }
+.entegrasyon-kart__logo:disabled { cursor: default; }
+.entegrasyon-kart__logo img { width: 100%; height: 60px; object-fit: contain; }
+.entegrasyon-kart__ad-logo { font-size: 1.35rem; font-weight: 800; color: var(--text-muted); letter-spacing: -.01em; }
+.entegrasyon-kart__alt { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .75rem 1rem; }
+.entegrasyon-kart__alt > div { display: grid; min-width: 0; }
+.entegrasyon-kart__alt small { color: var(--text-muted); font-size: .78rem; }
+.entegrasyon-kart__isaret { position: absolute; top: .5rem; right: .5rem; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--success); color: var(--surface); font-weight: 800; }
+.entegrasyon-kart__yakinda { position: absolute; top: .55rem; left: .55rem; padding: .1rem .5rem; border-radius: 999px; background: var(--warning-soft); color: var(--warning); font-size: .72rem; font-weight: 700; }
+@media (max-width: 480px) { .entegrasyon-grid { grid-template-columns: 1fr 1fr; gap: .6rem; } .entegrasyon-kart__logo { height: 86px; } .entegrasyon-kart__alt { flex-direction: column; align-items: flex-start; } }
 /* AI-13: fiş/kartvizit okuma penceresi. */
 .ocr-pencere { display: grid; gap: .85rem; }
 .ocr-onizleme { max-width: 100%; max-height: 220px; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); justify-self: start; }
