@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Modal, Alert } from "@/components/ui";
+import { Alert, Button, Field, Input, Modal, Select, Tabs } from "@/components/ui";
+import { belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { api } from "@/lib/api";
+import { kirilimToplami, oranKirilimi, type KirilimSatiri } from "@/lib/fis-kirilim";
+import { dataUrlOku, kucukDosya } from "@/lib/gorsel-kucult";
 
 export interface FisAiDoldurVerisi {
   belgeTuru: "FIS" | "FATURA" | "E_ARSIV" | "E_FATURA" | "BILINMIYOR";
@@ -15,16 +18,16 @@ export interface FisAiDoldurVerisi {
   toplamKdv: number;
   toplamMatrah: number;
   genelToplam: number;
-  kdvKirilimi: { oran: number; matrah: number; kdvTutari: number }[];
-  kalemler: {
-    aciklama: string;
-    miktar: number;
-    birim: string;
-    birimFiyat: number;
-    toplamTutar: number;
-    kdvOrani?: number | null;
-  }[];
+  kdvKirilimi: KirilimSatiri[];
+  kalemler: { aciklama: string; miktar: number; birim: string; birimFiyat: number; toplamTutar: number; kdvOrani?: number | null }[];
   guvenSkoru: number;
+}
+
+interface TaramaYaniti {
+  dogrulama: { gecerli: boolean; veri: FisAiDoldurVerisi; uyarilar: string[]; hatalar: string[] };
+  eslesenCari: { id: string; unvan: string; kod: string } | null;
+  onerilenMasrafKategorisi: string | null;
+  ocrKayitId: string | null;
 }
 
 interface FisAiDoldurModalProps {
@@ -33,281 +36,181 @@ interface FisAiDoldurModalProps {
   kategoriler?: Array<{ id: string; ad: string; varsayilanKdvOrani?: string | null; ustId?: string | null }>;
   kasalar?: Array<{ id: string; ad: string; dovizCinsi: string }>;
   krediKartlari?: Array<{ id: string; ad: string; sonDortHane: string; dovizCinsi: string; aktif: boolean }>;
-  onVeriDoldur: (veri: {
-    ocr: FisAiDoldurVerisi;
-    dosya?: File;
-    kategoriId?: string | null;
-    odemeHesabi?: string | null;
-  }) => void;
+  /** Tek oranlı fiş: form doldurulur; kayıttan sonra `ocrKayitId` ile tarama kaydına bağlanır. */
+  onVeriDoldur: (veri: { ocr: FisAiDoldurVerisi; dosya?: File; kategoriId?: string | null; odemeHesabi?: string | null; ocrKayitId?: string | null }) => void;
+  /** AI-13: çok oranlı fişte oran başına taslaklar pencerede açıldı. */
+  onTaslaklarAcildi?: (adet: number) => void;
 }
 
-export function FisAiDoldurModal({ acik, onKapat, kategoriler, kasalar, krediKartlari, onVeriDoldur }: FisAiDoldurModalProps) {
-  const [secilenDosya, setSecilenDosya] = useState<File | null>(null);
-  const [gorselBase64, setGorselBase64] = useState("");
+const para = (n: number, d: string) => `${n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${d === "TRY" ? "TL" : d}`;
+const bugun = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+
+/** Kategori adından ya da satıcıdan basit eşleşme; yoksa ilk kategori. */
+function kategoriSec(kategoriler: NonNullable<FisAiDoldurModalProps["kategoriler"]>, oneri: string | null, satici: string): string {
+  const o = (oneri ?? "").toLocaleLowerCase("tr-TR"), s = satici.toLocaleLowerCase("tr-TR");
+  const bulunan = kategoriler.find((k) => {
+    const a = k.ad.toLocaleLowerCase("tr-TR");
+    return (o && (a.includes(o) || o.includes(a)))
+      || (o.includes("akaryakıt") && /akaryakıt|taşıt|araç/.test(a))
+      || (o.includes("yemek") && /yemek|temsil|ağırlama/.test(a))
+      || (o.includes("ulaşım") && /ulaşım|seyahat|yol/.test(a))
+      || (o.includes("ofis") && /kırtasiye|ofis|büro/.test(a))
+      || (s.includes("petrol") && a.includes("akaryakıt"))
+      || (s.includes("taksi") && a.includes("ulaşım"));
+  });
+  return bulunan?.id ?? kategoriler[0]?.id ?? "";
+}
+
+/** AI-13: fişi okur; tek oranlıda formu doldurur, çok oranlıda oran başına ayrı masraf taslağı açar. */
+export function FisAiDoldurModal({ acik, onKapat, kategoriler, kasalar, krediKartlari, onVeriDoldur, onTaslaklarAcildi }: FisAiDoldurModalProps) {
+  const [dosya, setDosya] = useState<File | null>(null);
+  const [onizleme, setOnizleme] = useState("");
   const [hamMetin, setHamMetin] = useState("");
   const [sekme, setSekme] = useState<"gorsel" | "metin">("gorsel");
-  const [yukleniyor, setYukleniyor] = useState(false);
+  const [isleniyor, setIsleniyor] = useState(false);
   const [hata, setHata] = useState("");
-  const [uyarilar, setUyarilar] = useState<string[]>([]);
-  const [secilenKategoriId, setSecilenKategoriId] = useState<string>("");
-  const [secilenOdemeHesabi, setSecilenOdemeHesabi] = useState<string>("");
-  const [oneriSonuc, setOneriSonuc] = useState<{
-    ocr: FisAiDoldurVerisi;
-    eslesenCari: { id: string; unvan: string; kod: string } | null;
-    onerilenMasrafKategorisi: string | null;
-  } | null>(null);
+  const [sonuc, setSonuc] = useState<TaramaYaniti | null>(null);
+  const [kategoriId, setKategoriId] = useState("");
+  const [odemeHesabi, setOdemeHesabi] = useState("");
 
   if (!acik) return null;
 
-  const handleDosyaSec = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const dosya = e.target.files?.[0];
-    if (!dosya) return;
-    setSecilenDosya(dosya);
-    const okuyucu = new FileReader();
-    okuyucu.onload = (olay) => {
-      setGorselBase64(olay.target?.result as string);
-    };
-    okuyucu.readAsDataURL(dosya);
-  };
+  async function dosyaSec(f: File | undefined) {
+    if (!f) return;
+    setHata(""); setSonuc(null);
+    const k = await kucukDosya(f);
+    if (k.size > 6 * 1024 * 1024) { setHata("Dosya 6 MB'tan büyük; daha düşük çözünürlükte çekin ya da PDF'i küçültün."); return; }
+    setDosya(k);
+    setOnizleme(k.type.startsWith("image/") ? await dataUrlOku(k) : "");
+  }
 
-  const aiTara = async () => {
-    setYukleniyor(true);
-    setHata("");
-    setUyarilar([]);
-    setOneriSonuc(null);
-
+  async function tara() {
+    setIsleniyor(true); setHata(""); setSonuc(null);
     try {
-      const payload = {
-        gorselBase64: sekme === "gorsel" ? gorselBase64 : undefined,
-        hamMetin: sekme === "metin" ? hamMetin : undefined,
-        mimeType: secilenDosya?.type || "image/jpeg",
-        belgeTipi: "fis_fatura",
-      };
+      const govde = sekme === "gorsel" && dosya
+        ? { gorselBase64: await dataUrlOku(dosya), mimeType: dosya.type || "image/jpeg", belgeTipi: "fis_fatura" }
+        : { hamMetin, belgeTipi: "fis_fatura" };
+      const r = await api<TaramaYaniti>("/ai/ocr/tara", { method: "POST", body: JSON.stringify(govde) });
+      if (!r.dogrulama.gecerli || r.dogrulama.hatalar.length) { setHata(r.dogrulama.hatalar.join(", ") || "Belge okunamadı."); return; }
+      setSonuc(r);
+      if (kategoriler?.length) setKategoriId(kategoriSec(kategoriler, r.onerilenMasrafKategorisi, r.dogrulama.veri.saticiUnvan ?? ""));
+    } catch (e) { setHata(e instanceof Error ? e.message : "Fiş taranırken bir hata oluştu."); } finally { setIsleniyor(false); }
+  }
 
-      const res = await api<{
-        dogrulama: {
-          gecerli: boolean;
-          veri: FisAiDoldurVerisi;
-          uyarilar: string[];
-          hatalar: string[];
-        };
-        eslesenCari: { id: string; unvan: string; kod: string } | null;
-        onerilenMasrafKategorisi: string | null;
-      }>("/ai/ocr/tara", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+  const ocr = sonuc?.dogrulama.veri;
+  const oranlar = oranKirilimi(ocr?.kdvKirilimi);
+  const cokOranli = oranlar.length > 1;
+  const doviz = ocr?.paraBirimi || "TRY";
 
-      if (!res.dogrulama.gecerli || res.dogrulama.hatalar.length > 0) {
-        setHata(res.dogrulama.hatalar.join(", "));
-        return;
-      }
-
-      setOneriSonuc({
-        ocr: res.dogrulama.veri,
-        eslesenCari: res.eslesenCari,
-        onerilenMasrafKategorisi: res.onerilenMasrafKategorisi,
-      });
-      setUyarilar(res.dogrulama.uyarilar || []);
-
-      // Akıllı Kategori Eşleştirmesi
-      if (kategoriler && kategoriler.length > 0) {
-        const oneri = res.onerilenMasrafKategorisi?.toLowerCase() || "";
-        const satici = res.dogrulama.veri.saticiUnvan?.toLowerCase() || "";
-        const bulunan = kategoriler.find((k) => {
-          const kAd = k.ad.toLowerCase();
-          return (
-            (oneri && (kAd.includes(oneri) || oneri.includes(kAd))) ||
-            (oneri.includes("akaryakıt") && (kAd.includes("akaryakıt") || kAd.includes("taşıt") || kAd.includes("araç"))) ||
-            (oneri.includes("yemek") && (kAd.includes("yemek") || kAd.includes("temsil") || kAd.includes("ağırlama"))) ||
-            (oneri.includes("ulaşım") && (kAd.includes("ulaşım") || kAd.includes("seyahat") || kAd.includes("yol"))) ||
-            (oneri.includes("ofis") && (kAd.includes("kırtasiye") || kAd.includes("ofis") || kAd.includes("büro"))) ||
-            (satici.includes("petrol") && kAd.includes("akaryakıt")) ||
-            (satici.includes("taksi") && kAd.includes("ulaşım"))
-          );
-        });
-        if (bulunan) {
-          setSecilenKategoriId(bulunan.id);
-        } else {
-          setSecilenKategoriId(kategoriler[0].id);
-        }
-      }
-    } catch (err) {
-      setHata(err instanceof Error ? err.message : "Fiş taranırken bir hata oluştu.");
-    } finally {
-      setYukleniyor(false);
-    }
-  };
-
-  const formaAktar = () => {
-    if (!oneriSonuc) return;
-    onVeriDoldur({
-      ocr: oneriSonuc.ocr,
-      dosya: secilenDosya || undefined,
-      kategoriId: secilenKategoriId || null,
-      odemeHesabi: secilenOdemeHesabi || null,
-    });
+  function formaAktar() {
+    if (!sonuc || !ocr) return;
+    onVeriDoldur({ ocr, dosya: dosya ?? undefined, kategoriId: kategoriId || null, odemeHesabi: odemeHesabi || null, ocrKayitId: sonuc.ocrKayitId });
     onKapat();
-  };
+  }
+
+  async function taslaklariAc() {
+    if (!sonuc || !ocr || !kategoriId) return;
+    setIsleniyor(true); setHata("");
+    try {
+      const tarih = ocr.tarih || bugun();
+      let kur = 1;
+      if (doviz !== "TRY") {
+        const k = await api<{ kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=satis`);
+        if (!k.kurlar[doviz]) throw new Error(`${doviz} için ${tarih} kuru alınamadı; masrafı elle girin.`);
+        kur = k.kurlar[doviz];
+      }
+      const ortak = {
+        kategoriId, belgeTuru: ocr.belgeTuru === "FIS" ? "fis" : "fatura", belgeNo: ocr.belgeNo || null, tarih,
+        cariId: sonuc.eslesenCari?.id ?? null, saticiUnvan: sonuc.eslesenCari ? null : ocr.saticiUnvan || "Perakende",
+        vknTckn: ocr.saticiVknTckn || null, aciklama: ocr.kalemler.map((k) => k.aciklama).join(", ").slice(0, 200) || null, dovizCinsi: doviz, kur,
+      };
+      const olusan = await api<Array<{ id: string }>>("/masraflar/oranlara-gore", {
+        method: "POST",
+        body: JSON.stringify({ ortak, oranlar: oranlar.map((o) => ({ kdvOrani: o.oran, matrah: o.matrah, kdvTutari: o.kdvTutari })), ...(sonuc.ocrKayitId ? { ocrKayitId: sonuc.ocrKayitId } : {}) }),
+      });
+      // Görsel her taslağa eklenir; eklenemezse taslaklar yine geçerlidir.
+      if (dosya) await Promise.all(olusan.map((m) => belgeDosyalariniYukle("masraf", m.id, [dosya]).catch(() => undefined)));
+      onTaslaklarAcildi?.(olusan.length);
+      onKapat();
+    } catch (e) { setHata(e instanceof Error ? e.message : "Taslaklar açılamadı"); } finally { setIsleniyor(false); }
+  }
+
+  const okuyabilir = sekme === "gorsel" ? Boolean(dosya) : Boolean(hamMetin.trim());
+  const eylemler = (
+    <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+      <Button onClick={onKapat}>Vazgeç</Button>
+      {!sonuc ? (
+        <Button variant="primary" onClick={() => void tara()} disabled={isleniyor || !okuyabilir}>{isleniyor ? "Okunuyor…" : "Fişi oku"}</Button>
+      ) : cokOranli ? (
+        <Button variant="primary" onClick={() => void taslaklariAc()} disabled={isleniyor || !kategoriId}>{isleniyor ? "Açılıyor…" : `${oranlar.length} taslak aç`}</Button>
+      ) : (
+        <Button variant="primary" onClick={formaAktar}>Forma doldur</Button>
+      )}
+    </div>
+  );
 
   return (
-    <Modal baslik="✨ Yapay Zeka ile Fiş / Harcama Tara" onKapat={onKapat}>
-      <div className="space-y-4 text-sm" style={{ minWidth: "480px", maxWidth: "620px" }}>
-        <p className="text-gray-600" style={{ fontSize: "13px", lineHeight: "1.5" }}>
-          Akaryakıt, yemek, taksi, otel fişinin fotoğrafını yükleyin veya metnini yapıştırın.
-          Yapay zeka matrah, KDV tutarı ve satıcı bilgilerini doğrudan carisiz masraf olarak çıkarır.
-        </p>
-
-        {/* Sekmeler */}
-        <div className="flex border-b border-gray-200">
-          <button
-            type="button"
-            className={`px-4 py-2 font-medium border-b-2 ${
-              sekme === "gorsel" ? "border-primary text-primary" : "border-transparent text-gray-500"
-            }`}
-            onClick={() => setSekme("gorsel")}
-          >
-            📸 Fiş Fotoğrafı / PDF
-          </button>
-          <button
-            type="button"
-            className={`px-4 py-2 font-medium border-b-2 ${
-              sekme === "metin" ? "border-primary text-primary" : "border-transparent text-gray-500"
-            }`}
-            onClick={() => setSekme("metin")}
-          >
-            📋 Fiş / Harcama Metni
-          </button>
-        </div>
-
-        {/* Görsel Yükleme */}
-        {sekme === "gorsel" && (
-          <div>
-            <label className="block font-medium mb-1">Fiş / Belge Görseli</label>
-            <input type="file" accept="image/*,application/pdf" onChange={handleDosyaSec} className="w-full text-sm" />
-            {gorselBase64 && (
-              <div className="mt-2 border rounded p-1 max-w-xs">
-                <img src={gorselBase64} alt="Fiş Önizleme" className="max-h-36 rounded object-contain" />
-              </div>
-            )}
-          </div>
+    <Modal baslik="Yapay zekâ ile fiş oku" aciklama="Fişin fotoğrafını ya da metnini verin; satıcı, tutar ve KDV çıkarılır, kaydetmeden önce kontrol edersiniz." onKapat={onKapat} altBilgi={eylemler}>
+      <div className="ocr-pencere">
+        <Tabs ariaLabel="Okuma kaynağı" items={[{ deger: "gorsel", baslik: "Fotoğraf / PDF" }, { deger: "metin", baslik: "Metin" }]} value={sekme} onChange={(s) => { setSekme(s); setSonuc(null); }} />
+        {sekme === "gorsel" ? (
+          <Field label="Fiş ya da belge">
+            <Input type="file" accept="image/*,application/pdf" onChange={(e) => void dosyaSec(e.target.files?.[0])} />
+            <small className="muted">Fotoğraf tarayıcıda küçültülür; PDF olduğu gibi gönderilir.</small>
+          </Field>
+        ) : (
+          <Field label="Fiş metni" htmlFor="ocr-fis-metni">
+            <textarea id="ocr-fis-metni" className="textarea" rows={5} value={hamMetin} onChange={(e) => setHamMetin(e.target.value)} placeholder={"Örn.\nOPET PETROLCÜLÜK A.Ş.\nTarih: 12/10/2026 Fiş No: 0041\nKDV %20: 100,00\nTOPLAM: 600,00"} />
+          </Field>
         )}
-
-        {/* Metin Girişi */}
-        {sekme === "metin" && (
-          <div>
-            <label className="block font-medium mb-1">Fiş / Harcama Metni</label>
-            <textarea
-              className="w-full h-28 p-2 border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none text-xs"
-              placeholder="Örn:&#10;OPET PETROLCÜLÜK A.Ş.&#10;Tarih: 12/10/2026 Fiş No: 0041&#10;KDV %20: 100.00 TL&#10;TOPLAM: 600.00 TL"
-              value={hamMetin}
-              onChange={(e) => setHamMetin(e.target.value)}
-            />
-          </div>
-        )}
+        {onizleme && sekme === "gorsel" && <img className="ocr-onizleme" src={onizleme} alt="Fiş önizlemesi" />}
+        {dosya && !onizleme && sekme === "gorsel" && <small className="muted">{dosya.name} seçildi.</small>}
 
         {hata && <Alert tone="error">{hata}</Alert>}
+        {sonuc && sonuc.dogrulama.uyarilar.length > 0 && <Alert tone="warning">{sonuc.dogrulama.uyarilar.join(" ")}</Alert>}
 
-        {uyarilar.length > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-2.5 rounded text-xs space-y-1">
-            {uyarilar.map((u, i) => (
-              <div key={i}>{u}</div>
-            ))}
-          </div>
-        )}
+        {sonuc && ocr && (
+          <>
+            <dl className="ocr-ozet">
+              <div><dt>Satıcı</dt><dd>{sonuc.eslesenCari ? `${sonuc.eslesenCari.unvan} (cari)` : ocr.saticiUnvan || "—"}</dd></div>
+              <div><dt>Tarih</dt><dd>{ocr.tarih ? ocr.tarih.split("-").reverse().join(".") : "—"}</dd></div>
+              <div><dt>Belge no</dt><dd>{ocr.belgeNo || "—"}</dd></div>
+              <div><dt>VKN / TCKN</dt><dd>{ocr.saticiVknTckn || "—"}</dd></div>
+              <div><dt>Toplam</dt><dd><strong>{para(ocr.genelToplam, doviz)}</strong></dd></div>
+              <div><dt>Güven</dt><dd>%{Math.round(ocr.guvenSkoru * 100)}</dd></div>
+            </dl>
 
-        {/* Çıkarım Sonuç Kartı */}
-        {oneriSonuc && (
-          <div className="space-y-3">
-            {/* Carisiz Gider Bilgi Kutusu */}
-            <div style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "10px 14px", color: "#166534", fontSize: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "16px" }}>⚡</span>
-              <div>
-                <strong>Carisiz Doğrudan Masraf Kaydı:</strong> Fiş doğrudan satıcı ({oneriSonuc.ocr.saticiUnvan || "Perakende"}) adına giderleştirilir; cari hesap açılmadan rehberiniz temiz tutulur.
+            {oranlar.length > 0 && (
+              <div className="table-wrap">
+                <table className="table ocr-kirilim">
+                  <caption>KDV kırılımı{cokOranli ? " — her oran ayrı masraf taslağı olur" : ""}</caption>
+                  <thead><tr><th>Oran</th><th className="num">Matrah</th><th className="num">KDV</th><th className="num">Toplam</th></tr></thead>
+                  <tbody>{oranlar.map((o) => <tr key={o.oran}><td>%{o.oran}</td><td className="num">{para(o.matrah, doviz)}</td><td className="num">{para(o.kdvTutari, doviz)}</td><td className="num">{para(o.matrah + o.kdvTutari, doviz)}</td></tr>)}</tbody>
+                  {cokOranli && <tfoot><tr><th colSpan={3}>Kırılım toplamı</th><td className="num">{para(kirilimToplami(oranlar), doviz)}</td></tr></tfoot>}
+                </table>
               </div>
-            </div>
+            )}
 
-            <div className="bg-blue-50 border border-blue-200 p-3.5 rounded text-xs space-y-2.5">
-              <div className="font-semibold text-blue-900 border-b border-blue-200 pb-1 flex justify-between items-center">
-                <span>🧾 Çıkarılan Fiş Detayları</span>
-                <span className="text-gray-500 font-normal">Güven: %{Math.round(oneriSonuc.ocr.guvenSkoru * 100)}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-gray-700">
-                <div><strong>Satıcı:</strong> {oneriSonuc.ocr.saticiUnvan}</div>
-                <div><strong>Tarih:</strong> {oneriSonuc.ocr.tarih || "-"}</div>
-                <div><strong>Fiş/Belge No:</strong> {oneriSonuc.ocr.belgeNo || "-"}</div>
-                <div><strong>VKN / TCKN:</strong> {oneriSonuc.ocr.saticiVknTckn || "-"}</div>
-                <div><strong>Matrah:</strong> {oneriSonuc.ocr.toplamMatrah.toFixed(2)} TL</div>
-                <div><strong>Toplam KDV:</strong> {oneriSonuc.ocr.toplamKdv.toFixed(2)} TL</div>
-                <div className="col-span-2 text-sm font-bold text-blue-950 pt-1 border-t border-blue-100 flex justify-between">
-                  <span>Ödenecek Tutar:</span>
-                  <span>{oneriSonuc.ocr.genelToplam.toFixed(2)} {oneriSonuc.ocr.paraBirimi}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Kategori ve Ödeme Seçicileri */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="ocr-secimler">
               {kategoriler && kategoriler.length > 0 && (
-                <div>
-                  <label className="block font-medium text-xs mb-1 text-gray-700">🏷️ Masraf Kategorisi</label>
-                  <select
-                    value={secilenKategoriId}
-                    onChange={(e) => setSecilenKategoriId(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {kategoriler.map((k) => (
-                      <option key={k.id} value={k.id}>{k.ad}</option>
-                    ))}
-                  </select>
-                </div>
+                <Field label="Masraf kategorisi">
+                  <Select value={kategoriId} onChange={(e) => setKategoriId(e.target.value)}>{kategoriler.map((k) => <option key={k.id} value={k.id}>{k.ad}</option>)}</Select>
+                </Field>
               )}
-
-              <div>
-                <label className="block font-medium text-xs mb-1 text-gray-700">💳 Ödeme Şekli / Hesap</label>
-                <select
-                  value={secilenOdemeHesabi}
-                  onChange={(e) => setSecilenOdemeHesabi(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="">Açık Bırak (Sonra ödenecek)</option>
-                  {kasalar && kasalar.length > 0 && (
-                    <optgroup label="💵 Nakit Kasalar">
-                      {kasalar.map((k) => (
-                        <option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi})</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {krediKartlari && krediKartlari.length > 0 && (
-                    <optgroup label="💳 Şirket Kredi Kartları">
-                      {krediKartlari.filter((c) => c.aktif).map((k) => (
-                        <option key={k.id} value={`kart:${k.id}`}>{k.ad} · •••• {k.sonDortHane} ({k.dovizCinsi})</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </div>
+              {!cokOranli && (
+                <Field label="Ödeme">
+                  <Select value={odemeHesabi} onChange={(e) => setOdemeHesabi(e.target.value)}>
+                    <option value="">Sonra ödenecek</option>
+                    {kasalar?.filter((k) => k.dovizCinsi === doviz).length ? <optgroup label="Kasalar">{kasalar.filter((k) => k.dovizCinsi === doviz).map((k) => <option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi})</option>)}</optgroup> : null}
+                    {krediKartlari?.filter((c) => c.aktif && c.dovizCinsi === doviz).length ? <optgroup label="Şirket kartları">{krediKartlari.filter((c) => c.aktif && c.dovizCinsi === doviz).map((k) => <option key={k.id} value={`kart:${k.id}`}>{k.ad} · •••• {k.sonDortHane}</option>)}</optgroup> : null}
+                  </Select>
+                  <small className="muted">Seçilirse kayıtta onaylanıp ödenir.</small>
+                </Field>
+              )}
             </div>
-          </div>
+            {cokOranli && <small className="muted">Taslaklar aynı belge no, satıcı ve tarihle açılır; görsel her birine eklenir. Onay ve ödeme listeden yapılır.</small>}
+          </>
         )}
-
-        {/* Eylem Düğmeleri */}
-        <div className="flex justify-end gap-2 pt-3 border-t">
-          <Button variant="ghost" onClick={onKapat}>Vazgeç</Button>
-          {!oneriSonuc ? (
-            <Button
-              variant="primary"
-              onClick={aiTara}
-              disabled={yukleniyor || (sekme === "gorsel" ? !gorselBase64 : !hamMetin.trim())}
-            >
-              {yukleniyor ? "Fiş Okunuyor..." : "✨ Fişi Oku"}
-            </Button>
-          ) : (
-            <Button variant="primary" onClick={formaAktar}>
-              ✅ Forma Doldur
-            </Button>
-          )}
-        </div>
       </div>
     </Modal>
   );

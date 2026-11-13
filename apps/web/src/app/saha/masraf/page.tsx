@@ -3,22 +3,10 @@
 import { useState } from "react";
 import { Alert, Button, Field, Input } from "@/components/ui";
 import { api } from "@/lib/api";
+import { gorselKucult } from "@/lib/gorsel-kucult";
 import { kuyrugaEkle } from "@/lib/saha-depo";
 import type { MasrafSonucu, SoruOzeti } from "@/lib/saha-kuyruk";
 import { useSaha } from "../saha-baglam";
-
-/** Telefon fotoğrafı OCR için gereğinden büyük; uzun kenar 1600 px JPEG'e küçültülür (kuyrukta da az yer tutar). */
-async function kucult(dosya: File): Promise<Blob> {
-  if (!dosya.type.startsWith("image/")) return dosya;
-  const bitmap = await createImageBitmap(dosya).catch(() => null);
-  if (!bitmap) return dosya;
-  const oran = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-  const tuval = document.createElement("canvas");
-  tuval.width = Math.round(bitmap.width * oran); tuval.height = Math.round(bitmap.height * oran);
-  tuval.getContext("2d")?.drawImage(bitmap, 0, 0, tuval.width, tuval.height);
-  bitmap.close();
-  return new Promise((coz) => tuval.toBlob((b) => coz(b ?? dosya), "image/jpeg", 0.82));
-}
 
 /** Sonuç metnindeki panel bağlantıları tıklanabilir yazılır. */
 function Metin({ metin }: { metin: string }) {
@@ -43,7 +31,7 @@ export default function SahaMasrafSayfasi() {
   async function sec(dosya: File | undefined) {
     if (!dosya) return;
     setHata(""); setSonuclar([]); setSoru(null);
-    const b = await kucult(dosya);
+    const b = await gorselKucult(dosya);
     if (b.size > 6 * 1024 * 1024) { setHata("Fotoğraf 6 MB'tan büyük; daha düşük çözünürlükte çekin."); return; }
     setFoto(b);
     setOnizleme((eski) => { if (eski) URL.revokeObjectURL(eski); return URL.createObjectURL(b); });

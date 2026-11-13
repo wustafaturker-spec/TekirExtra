@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from "@nestjs/common";
 import type { ZodType } from "zod";
 import { Roller } from "../auth/roller.decorator";
-import { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
+import { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi, oranlaraGoreMasrafSemasi } from "./masraflar.semalar";
 import { MasraflarService } from "./masraflar.service";
 
 function ayristir<T>(sema: ZodType<T>, govde: unknown): T {
@@ -29,6 +29,8 @@ export class MasraflarController {
   @Get() @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") listele(@Query() q: Record<string, string>) { return this.service.listele(q); }
   @Get(":id") @Roller("muhasebe", "salt_okunur", "mali_musavir", "depo") getir(@Param("id") id: string) { return this.service.getir(id); }
   @Post() @Roller("muhasebe") olustur(@Body() g: unknown) { return this.service.olustur(ayristir(masrafOlusturSemasi, g)); }
+  /** AI-13 */
+  @Post("oranlara-gore") @Roller("muhasebe") oranlaraGore(@Body() g: unknown) { return this.service.oranlaraGoreOlustur(ayristir(oranlaraGoreMasrafSemasi, g)); }
   @Patch(":id") @Roller("muhasebe") guncelle(@Param("id") id: string, @Body() g: unknown) { return this.service.guncelle(id, ayristir(masrafGuncelleSemasi, g)); }
   @Post(":id/onayla") @Roller("muhasebe") onayla(@Param("id") id: string) { return this.service.onayla(id); }
   @Post(":id/ode") @Roller("muhasebe") ode(@Param("id") id: string, @Body() g: unknown) { return this.service.ode(id, ayristir(masrafOdemeSemasi, g)); }

@@ -16,16 +16,20 @@ import { kiraciSaglayicisi } from "./saglayici/kiraci-saglayici";
 import { zamanAsimiyla } from "./saglayici/aracli-ortak";
 import { baglamAl } from "../core/istek-baglami";
 import { cekOcrSonucSemasi, cekOcrDogrula, type CekOcrVerisi } from "./cek-ocr";
+import { ocrKaydiYaz, type OcrBelgeTuru, type OcrKanal } from "./ocr-kaydi";
 
 export interface FisFaturaTaramaCiktisi {
   dogrulama: DogrulamaSonucu<FisFaturaOcrSonuc>;
   eslesenCari: { id: string; unvan: string; kod: string } | null;
   onerilenMasrafKategorisi: string | null;
+  /** AI-13: tarama kaydı; oluşan masraf `POST /ai/ocr/kayitlar/:id/sonuc` ile bağlanır. */
+  ocrKayitId: string | null;
 }
 
 export interface CariTaramaCiktisi {
   dogrulama: DogrulamaSonucu<CariIletisimCikarim>;
   mevcutCari: { id: string; unvan: string; kod: string } | null;
+  ocrKayitId: string | null;
 }
 
 /** OCR'da yedek model varken güçlü model için bekleme süresi. */
@@ -81,6 +85,19 @@ export class AiService {
     return kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "tarama", ekonomikModel: true, varsayilan: () => this.aiProvider }).then((x) => x.saglayici);
   }
 
+  /** AI-13: tarama denetim izi; yazılamazsa tarama sonucu yine döner (iz kaybı günlüğe yazılır). */
+  private async izYaz(tenantId: string, belgeTuru: OcrBelgeTuru, kanal: OcrKanal, saglayici: IAiProvider, cikarilanVeri: unknown, hamMetin?: string | null): Promise<string | null> {
+    try {
+      return await this.prisma.tenantIslem(tenantId, (tx) => ocrKaydiYaz(tx, {
+        tenantId, kullaniciId: baglamAl()?.userId ?? null, belgeTuru, kanal,
+        saglayici: saglayici.saglayiciAdi ?? null, model: saglayici.modelAdi ?? null, hamMetin: hamMetin ?? null, cikarilanVeri,
+      }));
+    } catch (hata) {
+      this.logger.warn(`Tarama kaydı yazılamadı (${belgeTuru}): ${hata instanceof Error ? hata.name : "bilinmeyen"}`);
+      return null;
+    }
+  }
+
   /** Çek/senet OCR yalnız form önerisi üretir; cari veya evrak kaydı yazmaz. */
   async cekOcrTara(tenantId: string, girdi: { gorselBase64: string; mimeType: "image/jpeg" | "image/png" | "image/webp" }) {
     let dosya: ReturnType<typeof ocrDosyasiniDogrula>;
@@ -106,7 +123,8 @@ export class AiService {
       await this.prisma.tenantIslem(tenantId, (tx) => tx.aiOcrDenetim.update({ where: { id: iz.id }, data: {
         durum: "basarili", sureMs: Date.now() - baslangic, tamamlandiAt: new Date(), saglayici: kullanilan.saglayiciAdi, model: kullanilan.modelAdi ?? null,
       } }));
-      return sonuc;
+      const ocrKayitId = await this.izYaz(tenantId, "CEK", "WEB", kullanilan, sonuc);
+      return { ...sonuc, ocrKayitId };
     } catch (h) {
       await this.prisma.tenantIslem(tenantId, (tx) => tx.aiOcrDenetim.update({ where: { id: iz.id }, data: {
         durum: "hata", sureMs: Date.now() - baslangic, tamamlandiAt: new Date(), hataSinifi: h instanceof Error ? h.name.slice(0, 100) : "BilinmeyenHata",
@@ -119,7 +137,7 @@ export class AiService {
    * Fiş veya Fatura Görselini/Belgesini Multimodal AI ile Tarar,
    * Matematiksel ve VKN doğrulamalarını yapar, sistemdeki Carilerle eşleştirir.
    */
-  async fisFaturaOcrTara(tenantId: string, girdi: AiBelgeGirdi): Promise<FisFaturaTaramaCiktisi> {
+  async fisFaturaOcrTara(tenantId: string, girdi: AiBelgeGirdi, kanal: OcrKanal = "WEB"): Promise<FisFaturaTaramaCiktisi> {
     if (!girdi.gorselBase64 && !girdi.hamMetin) {
       throw new BadRequestException("İşlem için görsel verisi (base64) veya belge metni zorunludur.");
     }
@@ -145,7 +163,7 @@ Lütfen yanıtı SADECE geçerli bir JSON objesi olarak ve AŞAĞIDAKİ camelCas
   "saticiTelefon": string | null,
   "saticiEposta": string | null,
   "saticiIban": string | null,
-  "paraBirimi": "TRY",
+  "paraBirimi": string,
   "toplamKdv": number,
   "toplamMatrah": number,
   "genelToplam": number,
@@ -157,6 +175,8 @@ Lütfen yanıtı SADECE geçerli bir JSON objesi olarak ve AŞAĞIDAKİ camelCas
   "odemeSekli": "nakit" | "kart" | "bilinmiyor",
   "kartSonDort": string | null
 }
+paraBirimi: belgedeki para biriminin ISO kodu (TL/₺ → "TRY", $ → "USD", € → "EUR"); belgede yazmıyorsa "TRY".
+kdvKirilimi: belgedeki her KDV oranı ayrı satır (ör. %10 ve %20 varsa iki satır); oranı uydurma.
 plaka: fişte yazılı araç plakası (ör. 34ABC123), yoksa null. litre: akaryakıt miktarı (LT), yoksa null.
 odemeSekli: fişte NAKİT yazıyorsa "nakit", kredi/banka kartı (K.KARTI, B.KARTI, kart numarası) varsa "kart", anlaşılmıyorsa "bilinmiyor".
 kartSonDort: maskeli kart numarasının yalnız son 4 hanesi (ör. **** 4893 → "4893"); tam kart numarasını asla yazma.
@@ -187,12 +207,14 @@ ${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
 
     const baslangic = Date.now();
     let hamSonuc: FisFaturaOcrSonuc;
+    let kullanilan: IAiProvider = provider;
     try {
       const t = await this.taramaCalistir(tenantId, !!girdi.gorselBase64, (p) => p.yapilandirilmisUretim<FisFaturaOcrSonuc>(
         { sistemRol, prompt, gorselBase64: girdi.gorselBase64, mimeType: girdi.mimeType, dusunmeKapali: true },
         fisFaturaOcrSonucSemasi,
       ));
       hamSonuc = t.sonuc;
+      kullanilan = t.saglayici;
       if (denetimId) await this.prisma.tenantIslem(tenantId, (tx) => tx.aiOcrDenetim.update({
         where: { id: denetimId }, data: { durum: "basarili", sureMs: Date.now() - baslangic, tamamlandiAt: new Date(), saglayici: t.saglayici.saglayiciAdi, model: t.saglayici.modelAdi ?? null },
       }));
@@ -269,10 +291,12 @@ ${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
       onerilenMasrafKategorisi = "Mutfak & Sarf";
     }
 
+    const ocrKayitId = await this.izYaz(tenantId, "FIS_FATURA", kanal, kullanilan, { ...dogrulama, eslesenCariId: eslesenCari?.id ?? null, onerilenMasrafKategorisi }, girdi.hamMetin);
     return {
       dogrulama,
       eslesenCari,
       onerilenMasrafKategorisi,
+      ocrKayitId,
     };
   }
 
@@ -308,7 +332,7 @@ ${girdi.hamMetin ? `\nİletişim / E-posta Metni:\n${girdi.hamMetin}` : ""}
 `.trim();
 
     // 1. Model-Agnostik Çıkarım
-    const { sonuc: hamSonuc } = await this.taramaCalistir(tenantId, !!girdi.gorselBase64, (p) => p.yapilandirilmisUretim<CariIletisimCikarim>(
+    const { sonuc: hamSonuc, saglayici: kullanilan } = await this.taramaCalistir(tenantId, !!girdi.gorselBase64, (p) => p.yapilandirilmisUretim<CariIletisimCikarim>(
       {
         sistemRol,
         prompt,
@@ -340,9 +364,11 @@ ${girdi.hamMetin ? `\nİletişim / E-posta Metni:\n${girdi.hamMetin}` : ""}
       }
     }
 
+    const ocrKayitId = await this.izYaz(tenantId, "KARTVIZIT", "WEB", kullanilan, { ...dogrulama, mevcutCariId: mevcutCari?.id ?? null }, girdi.hamMetin);
     return {
       dogrulama,
       mevcutCari,
+      ocrKayitId,
     };
   }
 }

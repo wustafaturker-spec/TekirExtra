@@ -335,6 +335,8 @@ export default function CariSayfasi() {
   const [elleHareketAcik, setElleHareketAcik] = useState(false);
   const [iceAktarAcik, setIceAktarAcik] = useState(false);
   const [aiModalAcik, setAiModalAcik] = useState(false);
+  // AI-13: formu dolduran taramanın kaydı; cari oluşunca ona bağlanır.
+  const [ocrKayitId, setOcrKayitId] = useState<string | null>(null);
   const [ekstreIptaller, setEkstreIptaller] = useState(false);
   /** CARI-24/25/26: ekstre türü, döviz ekstresinde gösterim ("" = her döviz ayrı) ve mutabakat metni. */
   const [ekstreTuru, setEkstreTuru] = useState<EkstreTuru>("standart");
@@ -685,7 +687,7 @@ export default function CariSayfasi() {
     setHata("");
     setBasari("");
     try {
-      await cariKaydet("/cari", "POST", {
+      const yeniCari = await cariKaydet<{ id: string }>("/cari", "POST", {
         kod,
         // Gerçek kişide unvanı API ad ve soyaddan kurar (CARI-21).
         unvan: kisiTipi === "gercek" ? `${ad.trim()} ${soyad.trim()}` : unvan,
@@ -716,6 +718,8 @@ export default function CariSayfasi() {
         belgeCiftDil: ciftDilGecerli(belgeDili, belgeCiftDil),
         notlar: notlar || undefined,
       });
+      if (ocrKayitId && yeniCari?.id) await api(`/ai/ocr/kayitlar/${ocrKayitId}/sonuc`, { method: "POST", body: JSON.stringify({ cariId: yeniCari.id }) }).catch(() => undefined);
+      setOcrKayitId(null);
       setBasari("Cari kart başarıyla oluşturuldu.");
       setFormAcik(false);
       setKod("");
@@ -1860,7 +1864,8 @@ export default function CariSayfasi() {
       <CariAiDoldurModal
         acik={aiModalAcik}
         onKapat={() => setAiModalAcik(false)}
-        onVeriDoldur={(v: CariAiDoldurVerisi) => {
+        onVeriDoldur={(v: CariAiDoldurVerisi, gelenOcrKayitId) => {
+          setOcrKayitId(gelenOcrKayitId);
           if (v.kisiTipi) setKisiTipi(v.kisiTipi);
           if (v.kisiTipi === "gercek") {
             if (v.ad) setAd(v.ad);

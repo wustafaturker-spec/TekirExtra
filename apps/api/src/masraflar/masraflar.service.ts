@@ -9,7 +9,9 @@ import { PrismaService } from "../core/prisma.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { DovizService } from "../doviz/doviz.service";
 import { KUR_GERI_BAKIS_GUN, kurCoz } from "../doviz/kur-coz";
-import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
+import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi, oranlaraGoreMasrafSemasi } from "./masraflar.semalar";
+import { masrafOlusturSemasi as masrafOlusturSemasiDegeri } from "./masraflar.semalar";
+import { ocrSonucuBagla } from "../ai/ocr-kaydi";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
@@ -168,6 +170,34 @@ export class MasraflarService {
       if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
       if (girdi.cariId && !(await tx.cariHesap.findUnique({ where: { id: girdi.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
       return tx.masraf.create({ data: { tenantId, ...this.veri(girdi) }, include: { kategori: true, cari: { select: { id: true, unvan: true } } } });
+    });
+  }
+
+  /**
+   * AI-13: çok oranlı fişten oran başına ayrı taslak; hepsi tek işlemde açılır (biri olmazsa hiçbiri).
+   * Tarama kaydı verilirse oluşan masraflar ona bağlanır.
+   */
+  async oranlaraGoreOlustur(girdi: z.infer<typeof oranlaraGoreMasrafSemasi>) {
+    const { tenantId } = aktifBaglam();
+    const yuvarla = (n: number) => Math.round(n * 100) / 100;
+    const kayitlar = girdi.oranlar.map((o) => {
+      const s = masrafOlusturSemasiDegeri.safeParse({
+        ...girdi.ortak, kdvOrani: o.kdvOrani, matrah: yuvarla(o.matrah), kdvTutari: yuvarla(o.kdvTutari), toplam: yuvarla(o.matrah + o.kdvTutari),
+        aciklama: `${typeof girdi.ortak.aciklama === "string" && girdi.ortak.aciklama.trim() ? `${girdi.ortak.aciklama.trim().slice(0, 900)} · ` : ""}KDV %${o.kdvOrani} kısmı`,
+      });
+      if (!s.success) throw new BadRequestException(`KDV %${o.kdvOrani}: ${s.error.issues.map((i) => i.message).join("; ")}`);
+      return s.data;
+    });
+    const ilk = kayitlar[0];
+    await this.donemKilidi.tarihDogrula(tenantId, ilk.tarih, "masraf oluşturma");
+    await this.mevzuat?.kdvOranlariniDogrula(kayitlar.map((k) => k.kdvOrani), ilk.tarih);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (!(await tx.masrafKategori.findUnique({ where: { id: ilk.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
+      if (ilk.cariId && !(await tx.cariHesap.findUnique({ where: { id: ilk.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
+      const olusan = [];
+      for (const k of kayitlar) olusan.push(await tx.masraf.create({ data: { tenantId, ...this.veri(k) }, include: { kategori: true, cari: { select: { id: true, unvan: true } } } }));
+      if (girdi.ocrKayitId) await ocrSonucuBagla(tx, girdi.ocrKayitId, { masrafIdler: olusan.map((m) => m.id) });
+      return olusan;
     });
   }
 

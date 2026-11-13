@@ -52,6 +52,23 @@ export const masrafOlusturSemasi = z.object({
 
 export const masrafGuncelleSemasi = masrafOlusturSemasi;
 
+/**
+ * AI-13: çok oranlı fiş — oran başına ayrı masraf taslağı (aynı belge no, satıcı, tarih ve döviz).
+ * Ortak alanlar bir kez gelir; her oranın tutarları ayrı satırdır.
+ */
+export const oranlaraGoreMasrafSemasi = z.object({
+  ortak: z.record(z.string(), z.unknown()),
+  oranlar: z.array(z.object({
+    kdvOrani: z.coerce.number().min(0).max(100),
+    matrah: z.coerce.number().positive(),
+    kdvTutari: z.coerce.number().min(0),
+  })).min(2, "Oran başına ayırma için en az iki oran gerekir").max(10),
+  ocrKayitId: z.string().uuid().optional(),
+}).superRefine((g, ctx) => {
+  if (new Set(g.oranlar.map((o) => o.kdvOrani)).size !== g.oranlar.length) ctx.addIssue({ code: "custom", path: ["oranlar"], message: "Her KDV oranı bir kez yazılmalı" });
+});
+
+
 export const masrafOdemeSemasi = z.object({
   kasaId: bosVeyaUuid,
   bankaHesapId: bosVeyaUuid,

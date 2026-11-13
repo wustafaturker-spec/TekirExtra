@@ -49,7 +49,7 @@ describe("çek OCR servis güvenlik kapıları", () => {
     expect(tx.cekSenet.create).not.toHaveBeenCalled();
   });
   it("OCR ucunda muhasebe yetkisi ve katı görsel şeması vardır", async () => {
-    const { servis } = kur(); const c = new AiController(servis);
+    const { servis } = kur(); const c = new AiController(servis, {} as never);
     expect(Reflect.getMetadata("roller", AiController)).toEqual(["muhasebe"]);
     await expect(c.cekOku({ hamMetin: "100 TL" })).rejects.toThrow("çek görüntüsü");
   });

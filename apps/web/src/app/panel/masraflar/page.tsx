@@ -47,6 +47,8 @@ export default function MasraflarSayfasi() {
   const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [aiFisModalAcik, setAiFisModalAcik] = useState(false);
   const [aiOdemeHesabi, setAiOdemeHesabi] = useState("");
+  // AI-13: formu dolduran taramanın kaydı; masraf kaydedilince ona bağlanır.
+  const [ocrKayitId, setOcrKayitId] = useState<string | null>(null);
   const [arama, setArama] = useState(""); const [durumFiltresi, setDurumFiltresi] = useState("aktif"); const [kategoriFiltresi, setKategoriFiltresi] = useState("");
 
   const matrah = useMemo(() => {
@@ -116,6 +118,7 @@ export default function MasraflarSayfasi() {
     try {
       const kayit = await api<Masraf>(duzenlenenId ? `/masraflar/${duzenlenenId}` : "/masraflar", { method: duzenlenenId ? "PATCH" : "POST", body: JSON.stringify({ kategoriId, cariId: cariId || null, belgeTuru, belgeNo: belgeNo || null, tarih, saticiUnvan: cariId ? null : saticiUnvan, vknTckn: vknTckn || null, aciklama: aciklama || null, matrah, kdvOrani, kdvTutari, toplam, dovizCinsi, kur }) });
       if (dosyalar.length) await belgeDosyalariniYukle("masraf", kayit.id, dosyalar);
+      if (ocrKayitId && !duzenlenenId) await api(`/ai/ocr/kayitlar/${ocrKayitId}/sonuc`, { method: "POST", body: JSON.stringify({ masrafIdler: [kayit.id] }) }).catch(() => undefined);
 
       // AI Fiş Hızlı Ödeme: Eğer kasa veya kart seçildiyse doğrudan onayla ve öde
       if (aiOdemeHesabi && !duzenlenenId) {
@@ -142,7 +145,7 @@ export default function MasraflarSayfasi() {
         setBasari(duzenlenenId ? "Masraf güncellendi." : "Masraf taslak olarak kaydedildi.");
       }
 
-      setFormAcik(false); setToplamBedel(""); setBelgeNo(""); setSaticiUnvan(""); setAciklama(""); setDovizCinsi("TRY"); setKur("1"); setKurBilgisi(""); setDosyalar([]); setAiOdemeHesabi(""); await yukle(); if (yeniSayfasi) router.push("/panel/masraflar");
+      setFormAcik(false); setToplamBedel(""); setBelgeNo(""); setSaticiUnvan(""); setAciklama(""); setDovizCinsi("TRY"); setKur("1"); setKurBilgisi(""); setDosyalar([]); setAiOdemeHesabi(""); setOcrKayitId(null); await yukle(); if (yeniSayfasi) router.push("/panel/masraflar");
     } catch (e) { setHata(e instanceof Error ? e.message : "Masraf kaydedilemedi"); }
   }
 
@@ -262,8 +265,10 @@ export default function MasraflarSayfasi() {
       kategoriler={kategoriler}
       kasalar={kasalar}
       krediKartlari={krediKartlari}
-      onVeriDoldur={({ ocr, dosya, kategoriId: gelenKategoriId, odemeHesabi: gelenOdemeHesabi }) => {
+      onTaslaklarAcildi={(adet) => { setFormAcik(false); setBasari(`Fiş KDV oranına göre ${adet} ayrı masraf taslağına bölündü; listeden kontrol edip onaylayın.`); void yukle(); if (yeniSayfasi) router.push("/panel/masraflar"); }}
+      onVeriDoldur={({ ocr, dosya, kategoriId: gelenKategoriId, odemeHesabi: gelenOdemeHesabi, ocrKayitId: gelenOcrKayitId }) => {
         setFormAcik(true);
+        setOcrKayitId(gelenOcrKayitId ?? null);
         setBelgeTuru("fis"); // Fiş belgesi olarak işaretle
         setCariId(""); // Fişlerde cari açmadan doğrudan satıcı unvanı işlenir
         if (ocr.saticiUnvan) setSaticiUnvan(ocr.saticiUnvan);

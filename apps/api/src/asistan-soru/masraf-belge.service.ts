@@ -1,3 +1,4 @@
+import { ocrSonucuBagla } from "../ai/ocr-kaydi";
 import { BadRequestException, ForbiddenException, Injectable, Logger } from "@nestjs/common";
 import { Prisma, type AsistanSorusu, type Rol } from "@prisma/client";
 import { AiAjanService } from "../ai/ajan/ai-ajan.service";
@@ -16,7 +17,7 @@ import {
 const TASLAK_ARACI = "masraf_taslagi_olustur";
 const UZANTI: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 
-interface KategoriSorusuVerisi { taslak: MasrafTaslagi; uyarilar: string[]; ekId: string; kategoriler: Array<{ id: string; ad: string }>; okunan?: FistenOkunan }
+interface KategoriSorusuVerisi { taslak: MasrafTaslagi; uyarilar: string[]; ekId: string; kategoriler: Array<{ id: string; ad: string }>; okunan?: FistenOkunan; ocrKayitId?: string | null }
 interface OdemeSorusuVerisi { masrafId: string; hesaplar: Array<{ id: string; ad: string }>; tur: "kasa" | "kart"; arac?: TamamlamaPlani["arac"] }
 export interface SoruOzeti { id: string; soru: string; secenekler: Secenek[]; serbestYanit: boolean }
 export interface BelgeSonucu { sonuc: string; masrafId?: string; talepId?: string; soru?: SoruOzeti }
@@ -62,7 +63,7 @@ export class MasrafBelgeService {
     await dosyaIceriginiDogrula(yuklenen, "belge");
     const ek = await this.ekler.yukle("ai_sohbet", await this.ajan.belgeOturumKimligi(kanal), yuklenen);
 
-    const ocr = await this.ai.fisFaturaOcrTara(tenantId, { ...girdi, belgeTipi: "fis_fatura" });
+    const ocr = await this.ai.fisFaturaOcrTara(tenantId, { ...girdi, belgeTipi: "fis_fatura" }, kanal);
     if (!ocr.dogrulama.gecerli || ocr.dogrulama.hatalar.length || !(ocr.dogrulama.veri.genelToplam > 0)) {
       throw new BadRequestException(`Belgeden tutar güvenle okunamadı${ocr.dogrulama.hatalar.length ? ` (${ocr.dogrulama.hatalar.join("; ").slice(0, 200)})` : ""}. Daha net bir fotoğraf gönderin ya da panelden girin.`);
     }
@@ -73,10 +74,10 @@ export class MasrafBelgeService {
     const kategoriler = await this.kategoriler();
     if (!kategoriler.length) throw new BadRequestException("Firmada etkin masraf kategorisi yok; önce panelden kategori tanımlayın.");
     const kategoriId = await this.kategoriBul(taslak, ocr.onerilenMasrafKategorisi, kategoriler);
-    if (kategoriId) return this.taslakAc(taslak, kategoriId, ek.id, uyarilar, okunan);
+    if (kategoriId) return this.taslakAc(taslak, kategoriId, ek.id, uyarilar, okunan, ocr.ocrKayitId);
 
     const s = kategoriSorusu(taslak, kategoriler);
-    const veri: KategoriSorusuVerisi = { taslak, uyarilar, ekId: ek.id, kategoriler: kategoriler.slice(0, 5), okunan };
+    const veri: KategoriSorusuVerisi = { taslak, uyarilar, ekId: ek.id, kategoriler: kategoriler.slice(0, 5), okunan, ocrKayitId: ocr.ocrKayitId };
     const soru = await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSorusu.create({ data: {
       tenantId, tur: "masraf_kategori", kaynakId: ek.id, userId, soru: s.soru, secenekler: s.secenekler as unknown as Prisma.InputJsonValue, veri: veri as unknown as Prisma.InputJsonValue, serbestYanit: true,
     } }));
@@ -109,10 +110,13 @@ export class MasrafBelgeService {
     return kategoriAdlaBul(oneri, kategoriler);
   }
 
-  private async taslakAc(t: MasrafTaslagi, kategoriId: string, ekId: string, uyarilar: string[], okunan: FistenOkunan = {}): Promise<BelgeSonucu> {
+  private async taslakAc(t: MasrafTaslagi, kategoriId: string, ekId: string, uyarilar: string[], okunan: FistenOkunan = {}, ocrKayitId: string | null = null): Promise<BelgeSonucu> {
     const r = await this.yurutucu.yurut({ ad: TASLAK_ARACI, girdi: { ...t, kategoriId } }, this.izinli(), { kaynak: "asistan" });
     if (r.hata) throw new BadRequestException(`Masraf taslağı açılamadı: ${r.icerik.replace(/^Hata: /, "").slice(0, 200)}`);
     const masraf = JSON.parse(r.icerik) as { id: string; adres?: string };
+    // AI-13: tarama kaydı oluşan masrafa bağlanır; bağ kurulamazsa taslak yine geçerlidir.
+    if (ocrKayitId) await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => ocrSonucuBagla(tx, ocrKayitId, { masrafIdler: [masraf.id] }))
+      .catch((hata: unknown) => this.logger.warn(`Tarama kaydı masrafa bağlanamadı: ${hata instanceof Error ? hata.name : "bilinmeyen"}`));
     // Görsel masrafın ekine kopyalanır; kopyalanamazsa taslak yine geçerlidir (görsel sohbet ekinde kalır).
     try {
       const { ek, icerik } = await this.ekler.indir(ekId);
@@ -195,6 +199,6 @@ export class MasrafBelgeService {
       kategoriId = kategoriAdlaBul(metin, tum);
       if (!kategoriId) throw new BadRequestException(`“${metin ?? ""}” ile tek bir kategori eşleşmedi; kategori adını tam yazın ya da düğmeden seçin.`);
     }
-    return this.taslakAc(veri.taslak, kategoriId, veri.ekId, veri.uyarilar, veri.okunan ?? {});
+    return this.taslakAc(veri.taslak, kategoriId, veri.ekId, veri.uyarilar, veri.okunan ?? {}, veri.ocrKayitId ?? null);
   }
 }

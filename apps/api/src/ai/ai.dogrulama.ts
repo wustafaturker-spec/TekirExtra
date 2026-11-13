@@ -1,4 +1,4 @@
-import { vknGecerliMi, tcknGecerliMi } from "@tekirextra/shared";
+import { DOVIZ_CINSLERI, vknGecerliMi, tcknGecerliMi } from "@tekirextra/shared";
 import { FisFaturaOcrSonuc, CariIletisimCikarim } from "./ai.semalar";
 
 export interface DogrulamaSonucu<T> {
@@ -53,6 +53,17 @@ export function fisFaturaDogrula(cikti: FisFaturaOcrSonuc): DogrulamaSonucu<FisF
     }
   } else {
     uyarilar.push("Belge tarihi tespit edilemedi; varsayılan günün tarihi kullanılacak.");
+  }
+
+  // AI-13: belge dövizi aktarılır; tanınmayan kod TL sayılmaz, uyarıyla TL'ye düşer.
+  const doviz = String(duzeltilmisVeri.paraBirimi ?? "TRY").trim().toUpperCase().replace(/^(TL|₺)$/, "TRY");
+  if ((DOVIZ_CINSLERI as readonly string[]).includes(doviz)) duzeltilmisVeri.paraBirimi = doviz;
+  else { uyarilar.push(`Belge para birimi (${duzeltilmisVeri.paraBirimi}) tanınmadı; TL varsayıldı, kontrol edin.`); duzeltilmisVeri.paraBirimi = "TRY"; }
+
+  // AI-13: kırılım toplamı belge matrahını tutmalı; tutmuyorsa oran başına ayırma uyarıyla yapılır.
+  if (duzeltilmisVeri.kdvKirilimi.length > 1) {
+    const kirilimMatrah = Math.round(duzeltilmisVeri.kdvKirilimi.reduce((t, k) => t + k.matrah, 0) * 100) / 100;
+    if (Math.abs(kirilimMatrah - duzeltilmisVeri.toplamMatrah) > 0.05) uyarilar.push(`KDV kırılımı matrahı (${kirilimMatrah}) belge matrahını (${duzeltilmisVeri.toplamMatrah}) tutmuyor; oranları kontrol edin.`);
   }
 
   // 4. Genel Toplam Pozitif Olmalı
