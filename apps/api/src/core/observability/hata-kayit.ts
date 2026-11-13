@@ -9,7 +9,8 @@ import { PrismaService } from "../prisma.service";
  * servis yok; mesajlarda firma verisi olabilir). Kayıt hiçbir zaman isteği düşürmez.
  */
 /** PLT-123: worker, Telegram ve ödeme sözü süreçleri de yazar (ödeme sözü "worker" sayılır). */
-export type HataKaynagi = "api" | "web" | "worker" | "telegram";
+export const HATA_KAYNAKLARI = ["api", "web", "worker", "telegram"] as const;
+export type HataKaynagi = (typeof HATA_KAYNAKLARI)[number];
 
 export interface HataGirdisi {
   kaynak: HataKaynagi;

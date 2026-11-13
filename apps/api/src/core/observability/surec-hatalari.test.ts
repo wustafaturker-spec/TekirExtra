@@ -69,3 +69,15 @@ describe("yakalanmamış hatalar (PLT-124)", () => {
     }
   });
 });
+
+describe("kaynak kısıtı (PLT-123)", () => {
+  it("veritabanındaki son kaynak CHECK'i koddaki kaynaklarla aynı", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { HATA_KAYNAKLARI } = await import("./hata-kayit");
+    const kok = join(__dirname, "../../../prisma/migrations");
+    const son = readdirSync(kok).sort().map((d) => { try { return readFileSync(join(kok, d, "migration.sql"), "utf8"); } catch { return ""; } })
+      .flatMap((sql) => [...sql.matchAll(/kaynak"?\s+IN\s*\(([^)]*)\)/gi)].map((m) => m[1])).at(-1) ?? "";
+    expect(son.match(/'([a-z]+)'/g)?.map((x) => x.replace(/'/g, "")).sort()).toEqual([...HATA_KAYNAKLARI].sort());
+  });
+});
