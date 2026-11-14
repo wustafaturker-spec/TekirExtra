@@ -15,6 +15,18 @@ describe("gönderen cari seçimi", () => {
     expect(r.uyari).toMatch(/CARI-005 müşteri tipinde; alış faturası için tedarikçi ya da her ikisi/);
   });
   it("kayıt yoksa cari de uyarı da yok", async () => {
-    expect(await gonderenCariSec(tx([]), "t", "1", "tedarikci")).toEqual({ cari: null, uyari: null });
+    expect(await gonderenCariSec(tx([]), "t", "1", "tedarikci")).toEqual({ cari: null, uyari: null, cokluUyari: null });
+  });
+  it("uygun tipte tek kart varsa (öteki müşteri) uyarı yok; birleştirilmiş kartlar aday değil", async () => {
+    const t = tx([{ id: "h", kod: "TED-001", tip: "her_ikisi" }, { id: "m", kod: "CARI-005", tip: "musteri" }]);
+    const r = await gonderenCariSec(t, "t", "1234567802", "tedarikci");
+    expect(r).toMatchObject({ cari: { id: "h" }, uyari: null, cokluUyari: null });
+    expect((t as unknown as { cariHesap: { findMany: ReturnType<typeof vi.fn> } }).cariHesap.findMany.mock.calls[0][0].where).toEqual({ tenantId: "t", vknTckn: "1234567802", birlestigiCariId: null });
+  });
+  it("uygun tipte birden çok kart: en eski seçilir ve aynı VKN uyarısı verilir", async () => {
+    const r = await gonderenCariSec(tx([{ id: "a", kod: "TED-001", tip: "tedarikci" }, { id: "b", kod: "TED-009", tip: "her_ikisi" }]), "t", "1234567802", "tedarikci");
+    expect(r.cari?.id).toBe("a");
+    expect(r.uyari).toBeNull();
+    expect(r.cokluUyari).toMatch(/^VKN 1234567802 birden çok caride kayıtlı: TED-001 \(X\), TED-009 \(X\)\. Belge en eski kart TED-001 carisine işlenir/);
   });
 });

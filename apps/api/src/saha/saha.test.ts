@@ -119,6 +119,14 @@ describe("saha mal kabul (SAH-06)", () => {
     expect(r.satirlar.map((s) => [s.anahtar, s.stokId, s.katsayi, s.beklenen])).toEqual([["1", "a", 1, 24], ["2", null, null, 1], ["3", "a", null, 1]]);
   });
 
+  it("e-İrsaliye: gönderenin VKN'si birden çok caride ise sahada kabul edilmez", async () => {
+    const r = await eirsaliyeKabulBelgesi(kartTx(null) as never, {
+      id: "e2", belgeNo: "ABC2027", tarih: "2026-11-14", gonderenUnvan: "Çift Kart", yanit: "yeni", kendiSevkimiz: false, cari: { id: "c1" }, cariUyarisi: "VKN … birden çok caride kayıtlı", alisIrsaliyesi: null,
+      satirlar: [{ siraNo: 1, ad: "Vida", miktar: "1", birim: "ADET", onerilenStokId: null, onerilenVaryantId: null }],
+    });
+    expect(r.engel).toMatch(/birden çok caride kayıtlı; panelde işlenir/);
+  });
+
   it("lot miktarları satır miktarını tutmalı", () => {
     expect(() => partiToplamiDenetle("3", [{ lotNo: "L1", miktar: "2" }, { lotNo: "L2", miktar: "1" }], "Vida")).not.toThrow();
     expect(() => partiToplamiDenetle("3", [{ lotNo: "L1", miktar: "2" }], "Vida")).toThrow(/tutmuyor/);

@@ -33,6 +33,7 @@ interface Eslesme {
   yanit: string;
   kendiSevkimiz: boolean;
   cari: { id: string; kod: string; unvan: string } | null;
+  cariUyarisi?: string | null;
   alisIrsaliyesi: { id: string; no: string | null } | null;
   satirlar: Oneri[];
 }
@@ -104,6 +105,7 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
         <header className="is-success"><div><h3>Alış irsaliyesine işle</h3><p>{veri ? `${veri.belgeNo} · ${veri.gonderenUnvan}` : "Belge okunuyor…"}</p></div></header>
         <div className="despatch-match__body">
           {hata && <Alert tone="error">{hata}</Alert>}
+          {veri?.cariUyarisi && <Alert tone="warning">{veri.cariUyarisi}</Alert>}
           {veri?.alisIrsaliyesi && <Alert tone="warning">Bu belgeden {veri.alisIrsaliyesi.no ?? "bir"} alış irsaliyesi zaten oluşturulmuş.</Alert>}
           {veri && !veri.cari && (
             <label className="row" style={{ gap: "0.4rem", alignItems: "center" }}>

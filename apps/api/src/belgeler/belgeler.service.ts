@@ -34,7 +34,7 @@ import { anaBirimMiktari, satirBirimleriniDogrula } from "../stok/birim-cevrim";
 import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
-import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
+import { gonderenCariSec, tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import { cariIslemDenetle, riskAsimiVarMi, riskLimitiDenetle, type BelgeTuru } from "../cari/cari-islem-denetimi";
 import { belgeGuncelTry } from "../cari/doviz-degerleme";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
@@ -1617,12 +1617,14 @@ export class BelgelerService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id: gelenId }, include: { alisIrsaliyesi: { select: { id: true, no: true, durum: true } } } });
       if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
-      const cari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: kayit.gonderenVkn }, select: { id: true, kod: true, unvan: true } });
+      // Aynı VKN'li birden çok kartta seçim kararlıdır (işlerken de aynısı) ve uyarılır.
+      const { cari: secilen, cokluUyari: cariUyarisi } = await gonderenCariSec(tx, tenantId, kayit.gonderenVkn);
+      const cari = secilen ? { id: secilen.id, kod: secilen.kod, unvan: secilen.unvan } : null;
       let ubl: UblIrsaliye;
       try { ubl = irsaliyeUblOku(kayit.xmlIcerik); } catch { throw new BadRequestException("Belgenin XML'i okunamadı"); }
       return {
         id: kayit.id, belgeNo: kayit.belgeNo, tarih: kayit.tarih.toISOString().slice(0, 10), gonderenUnvan: kayit.gonderenUnvan, gonderenVkn: kayit.gonderenVkn,
-        yanit: kayit.durum, kendiSevkimiz: kayit.kendiSevkimiz, cari, alisIrsaliyesi: kayit.alisIrsaliyesi,
+        yanit: kayit.durum, kendiSevkimiz: kayit.kendiSevkimiz, cari, cariUyarisi, alisIrsaliyesi: kayit.alisIrsaliyesi,
         satirlar: await irsaliyeSatirOnerileri(tx, tenantId, ubl.satirlar, cari?.id ?? null),
       };
     });
@@ -1659,7 +1661,7 @@ export class BelgelerService {
       const eksik = ubl.satirlar.map((s, i) => ({ sira: i + 1, ad: s.ad })).filter((s) => alinacak(s.sira) && !eslesme.get(s.sira));
       if (eksik.length > 0) throw new BadRequestException(`Şu satırlar bir stok kartıyla eşleştirilmedi: ${eksik.map((s) => `${s.sira}. ${s.ad}`).join(", ")}`);
 
-      const mevcutCari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: kayit.gonderenVkn }, select: { id: true } });
+      const { cari: mevcutCari } = await gonderenCariSec(tx, tenantId, kayit.gonderenVkn);
       if (!mevcutCari && !girdi.yeniCariOnay) {
         throw new BadRequestException(`Gönderen firma (${kayit.gonderenUnvan} - VKN: ${kayit.gonderenVkn}) sisteminizde kayıtlı bir cari hesap değil. Lütfen yeni cari hesap açılmasını onaylayın.`);
       }

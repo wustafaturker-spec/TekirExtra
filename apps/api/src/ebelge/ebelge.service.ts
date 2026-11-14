@@ -2018,7 +2018,7 @@ export class EbelgeService {
     // MVZ-12: belge tarihindeki merkezi tablo; firmanın gizledikleri de tanınır.
     const { girdi: oneri, engeller, denetim, bilinmeyenler } = gelenDenetle(ubl, await this.gelenTablolari(ubl.tarih));
     // Aynı VKN'li birden çok cari varsa belgenin yönüne uygun olanı.
-    const { cari: secilenCari, uyari: cariUyarisi } = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const { cari: secilenCari, uyari: cariUyarisi, cokluUyari: cariCokluUyarisi } = await this.prisma.tenantIslem(tenantId, (tx) =>
       gonderenCariSec(tx, tenantId, kayit.gonderenVkn, oneri.tip === "satis_iade" ? "musteri" : "tedarikci"),
     );
     const cari = secilenCari ? { id: secilenCari.id, kod: secilenCari.kod, unvan: secilenCari.unvan, karaListe: secilenCari.karaListe } : null;
@@ -2067,6 +2067,8 @@ export class EbelgeService {
       cari,
       /** Bulunan cari belgenin yönüne uygun tipte değilse işleme engeli. */
       cariUyarisi,
+      /** Aynı VKN birden çok caride: işlem engellenmez, seçilen kart söylenir. */
+      cariCokluUyarisi,
       dovizCinsi: ubl.dovizCinsi,
       belgeToplamlari: {
         satirToplami: ubl.toplamlar.satirToplami.toFixed(2),

@@ -141,6 +141,7 @@ interface GelenDetay {
   cari: { id: string; kod: string; unvan: string; karaListe: boolean } | null;
   /** Bulunan cari belgenin yönüne uygun tipte değil (ör. alışta müşteri kartı). */
   cariUyarisi?: string | null;
+  cariCokluUyarisi?: string | null;
   dovizCinsi: string;
   belgeToplamlari: {
     satirToplami: string;
@@ -875,6 +876,7 @@ export default function GelenKutusuSayfasi() {
             )}
           </p>
           {detay.cariUyarisi && detay.durum === "beklemede" && <div style={{ marginTop: "0.6rem" }}><Alert tone="warning">{detay.cariUyarisi}</Alert></div>}
+          {detay.cariCokluUyarisi && detay.durum === "beklemede" && <div style={{ marginTop: "0.6rem" }}><Alert tone="warning">{detay.cariCokluUyarisi}</Alert></div>}
           </>
         ) : (
           <div>

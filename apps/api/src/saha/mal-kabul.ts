@@ -124,12 +124,14 @@ export async function siparisKabulBelgesi(tx: Prisma.TransactionClient, id: stri
 /** e-İrsaliye satırları, SAT-12 eşleşme önerisiyle; eşleşmeyen satır sahada kabul edilemez. */
 export async function eirsaliyeKabulBelgesi(
   tx: Prisma.TransactionClient,
-  eslesme: { id: string; belgeNo: string; tarih: string; gonderenUnvan: string; yanit: string; kendiSevkimiz: boolean; cari: { id: string } | null; alisIrsaliyesi: unknown; satirlar: Array<{ siraNo: number; ad: string; miktar: string; birim: string; onerilenStokId: string | null; onerilenVaryantId: string | null }> },
+  eslesme: { id: string; belgeNo: string; tarih: string; gonderenUnvan: string; yanit: string; kendiSevkimiz: boolean; cari: { id: string } | null; cariUyarisi?: string | null; alisIrsaliyesi: unknown; satirlar: Array<{ siraNo: number; ad: string; miktar: string; birim: string; onerilenStokId: string | null; onerilenVaryantId: string | null }> },
 ): Promise<MalKabulBelgesi> {
   const engel = eslesme.alisIrsaliyesi ? "Bu e-İrsaliyeden zaten alış irsaliyesi oluşturulmuş."
     : eslesme.yanit === "ret" ? "Reddedilen e-İrsaliye kabul edilemez."
     : eslesme.kendiSevkimiz ? "Firmanın kendi sevk irsaliyesi."
     : !eslesme.cari ? `${eslesme.gonderenUnvan} cari olarak kayıtlı değil; cari panelde açılınca kabul edilir.`
+    // Aynı VKN birden çok caride: hangi tedarikçi olduğuna sahada karar verilmez.
+    : eslesme.cariUyarisi ? "Gönderenin VKN'si birden çok caride kayıtlı; panelde işlenir."
     : null;
   const stokIdler = [...new Set(eslesme.satirlar.map((s) => s.onerilenStokId).filter((x): x is string => Boolean(x)))];
   const k = await katsayilar(tx, stokIdler);
