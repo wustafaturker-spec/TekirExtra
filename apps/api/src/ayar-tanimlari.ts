@@ -14,6 +14,7 @@ import { TEKLIF_TALEBI_MODULU, teklifTalebiAyariSemasi } from "./ai/teklif-taleb
 import { TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi } from "./belgeler/teklif-takibi/teklif-takip.kurallari";
 import { VERI_AKTARIMI_MODULU, veriAktarimiAyariSemasi } from "./veri-aktarimi/adim";
 import { onayAyariSemasi, onayModulu } from "./onay/onay-kurallari";
+import { FIYAT_ENDEKS_MODULU, FIYAT_ENDEKS_VARSAYILAN, fiyatEndeksAyariSemasi } from "./fiyat-endeks/fiyat-endeks-erisim";
 
 registerModulAyar(IHTIYAC_MODULU,ihtiyacAyariSemasi,{surum:1,mod:'kapali'});
 registerModulAyar(MALIYET_KONTROL_MODULU, maliyetKontrolAyariSemasi, { surum: 1, mod: "kapali" });
@@ -25,6 +26,8 @@ registerModulAyar(TEKLIF_TAKIP_MODULU, teklifTakipAyariSemasi, { acik: false, is
 registerModulAyar(VERI_AKTARIMI_MODULU, veriAktarimiAyariSemasi, { gecisTarihi: null });
 // ONY-04: görev ayrılığı yalnız tek yöneticili firmada kapatılabilir.
 registerModulAyar(onayModulu, onayAyariSemasi, { gorevAyriligiKapali: false });
+// END-23: fiyat–endeks analizine hangi rollerin erişeceğini yönetici belirler (yönetici her zaman erişir).
+registerModulAyar(FIYAT_ENDEKS_MODULU, fiyatEndeksAyariSemasi, { ...FIYAT_ENDEKS_VARSAYILAN });
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi

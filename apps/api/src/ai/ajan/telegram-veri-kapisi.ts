@@ -45,6 +45,7 @@ export const TELEGRAM_RAPOR_KARARI: Record<string, { acik: boolean; neden?: stri
   "stok.en-cok-satanlar": { acik: true },
   "stok.envanter": { acik: true },
   "stok.fire-zayi": { acik: true },
+  "stok.fiyat_endeks": { acik: false, neden: "alış fiyatı ve tedarikçi koşullarını gösterebilir; erişimi yöneticinin rol seçimine bağlıdır (END-23)" },
   "stok.hareket-ozeti": { acik: true },
   "stok.hareketsiz": { acik: true },
   "stok.kritik-stok": { acik: true },

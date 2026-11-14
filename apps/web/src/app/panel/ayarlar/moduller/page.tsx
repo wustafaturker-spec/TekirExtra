@@ -4,14 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import Link from "next/link";
-import { DOVIZ_CINSLERI } from "@tekirextra/shared";
+import { DOVIZ_CINSLERI, type Rol } from "@tekirextra/shared";
+import { ROL_ADI } from "@/lib/rol-adlari";
 
 /**
  * Modül Ayarları (AYR-01/03): backend jenerik ayar altyapısını
  * (GET/PUT /ayarlar/:modul) tipli bir form ile tüketir. Alan tanımları burada
  * deklaratiftir; yeni modül ayarı gelince yalnız bu tablo genişletilir.
  */
-type AlanTip = "enum" | "sayi" | "onay" | "metin" | "uzunMetin" | "kasaRef" | "bankaRef" | "kullaniciRef" | "sablon" | "gizli";
+type AlanTip = "enum" | "sayi" | "onay" | "metin" | "uzunMetin" | "kasaRef" | "bankaRef" | "kullaniciRef" | "sablon" | "gizli" | "rolListesi";
 interface Alan {
   ad: string;
   etiket: string;
@@ -20,7 +21,7 @@ interface Alan {
   min?: number;
   max?: number;
   ipucu?: string;
-  /** kullaniciRef: seçilebilecek roller (varsayılan yönetici + muhasebe). */
+  /** kullaniciRef: seçilebilecek roller (varsayılan yönetici + muhasebe); rolListesi: işaretlenebilecek roller. */
   roller?: string[];
 }
 interface ModulTanim {
@@ -31,7 +32,16 @@ interface ModulTanim {
 
 const HATIRLATMA_ALANLARI = "Kullanılabilir alanlar: {unvan} {firma} {toplam} {enEskiVade} {gecikmeGun} {faturaSayisi} {faturalar} — {faturalar} vadesi geçmiş belge tablosudur; metinde yoksa sona eklenir.";
 
+/** END-23: yöneticinin fiyat–endeks analizine açabileceği roller (API'deki FIYAT_ENDEKS_ROLLERI ile aynı). */
+const FIYAT_ENDEKS_ROLLERI = ["muhasebe", "satis", "salt_okunur", "mali_musavir", "maliyet_muhasebesi", "uretim_planlama", "depo"];
+
 const MODUL_TANIM: Record<string, ModulTanim> = {
+  fiyat_endeks: {
+    baslik: "Fiyat ve Endeks Analizi", ikon: "📈", alanlar: [
+      { ad: "satisRolleri", etiket: "Satış fiyatı tarafını görebilecek roller", tip: "rolListesi", roller: FIYAT_ENDEKS_ROLLERI, ipucu: "Yönetici her zaman görür. Satış fiyatlarının TÜFE, Yİ-ÜFE ve kurla karşılaştırması (stok kartı › Fiyat ve endeks, rapor kataloğu)." },
+      { ad: "alisRolleri", etiket: "Alış fiyatı ve maliyet tarafını görebilecek roller", tip: "rolListesi", roller: FIYAT_ENDEKS_ROLLERI, ipucu: "Yönetici her zaman görür. Alış fiyatları tedarikçi koşullarını gösterdiği için ayrı açılır. Özel roldeki “Raporlar” kutusu kapalıysa iki taraf da kapanır." },
+    ],
+  },
   crm_belge_baglari: {
     baslik: "CRM Teklif Bağları", ikon: "📋", alanlar: [
       { ad: "mod", etiket: "CRM teklif bağı kullanım modu", tip: "enum", secenekler: [["kapali", "Kapalı"], ["salt_okunur", "Salt okunur"], ["pilot", "Pilot"], ["acik", "Açık"]], ipucu: "Pilot ve açık modda yönetici ve satış kullanıcıları teklif bağlayabilir. Salt okunur modda bağ kurma ve çözme kapalıdır." },
@@ -173,7 +183,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "ebelge", "stok", "fiyat_onerisi", "stok_ihtiyac_plani", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "ebelge", "stok", "fiyat_onerisi", "fiyat_endeks", "stok_ihtiyac_plani", "maliyet_kontrolu", "cari", "crm_belge_baglari", "eposta_teklif_taslagi", "teklif_takibi", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;
@@ -300,6 +310,19 @@ export default function ModulAyarlariSayfasi() {
         {v && !uygun.some((u) => u.id === v) ? <option value={String(v)} disabled>Önceki sorumlu uygun değil; yeniden seçin</option> : null}
         {uygun.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}
       </Select>;
+    }
+    if (a.tip === "rolListesi") {
+      const secili = Array.isArray(v) ? (v as string[]) : [];
+      return (
+        <div className="endeks-secim" role="group" aria-label={a.etiket}>
+          {(a.roller ?? []).map((r) => (
+            <label key={r}>
+              <input type="checkbox" checked={secili.includes(r)} onChange={(e) => alanGuncelle(modul, a.ad, e.target.checked ? [...secili, r] : secili.filter((x) => x !== r))} />
+              {ROL_ADI[r as Rol] ?? r}
+            </label>
+          ))}
+        </div>
+      );
     }
     if (a.tip === "kasaRef" || a.tip === "bankaRef") {
       const kaynak = a.tip === "kasaRef" ? kasalar : bankalar;

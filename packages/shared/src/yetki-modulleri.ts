@@ -49,7 +49,7 @@ export const YETKI_MODULLERI: readonly YetkiModulu[] = [
   { kod: "demirbas_arac", ad: "Demirbaş ve Araç", api: ["demirbas", "arac-takip"], panel: ["/panel/demirbas", "/panel/araclar"] },
   { kod: "projeler", ad: "Projeler", api: ["projeler"], panel: ["/panel/projeler"] },
   { kod: "butce_nakit", ad: "Bütçe ve Nakit Akışı", api: ["butce", "nakit-akisi"], panel: ["/panel/butce", "/panel/nakit-akisi"] },
-  { kod: "raporlar", ad: "Raporlar", api: ["raporlar", "rapor", "rapor-abonelikleri", "ai/rapor"], panel: ["/panel/raporlar"] },
+  { kod: "raporlar", ad: "Raporlar", api: ["raporlar", "rapor", "rapor-abonelikleri", "ai/rapor", "fiyat-endeks"], panel: ["/panel/raporlar"] },
   { kod: "mali_musavir", ad: "Mali Müşavir ve Muhasebe Aktarımı", api: ["mali-musavir"], panel: ["/panel/mali-musavir"] },
   { kod: "donem_kapatma", ad: "Dönem Kapatma", api: ["donem-kapatma", "duzeltmeler"], panel: ["/panel/donem-kapatma"] },
   { kod: "yapay_zeka", ad: "Yapay Zekâ ve Asistan", api: ["ai", "mcp"], panel: ["/panel/ai"] },

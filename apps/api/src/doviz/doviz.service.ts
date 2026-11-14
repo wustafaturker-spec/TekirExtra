@@ -6,6 +6,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import { KUR_GERI_BAKIS_GUN, KurTipi, kurlariBul, kurPenceresiBasi } from "./kur-coz";
+import { EVDS_TABAN_ADRESI } from "../fiyat-endeks/evds-istemci";
 
 type Doviz = YabanciDoviz;
 /** DVZ-10: TCMB'nin gösterge kuru yayımladığı bütün dövizler; günlük XML hepsini taşır. */
@@ -64,7 +65,7 @@ export class DovizService {
   private async evdsAralik(baslangic: Date, bitis: Date): Promise<TcmbGunu[] | null> {
     const anahtar = this.config.get<string>("TCMB_EVDS_API_KEY")?.trim();
     if (!anahtar) return null;
-    const url = `https://evds3.tcmb.gov.tr/service/evds/series=${SERILER.join("-")}&startDate=${ddmmyyyy(baslangic)}&endDate=${ddmmyyyy(bitis)}&type=json`;
+    const url = `${EVDS_TABAN_ADRESI}/series=${SERILER.join("-")}&startDate=${ddmmyyyy(baslangic)}&endDate=${ddmmyyyy(bitis)}&type=json`;
     try {
       const yanit = await fetch(url, { headers: { key: anahtar, Accept: "application/json" }, signal: AbortSignal.timeout(10000) });
       if (!yanit.ok || !(yanit.headers.get("content-type") ?? "").includes("json")) return null;

@@ -1,0 +1,48 @@
+import { ForbiddenException } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
+import { z } from "zod";
+import type { Rol } from "@tekirextra/shared";
+import { planOzelligiAcik } from "../core/abonelik-erisim.service";
+
+/**
+ * END-23 (kullanıcı kararı 2026-11-14): erişimi firma yöneticisi belirler.
+ * Satış fiyatı ve alış fiyatı/maliyet tarafları ayrı rol listeleridir; yönetici
+ * ikisine de her zaman erişir. Özel rol (KLN-20) bunun üstüne "Raporlar"
+ * kutusuyla daraltır (`fiyat-endeks` yolu raporlar modülündedir).
+ */
+export const FIYAT_ENDEKS_MODULU = "fiyat_endeks";
+/** Yöneticinin açabileceği roller; bayi, çalışan gibi dış/self-servis roller seçilemez. */
+export const FIYAT_ENDEKS_ROLLERI = ["muhasebe", "satis", "salt_okunur", "mali_musavir", "maliyet_muhasebesi", "uretim_planlama", "depo"] as const satisfies readonly Rol[];
+const rolListesi = z.array(z.enum(FIYAT_ENDEKS_ROLLERI)).max(FIYAT_ENDEKS_ROLLERI.length)
+  .refine((r) => new Set(r).size === r.length, "Rol tekrar edemez");
+export const fiyatEndeksAyariSemasi = z.object({ satisRolleri: rolListesi, alisRolleri: rolListesi }).strict();
+export type FiyatEndeksAyari = z.infer<typeof fiyatEndeksAyariSemasi>;
+/** Varsayılan: muhasebe iki tarafa da erişir, diğer roller kapalı (yönetici değiştirene kadar). */
+export const FIYAT_ENDEKS_VARSAYILAN: FiyatEndeksAyari = { satisRolleri: ["muhasebe"], alisRolleri: ["muhasebe"] };
+
+export type FiyatTarafi = "satis" | "alis";
+export interface FiyatEndeksErisimi { satis: boolean; alis: boolean }
+
+export function rolErisimi(ayar: FiyatEndeksAyari, rol: Rol): FiyatEndeksErisimi {
+  if (rol === "yonetici") return { satis: true, alis: true };
+  return {
+    satis: (ayar.satisRolleri as readonly string[]).includes(rol),
+    alis: (ayar.alisRolleri as readonly string[]).includes(rol),
+  };
+}
+
+/** Plan özelliği kapalıysa ya da kullanıcının hiçbir tarafa erişimi yoksa reddeder. */
+export async function fiyatEndeksErisimi(tx: Prisma.TransactionClient, tenantId: string, rol: Rol): Promise<FiyatEndeksErisimi> {
+  if (!(await planOzelligiAcik(tx, tenantId, "fiyatEndeksAnalizi"))) {
+    throw new ForbiddenException("Fiyat ve endeks analizi abonelik planınızda açık değil.");
+  }
+  const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: FIYAT_ENDEKS_MODULU } }, select: { ayarlar: true } });
+  const ayar = fiyatEndeksAyariSemasi.safeParse(kayit?.ayarlar ?? FIYAT_ENDEKS_VARSAYILAN);
+  const erisim = rolErisimi(ayar.success ? ayar.data : FIYAT_ENDEKS_VARSAYILAN, rol);
+  if (!erisim.satis && !erisim.alis) throw new ForbiddenException("Fiyat ve endeks analizine erişiminiz yok; yönetici Ayarlar › Modül Ayarları'ndan açabilir.");
+  return erisim;
+}
+
+export function tarafDenetle(erisim: FiyatEndeksErisimi, taraf: FiyatTarafi): void {
+  if (!erisim[taraf]) throw new ForbiddenException(taraf === "alis" ? "Alış fiyatı ve maliyet tarafına erişiminiz yok." : "Satış fiyatı tarafına erişiminiz yok.");
+}

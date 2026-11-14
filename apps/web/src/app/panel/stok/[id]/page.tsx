@@ -29,6 +29,7 @@ import { BELGE_DILI_ADLARI, YABANCI_ACIKLAMA_UZUNLUGU, YABANCI_AD_UZUNLUGU, YABA
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { CariSecici } from "@/components/cari-secici";
+import { FiyatEndeksSekmesi, type FiyatEndeksSecenekleri } from "@/components/fiyat-endeks-sekmesi";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -287,7 +288,7 @@ interface CariOzet {
   unvan: string;
 }
 
-type Sekme = "genel" | "recete" | "fiyatlar" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler" | "vergiler";
+type Sekme = "genel" | "recete" | "fiyatlar" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler" | "vergiler" | "fiyat_endeks";
 
 interface Parti { id: string; lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; ilkMiktar: string; kalanMiktar: string; depo: { ad: string }; varyant: { kod: string; ad: string } | null }
 
@@ -373,6 +374,13 @@ export default function StokDetaySayfasi() {
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
+  // END-11: plan özelliği ve yöneticinin rol seçimi açıksa sekme görünür; 403 sessizce sekmeyi gizler.
+  const [endeksSecenekleri, setEndeksSecenekleri] = useState<FiyatEndeksSecenekleri | null>(null);
+  useEffect(() => {
+    let iptal = false;
+    api<FiyatEndeksSecenekleri>("/fiyat-endeks/secenekler").then((r) => { if (!iptal) setEndeksSecenekleri(r); }).catch(() => undefined);
+    return () => { iptal = true; };
+  }, []);
   const { cokluDepo } = useDepolar();
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
@@ -555,6 +563,7 @@ export default function StokDetaySayfasi() {
             ...((detay.takipTipi ?? "yok") !== "yok" ? [{ deger: "partiler" as Sekme, baslik: `Seri / Lot (${partiler.length})` }] : []),
             { deger: "barkodlar", baslik: `Barkodlar (${detay.barkodlar.length})` },
             { deger: "tedarikciler", baslik: `Tedarikçiler (${detay.tedarikciler.length})` },
+            ...(endeksSecenekleri ? [{ deger: "fiyat_endeks" as Sekme, baslik: "Fiyat ve endeks" }] : []),
           ]}
         />
       </div>
@@ -675,6 +684,9 @@ export default function StokDetaySayfasi() {
             )
           }
         /></TabPanel>
+      )}
+      {aktifSekme === "fiyat_endeks" && endeksSecenekleri && (
+        <TabPanel idPrefix="stok-detay" value="fiyat_endeks"><FiyatEndeksSekmesi stokId={id} anaBirim={detay.anaBirim} varyantlar={(detay.varyantlar ?? []).map((v) => ({ id: v.id, ad: v.ad, kod: v.kod }))} secenekler={endeksSecenekleri} /></TabPanel>
       )}
     </div>
   );

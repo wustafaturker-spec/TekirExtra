@@ -23,6 +23,8 @@ const kotaSemasi = z.object({ sinir: z.number().int().min(0).max(2147483647).nul
 /** CNL-19: modül dışı plan özellikleri; varsayılan kapalı. */
 export const PAKET_OZELLIKLERI = {
   telegramOzelBot: { ad: "Firmaya özel Telegram botu", aciklama: "Firma, platform botu yerine kendi Telegram botunu kullanabilir.", gerekenModul: "yapay_zeka" },
+  /** END: ürün fiyatlarının TÜFE, Yİ-ÜFE ve döviz kuruyla karşılaştırılması (kullanıcı kararı 2026-11-14: plan özelliği). */
+  fiyatEndeksAnalizi: { ad: "Fiyat ve endeks analizi", aciklama: "Ürünlerin gerçekleşen alış/satış fiyatları TÜFE, Yİ-ÜFE ve döviz kuruyla karşılaştırılır.", gerekenModul: "raporlar" },
 } as const satisfies Record<string, { ad: string; aciklama: string; gerekenModul: PaketModulKodu }>;
 export type PaketOzellikKodu = keyof typeof PAKET_OZELLIKLERI;
 export const PAKET_OZELLIK_KODLARI = Object.keys(PAKET_OZELLIKLERI) as PaketOzellikKodu[];
@@ -36,7 +38,7 @@ export const paketKapsamSemasi = z.object({
     uyariYuzdesi: z.number().int().min(1).max(99),
   }).strict().optional(),
   /** Modül dışı, açık seçilmedikçe kapalı plan özellikleri (CNL-19). Eski sözleşmelerde yoktur = kapalı. */
-  ozellikler: z.object({ telegramOzelBot: z.boolean().optional() }).strict().optional(),
+  ozellikler: z.object({ telegramOzelBot: z.boolean().optional(), fiyatEndeksAnalizi: z.boolean().optional() }).strict().optional(),
 }).strict().superRefine((g, ctx) => {
   for (const [kod, t] of Object.entries(PAKET_OZELLIKLERI) as Array<[PaketOzellikKodu, (typeof PAKET_OZELLIKLERI)[PaketOzellikKodu]]>) {
     if (g.ozellikler?.[kod] && !g.moduller.includes(t.gerekenModul)) ctx.addIssue({ code: "custom", path: ["ozellikler", kod], message: `${t.ad} için ${PAKET_MODUL_ADLARI[t.gerekenModul]} seçilmeli.` });

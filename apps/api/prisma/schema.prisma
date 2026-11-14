@@ -123,6 +123,7 @@ enum DuzeltmeTuru {
 }
 
 model Tenant {
+  fiyatListesiFiyatGecmisi FiyatListesiFiyatGecmisi[]
   entegrasyonTalepleri EntegrasyonTalebi[]
   iletiSablonlari      IletiSablonu[]
   asistanFikirleri       AsistanFikri[]
@@ -2729,6 +2730,8 @@ model FiyatListesi {
 
   kalemler FiyatListesiKalem[]
   cariler  CariHesap[]
+  faturalar    Fatura[]                   @relation("FaturaFiyatListesi")
+  fiyatGecmisi FiyatListesiFiyatGecmisi[]
 
   @@unique([tenantId, ad])
   @@map("fiyat_listeleri")
@@ -3771,6 +3774,9 @@ model Fatura {
   genelToplam           Decimal               @map("genel_toplam") @db.Decimal(15, 2)
   aciklama              String?
   notlar                String?
+  /// END-27: kesinleşme anında carinin fiyat listesi (tetikleyici yazar); eski faturalarda boş.
+  fiyatListesiId        String?               @map("fiyat_listesi_id") @db.Uuid
+  fiyatListesi          FiyatListesi?         @relation("FaturaFiyatListesi", fields: [fiyatListesiId], references: [id], onDelete: SetNull)
   createdAt             DateTime              @default(now()) @map("created_at")
   updatedAt             DateTime              @updatedAt @map("updated_at")
 
@@ -8746,4 +8752,81 @@ model EntegrasyonTalebi {
 
   @@unique([tenantId, saglayici])
   @@map("entegrasyon_talepleri")
+}
+
+/// END-27: fiyat listesi kaleminin fiyat değişimleri; tetikleyici yazar (ekleme ve fiyat güncellemesi).
+model FiyatListesiFiyatGecmisi {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  listeId   String   @map("liste_id") @db.Uuid
+  stokId    String   @map("stok_id") @db.Uuid
+  eskiFiyat Decimal? @map("eski_fiyat") @db.Decimal(15, 4)
+  yeniFiyat Decimal  @map("yeni_fiyat") @db.Decimal(15, 4)
+  degistiAt DateTime @default(now()) @map("degisti_at")
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  liste  FiyatListesi @relation(fields: [listeId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, listeId, stokId, degistiAt])
+  @@map("fiyat_listesi_fiyat_gecmisi")
+}
+
+/// END-01/02/26: platform genelinde endeks seri kataloğu. Kiracı verisi içermez (RLS'siz);
+/// katalogu yalnız platform rolü yazar, uygulama rolü okur ve çekim durumunu günceller.
+model EndeksSerisi {
+  /// Uygulama içi kısa kod (ör. TUFE, YIUFE); kiracı ekranları ve yapay zekâ bu kodu kullanır.
+  kod             String    @id @db.VarChar(40)
+  /// TCMB EVDS seri kodu (ör. TP.TUKFIY2025.GENEL); platformda sınanarak girilir.
+  evdsKodu        String    @unique @map("evds_kodu") @db.VarChar(80)
+  ad              String    @db.VarChar(160)
+  /// Yalnız aylık seriler (kur günlük olduğu için tcmb_kurlari'ndan okunur).
+  siklik          String    @default("aylik") @db.VarChar(10)
+  bazYili         String?   @map("baz_yili") @db.VarChar(20)
+  kaynak          String    @default("TÜİK") @db.VarChar(60)
+  etkin           Boolean   @default(true)
+  sira            Int       @default(100)
+  /// END-04: baz yılı değişince yeni seri eskisine zincirlenir; eski dönemler katsayıyla bu seriye taşınır.
+  oncekiSeriKodu  String?   @map("onceki_seri_kodu") @db.VarChar(40)
+  zincirKatsayisi Decimal?  @map("zincir_katsayisi") @db.Decimal(24, 12)
+  zincirDonemi    DateTime? @map("zincir_donemi") @db.Date
+  sonCekimAt      DateTime? @map("son_cekim_at")
+  sonBasariliAt   DateTime? @map("son_basarili_at")
+  /// Kaynağın açıkladığı son dönem (ayın ilk günü).
+  sonDonem        DateTime? @map("son_donem") @db.Date
+  sonHata         String?   @map("son_hata") @db.VarChar(500)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  degerler EndeksDegeri[]
+
+  @@map("endeks_serileri")
+}
+
+/// END-01: aylık endeks değeri; dönem ayın ilk günüdür.
+model EndeksDegeri {
+  seriKodu String       @map("seri_kodu") @db.VarChar(40)
+  donem    DateTime     @db.Date
+  deger    Decimal      @db.Decimal(20, 6)
+  /// evds | elle
+  kaynak   String       @default("evds") @db.VarChar(10)
+  alindiAt DateTime     @default(now()) @map("alindi_at")
+  seri     EndeksSerisi @relation(fields: [seriKodu], references: [kod], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([seriKodu, donem])
+  @@map("endeks_degerleri")
+}
+
+/// END-04: kaynağın geçmiş bir dönemin değerini değiştirmesi (revizyon) ya da elle düzeltme.
+model EndeksDegerRevizyonu {
+  id         String   @id @default(uuid()) @db.Uuid
+  seriKodu   String   @map("seri_kodu") @db.VarChar(40)
+  donem      DateTime @db.Date
+  eskiDeger  Decimal  @map("eski_deger") @db.Decimal(20, 6)
+  yeniDeger  Decimal  @map("yeni_deger") @db.Decimal(20, 6)
+  eskiKaynak String   @map("eski_kaynak") @db.VarChar(10)
+  yeniKaynak String   @map("yeni_kaynak") @db.VarChar(10)
+  degistiAt  DateTime @default(now()) @map("degisti_at")
+
+  @@index([seriKodu, donem])
+  @@map("endeks_deger_revizyonlari")
 }

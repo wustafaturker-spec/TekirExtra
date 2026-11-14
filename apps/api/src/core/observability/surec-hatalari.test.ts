@@ -77,6 +77,8 @@ describe("kaynak kısıtı (PLT-123)", () => {
     const { HATA_KAYNAKLARI } = await import("./hata-kayit");
     const kok = join(__dirname, "../../../prisma/migrations");
     const son = readdirSync(kok).sort().map((d) => { try { return readFileSync(join(kok, d, "migration.sql"), "utf8"); } catch { return ""; } })
+      // Yalnız sistem_hatalari tablosunun kısıtı: başka tabloların "kaynak" sütunu (ör. endeks_degerleri) karışmasın.
+      .filter((sql) => /sistem_hatalari/.test(sql))
       .flatMap((sql) => [...sql.matchAll(/kaynak"?\s+IN\s*\(([^)]*)\)/gi)].map((m) => m[1])).at(-1) ?? "";
     expect(son.match(/'([a-z]+)'/g)?.map((x) => x.replace(/'/g, "")).sort()).toEqual([...HATA_KAYNAKLARI].sort());
   });

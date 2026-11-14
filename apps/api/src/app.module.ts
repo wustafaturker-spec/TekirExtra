@@ -39,6 +39,7 @@ import { VergiTakvimiModule } from "./vergi-takvimi/vergi-takvimi.module";
 import { ProjelerModule } from "./projeler/projeler.module";
 import { DemirbasModule } from "./demirbas/demirbas.module";
 import { VeriAktarimiModule } from "./veri-aktarimi/veri-aktarimi.module";
+import { FiyatEndeksModule } from "./fiyat-endeks/fiyat-endeks.module";
 import { OnayModule } from "./onay/onay.module";
 import { TelegramModule } from "./telegram/telegram.module";
 import { AsistanSoruModule } from "./asistan-soru/asistan-soru.module";
@@ -85,6 +86,7 @@ import { SistemSagligiModule } from "./sistem-sagligi/sistem-sagligi.module";
     ProjelerModule,
     DemirbasModule,
     VeriAktarimiModule,
+    FiyatEndeksModule,
     OnayModule,
     AsistanSoruModule,
     SahaModule,
