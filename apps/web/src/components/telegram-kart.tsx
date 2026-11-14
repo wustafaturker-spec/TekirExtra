@@ -8,6 +8,7 @@ type TelegramDurumu =
   | {
       kullanilabilir: true;
       botAdi: string;
+      botGecersiz?: boolean;
       urunEkli: boolean;
       yonetici: boolean;
       tutarGoster?: boolean;
@@ -15,6 +16,7 @@ type TelegramDurumu =
       sesOnayAt?: string | null;
       sesKullanilabilir?: boolean;
       bagliKullanici?: number;
+      ozelBot?: { kullanilabilir: boolean; bot: { botAdi: string; durum: "etkin" | "gecersiz"; hataTuru: string | null } | null };
       bag: { kullaniciAdi: string | null; baglandiAt: string } | null;
       tercih: Tercih;
     };
@@ -50,6 +52,7 @@ export function TelegramKarti() {
   const [isleniyor, setIsleniyor] = useState(false);
   const [hata, setHata] = useState("");
   const [bilgi, setBilgi] = useState("");
+  const [botAnahtari, setBotAnahtari] = useState("");
 
   const yukle = useCallback(async () => {
     try {
@@ -107,6 +110,10 @@ export function TelegramKarti() {
       ) : (
         <p className="muted">Telegram kanalı firmanızda eklenmemiş; yöneticiniz bu sayfadan ekleyebilir.</p>
       ))}
+
+      {durum.urunEkli && durum.botGecersiz && (
+        <Alert tone="warning">Firmanızın Telegram botu (@{durum.botAdi}) şu anda çalışmıyor: Telegram anahtarı reddetti. {durum.yonetici ? "Aşağıdan yeni anahtar girin." : "Yöneticiniz yeni anahtar girmeli."}</Alert>
+      )}
 
       {durum.urunEkli && (
         <>
@@ -233,6 +240,46 @@ export function TelegramKarti() {
                   </label>
                   {durum.sesEtkin && durum.sesOnayAt && (
                     <p className="muted" style={{ margin: "0.25rem 0 0" }}>Onay: <Tarih deger={durum.sesOnayAt} saatli /> · en çok 2 dakikalık mesaj</p>
+                  )}
+                </div>
+              )}
+              {durum.ozelBot && (durum.ozelBot.kullanilabilir || durum.ozelBot.bot) && (
+                <div className="mt-1" style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+                  <strong>Firmaya özel bot</strong>
+                  <p className="muted" style={{ margin: "0.25rem 0 0.5rem" }}>
+                    Kullanıcılarınız platform botu yerine firmanızın kendi botuyla konuşur. BotFather'da (@BotFather › /newbot) yalnız TekirExtra için yeni bir bot oluşturup anahtarını girin.
+                    Bot değişince bütün kullanıcıların bağlantısı kalkar ve yeni botla yeniden bağlanmaları gerekir. Anahtar şifreli saklanır, bir daha gösterilmez.
+                  </p>
+                  {durum.ozelBot.bot && (
+                    <p style={{ margin: "0 0 0.5rem" }}>
+                      Kullanılan bot: @{durum.ozelBot.bot.botAdi}{" "}
+                      <Badge variant={durum.ozelBot.bot.durum === "etkin" ? "success" : "warning"}>{durum.ozelBot.bot.durum === "etkin" ? "Çalışıyor" : "Anahtar reddedildi"}</Badge>
+                      {!durum.ozelBot.kullanilabilir && <span className="muted"> · paketinizde bu özellik kapalı, platform botu kullanılıyor</span>}
+                    </p>
+                  )}
+                  {durum.ozelBot.kullanilabilir && (
+                    <form style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }} onSubmit={(e) => {
+                      e.preventDefault();
+                      if (durum.ozelBot?.bot && !window.confirm("Bot anahtarı değiştirilecek. Farklı bir botsa bütün kullanıcıların Telegram bağlantısı kalkar. Devam edilsin mi?")) return;
+                      void islem(async () => {
+                        const r = await api<{ botAdi: string; dusenBag: number }>("/telegram/ozel-bot", { method: "PUT", body: JSON.stringify({ anahtar: botAnahtari.trim() }) });
+                        setBotAnahtari(""); setKod(null); await yukle();
+                        setBilgi(`@${r.botAdi} kaydedildi.${r.dusenBag ? ` ${r.dusenBag} kullanıcının bağlantısı kalktı; panelden yeniden bağlanmaları gerekir.` : ""}`);
+                      });
+                    }}>
+                      <Field label={durum.ozelBot.bot ? "Yeni bot anahtarı" : "Bot anahtarı (BotFather)"}>
+                        <Input type="password" autoComplete="off" placeholder="123456789:ABC…" value={botAnahtari} onChange={(e) => setBotAnahtari(e.target.value)} required minLength={20} />
+                      </Field>
+                      <Button type="submit" variant="primary" disabled={isleniyor || botAnahtari.trim().length < 20}>{durum.ozelBot.bot ? "Anahtarı değiştir" : "Botu kaydet"}</Button>
+                    </form>
+                  )}
+                  {durum.ozelBot.bot && (
+                    <Button className="mt-1" disabled={isleniyor} onClick={() => {
+                      if (!window.confirm("Firmaya özel bot kaldırılacak ve platform botuna dönülecek; bütün kullanıcıların bağlantısı kalkar. Devam edilsin mi?")) return;
+                      void islem(async () => { await api("/telegram/ozel-bot", { method: "DELETE" }); setKod(null); await yukle(); }, "Firmaya özel bot kaldırıldı; platform botu kullanılıyor.");
+                    }}>
+                      Özel botu kaldır
+                    </Button>
                   )}
                 </div>
               )}

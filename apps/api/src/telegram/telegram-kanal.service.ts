@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { BildirimService } from "../bildirimler/bildirim.service";
+import { coz as sifreCoz } from "../core/kripto";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
@@ -39,15 +41,38 @@ const uyu = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
 const olay = (tur: string) => structuredLogger.info("telegram_guncelleme", { tur });
 
 /** Güncelleme numarasından kararlı istek kimliği: aynı mesaj asistanda da iki kez çalışmaz. */
-export function guncellemeIstekKimligi(updateId: number, deneme = 1): string {
-  const h = createHash("sha256").update(deneme === 1 ? `telegram:${updateId}` : `telegram:${updateId}:${deneme}`).digest("hex");
+export function guncellemeIstekKimligi(updateId: number, deneme = 1, botKimlik: bigint | null = null): string {
+  // Platform botunun biçimi değişmez; firma botunda güncelleme numarası bot başına sayıldığı için bot da katılır.
+  const kok = botKimlik === null ? `telegram:${updateId}` : `telegram:${botKimlik}:${updateId}`;
+  const h = createHash("sha256").update(deneme === 1 ? kok : `${kok}:${deneme}`).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 const YONERGE = "Merhaba! Bu bot TekirExtra asistanıdır.\n\nKullanmak için TekirExtra panelinde Ayarlar › Bildirimler › Telegram bölümünden “Telegram'ı bağla”ya basın ve açılan bağlantıyla buraya dönün.\n\nBağlantıyı açtığınız hâlde bu mesajı görüyorsanız (Telegram bu sohbet daha önce açıldıysa kodu iletmeyebilir) panelde gösterilen kodu buraya yapıştırıp gönderin.";
 const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\nFiş ya da fatura fotoğrafı gönderirseniz masraf taslağı açarım.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\nsus — 24 saat kendiliğinden mesaj göndermez (bugünlük yeter: gün sonuna dek)\n/devam — kendiliğinden mesajları yeniden açar\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
 
-interface Cozum { tenantId: string; userId: string }
+interface Cozum { tenantId: string; userId: string; botKimlik: bigint | null }
+
+/**
+ * CNL-19: yoklanan bot. Platform botunda `kimlik` null, izde 0; firma botunda Telegram bot kimliği ve
+ * sahibi firma. Her botun yoklaması, offset'i ve kilidi ayrıdır.
+ */
+export interface Bot {
+  kimlik: bigint | null;
+  tenantId: string | null;
+  ad: string;
+  istemci: TelegramIstemci;
+  offset?: number;
+  sonBasariliYoklama: number;
+  kilitBaskasinda: boolean;
+  durdu: boolean;
+  dongu?: Promise<void>;
+  /** Kayıt değişti mi (anahtar yenilendi): firma botu yeniden kurulur. */
+  surum?: string;
+}
+const izKimlik = (bot: Pick<Bot, "kimlik">) => bot.kimlik ?? 0n;
+/** Firma botları listesinin yenilenme aralığı (yeni anahtar en geç bu sürede çalışır). */
+const FIRMA_BOTU_ARALIK_MS = 30_000;
 
 /**
  * CNL-01/02/03/04/13/17: ayrı Telegram sürecinin (`main.telegram.ts`) yoklama döngüsü.
@@ -58,12 +83,13 @@ interface Cozum { tenantId: string; userId: string }
 export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramKanalService.name);
   private istemci: TelegramIstemci | null = null;
+  private platform: Bot | null = null;
+  /** CNL-19: çalışan firma botları (anahtar: bot kimliği). */
+  private readonly firmaBotlari = new Map<string, Bot>();
   private durdu = false;
-  private dongu?: Promise<void>;
   private saglikZamanlayici?: NodeJS.Timeout;
-  private offset: number | undefined;
-  private sonBasariliYoklama = 0;
-  private kilitBaskasinda = false;
+  private botZamanlayici?: NodeJS.Timeout;
+  private botYenileniyor = false;
   private readonly gonderimHatalari = new Map<string, number>();
   private readonly kuyruklar = new Map<string, Promise<void>>();
   private readonly hiz = new Map<string, number[]>();
@@ -80,7 +106,21 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly sorular?: AsistanSoruService,
     @Optional() private readonly fikirler?: FikirService,
     @Optional() private readonly masrafBelge?: MasrafBelgeService,
+    @Optional() private readonly bildirimler?: BildirimService,
   ) {}
+
+  /** Mesajın geldiği bot verilmezse platform botu (birim testleri ve eski çağrılar). */
+  private platformBotu(): Bot {
+    if (!this.platform || this.platform.istemci !== this.istemci) this.platform = { kimlik: null, tenantId: null, ad: telegramBotAdi() ?? "", istemci: this.istemci!, sonBasariliYoklama: 0, kilitBaskasinda: false, durdu: false };
+    return this.platform;
+  }
+
+  /** Giden mesajda bağın botu: null = platform; firma botu çalışmıyorsa null döner. */
+  private gonderenBot(botKimlik: bigint | null, tenantId: string): Bot | null {
+    if (botKimlik === null) return this.istemci ? this.platformBotu() : null;
+    const bot = this.firmaBotlari.get(String(botKimlik));
+    return bot && !bot.durdu && bot.tenantId === tenantId ? bot : null;
+  }
 
   onModuleInit(): void {
     if (process.env.TEKIR_TELEGRAM !== "1") return;
@@ -90,8 +130,10 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.durdu = true;
     if (this.saglikZamanlayici) clearInterval(this.saglikZamanlayici);
+    if (this.botZamanlayici) clearInterval(this.botZamanlayici);
+    const donguler = [this.platform, ...this.firmaBotlari.values()].flatMap((b) => { if (b) b.durdu = true; return b?.dongu ? [b.dongu] : []; });
     // Süren yanıtlar bitsin (en çok 20 sn); yoklama döngüsü zaman aşımında kendiliğinden döner.
-    await Promise.race([Promise.allSettled([...this.kuyruklar.values(), ...(this.dongu ? [this.dongu] : [])]), uyu(20_000)]);
+    await Promise.race([Promise.allSettled([...this.kuyruklar.values(), ...donguler]), uyu(20_000)]);
   }
 
   baslat(): void {
@@ -108,12 +150,72 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn("TELEGRAM_BOT_TOKEN tanımlı değil; Telegram kanalı çalışmıyor.");
       return;
     }
+    // CNL-19: firma botları platform botu varken çalışır (ürün ön koşulu).
+    this.botZamanlayici = setInterval(() => void this.firmaBotlariniYenile(), FIRMA_BOTU_ARALIK_MS);
+    this.botZamanlayici.unref();
+    void this.firmaBotlariniYenile();
     // Panelin ürettiği bağlantı başka bota gitmesin: anahtar ile TELEGRAM_BOT_ADI aynı botu göstermeli.
     void this.istemci.ben().then((b) => {
       const ad = telegramBotAdi();
       if (ad && b.username?.toLowerCase() !== ad.toLowerCase()) this.logger.error(`TELEGRAM_BOT_ADI (${ad}) anahtarın botuyla (${b.username ?? "?"}) uyuşmuyor; paneldeki bağlantılar yanlış bota gider.`);
     }).catch(() => undefined);
-    this.dongu = this.yokla();
+    const platform = this.platformBotu();
+    platform.dongu = this.yokla(platform);
+  }
+
+  /**
+   * CNL-19e: kayıtlı firma botları okunur; plan özelliği açık ve etkin olanlar çalışır, kaydı değişen
+   * yeniden kurulur, kaldırılan/özelliği kapanan durur. Anahtar yalnız bu süreçte çözülür.
+   */
+  async firmaBotlariniYenile(): Promise<void> {
+    if (this.botYenileniyor || this.durdu) return;
+    this.botYenileniyor = true;
+    try {
+      const satirlar = await this.prisma.$queryRaw<Array<{ tenant_id: string; bot_kimlik: bigint; bot_adi: string; sifreli_anahtar: string; durum: string; updated_at: Date }>>`SELECT tenant_id::text, bot_kimlik, bot_adi, sifreli_anahtar, durum, updated_at FROM telegram_firma_botlari_oku()`;
+      const istenen = new Map<string, (typeof satirlar)[number]>();
+      for (const r of satirlar) {
+        if (r.durum !== "etkin") continue;
+        try {
+          const etkin = await this.telegram.etkinBot(r.tenant_id, { botKimlik: r.bot_kimlik, botAdi: r.bot_adi, durum: "etkin", hataTuru: null });
+          if (etkin?.botKimlik === r.bot_kimlik) istenen.set(String(r.bot_kimlik), r);
+        } catch { /* erişim okunamadı: çalışan bot bu turda durdurulmaz */ if (this.firmaBotlari.has(String(r.bot_kimlik))) istenen.set(String(r.bot_kimlik), r); }
+      }
+      for (const [k, bot] of this.firmaBotlari) {
+        const r = istenen.get(k);
+        if (!r || r.updated_at.toISOString() !== bot.surum) { bot.durdu = true; this.firmaBotlari.delete(k); }
+      }
+      for (const [k, r] of istenen) {
+        if (this.firmaBotlari.has(k)) continue;
+        let istemci: TelegramIstemci;
+        try { istemci = this.istemciKur(sifreCoz(r.sifreli_anahtar)); } catch { this.hataSay("firma_botu_kurulamadi"); continue; }
+        const bot: Bot = { kimlik: r.bot_kimlik, tenantId: r.tenant_id, ad: r.bot_adi, istemci, sonBasariliYoklama: Date.now(), kilitBaskasinda: false, durdu: false, surum: r.updated_at.toISOString() };
+        this.firmaBotlari.set(k, bot);
+        bot.dongu = this.yokla(bot);
+      }
+    } catch (hata) {
+      this.logger.warn(`Firma botları okunamadı: ${hata instanceof Error ? hata.name : "bilinmeyen"}`);
+    } finally {
+      this.botYenileniyor = false;
+    }
+  }
+
+  /** CNL-19e: anahtar reddedildi; bot durur, kayıt geçersiz olur, firma yöneticisine panel bildirimi gider. */
+  private async firmaBotuGecersiz(bot: Bot, hataTuru: string): Promise<void> {
+    bot.durdu = true;
+    this.firmaBotlari.delete(String(bot.kimlik));
+    const tenantId = bot.tenantId!;
+    try {
+      const guncellendi = await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramFirmaBotu.updateMany({ where: { tenantId, botKimlik: bot.kimlik!, durum: "etkin" }, data: { durum: "gecersiz", hataTuru } }));
+      if (!guncellendi.count || !this.bildirimler) return;
+      const yonetici = await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findFirst({ where: { rol: "yonetici", aktif: true }, select: { id: true } }));
+      await baglamlaCalistir({ tenantId, userId: yonetici?.id ?? null, rol: "yonetici" } as unknown as IstekBaglami, () => this.bildirimler!.uret({
+        tur: "entegrasyon", onem: "kritik", baslik: `Telegram botunuz (@${bot.ad}) çalışmıyor`,
+        aciklama: "Telegram bot anahtarını reddetti (BotFather'da iptal edilmiş ya da bot silinmiş olabilir). Kullanıcılarınız şu anda Telegram'dan yanıt alamıyor. Ayarlar › Bildirimler › Telegram bölümünden yeni anahtar girin.",
+        birlesimAnahtari: `telegram:ozel-bot:${bot.kimlik}`, hedefYol: "/panel/ayarlar/bildirimler", roller: ["yonetici"],
+      }));
+    } catch (hata) {
+      this.logger.error(`Geçersiz firma botu kaydedilemedi: ${hata instanceof Error ? hata.name : "bilinmeyen"}`);
+    }
   }
 
   /** CNL-14: sistem sağlığında görünen tik. Yalnız sayı ve hata türü yazılır (CNL-17f). */
@@ -121,9 +223,12 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     if (!this.istemci) throw new Error("Bot anahtarı tanımlı değil ya da geçersiz");
     const hatalar = [...this.gonderimHatalari.entries()];
     this.gonderimHatalari.clear();
-    if (this.kilitBaskasinda) return;
-    const gecen = Date.now() - this.sonBasariliYoklama;
-    if (gecen > SAGLIK_ESIGI_MS) throw new Error(`Son başarılı yoklama ${this.sonBasariliYoklama ? `${Math.round(gecen / 60_000)} dakika önce` : "hiç olmadı"}`);
+    const p = this.platformBotu();
+    const gecen = Date.now() - p.sonBasariliYoklama;
+    if (!p.kilitBaskasinda && gecen > SAGLIK_ESIGI_MS) throw new Error(`Son başarılı yoklama ${p.sonBasariliYoklama ? `${Math.round(gecen / 60_000)} dakika önce` : "hiç olmadı"}`);
+    // CNL-19e: firma botlarından yalnız sayı (firma ya da bot adı yazılmaz).
+    const geciken = [...this.firmaBotlari.values()].filter((b) => !b.kilitBaskasinda && Date.now() - b.sonBasariliYoklama > SAGLIK_ESIGI_MS).length;
+    if (geciken) throw new Error(`Firma botu yoklaması gecikiyor: ${geciken}/${this.firmaBotlari.size}`);
     if (hatalar.length) throw new Error(`Gönderim hataları: ${hatalar.map(([tur, n]) => `${tur} ${n}`).join(", ")}`);
   }
 
@@ -132,47 +237,49 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Uzun yoklama. Telegram aynı bot için tek yoklamaya izin verir; süreçler arası Redis kilidi tutulur. */
-  private async yokla(): Promise<void> {
+  private async yokla(bot: Bot): Promise<void> {
     let bekleme = 1_000;
-    while (!this.durdu) {
+    const durdu = () => this.durdu || bot.durdu;
+    while (!durdu()) {
       let birak: (() => Promise<void>) | null = null;
       try {
-        birak = await uzayanKilitle(KILIT, 90);
+        birak = await uzayanKilitle(bot.kimlik === null ? KILIT : `${KILIT}:${bot.kimlik}`, 90);
       } catch (hata) {
         this.logger.warn(`Telegram yoklama kilidi alınamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
       }
-      if (!birak) { this.kilitBaskasinda = true; await uyu(30_000); continue; }
-      this.kilitBaskasinda = false;
+      if (!birak) { bot.kilitBaskasinda = true; await uyu(bot.kimlik === null ? 30_000 : 5_000); continue; }
+      bot.kilitBaskasinda = false;
       try {
-        while (!this.durdu) {
-          const guncellemeler = await this.istemci!.guncellemeler(this.offset);
-          this.sonBasariliYoklama = Date.now();
+        while (!durdu()) {
+          const guncellemeler = await bot.istemci.guncellemeler(bot.offset);
+          bot.sonBasariliYoklama = Date.now();
           bekleme = 1_000;
           for (const g of guncellemeler) {
             // Sonraki yoklama bu numaraya kadar olanları sunucuda onaylar; tekrar gelen mesaj
-            // veritabanındaki benzersiz güncelleme numarasıyla elenir.
-            this.offset = Math.max(this.offset ?? 0, g.update_id + 1);
-            void this.sirala(g);
+            // veritabanındaki benzersiz (bot, güncelleme numarası) çiftiyle elenir.
+            bot.offset = Math.max(bot.offset ?? 0, g.update_id + 1);
+            void this.sirala(g, bot);
           }
         }
       } catch (hata) {
         const h = hata instanceof TelegramHatasi ? hata : new TelegramHatasi("ag", hata instanceof Error ? hata.message : String(hata));
-        if (h.tur === "yetki") { this.logger.error(`Telegram bot anahtarı reddedildi: ${h.message}`); bekleme = 5 * 60_000; }
+        if (h.tur === "yetki" && bot.kimlik !== null) { await this.firmaBotuGecersiz(bot, "yetki"); }
+        else if (h.tur === "yetki") { this.logger.error(`Telegram bot anahtarı reddedildi: ${h.message}`); bekleme = 5 * 60_000; }
         else if (h.tur === "cakisma") { this.logger.warn("Telegram: başka bir süreç aynı botu yokluyor."); bekleme = 30_000; }
         else if (h.tur === "hiz_siniri") bekleme = (h.bekleSn ?? 5) * 1000;
         else { this.logger.warn(`Telegram yoklaması başarısız: ${h.message}`); bekleme = Math.min(bekleme * 2, 60_000); }
       } finally {
         await birak().catch(() => undefined);
       }
-      if (!this.durdu) await uyu(bekleme);
+      if (!durdu()) await uyu(bekleme);
     }
   }
 
   /** Sohbet başına sıralı kuyruk; sohbetler birbirini beklemez, toplam eşzamanlılık sınırlıdır. */
-  sirala(g: TelegramGuncelleme): Promise<void> {
-    const anahtar = String(g.message?.chat.id ?? g.callback_query?.message?.chat.id ?? `g${g.update_id}`);
+  sirala(g: TelegramGuncelleme, bot: Bot = this.platformBotu()): Promise<void> {
+    const anahtar = `${izKimlik(bot)}:${g.message?.chat.id ?? g.callback_query?.message?.chat.id ?? `g${g.update_id}`}`;
     const onceki = this.kuyruklar.get(anahtar) ?? Promise.resolve();
-    const sonraki = onceki.then(() => this.sinirli(() => this.isleGuvenli(g)));
+    const sonraki = onceki.then(() => this.sinirli(() => this.isleGuvenli(g, bot)));
     this.kuyruklar.set(anahtar, sonraki);
     void sonraki.finally(() => { if (this.kuyruklar.get(anahtar) === sonraki) this.kuyruklar.delete(anahtar); });
     return sonraki;
@@ -184,9 +291,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     try { await is(); } finally { this.calisan--; this.bekleyenler.shift()?.(); }
   }
 
-  private async isleGuvenli(g: TelegramGuncelleme): Promise<void> {
+  private async isleGuvenli(g: TelegramGuncelleme, bot: Bot): Promise<void> {
     try {
-      await this.isle(g);
+      await this.isle(g, bot);
     } catch (hata) {
       this.logger.error(`Telegram mesajı işlenemedi (güncelleme ${g.update_id}): ${hata instanceof Error ? hata.message.split("\n").filter(Boolean).pop() : String(hata)}`);
     }
@@ -202,8 +309,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     return liste.length > sinir;
   }
 
-  async isle(g: TelegramGuncelleme): Promise<void> {
-    if (g.callback_query) return this.dugmeIsle(g, g.callback_query);
+  async isle(g: TelegramGuncelleme, bot: Bot = this.platformBotu()): Promise<void> {
+    if (g.callback_query) return this.dugmeIsle(g, g.callback_query, bot);
     const m = g.message;
     // CNL-01: yalnız bire bir sohbet; grup ve kanal mesajlarına yanıt verilmez.
     if (!m || m.chat.type !== "private" || !m.from || m.from.is_bot) return;
@@ -212,23 +319,44 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const metin = (m.text ?? "").trim();
     // "/start KOD" (bağlantıdan) ya da yalnız kod (Telegram bağlantıdaki kodu iletmediyse elle yapıştırılır).
     const baglama = /^\/start(?:@\w+)?\s+([A-Za-z0-9_-]{16,64})$/.exec(metin) ?? /^([A-Za-z0-9_-]{32})$/.exec(metin);
-    if (baglama) return this.bagla(g, m, baglama[1]);
+    if (baglama) return this.bagla(g, m, baglama[1], bot);
     const cozum = await this.coz(BigInt(m.from.id));
     // Bağlı olmayan hesaba yalnız yönerge; hiçbir firma kaydına iz düşmez.
-    if (!cozum) { olay("bagsiz_hesap"); await this.dogrudanGonder(m.chat.id, YONERGE); return; }
-    await this.firmaMesaji(g, m, metin, cozum);
+    if (!cozum) { olay("bagsiz_hesap"); await this.dogrudanGonder(bot, m.chat.id, await this.yonerge(bot, BigInt(m.from.id))); return; }
+    if (!(await this.botUyumlu(bot, cozum, m.chat.id))) return;
+    await this.firmaMesaji(g, m, metin, cozum, bot);
+  }
+
+  /**
+   * CNL-19d: hesap başka bota bağlıysa bu bot yanıt vermez; yalnız hangi bota yazacağını söyler.
+   * Firma botu yalnız kendi firmasının bağlarına yanıt verir.
+   */
+  private async botUyumlu(bot: Bot, cozum: Cozum, sohbetId: number): Promise<boolean> {
+    if ((cozum.botKimlik ?? null) === bot.kimlik && (bot.tenantId === null || bot.tenantId === cozum.tenantId)) return true;
+    olay("baska_bota_bagli");
+    await this.dogrudanGonder(bot, sohbetId, bot.kimlik === null
+      ? "Bu Telegram hesabı firmanızın kendi TekirExtra botuna bağlı; sorularınızı o bota yazın."
+      : "Bu Telegram hesabı başka bir TekirExtra botuna bağlı. Bu botu kullanmak için önce diğer botta /ayril yazın, sonra panelden yeni bağlantı alın.");
+    return false;
+  }
+
+  /** Bağsız hesaba yönerge; firması kendi botuna geçtiyse (CNL-19c) platform botu yeni botu söyler. */
+  private async yonerge(bot: Bot, telegramId: bigint): Promise<string> {
+    if (bot.kimlik !== null) return YONERGE;
+    const [gecis] = await this.prisma.$queryRaw<{ bot_adi: string }[]>`SELECT bot_adi FROM telegram_gecis_coz(${telegramId})`;
+    return gecis ? `Firmanız artık kendi Telegram botunu kullanıyor: @${gecis.bot_adi}\n\nPanelde Ayarlar › Bildirimler › Telegram bölümünden yeni bağlantı alıp o botla bağlanın.` : YONERGE;
   }
 
   /** CNL-17b: firma yalnız bağ kaydından; dar işlev yalnız firma ve kullanıcıyı döndürür. */
   private async coz(telegramKullaniciId: bigint): Promise<Cozum | null> {
-    const satir = await this.prisma.$queryRaw<{ tenant_id: string; user_id: string }[]>`SELECT tenant_id::text, user_id::text FROM telegram_bag_coz(${telegramKullaniciId})`;
-    return satir[0] ? { tenantId: satir[0].tenant_id, userId: satir[0].user_id } : null;
+    const satir = await this.prisma.$queryRaw<{ tenant_id: string; user_id: string; bot_kimlik: bigint | null }[]>`SELECT tenant_id::text, user_id::text, bot_kimlik FROM telegram_bag_coz_bot(${telegramKullaniciId})`;
+    return satir[0] ? { tenantId: satir[0].tenant_id, userId: satir[0].user_id, botKimlik: satir[0].bot_kimlik === null ? null : BigInt(satir[0].bot_kimlik) } : null;
   }
 
   /** Yalnız bağsız durumlar (yönerge, bağlama sonucu, düşen bağ): alıcı mesajı yazan sohbettir, firma verisi içermez. */
-  private async dogrudanGonder(sohbetId: number, metin: string): Promise<boolean> {
+  private async dogrudanGonder(bot: Bot, sohbetId: number, metin: string): Promise<boolean> {
     try {
-      await this.istemci!.gonder(sohbetId, telegramSuz(metin, { tutarGoster: true }));
+      await bot.istemci.gonder(sohbetId, telegramSuz(metin, { tutarGoster: true }));
       return true;
     } catch (hata) {
       this.hataSay(hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen");
@@ -236,25 +364,31 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private iz(tx: Prisma.TransactionClient, tenantId: string, userId: string | null, yon: "gelen" | "giden", tur: string, durum: string, hataTuru: string | null = null, guncellemeNo: number | null = null) {
-    return tx.telegramMesaji.create({ data: { tenantId, userId, yon, tur, durum, hataTuru, guncellemeNo: guncellemeNo === null ? null : BigInt(guncellemeNo) } });
+  private iz(tx: Prisma.TransactionClient, tenantId: string, userId: string | null, yon: "gelen" | "giden", tur: string, durum: string, hataTuru: string | null = null, guncellemeNo: number | null = null, botKimlik: bigint = 0n) {
+    return tx.telegramMesaji.create({ data: { tenantId, userId, yon, tur, durum, hataTuru, guncellemeNo: guncellemeNo === null ? null : BigInt(guncellemeNo), botKimlik } });
   }
 
   /** CNL-02/17a/18: tek kullanımlık kodla bağlama. Kod tüketimi ve bağ aynı firma işleminde yazılır. */
-  private async bagla(g: TelegramGuncelleme, m: TelegramMesaj, kod: string): Promise<void> {
+  private async bagla(g: TelegramGuncelleme, m: TelegramMesaj, kod: string, bot: Bot): Promise<void> {
     const hesap = String(m.from!.id);
     if (this.sinirda(this.yanlisKod, hesap, YANLIS_KOD_SINIRI - 1, YANLIS_KOD_PENCERE_MS, false)) {
       olay("baglama_cok_deneme");
-      await this.dogrudanGonder(m.chat.id, "Çok fazla hatalı bağlantı denemesi yapıldı. 15 dakika sonra panelden yeni bir bağlantı alarak deneyin.");
+      await this.dogrudanGonder(bot, m.chat.id, "Çok fazla hatalı bağlantı denemesi yapıldı. 15 dakika sonra panelden yeni bir bağlantı alarak deneyin.");
       return;
     }
     const telegramId = BigInt(m.from!.id);
     const ozet = kodOzeti(kod);
-    const [kayit] = await this.prisma.$queryRaw<{ tenant_id: string; user_id: string }[]>`SELECT tenant_id::text, user_id::text FROM telegram_kod_coz(${ozet})`;
+    const [kayit] = await this.prisma.$queryRaw<{ tenant_id: string; user_id: string; bot_kimlik: bigint | null }[]>`SELECT tenant_id::text, user_id::text, bot_kimlik FROM telegram_kod_coz_bot(${ozet})`;
     if (!kayit) {
       olay("baglama_kod_gecersiz");
       this.sinirda(this.yanlisKod, hesap, YANLIS_KOD_SINIRI, YANLIS_KOD_PENCERE_MS);
-      await this.dogrudanGonder(m.chat.id, "Bu bağlantı geçersiz ya da süresi dolmuş (bağlantılar 10 dakika geçerlidir). Panelden yeni bir bağlantı alın.");
+      await this.dogrudanGonder(bot, m.chat.id, "Bu bağlantı geçersiz ya da süresi dolmuş (bağlantılar 10 dakika geçerlidir). Panelden yeni bir bağlantı alın.");
+      return;
+    }
+    // CNL-19d: kod hangi bot için üretildiyse yalnız o botta geçerlidir (firma botunda o firmanın kodu).
+    if ((kayit.bot_kimlik === null ? null : BigInt(kayit.bot_kimlik)) !== bot.kimlik || (bot.tenantId !== null && bot.tenantId !== kayit.tenant_id)) {
+      olay("baglama_baska_bot");
+      await this.dogrudanGonder(bot, m.chat.id, "Bu bağlantı kodu başka bir Telegram botu için üretildi. Panelde gösterilen bota yazın.");
       return;
     }
     const tenantId = kayit.tenant_id;
@@ -263,13 +397,13 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     // CNL-17a: başka bir kullanıcıya (başka firmada olabilir) bağlı hesap önce o bağı kaldırır.
     if (mevcut && mevcut.userId !== userId) {
       olay("baglama_baska_hesap");
-      await this.dogrudanGonder(m.chat.id, "Bu Telegram hesabı başka bir TekirExtra kullanıcısına bağlı. Önce /ayril yazarak o bağı kaldırın, sonra panelden yeni bir bağlantı alın.");
+      await this.dogrudanGonder(bot, m.chat.id, "Bu Telegram hesabı başka bir TekirExtra kullanıcısına bağlı. Önce /ayril yazarak o bağı kaldırın, sonra panelden yeni bir bağlantı alın.");
       return;
     }
     const karar = await this.telegram.bagKarari(tenantId, userId, null);
     if (karar.neden) {
       olay(`baglama_engel_${karar.neden}`);
-      await this.dogrudanGonder(m.chat.id, `Bağlanamadı: ${DUSME_METNI[karar.neden]}.`);
+      await this.dogrudanGonder(bot, m.chat.id, `Bağlanamadı: ${DUSME_METNI[karar.neden]}.`);
       return;
     }
     let sonuc: { adSoyad: string; unvan: string } | "gecersiz" | "baska_hesap";
@@ -287,10 +421,10 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         // Kullanıcının başka bir Telegram hesabıyla bağı varsa yenisi onun yerine geçer.
         await tx.telegramBagi.deleteMany({ where: { userId } });
         await tx.telegramBagi.create({
-          data: { tenantId, userId, telegramKullaniciId: telegramId, sohbetId: BigInt(m.chat.id), kullaniciAdi: m.from!.username?.slice(0, 64) ?? null, oturumSurumu: kullanici.oturumSurumu, rizaAt: kodKaydi.rizaAt },
+          data: { tenantId, userId, telegramKullaniciId: telegramId, sohbetId: BigInt(m.chat.id), kullaniciAdi: m.from!.username?.slice(0, 64) ?? null, oturumSurumu: kullanici.oturumSurumu, rizaAt: kodKaydi.rizaAt, botKimlik: bot.kimlik },
         });
         await tx.auditLog.create({ data: { tenantId, userId, islem: "telegram_baglandi", varlik: "telegram_bag", varlikId: userId, detay: { rizaAt: kodKaydi.rizaAt.toISOString() } } });
-        await this.iz(tx, tenantId, userId, "gelen", "baglama", "islendi", null, g.update_id);
+        await this.iz(tx, tenantId, userId, "gelen", "baglama", "islendi", null, g.update_id, izKimlik(bot));
         return { adSoyad: kullanici.adSoyad, unvan: firma.unvan };
       }));
     } catch (hata) {
@@ -304,11 +438,11 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     olay(sonuc === "gecersiz" ? "baglama_kod_gecersiz" : sonuc === "baska_hesap" ? "baglama_baska_hesap" : "baglandi");
     if (sonuc === "gecersiz") {
       this.sinirda(this.yanlisKod, hesap, YANLIS_KOD_SINIRI, YANLIS_KOD_PENCERE_MS);
-      await this.dogrudanGonder(m.chat.id, "Bu bağlantı geçersiz ya da süresi dolmuş. Panelden yeni bir bağlantı alın.");
+      await this.dogrudanGonder(bot, m.chat.id, "Bu bağlantı geçersiz ya da süresi dolmuş. Panelden yeni bir bağlantı alın.");
     } else if (sonuc === "baska_hesap") {
-      await this.dogrudanGonder(m.chat.id, "Bu Telegram hesabı başka bir TekirExtra kullanıcısına bağlı. Önce /ayril yazarak o bağı kaldırın.");
+      await this.dogrudanGonder(bot, m.chat.id, "Bu Telegram hesabı başka bir TekirExtra kullanıcısına bağlı. Önce /ayril yazarak o bağı kaldırın.");
     } else {
-      await this.dogrudanGonder(m.chat.id, `Bağlantı tamam: ${sonuc.adSoyad} — ${sonuc.unvan}.\n\n${YARDIM}`);
+      await this.dogrudanGonder(bot, m.chat.id, `Bağlantı tamam: ${sonuc.adSoyad} — ${sonuc.unvan}.\n\n${YARDIM}`);
     }
   }
 
@@ -316,14 +450,14 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
    * Bağ bu an geçerli mi (CNL-02/17)? Değilse bağ düşer, kullanıcıya söylenir ve null döner.
    * Geçerliyse kullanıcının güncel rolü, özel rolü ve paket modülleriyle bağlam döner.
    */
-  private async baglamHazirla(tenantId: string, userId: string, telegramId: bigint, sohbetId: number) {
-    const bag = await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.findFirst({ where: { tenantId, userId, telegramKullaniciId: telegramId }, select: { oturumSurumu: true } }));
-    if (!bag) { await this.dogrudanGonder(sohbetId, YONERGE); return null; }
+  private async baglamHazirla(tenantId: string, userId: string, telegramId: bigint, sohbetId: number, bot: Bot) {
+    const bag = await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.findFirst({ where: { tenantId, userId, telegramKullaniciId: telegramId, botKimlik: bot.kimlik }, select: { oturumSurumu: true, botKimlik: true } }));
+    if (!bag) { await this.dogrudanGonder(bot, sohbetId, YONERGE); return null; }
     const karar = await this.telegram.bagKarari(tenantId, userId, bag);
     if (karar.neden && karar.neden !== "rol_kapali") {
       olay(`bag_dustu_${karar.neden}`);
       await this.telegram.bagDusur(tenantId, userId, karar.neden);
-      await this.dogrudanGonder(sohbetId, `Telegram bağlantınız kaldırıldı: ${DUSME_METNI[karar.neden]}. Gerekirse panelden yeniden bağlayabilirsiniz.`);
+      await this.dogrudanGonder(bot, sohbetId, `Telegram bağlantınız kaldırıldı: ${DUSME_METNI[karar.neden]}. Gerekirse panelden yeniden bağlayabilirsiniz.`);
       return null;
     }
     const baglam: IstekBaglami = { tenantId, userId, rol: karar.rol as Rol, ...(karar.ozelRol ? { ozelRol: karar.ozelRol } : {}), paketModulleri: karar.moduller };
@@ -331,9 +465,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Aynı güncelleme ikinci kez gelirse false (CNL-01). */
-  private async gelenIz(baglam: IstekBaglami, guncellemeNo: number, tur: string): Promise<boolean> {
+  private async gelenIz(baglam: IstekBaglami, guncellemeNo: number, tur: string, bot: Bot): Promise<boolean> {
     try {
-      await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(baglam.tenantId, (tx) => this.iz(tx, baglam.tenantId, baglam.userId, "gelen", tur, "alindi", null, guncellemeNo)));
+      await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(baglam.tenantId, (tx) => this.iz(tx, baglam.tenantId, baglam.userId, "gelen", tur, "alindi", null, guncellemeNo, izKimlik(bot))));
       return true;
     } catch (hata) {
       if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") return false;
@@ -345,7 +479,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
    * CNL-16: fiş/fatura fotoğrafı ya da PDF'i masraf taslağına çevrilir. En büyük fotoğraf boyutu 6 MB
    * sınırını aşıyorsa sığan en büyüğü alınır. Kategori belirsizse asistan düğmeli soru sorar.
    */
-  private async belgeIsle(baglam: IstekBaglami, m: TelegramMesaj): Promise<void> {
+  private async belgeIsle(baglam: IstekBaglami, m: TelegramMesaj, bot: Bot): Promise<void> {
     const { tenantId, userId } = baglam;
     if (!this.masrafBelge) return void (await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "bilgi", "Belge işleme şu anda kullanılamıyor.")));
     const foto = [...(m.photo ?? [])].reverse().find((p) => !p.file_size || p.file_size <= BELGE_AZAMI_BAYT);
@@ -356,8 +490,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       if (!dosyaId) throw new BadRequestException("Fotoğraf 6 MB'tan büyük; daha küçük gönderin.");
       if (m.document?.mime_type && !/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(m.document.mime_type)) throw new BadRequestException("Yalnız JPEG, PNG, WebP fotoğraf ya da PDF gönderebilirsiniz.");
       await baglamlaCalistir(baglam, async () => this.masrafBelge!.yetkiDenetle());
-      await this.istemci!.yaziyor(m.chat.id);
-      const buffer = await this.istemci!.dosyaIndir(dosyaId, BELGE_AZAMI_BAYT).catch((h: unknown) => {
+      await bot.istemci.yaziyor(m.chat.id);
+      const buffer = await bot.istemci.dosyaIndir(dosyaId, BELGE_AZAMI_BAYT).catch((h: unknown) => {
         throw h instanceof TelegramHatasi && h.message === "Dosya çok büyük" ? new BadRequestException("Dosya 6 MB'tan büyük; daha küçük gönderin.") : h;
       });
       const r = await baglamlaCalistir(baglam, () => this.masrafBelge!.belgedenMasraf({ ad, buffer }, m.caption ?? null));
@@ -379,16 +513,17 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** CNL-09: soru düğmesi. "Panelde bakacağım" yalnız Telegram'daki düğmeleri kaldırır; soru panelde açık kalır. */
-  private async dugmeIsle(g: TelegramGuncelleme, d: TelegramDugme): Promise<void> {
+  private async dugmeIsle(g: TelegramGuncelleme, d: TelegramDugme, bot: Bot): Promise<void> {
     const m = d.message;
-    if (!m || m.chat.type !== "private" || d.from.is_bot) { await this.istemci!.dugmeYanitla(d.id); return; }
+    if (!m || m.chat.type !== "private" || d.from.is_bot) { await bot.istemci.dugmeYanitla(d.id); return; }
     if (this.sinirda(this.hiz, String(d.from.id), DAKIKA_SINIRI, 60_000)) return;
     const cozum = await this.coz(BigInt(d.from.id));
-    if (!cozum) { await this.istemci!.dugmeYanitla(d.id, "Bu Telegram hesabı TekirExtra'ya bağlı değil."); return; }
-    const hazir = await this.baglamHazirla(cozum.tenantId, cozum.userId, BigInt(d.from.id), m.chat.id);
-    if (!hazir) { await this.istemci!.dugmeYanitla(d.id); return; }
+    if (!cozum) { await bot.istemci.dugmeYanitla(d.id, "Bu Telegram hesabı TekirExtra'ya bağlı değil."); return; }
+    if ((cozum.botKimlik ?? null) !== bot.kimlik || (bot.tenantId !== null && bot.tenantId !== cozum.tenantId)) { await bot.istemci.dugmeYanitla(d.id, "Bu Telegram hesabı başka bir TekirExtra botuna bağlı."); return; }
+    const hazir = await this.baglamHazirla(cozum.tenantId, cozum.userId, BigInt(d.from.id), m.chat.id, bot);
+    if (!hazir) { await bot.istemci.dugmeYanitla(d.id); return; }
     const { baglam, karar } = hazir;
-    if (!(await this.gelenIz(baglam, g.update_id, "soru_yanit"))) return;
+    if (!(await this.gelenIz(baglam, g.update_id, "soru_yanit", bot))) return;
     olay("soru_yanit");
     const f = fikirDugmesiCoz(d.data ?? "");
     if (f && this.fikirler && karar.neden !== "rol_kapali") {
@@ -398,23 +533,23 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       } catch (hata) {
         metin = this.kullaniciHatasi(hata, "İşaret kaydedilemedi; biraz sonra yeniden deneyin.");
       }
-      await this.istemci!.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
-      await this.istemci!.dugmeYanitla(d.id, metin);
+      await bot.istemci.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
+      await bot.istemci.dugmeYanitla(d.id, metin);
       return;
     }
     const v = dugmeCoz(d.data ?? "");
-    if (!v || !this.sorular || karar.neden === "rol_kapali") { await this.istemci!.dugmeYanitla(d.id, "Bu düğme artık geçerli değil."); return; }
+    if (!v || !this.sorular || karar.neden === "rol_kapali") { await bot.istemci.dugmeYanitla(d.id, "Bu düğme artık geçerli değil."); return; }
     if (v.kod === PANEL_SECENEGI.kod) {
-      await this.istemci!.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
+      await bot.istemci.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
       await baglamlaCalistir(baglam, () => this.klavyeKaldirildi(baglam.tenantId, v.soruId, baglam.userId));
-      await this.istemci!.dugmeYanitla(d.id, "Soru panelde Asistan › Sorular kutusunda bekliyor.");
+      await bot.istemci.dugmeYanitla(d.id, "Soru panelde Asistan › Sorular kutusunda bekliyor.");
       return;
     }
-    await this.soruYanitla(baglam, v.soruId, { kod: v.kod }, m.chat.id, m.message_id, d.id);
+    await this.soruYanitla(baglam, v.soruId, { kod: v.kod }, m.chat.id, m.message_id, bot, d.id);
   }
 
   /** Yanıt soru servisine gider; sonuç ve (açıldıysa) onay talebinin panel bağlantısı sohbete yazılır. */
-  private async soruYanitla(baglam: IstekBaglami, soruId: string, yanit: SoruYaniti, sohbetId: number, mesajId: number, dugmeId?: string): Promise<void> {
+  private async soruYanitla(baglam: IstekBaglami, soruId: string, yanit: SoruYaniti, sohbetId: number, mesajId: number, bot: Bot, dugmeId?: string): Promise<void> {
     const { tenantId, userId } = baglam;
     let metin: string;
     let sonraki: YanitSonucu["sonrakiSoru"];
@@ -424,12 +559,12 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       const bag = r.talepId && !r.sonuc.includes(`talep=${r.talepId}`) ? `\n${panel}/panel/ai?talep=${r.talepId}` : "";
       metin = `✅ ${r.sonuc}${bag}`;
       sonraki = r.sonrakiSoru;
-      await this.istemci!.klavyeKaldir(sohbetId, mesajId).catch(() => undefined);
+      await bot.istemci.klavyeKaldir(sohbetId, mesajId).catch(() => undefined);
       await baglamlaCalistir(baglam, () => this.klavyeKaldirildi(tenantId, soruId, userId));
-      if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, "Yanıtınız alındı.");
+      if (dugmeId) await bot.istemci.dugmeYanitla(dugmeId, "Yanıtınız alındı.");
     } catch (hata) {
       const neden = this.kullaniciHatasi(hata, "Yanıt işlenemedi; biraz sonra yeniden deneyin ya da panelden yanıtlayın.");
-      if (dugmeId) await this.istemci!.dugmeYanitla(dugmeId, neden);
+      if (dugmeId) await bot.istemci.dugmeYanitla(dugmeId, neden);
       metin = `Yanıtınızı işleyemedim: ${neden}`;
     }
     await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "soru_sonuc", metin));
@@ -464,9 +599,10 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
    */
   async soruGonder(tenantId: string, userId: string, soru: { id: string; soru: string; secenekler: Array<{ kod: string; etiket: string }>; serbestYanit: boolean }): Promise<GonderimSonucu> {
     const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
-      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, sohbetId: true } }),
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, sohbetId: true, botKimlik: true } }),
       ayar: await telegramAyariOku(tx, tenantId),
     }));
+    const bot = bag ? this.gonderenBot(bag.botKimlik, tenantId) : null;
     if (!bag || bag.tenantId !== tenantId || !ayar.etkin) {
       await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "soru", "gonderilmedi", "bag_gecersiz"));
       return "bag_gecersiz";
@@ -474,7 +610,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const metin = telegramSuz(`❓ ${soru.soru}${soru.serbestYanit ? "\n\nDüğmelerden seçin ya da bu mesajı yanıtlayarak yazın." : ""}`, { tutarGoster: ayar.tutarGoster });
     const klavye = soru.secenekler.map((s) => [{ text: s.etiket.slice(0, 60), callback_data: dugmeVerisi(soru.id, s.kod) }]);
     try {
-      const mesajId = await this.istemci!.klavyeliGonder(bag.sohbetId, parcala(metin)[0], klavye);
+      if (!bot) throw new TelegramHatasi("ag", "Firma botu çalışmıyor");
+      const mesajId = await bot.istemci.klavyeliGonder(bag.sohbetId, parcala(metin)[0], klavye);
       await this.prisma.tenantIslem(tenantId, async (tx) => {
         await tx.asistanSoruGonderimi.create({ data: { tenantId, soruId: soru.id, userId, sohbetId: bag.sohbetId, telegramMesajId: BigInt(mesajId) } });
         await this.iz(tx, tenantId, userId, "giden", "soru", "gonderildi");
@@ -491,9 +628,10 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   /** CNL-11: fikir üç işaret düğmesiyle gider; dayandığı rapor ya da ekran bağlantısıyla. */
   async fikirGonder(tenantId: string, userId: string, fikir: { id: string; baslik: string; metin: string; hedefYol: string }): Promise<GonderimSonucu> {
     const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
-      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, sohbetId: true } }),
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, sohbetId: true, botKimlik: true } }),
       ayar: await telegramAyariOku(tx, tenantId),
     }));
+    const bot = bag ? this.gonderenBot(bag.botKimlik, tenantId) : null;
     if (!bag || bag.tenantId !== tenantId || !ayar.etkin) {
       await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "fikir", "gonderilmedi", "bag_gecersiz"));
       return "bag_gecersiz";
@@ -502,7 +640,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const metin = telegramSuz(`💡 ${fikir.baslik}\n\n${fikir.metin}\n\n${panel}${fikir.hedefYol}`, { tutarGoster: ayar.tutarGoster });
     const klavye = [[{ text: "👍 İşe yarar", callback_data: fikirDugmesi(fikir.id, "yarar") }, { text: "👎 İşe yaramaz", callback_data: fikirDugmesi(fikir.id, "yaramaz") }], [{ text: "🚫 Bu konuyu bir daha getirme", callback_data: fikirDugmesi(fikir.id, "getirme") }]];
     try {
-      await this.istemci!.klavyeliGonder(bag.sohbetId, parcala(metin)[0], klavye);
+      if (!bot) throw new TelegramHatasi("ag", "Firma botu çalışmıyor");
+      await bot.istemci.klavyeliGonder(bag.sohbetId, parcala(metin)[0], klavye);
       await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "fikir", "gonderildi"));
       return "gonderildi";
     } catch (hata) {
@@ -515,9 +654,14 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
 
   /** Yanıtlanmış ya da geçersizleşmiş sorunun Telegram'daki düğmeleri kaldırılır (yanıt panelden geldiyse). */
   async klavyeleriTemizle(tenantId: string, userId: string): Promise<void> {
-    const eski = await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.findMany({ where: { userId, klavyeKaldirildiAt: null, soru: { durum: { not: "acik" } } }, select: { id: true, sohbetId: true, telegramMesajId: true }, take: 20 }));
+    const { eski, bag } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      eski: await tx.asistanSoruGonderimi.findMany({ where: { userId, klavyeKaldirildiAt: null, soru: { durum: { not: "acik" } } }, select: { id: true, sohbetId: true, telegramMesajId: true }, take: 20 }),
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { botKimlik: true } }),
+    }));
+    // Mesaj hangi botla gittiyse yalnız o bot düzenleyebilir; bağ yoksa ya da bot değiştiyse düğmeler kalır.
+    const bot = bag ? this.gonderenBot(bag.botKimlik, tenantId) : null;
     for (const e of eski) {
-      await this.istemci!.klavyeKaldir(e.sohbetId, e.telegramMesajId).catch(() => undefined);
+      if (bot) await bot.istemci.klavyeKaldir(e.sohbetId, e.telegramMesajId).catch(() => undefined);
       await this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.update({ where: { id: e.id }, data: { klavyeKaldirildiAt: new Date() } }));
     }
   }
@@ -526,7 +670,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
    * CNL-15: sesli mesaj yazıya çevrilir; anlaşılan metin kullanıcıya gösterilir ve soru olarak işlenir.
    * Firmada ses açık değilse, süre/boyut sınırı aşılırsa ya da çeviri olmazsa null (yanıt burada verilir).
    */
-  private async sesIsle(baglam: IstekBaglami, m: TelegramMesaj, ses: NonNullable<TelegramMesaj["voice"]>): Promise<string | null> {
+  private async sesIsle(baglam: IstekBaglami, m: TelegramMesaj, ses: NonNullable<TelegramMesaj["voice"]>, bot: Bot): Promise<string | null> {
     const { tenantId, userId } = baglam;
     const yanitla = (metin: string, tur: string) => baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, tur, metin));
     const ayar = await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => telegramAyariOku(tx, tenantId)));
@@ -539,8 +683,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
     try {
-      await this.istemci!.yaziyor(m.chat.id);
-      const tampon = await this.istemci!.dosyaIndir(ses.file_id, SES_AZAMI_BAYT);
+      await bot.istemci.yaziyor(m.chat.id);
+      const tampon = await bot.istemci.dosyaIndir(ses.file_id, SES_AZAMI_BAYT);
       const yazi = await baglamlaCalistir(baglam, () => sesiYaziyaCevir(this.prisma, { tenantId, userId }, { tampon, mime: ses.mime_type, saniye: ses.duration ?? 0 }));
       if (yazi.length < 2) {
         await yanitla("Sesli mesajda anlaşılır bir konuşma bulamadım; yeniden deneyin ya da yazın.", "bilgi");
@@ -558,9 +702,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async firmaMesaji(g: TelegramGuncelleme, m: TelegramMesaj, metin: string, { tenantId, userId }: Cozum): Promise<void> {
+  private async firmaMesaji(g: TelegramGuncelleme, m: TelegramMesaj, metin: string, { tenantId, userId }: Cozum, bot: Bot): Promise<void> {
     const telegramId = BigInt(m.from!.id);
-    const hazir = await this.baglamHazirla(tenantId, userId, telegramId, m.chat.id);
+    const hazir = await this.baglamHazirla(tenantId, userId, telegramId, m.chat.id, bot);
     if (!hazir) return;
     const { baglam, karar } = hazir;
     const belge = m.photo?.length || m.document;
@@ -568,7 +712,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const tur = belge ? "belge" : ses ? "ses" : !m.text ? "desteklenmeyen" : metin.startsWith("/") ? "komut" : "sohbet";
     olay(tur);
     // CNL-01: aynı güncelleme ikinci kez gelirse burada elenir.
-    if (!(await this.gelenIz(baglam, g.update_id, tur))) return;
+    if (!(await this.gelenIz(baglam, g.update_id, tur, bot))) return;
     const yanitla = (yanit: string, yanitTuru: string) => baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, telegramId, yanitTuru, yanit, karar.tutarGoster));
 
     if (karar.neden === "rol_kapali") return void (await yanitla(`Yanıt veremiyorum: ${DUSME_METNI.rol_kapali}.`, "red"));
@@ -582,10 +726,10 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         "komut",
       ));
     }
-    if (tur === "belge") return this.belgeIsle(baglam, m);
+    if (tur === "belge") return this.belgeIsle(baglam, m, bot);
     if (tur === "desteklenmeyen") return void (await yanitla("Bu tür mesajı anlayamıyorum. Soru yazabilir, sesli mesaj ya da fiş/fatura fotoğrafı gönderebilirsiniz.", "bilgi"));
     if (tur === "ses") {
-      const yazi = await this.sesIsle(baglam, m, ses!);
+      const yazi = await this.sesIsle(baglam, m, ses!, bot);
       if (!yazi) return;
       metin = yazi;
     }
@@ -593,7 +737,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       const komut = metin.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
       if (komut === "/ayril") {
         await this.telegram.bagDusur(tenantId, userId, "telegram");
-        await this.dogrudanGonder(m.chat.id, "Bağlantı kaldırıldı. Bu hesaptan artık TekirExtra verisi gelmeyecek. Yeniden bağlamak için paneli kullanın.");
+        await this.dogrudanGonder(bot, m.chat.id, "Bağlantı kaldırıldı. Bu hesaptan artık TekirExtra verisi gelmeyecek. Yeniden bağlamak için paneli kullanın.");
         return;
       }
       if (komut === "/yeni") {
@@ -607,15 +751,15 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     // CNL-09: bir soru mesajına yanıt olarak yazılan metin soruya gider, asistana değil.
     if (m.reply_to_message && this.sorular) {
       const gonderim = await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.asistanSoruGonderimi.findFirst({ where: { userId, sohbetId: BigInt(m.chat.id), telegramMesajId: BigInt(m.reply_to_message!.message_id) }, select: { soruId: true } })));
-      if (gonderim) return this.soruYanitla(baglam, gonderim.soruId, { metin }, m.chat.id, m.reply_to_message.message_id);
+      if (gonderim) return this.soruYanitla(baglam, gonderim.soruId, { metin }, m.chat.id, m.reply_to_message.message_id, bot);
     }
 
     // Telegram "yazıyor" göstergesini ~5 sn tutar; model yanıtı uzun sürebildiği için yanıt gelene dek yenilenir.
-    await this.istemci!.yaziyor(m.chat.id);
-    const yaziyor = setInterval(() => void this.istemci!.yaziyor(m.chat.id), 4_500);
+    await bot.istemci.yaziyor(m.chat.id);
+    const yaziyor = setInterval(() => void bot.istemci.yaziyor(m.chat.id), 4_500);
     let yanit: AjanYaniti;
     let aracCalisti = false;
-    const sor = (deneme: number) => baglamlaCalistir(baglam, () => this.ajan.mesajiIsle(metin, guncellemeIstekKimligi(g.update_id, deneme), undefined, [], {
+    const sor = (deneme: number) => baglamlaCalistir(baglam, () => this.ajan.mesajiIsle(metin, guncellemeIstekKimligi(g.update_id, deneme, bot.kimlik), undefined, [], {
       kanal: "TELEGRAM",
       olay: (e) => { if (e.tur === "arac") aracCalisti = true; },
     }));
@@ -634,14 +778,14 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       if (hata instanceof ConflictException) return;
       const sinir = hata instanceof AiSinirHatasi;
       if (!sinir) this.logger.error(`Telegram asistan yanıtı üretilemedi: ${hata instanceof Error ? hata.message.split("\n").filter(Boolean).pop() : String(hata)}`);
-      await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { guncellemeNo: BigInt(g.update_id) }, data: { durum: "hata", hataTuru: sinir ? "ai_sinir" : "ai_hata" } })));
+      await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { botKimlik: izKimlik(bot), guncellemeNo: BigInt(g.update_id) }, data: { durum: "hata", hataTuru: sinir ? "ai_sinir" : "ai_hata" } })));
       await yanitla(sinir
         ? "Bu ayın yapay zekâ kullanım sınırına ulaşıldı; asistan şu anda yanıt veremiyor. Yöneticiniz Ayarlar › Yapay zekâ ekranından sınırı görebilir."
         : "Şu anda yanıt veremiyorum. Biraz sonra yeniden deneyin.", "hata");
       return;
     }
     clearInterval(yaziyor);
-    await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { guncellemeNo: BigInt(g.update_id) }, data: { durum: "islendi" } })));
+    await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { botKimlik: izKimlik(bot), guncellemeNo: BigInt(g.update_id) }, data: { durum: "islendi" } })));
     await yanitla(telegramYaniti(yanit), "sohbet");
   }
 
@@ -652,22 +796,28 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
    */
   async firmayaGonder(tenantId: string, userId: string, beklenenHesap: bigint | null, tur: string, metin: string, tutarGoster?: boolean): Promise<GonderimSonucu> {
     const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
-      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, telegramKullaniciId: true, sohbetId: true } }),
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, telegramKullaniciId: true, sohbetId: true, botKimlik: true } }),
       ayar: await telegramAyariOku(tx, tenantId),
     }));
     if (!bag || bag.tenantId !== tenantId || !ayar.etkin || (beklenenHesap !== null && bag.telegramKullaniciId !== beklenenHesap)) {
       await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderilmedi", "bag_gecersiz"));
       return "bag_gecersiz";
     }
+    const bot = this.gonderenBot(bag.botKimlik, tenantId);
+    if (!bot) {
+      this.hataSay("bot_calismiyor");
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderilmedi", "bot_calismiyor"));
+      return "hata";
+    }
     const temiz = telegramSuz(metin, { tutarGoster: tutarGoster ?? ayar.tutarGoster });
     let hataTuru: string | null = null;
     for (const parca of parcala(temiz)) {
       try {
-        await this.istemci!.gonder(bag.sohbetId, parca);
+        await bot.istemci.gonder(bag.sohbetId, parca);
       } catch (hata) {
         if (hata instanceof TelegramHatasi && hata.tur === "hiz_siniri" && (hata.bekleSn ?? 0) <= 10) {
           await uyu((hata.bekleSn ?? 1) * 1000);
-          try { await this.istemci!.gonder(bag.sohbetId, parca); continue; } catch (ikinci) { hataTuru = ikinci instanceof TelegramHatasi ? ikinci.tur : "bilinmeyen"; }
+          try { await bot.istemci.gonder(bag.sohbetId, parca); continue; } catch (ikinci) { hataTuru = ikinci instanceof TelegramHatasi ? ikinci.tur : "bilinmeyen"; }
         } else hataTuru = hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen";
         break;
       }

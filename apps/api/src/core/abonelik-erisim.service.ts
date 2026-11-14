@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "./prisma.service";
-import { abonelikModulleriniOku } from "../tenant/abonelik-kosullari";
+import { abonelikKosullariniOku, abonelikModulleriniOku } from "../tenant/abonelik-kosullari";
 import { etkinFiyatKosullariniBagla } from "../tenant/etkin-fiyat-kosullari";
-import { paketApiYoluKapali, type PaketModulKodu } from "@tekirextra/shared";
+import { paketApiYoluKapali, type PaketModulKodu, type PaketOzellikKodu } from "@tekirextra/shared";
 
 export interface AbonelikErisimi {
   /** Platform P0-1: true ise firma salt okunurdur (yazma istekleri reddedilir). */
@@ -51,6 +51,12 @@ export class AbonelikErisimService {
   async modulleriGetir(tenantId: string) {
     const a = await this.prisma.tenantIslem(tenantId, async (tx) => etkinFiyatKosullariniBagla(tx, tenantId, await tx.tenantAbonelik.findUnique({ where: { tenantId }, select: { planKodu: true, paketSurumId: true, paketKosullari: true } })));
     return a ? abonelikModulleriniOku(a) : null;
+  }
+  /** CNL-19: modül dışı plan özelliği; yalnız kapsam sözleşmesinde açıkça seçildiyse açıktır (eski koşul = kapalı). */
+  async ozellikAcik(tenantId: string, ozellik: PaketOzellikKodu): Promise<boolean> {
+    const a = await this.prisma.tenantIslem(tenantId, async (tx) => etkinFiyatKosullariniBagla(tx, tenantId, await tx.tenantAbonelik.findUnique({ where: { tenantId }, select: { planKodu: true, paketSurumId: true, paketKosullari: true } })));
+    const k = a ? abonelikKosullariniOku(a) : null;
+    return k?.semaSurumu === 2 && k.kapsamSozlesmesi.ozellikler?.[ozellik] === true;
   }
   async modulKapali(tenantId: string, modul: PaketModulKodu) {
     const moduller = await this.modulleriGetir(tenantId);

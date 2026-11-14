@@ -34,4 +34,15 @@ export class TelegramController {
   urun(@Body() govde: unknown) {
     return this.telegram.urunAyarla(govde);
   }
+
+  /** CNL-19: firmaya özel bot (yalnız yönetici, plan özelliği; serviste denetlenir). Anahtar yanıtta dönmez. */
+  @Put("ozel-bot")
+  ozelBot(@Body() govde: unknown) {
+    return this.telegram.ozelBotKaydet(govde);
+  }
+
+  @Delete("ozel-bot")
+  ozelBotKaldir() {
+    return this.telegram.ozelBotKaldir();
+  }
 }

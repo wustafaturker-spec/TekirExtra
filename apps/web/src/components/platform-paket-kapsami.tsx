@@ -1,6 +1,6 @@
 "use client";
 import { useId } from "react";
-import { PAKET_MODUL_KODLARI, PAKET_MODUL_ADLARI, PAKET_MODUL_BAGIMLILIKLARI, PAKET_KOTA_KODLARI, PAKET_KOTA_TANIMLARI, type PaketKapsamSozlesmesi } from "@tekirextra/shared";
+import { PAKET_MODUL_KODLARI, PAKET_MODUL_ADLARI, PAKET_MODUL_BAGIMLILIKLARI, PAKET_KOTA_KODLARI, PAKET_KOTA_TANIMLARI, PAKET_OZELLIK_KODLARI, PAKET_OZELLIKLERI, type PaketKapsamSozlesmesi } from "@tekirextra/shared";
 import { Field, Input, TableWrap } from "@/components/ui";
 
 export function bosPaketKapsami(): PaketKapsamSozlesmesi {
@@ -32,6 +32,13 @@ export function PlatformPaketKapsamEditoru({ etkin, onEtkin, deger, onDegis, mes
         </fieldset>;
       })}
       <DepolamaKotaEditoru deger={deger.depolama} onDegis={(depolama) => onDegis({ ...deger, depolama })} />
+      <fieldset className="stack"><legend>Plan özellikleri</legend>
+        <p className="subtle">Seçilmedikçe kapalıdır.</p>
+        {PAKET_OZELLIK_KODLARI.map((kod) => { const t = PAKET_OZELLIKLERI[kod]; return <label key={kod}><input type="checkbox" checked={deger.ozellikler?.[kod] === true} onChange={(e) => {
+          const ozellikler = { ...deger.ozellikler, [kod]: e.target.checked || undefined };
+          onDegis({ ...deger, ozellikler: Object.values(ozellikler).some(Boolean) ? ozellikler : undefined });
+        }} /> {t.ad}<small> · {t.aciklama} Gereken: {PAKET_MODUL_ADLARI[t.gerekenModul]}</small></label>; })}
+      </fieldset>
     </>}
     {hata && <p role="alert">{hata}</p>}
   </fieldset>;
@@ -45,6 +52,7 @@ export function PlatformPaketKapsami({ kapsam }: { kapsam?: PaketKapsamSozlesmes
       const q = kapsam.kotalar[kod], t = PAKET_KOTA_TANIMLARI[kod];
       return <tr key={kod}><td>{t.ad}<br /><small>{t.aciklama}</small></td><td>{q.sinir === null ? "Sınırsız" : q.sinir.toLocaleString("tr-TR")}</td><td>{t.birim} · {t.donem === "anlik" ? "Anlık" : "Türkiye takvim ayı"}</td><td>%{q.uyariYuzdesi}</td></tr>;
     })}</tbody></TableWrap>
+    {PAKET_OZELLIK_KODLARI.some((k) => kapsam.ozellikler?.[k]) && <p>Plan özellikleri: {PAKET_OZELLIK_KODLARI.filter((k) => kapsam.ozellikler?.[k]).map((k) => PAKET_OZELLIKLERI[k].ad).join(", ")}.</p>}
     {kapsam.depolama && <p>Depolama sınırı: {kapsam.depolama.sinirBayt === null ? "Sınırsız" : `${kapsam.depolama.sinirBayt} bayt`} · Uyarı eşiği: %{kapsam.depolama.uyariYuzdesi}. Kayıtlı ekler ve devam eden yüklemeler birlikte sayılır.</p>}
     <p className="subtle">Bu tanım mevcut aboneliklere uygulanmaz. Bu sürüm yalnız açık kapsam onayıyla modül, kota ve fiyatları birlikte değiştirir.</p>
   </div>;

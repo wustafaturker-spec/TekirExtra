@@ -71,7 +71,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
   private async firmaTara(tenantId: string, simdi: Date): Promise<void> {
     const { ayar, baglar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
       ayar: await telegramAyariOku(tx, tenantId),
-      baglar: await tx.telegramBagi.findMany({ select: { userId: true, oturumSurumu: true, createdAt: true } }),
+      baglar: await tx.telegramBagi.findMany({ select: { userId: true, oturumSurumu: true, createdAt: true, botKimlik: true } }),
     }));
     if (!ayar.etkin) return;
     let butce: Promise<boolean> | undefined;
@@ -85,7 +85,7 @@ export class TelegramBildirimService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async kullaniciTara(tenantId: string, bag: { userId: string; oturumSurumu: number; createdAt: Date }, simdi: Date, butceDolu: () => Promise<boolean>): Promise<void> {
+  private async kullaniciTara(tenantId: string, bag: { userId: string; oturumSurumu: number; createdAt: Date; botKimlik: bigint | null }, simdi: Date, butceDolu: () => Promise<boolean>): Promise<void> {
     const { userId } = bag;
     const karar = await this.telegram.bagKarari(tenantId, userId, bag);
     if (karar.neden && karar.neden !== "rol_kapali") { await this.telegram.bagDusur(tenantId, userId, karar.neden); return; }

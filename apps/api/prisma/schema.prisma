@@ -131,6 +131,8 @@ model Tenant {
   telegramBaglamaKodlari TelegramBaglamaKodu[]
   telegramBaglari        TelegramBagi[]
   telegramMesajlari      TelegramMesaji[]
+  telegramFirmaBotu      TelegramFirmaBotu?
+  telegramBotGecisleri   TelegramBotGecisi[]
   pesinVergiMahsuplari PesinVergiMahsup[]
   vergiTakvimiAyari    VergiTakvimiAyari?
   smsGonderimleri      SmsGonderim[]
@@ -8560,6 +8562,8 @@ model TelegramBaglamaKodu {
   sonGecerlilik DateTime  @map("son_gecerlilik")
   kullanildiAt  DateTime? @map("kullanildi_at")
   rizaAt        DateTime  @map("riza_at")
+  /// CNL-19: kodun geçerli olduğu firma botu; null = platform botu.
+  botKimlik     BigInt?   @map("bot_kimlik")
   createdAt     DateTime  @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -8577,6 +8581,8 @@ model TelegramBagi {
   userId              String   @unique @map("user_id") @db.Uuid
   telegramKullaniciId BigInt   @unique @map("telegram_kullanici_id")
   sohbetId            BigInt   @map("sohbet_id")
+  /// CNL-19: bağın kurulduğu firma botu; null = platform botu.
+  botKimlik           BigInt?  @map("bot_kimlik")
   kullaniciAdi        String?  @map("kullanici_adi") @db.VarChar(64)
   oturumSurumu        Int      @map("oturum_surumu")
   rizaAt              DateTime @map("riza_at")
@@ -8598,14 +8604,48 @@ model TelegramMesaji {
   tur          String   @db.VarChar(20)
   durum        String   @db.VarChar(16)
   hataTuru     String?  @map("hata_turu") @db.VarChar(40)
-  guncellemeNo BigInt?  @unique @map("guncelleme_no")
+  guncellemeNo BigInt?  @map("guncelleme_no")
+  /// CNL-19: güncelleme numarası bot başına sayılır; 0 = platform botu.
+  botKimlik    BigInt   @default(0) @map("bot_kimlik")
   createdAt    DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@unique([botKimlik, guncellemeNo])
   @@index([tenantId, createdAt])
   @@map("telegram_mesajlari")
+}
+
+/// CNL-19: firmaya özel Telegram botu (anahtar şifreli; bir bot tek firmada).
+model TelegramFirmaBotu {
+  tenantId       String   @id @map("tenant_id") @db.Uuid
+  botKimlik      BigInt   @unique @map("bot_kimlik")
+  botAdi         String   @map("bot_adi") @db.VarChar(64)
+  sifreliAnahtar String   @map("sifreli_anahtar")
+  durum          String   @default("etkin") @db.VarChar(12)
+  hataTuru       String?  @map("hata_turu") @db.VarChar(40)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_firma_botlari")
+}
+
+/// CNL-19c: firma kendi botuna geçince düşen bağların hesapları (platform botu yönlendirir).
+model TelegramBotGecisi {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  telegramKullaniciId BigInt   @map("telegram_kullanici_id")
+  botAdi              String   @map("bot_adi") @db.VarChar(64)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([telegramKullaniciId, createdAt])
+  @@index([tenantId])
+  @@map("telegram_bot_gecisleri")
 }
 
 /// CNL-09/10: asistanın tahmin yürütmek yerine sorduğu soru. Hedef bir kişi (userId) ya da roller.

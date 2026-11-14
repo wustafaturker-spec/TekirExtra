@@ -20,6 +20,13 @@ export const PAKET_KOTA_TANIMLARI: Record<PaketKotaKodu, { ad: string; birim: st
   aylikFatura: { ad: "Aylık oluşturulan fatura", birim: "fatura", donem: "takvim_ayi", aciklama: "Oluşturulma zamanına göre Türkiye takvim ayındaki tüm faturalar; taslak ve iptaller dahil. Belge tarihi esas alınmaz." },
 };
 const kotaSemasi = z.object({ sinir: z.number().int().min(0).max(2147483647).nullable(), uyariYuzdesi: z.number().int().min(1).max(99) }).strict();
+/** CNL-19: modül dışı plan özellikleri; varsayılan kapalı. */
+export const PAKET_OZELLIKLERI = {
+  telegramOzelBot: { ad: "Firmaya özel Telegram botu", aciklama: "Firma, platform botu yerine kendi Telegram botunu kullanabilir.", gerekenModul: "yapay_zeka" },
+} as const satisfies Record<string, { ad: string; aciklama: string; gerekenModul: PaketModulKodu }>;
+export type PaketOzellikKodu = keyof typeof PAKET_OZELLIKLERI;
+export const PAKET_OZELLIK_KODLARI = Object.keys(PAKET_OZELLIKLERI) as PaketOzellikKodu[];
+
 export const paketKapsamSemasi = z.object({
   semaSurumu: z.literal(1),
   moduller: z.array(z.enum(PAKET_MODUL_KODLARI)).min(1).max(PAKET_MODUL_KODLARI.length),
@@ -28,7 +35,12 @@ export const paketKapsamSemasi = z.object({
     sinirBayt: z.string().regex(/^(0|[1-9]\d{0,18})$/).refine((v) => /^(0|[1-9]\d{0,18})$/.test(v) && BigInt(v) <= BigInt("9223372036854775807"), "Depolama sınırı geçersiz.").nullable(),
     uyariYuzdesi: z.number().int().min(1).max(99),
   }).strict().optional(),
+  /** Modül dışı, açık seçilmedikçe kapalı plan özellikleri (CNL-19). Eski sözleşmelerde yoktur = kapalı. */
+  ozellikler: z.object({ telegramOzelBot: z.boolean().optional() }).strict().optional(),
 }).strict().superRefine((g, ctx) => {
+  for (const [kod, t] of Object.entries(PAKET_OZELLIKLERI) as Array<[PaketOzellikKodu, (typeof PAKET_OZELLIKLERI)[PaketOzellikKodu]]>) {
+    if (g.ozellikler?.[kod] && !g.moduller.includes(t.gerekenModul)) ctx.addIssue({ code: "custom", path: ["ozellikler", kod], message: `${t.ad} için ${PAKET_MODUL_ADLARI[t.gerekenModul]} seçilmeli.` });
+  }
   const secili = new Set(g.moduller);
   if (secili.size !== g.moduller.length) ctx.addIssue({ code: "custom", path: ["moduller"], message: "Modüller tekrar edemez." });
   for (const kod of g.moduller) for (const gerekli of PAKET_MODUL_BAGIMLILIKLARI[kod] ?? []) {

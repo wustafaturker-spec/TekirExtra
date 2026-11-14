@@ -40,7 +40,7 @@ export class TelegramIstemci {
   private readonly taban: string;
 
   constructor(private readonly anahtar: string, taban = process.env.TELEGRAM_API_URL || "https://api.telegram.org") {
-    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(anahtar)) throw new Error("TELEGRAM_BOT_TOKEN biçimi geçersiz");
+    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(anahtar)) throw new Error("Bot anahtarı biçimi geçersiz");
     this.taban = taban.replace(/\/+$/, "");
   }
 
@@ -78,6 +78,11 @@ export class TelegramIstemci {
 
   ben(): Promise<TelegramKullanici> {
     return this.cagir("getMe", {}, 10_000);
+  }
+
+  /** CNL-19: webhook kurulu bot başka yerde kullanılıyordur (getUpdates de çalışmaz). */
+  webhookBilgisi(): Promise<{ url?: string }> {
+    return this.cagir("getWebhookInfo", {}, 10_000);
   }
 
   /** Düz metin (biçimlendirme yok: model çıktısındaki işaretler biçim enjeksiyonu yapamaz), bağlantı önizlemesi kapalı. */
