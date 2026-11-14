@@ -118,6 +118,9 @@ const GIZLI_ALANLAR = ["kullaniciAdi", "parola", "apiAnahtari"] as const;
  */
 const TASARIM_ALANLARI = ["efaturaTasarimi", "earsivTasarimi", "eirsaliyeTasarimi"] as const;
 
+/** ETC-12: platform onayıyla alınan anahtarlar (İdeaSoft); form göstermez, düzenlemede korunur. */
+const OAUTH_ALANLARI = ["erisimAnahtari", "erisimBitis", "yenilemeAnahtari", "yetkiBekleyen"] as const;
+
 /**
  * Düzenleme formunun kayıtlı değerle açtığı gizli olmayan ayarlar. İzin
  * listesidir: config'e sonradan eklenen bir alan buraya yazılmadıkça
@@ -309,6 +312,12 @@ export class BaglantilarService {
       for (const alan of TASARIM_ALANLARI) {
         if (onceki[alan]) config[alan] = onceki[alan];
       }
+      // ETC-12: OAuth anahtarları formda yoktur; mağaza ve istemci aynı kaldıkça korunur.
+      if (config.servisAdresi === onceki.servisAdresi && config.saticiId === onceki.saticiId) {
+        for (const alan of OAUTH_ALANLARI) {
+          if (onceki[alan]) config[alan] = onceki[alan];
+        }
+      }
 
       const yeniConfig = saklanacakConfig(mevcut.saglayici, config);
       const guncel = await tx.baglanti.update({
@@ -319,7 +328,7 @@ export class BaglantilarService {
         },
       });
       await this.denetimYaz(tx, tenantId, userId, "baglanti_guncellendi", guncel, {
-        degisiklikler: degisiklikleriBul(onceki, yeniConfig, { gizli: GIZLI_ALANLAR }),
+        degisiklikler: degisiklikleriBul(onceki, yeniConfig, { gizli: [...GIZLI_ALANLAR, ...OAUTH_ALANLARI] }),
       });
       return guncel;
     });

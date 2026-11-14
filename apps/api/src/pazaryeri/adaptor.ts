@@ -1,5 +1,6 @@
 import { AmazonAdapter } from "./amazon.adapter";
 import { HepsiburadaAdapter } from "./hepsiburada.adapter";
+import { IdeasoftAdapter } from "./ideasoft.adapter";
 import { IkasAdapter } from "./ikas.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { ShopifyAdapter } from "./shopify.adapter";
@@ -43,6 +44,7 @@ const ADAPTORLER: Record<string, Fabrika> = {
   shopify: () => new ShopifyAdapter(),
   ikas: () => new IkasAdapter(),
   ticimax: () => new TicimaxAdapter(),
+  ideasoft: () => new IdeasoftAdapter(),
 };
 
 export function adaptorCoz(saglayici: string): PazaryeriAdaptoru | null {

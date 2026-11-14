@@ -10,6 +10,14 @@ export interface PazaryeriConfig {
   kullaniciAdi: string; parola?: string; apiAnahtari?: string; saticiId?: string; magazaId?: string; servisAdresi?: string;
   /** PZR-21: Hepsiburada entegratör adı (User-Agent). */
   entegratorAdi?: string;
+  /** ETC-12: OAuth2 ile alınan anahtarlar (İdeaSoft); yenileme anahtarı her kullanımda değişir. */
+  erisimAnahtari?: string; erisimBitis?: string; yenilemeAnahtari?: string;
+  /** Çalışma anında servis ekler (saklanmaz): anahtar yenilemesini kayıt kilidi altında yazar. */
+  anahtarDeposu?: AnahtarDeposu;
+}
+export interface AnahtarDeposu {
+  /** Kayıtlı güncel config kilit altında okunur; `is` yeni anahtar döndürürse yazılır. Sonuç güncel config'tir. */
+  kilitliGuncelle(is: (kayitli: PazaryeriConfig) => Promise<{ erisimAnahtari: string; erisimBitis: string; yenilemeAnahtari: string } | null>): Promise<PazaryeriConfig>;
 }
 export interface NormalizeSiparis {
   hariciId: string; siparisNo: string; hariciDurum?: string; siparisTarihi: string;

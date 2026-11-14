@@ -24,6 +24,8 @@ export interface KatalogKaydi {
   alanlar?: KatalogAlani[];
   /** Kısa "anahtarı nereden alırım" anlatımı. */
   anahtarYeri?: string;
+  /** ETC-12: kayıttan sonra platformda kullanıcı onayı gerekir (OAuth2 authorization_code). */
+  yetkiAkisi?: "oauth";
 }
 
 export const ENTEGRASYON_KATEGORILERI: Record<EntegrasyonKategorisi, string> = { pazaryeri: "Pazaryeri", eticaret: "E-ticaret sitesi" };
@@ -53,7 +55,9 @@ export const ENTEGRASYON_KATALOGU: readonly KatalogKaydi[] = [
   { kod: "ticimax", ad: "Ticimax", kategori: "eticaret", durum: "etkin", logo: "ticimax.svg",
     alanlar: [{ alan: "servisAdresi", etiket: "Site adresi", ipucu: "https://www.magazam.com", zorunlu: true }, { alan: "apiAnahtari", etiket: "Web servis yetki kodu", gizli: true, zorunlu: true }],
     anahtarYeri: "Ticimax yönetim paneli › Ayarlar › Web Servis Ayarları › yetki kodu (Sipariş ve Ürün servis yetkileri açık)." },
-  { kod: "ideasoft", ad: "İdeaSoft", kategori: "eticaret", durum: "yakinda" },
+  { kod: "ideasoft", ad: "İdeaSoft", kategori: "eticaret", durum: "etkin", yetkiAkisi: "oauth",
+    alanlar: [{ alan: "servisAdresi", etiket: "Mağaza adresi", ipucu: "https://magazam.myideasoft.com", zorunlu: true }, { alan: "saticiId", etiket: "Client ID", zorunlu: true }, { alan: "parola", etiket: "Client Secret", gizli: true, zorunlu: true }],
+    anahtarYeri: "İdeaSoft yönetim paneli › Entegrasyonlar › API › Ekle: Yönlendirme (Redirect) adresine aşağıdaki dönüş adresini yazın; izinler: sipariş okuma, ürün okuma ve yazma. Client ID ve Client Secret'ı buraya girip kaydedin, ardından \"İdeaSoft'ta yetki ver\" ile onaylayın." },
   { kod: "tsoft", ad: "T-Soft", kategori: "eticaret", durum: "yakinda", logo: "tsoft.svg" },
   { kod: "ciceksepeti", ad: "Çiçeksepeti", kategori: "pazaryeri", durum: "yakinda" },
   { kod: "pazarama", ad: "Pazarama", kategori: "pazaryeri", durum: "yakinda" },
@@ -85,9 +89,13 @@ export function eticaretKimlikHatasi(saglayici: string, c: Partial<Record<Kimlik
       if (!dolu("servisAdresi")) return "Site adresi zorunludur";
       if (!dolu("apiAnahtari")) return "Web servis yetki kodu zorunludur";
       return null;
+    case "ideasoft":
+      if (!dolu("servisAdresi")) return "Mağaza adresi zorunludur";
+      if (!dolu("saticiId") || !dolu("parola")) return "Client ID ve Client Secret zorunludur";
+      return null;
     default:
       return null;
   }
 }
 
-export const ETICARET_SAGLAYICILARI = ["woocommerce", "shopify", "ikas", "ticimax"] as const;
+export const ETICARET_SAGLAYICILARI = ["woocommerce", "shopify", "ikas", "ticimax", "ideasoft"] as const;

@@ -55,6 +55,22 @@ export class PazaryeriController {
     return this.service.baglantiSina(id);
   }
 
+  /** ETC-12: İdeaSoft OAuth2 — yetki adresi üretilir; dönüşte panel kodu `tamamla`ya iletir. */
+  @Post("baglantilar/:id/ideasoft/yetki") @Roller("yonetici")
+  ideasoftYetki(@Param("id") id: string, @Body() govde: unknown) {
+    if (!z.string().uuid().safeParse(id).success) throw new BadRequestException("Geçersiz bağlantı");
+    const g = z.object({ donusAdresi: z.string().url().max(500) }).safeParse(govde);
+    if (!g.success) throw new BadRequestException("Dönüş adresi zorunludur");
+    return this.service.ideasoftYetkiBaslat(id, g.data.donusAdresi);
+  }
+
+  @Post("ideasoft/yetki-tamamla") @Roller("yonetici")
+  ideasoftYetkiTamamla(@Body() govde: unknown) {
+    const g = z.object({ state: z.string().min(16).max(200), code: z.string().min(1).max(2000) }).safeParse(govde);
+    if (!g.success) throw new BadRequestException("Yetki yanıtı eksik");
+    return this.service.ideasoftYetkiTamamla(g.data.state, g.data.code);
+  }
+
   @Post("stok-fiyat/senkronize") @Roller("yonetici")
   stokFiyatSenkronize(@Body() govde: unknown) {
     const sonuc = z.object({ baglantiId: z.string().uuid().optional() }).safeParse(govde ?? {});

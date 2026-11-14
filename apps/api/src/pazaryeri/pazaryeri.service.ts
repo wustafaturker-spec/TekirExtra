@@ -5,8 +5,10 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
-import { coz } from "../core/kripto";
-import { TrendyolAdapter, type NormalizeKesinti, type PazaryeriConfig } from "./trendyol.adapter";
+import { createHash, randomBytes } from "node:crypto";
+import { coz, sifrele } from "../core/kripto";
+import { ideasoftDonusAdresiGecerli, ideasoftKoduAnahtaraCevir, ideasoftYetkiAdresi } from "./ideasoft.adapter";
+import { TrendyolAdapter, type AnahtarDeposu, type NormalizeKesinti, type PazaryeriConfig } from "./trendyol.adapter";
 import { cekimPencereleri, istanbulGunu } from "./trendyol-finans";
 import { HB_SIPARIS_TIPLERI, hbKesintisi, hbOdemeDonemleri, type HbKayit } from "./hepsiburada-finans";
 import { denemeSonucu, FINANS_SAGLAYICILARI, varsayilanAralik, type OtomatikIs } from "./otomatik-is";
@@ -145,7 +147,7 @@ export class PazaryeriService {
     const sonuclar: Record<string, unknown>[] = [];
     for (const baglanti of baglantilar) sonuclar.push(await this.otomatikIsle(tenantId, baglanti, "siparis", async () => {
       try {
-        const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+        const config = this.adaptorConfig(tenantId, baglanti);
         // ETC-03: adaptör ortak kayıttan seçilir.
         const adapter = adaptorCoz(baglanti.saglayici);
         if (!adapter) throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
@@ -188,7 +190,7 @@ export class PazaryeriService {
     const sonuclar = [];
     for (const baglanti of baglantilar) {
       try {
-        const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+        const config = this.adaptorConfig(tenantId, baglanti);
         const adapter = adaptorCoz(baglanti.saglayici)!;
         const gecerli = kalemler.filter((k) => k.fiyat > 0 && (!adapter.barkodZorunlu || k.barkod));
         const sonuc = await adapter.stokFiyatGonder(config, gecerli);
@@ -215,6 +217,75 @@ export class PazaryeriService {
     return { saglayici, kaydedildi: true };
   }
 
+  /** ETC-12: adaptör config'i; OAuth anahtarını yenileyen adaptör kayda kilit altında yazar. */
+  private adaptorConfig(tenantId: string, baglanti: { id: string; sifreliConfig: string }): PazaryeriConfig {
+    const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+    const depo: AnahtarDeposu = { kilitliGuncelle: (is) => this.anahtarGuncelle(tenantId, baglanti.id, is) };
+    return Object.assign(config, { anahtarDeposu: depo });
+  }
+
+  /**
+   * Yenileme anahtarı tek kullanımlıktır: iki süreç (API "Sına", worker çekimi) aynı anda yenilerse
+   * biri geçersiz anahtarla kalır. Süreçler arası kilit alınır, kayıt kilit altında yeniden okunur.
+   */
+  private async anahtarGuncelle(tenantId: string, baglantiId: string, is: Parameters<AnahtarDeposu["kilitliGuncelle"]>[0]): Promise<PazaryeriConfig> {
+    const anahtar = `pazaryeri-anahtar:${baglantiId}`;
+    let birak: (() => Promise<void>) | null = null;
+    for (let i = 0; i < 60 && !(birak = await kilitle(anahtar, 60)); i++) await new Promise((r) => setTimeout(r, 500));
+    if (!birak) throw new Error("Anahtar yenilemesi başka bir işlemde sürüyor; biraz sonra yeniden deneyin");
+    try {
+      const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findUnique({ where: { id: baglantiId }, select: { sifreliConfig: true } }));
+      if (!kayit) throw new NotFoundException("Bağlantı bulunamadı");
+      const kayitli = JSON.parse(coz(kayit.sifreliConfig)) as PazaryeriConfig;
+      const yeni = await is(kayitli);
+      if (!yeni) return kayitli;
+      const guncel = { ...kayitli, ...yeni };
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglantiId }, data: { sifreliConfig: sifrele(JSON.stringify(guncel)) } }));
+      return guncel;
+    } finally { await birak(); }
+  }
+
+  /**
+   * ETC-12: İdeaSoft yetki adresi. Tek kullanımlık `state` üretilir, özeti ve dönüş adresi 10 dk
+   * geçerli olarak bağlantı kaydına yazılır; kullanıcı İdeaSoft'ta onaylayınca panel `tamamla`yı çağırır.
+   */
+  async ideasoftYetkiBaslat(baglantiId: string, donusAdresi: string) {
+    const { tenantId, userId } = aktifBaglam();
+    if (!ideasoftDonusAdresiGecerli(donusAdresi)) throw new BadRequestException("Geçersiz dönüş adresi");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const baglanti = await tx.baglanti.findFirst({ where: { id: baglantiId, aile: "pazaryeri", saglayici: "ideasoft" } });
+      if (!baglanti) throw new NotFoundException("İdeaSoft bağlantısı bulunamadı");
+      const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig & Record<string, unknown>;
+      const state = randomBytes(24).toString("base64url");
+      let adres: string;
+      try { adres = ideasoftYetkiAdresi(config, state, donusAdresi); } catch (hata) { throw new BadRequestException(hata instanceof Error ? hata.message : "Yetki adresi oluşturulamadı"); }
+      config.yetkiBekleyen = { stateOzeti: createHash("sha256").update(state).digest("hex"), donusAdresi, bitis: new Date(Date.now() + 10 * 60_000).toISOString(), userId };
+      await tx.baglanti.update({ where: { id: baglanti.id }, data: { sifreliConfig: sifrele(JSON.stringify(config)) } });
+      return { adres };
+    });
+  }
+
+  /** ETC-12: İdeaSoft'un döndürdüğü kod (30 sn geçerli) anahtara çevrilir, bağlantı etkinleşir. */
+  async ideasoftYetkiTamamla(state: string, kod: string) {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findFirst({ where: { aile: "pazaryeri", saglayici: "ideasoft" } }));
+    if (!baglanti) throw new NotFoundException("İdeaSoft bağlantısı bulunamadı");
+    const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig & { yetkiBekleyen?: { stateOzeti: string; donusAdresi: string; bitis: string } };
+    const b = config.yetkiBekleyen;
+    const ozet = createHash("sha256").update(state).digest("hex");
+    if (!b || b.stateOzeti !== ozet || Date.parse(b.bitis) < Date.now()) throw new BadRequestException("Yetki isteği geçersiz ya da süresi dolmuş; bağlantı penceresinden yeniden başlatın");
+    let anahtar: Awaited<ReturnType<typeof ideasoftKoduAnahtaraCevir>>;
+    try { anahtar = await ideasoftKoduAnahtaraCevir(config, kod, b.donusAdresi); } catch (hata) { throw new BadRequestException(hata instanceof Error ? hata.message : "İdeaSoft yetkisi alınamadı"); }
+    await this.anahtarGuncelle(tenantId, baglanti.id, async () => anahtar);
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.baglanti.findUniqueOrThrow({ where: { id: baglanti.id } });
+      const c = JSON.parse(coz(kayit.sifreliConfig)) as Record<string, unknown>;
+      delete c.yetkiBekleyen;
+      await tx.baglanti.update({ where: { id: baglanti.id }, data: { sifreliConfig: sifrele(JSON.stringify(c)), durum: "aktif" } });
+    });
+    return { baglantiId: baglanti.id, ...(await this.baglantiSina(baglanti.id)) };
+  }
+
   /** ETC-13: bağlantı sınaması; kimlik doğrulanır ve son sipariş okunur, kayıt yazılmaz. */
   async baglantiSina(baglantiId: string) {
     const { tenantId } = aktifBaglam();
@@ -223,7 +294,7 @@ export class PazaryeriService {
     const adapter = adaptorCoz(baglanti.saglayici);
     if (!adapter?.sina) return { basarili: true, mesaj: "Bu sağlayıcıda canlı sınama yok; bilgiler biçim olarak geçerli." };
     try {
-      const r = await adapter.sina(JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig);
+      const r = await adapter.sina(this.adaptorConfig(tenantId, baglanti));
       return { basarili: true, mesaj: r.mesaj };
     } catch (hata) {
       return { basarili: false, mesaj: hata instanceof Error ? hata.message : "Bağlantı sınanamadı" };

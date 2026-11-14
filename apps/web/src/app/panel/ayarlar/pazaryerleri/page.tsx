@@ -23,6 +23,8 @@ export default function EntegrasyonKatalogu() {
   const [hata, setHata] = useState(""); const [mesaj, setMesaj] = useState("");
   const [sinama, setSinama] = useState<{ basarili: boolean; mesaj: string } | null>(null);
   const [varsayilanCari, setVarsayilanCari] = useState("");
+  const [donusAdresi, setDonusAdresi] = useState("");
+  useEffect(() => { setDonusAdresi(`${window.location.origin}/panel/ayarlar/pazaryerleri/ideasoft`); }, []);
 
   const yukle = useCallback(async () => {
     const [b, t, c] = await Promise.all([
@@ -70,10 +72,22 @@ export default function EntegrasyonKatalogu() {
         ? await api<Baglanti>(`/baglantilar/${mevcut.id}`, { method: "PATCH", body: JSON.stringify({ config }) })
         : await api<Baglanti>("/baglantilar", { method: "POST", body: JSON.stringify({ aile: "pazaryeri", saglayici: acik.kod, config: { kullaniciAdi: "", ...config } }) });
       if (acik.kategori === "eticaret") await api(`/pazaryeri/baglantilar/${kayit.id}/varsayilan-alici`, { method: "POST", body: JSON.stringify({ cariId: varsayilanCari || null }) });
-      await sina(kayit.id);
+      if (acik.yetkiAkisi === "oauth") {
+        await api(`/baglantilar/${kayit.id}/test`, { method: "POST" });
+        setSinama({ basarili: true, mesaj: `Bilgiler kaydedildi. Şimdi "${acik.ad}'ta yetki ver" düğmesine basın.` });
+      } else await sina(kayit.id);
       setMesaj(`${acik.ad} bağlantısı kaydedildi.`);
       await yukle();
     } catch (x) { setHata(x instanceof Error ? x.message : "Bağlantı kaydedilemedi"); } finally { setIsleniyor(false); }
+  }
+
+  /** ETC-12: OAuth — sunucu tek kullanımlık state ile yetki adresini verir, tarayıcı İdeaSoft'a gider. */
+  async function yetkiVer(id: string) {
+    setIsleniyor(true); setHata("");
+    try {
+      const { adres } = await api<{ adres: string }>(`/pazaryeri/baglantilar/${id}/ideasoft/yetki`, { method: "POST", body: JSON.stringify({ donusAdresi }) });
+      window.location.assign(adres);
+    } catch (x) { setHata(x instanceof Error ? x.message : "Yetki başlatılamadı"); setIsleniyor(false); }
   }
 
   async function ilgileniyorum(k: KatalogKaydi) {
@@ -133,6 +147,13 @@ export default function EntegrasyonKatalogu() {
               <Input name={a.alan} type={a.gizli ? "password" : "text"} placeholder={mevcut && (a.gizli || a.alan === "kullaniciAdi") ? "Kayıtlı değer korunur" : a.ipucu} autoComplete="off" required={Boolean(a.zorunlu && !(mevcut && (a.gizli || a.alan === "kullaniciAdi")))} />
             </Field>)}
           </div>
+          {acik.yetkiAkisi === "oauth" && <div className="market-info-box">
+            <strong>Dönüş (Redirect) adresi</strong>
+            <span>İdeaSoft'ta API tanımlarken bu adresi aynen yazın: <code>{donusAdresi}</code></span>
+            {mevcut
+              ? <span><Button type="button" size="sm" variant="primary" disabled={isleniyor} onClick={() => void yetkiVer(mevcut.id)}>İdeaSoft'ta yetki ver</Button> Önce bilgileri kaydedin; düğme sizi İdeaSoft paneline götürür, onaylayınca buraya dönersiniz.</span>
+              : <span>Bilgileri kaydettikten sonra "İdeaSoft'ta yetki ver" düğmesi açılır.</span>}
+          </div>}
           {acik.kategori === "eticaret" && <Field label="Bireysel alıcıların carisi">
             <CariSecici cariler={cariler} deger={varsayilanCari} onChange={setVarsayilanCari} placeholder="Ör. Perakende Müşteri" />
             <small className="muted">VKN'li alıcı kendi carisine gider (yoksa açılır). Bireysel alıcı bu cariye faturalanır, kişi bilgisi e-Arşiv'e yazılır. Boşsa cari siparişte seçilir. Siteye stok ve KDV dahil satış fiyatı gönderilir.</small>

@@ -15,7 +15,7 @@ export type BaglantiAile = (typeof BAGLANTI_AILELERI)[number];
 export const EBELGE_SAGLAYICILARI = ["sovos", "nes", "izibiz", "foriba", "elogo", "uyumsoft"] as const;
 export type EbelgeSaglayici = (typeof EBELGE_SAGLAYICILARI)[number];
 /** ETC-03: pazaryerleri ve e-ticaret siteleri aynı aileyi (pazaryeri) paylaşır. */
-export const PAZARYERI_SAGLAYICILARI = ["trendyol", "hepsiburada", "n11", "amazon_tr", "woocommerce", "shopify", "ikas", "ticimax"] as const;
+export const PAZARYERI_SAGLAYICILARI = ["trendyol", "hepsiburada", "n11", "amazon_tr", "woocommerce", "shopify", "ikas", "ticimax", "ideasoft"] as const;
 export type PazaryeriSaglayici = (typeof PAZARYERI_SAGLAYICILARI)[number];
 export const POS_SAGLAYICILARI = ["iyzico", "paytr"] as const;
 export type PosSaglayici = (typeof POS_SAGLAYICILARI)[number];

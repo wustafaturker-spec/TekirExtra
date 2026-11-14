@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /** ETC-01/02: entegrasyon kataloğu; API taklittir. */
-async function kur(page: Page) {
+async function kur(page: Page, ekBaglantilar: unknown[] = [], adres = "/panel/ayarlar/pazaryerleri") {
   const istekler: Array<{ yol: string; yontem: string; govde: unknown }> = [];
   await page.addInitScript(() => sessionStorage.setItem("tekir_access", "e2e-token"));
   // Taklit edilmeyen istek gerçek API'ye gitmesin: en düşük öncelikli boş yanıt.
@@ -12,7 +12,7 @@ async function kur(page: Page) {
     if (yontem !== "GET") istekler.push({ yol, yontem, govde: r.postDataJSON() });
     let json: unknown;
     if (yol === "/auth/ben") json = { userId: "u1", tenantId: "t1", rol: "yonetici" };
-    else if (yol === "/baglantilar" && yontem === "GET") json = [{ id: "b-ty", aile: "pazaryeri", saglayici: "trendyol", durum: "aktif", kullaniciAdiMaskeli: "ab***" }];
+    else if (yol === "/baglantilar" && yontem === "GET") json = [{ id: "b-ty", aile: "pazaryeri", saglayici: "trendyol", durum: "aktif", kullaniciAdiMaskeli: "ab***" }, ...ekBaglantilar];
     else if (yol === "/baglantilar" && yontem === "POST") json = { id: "b-sh", aile: "pazaryeri", saglayici: "shopify", durum: "pasif", kullaniciAdiMaskeli: "ma***" };
     else if (yol === "/pazaryeri/entegrasyon-talepleri") json = yontem === "GET" ? [] : { kaydedildi: true };
     else if (yol === "/pazaryeri/hakedis/baglantilar") json = [];
@@ -21,11 +21,13 @@ async function kur(page: Page) {
     else if (yol.endsWith("/aktif-et")) json = { ok: true };
     else if (yol.endsWith("/varsayilan-alici")) json = { ok: true };
     else if (yol.endsWith("/sina")) json = { basarili: true, mesaj: "Magazam mağazasına bağlanıldı; son sipariş #1001." };
+    else if (yol.endsWith("/ideasoft/yetki")) json = { adres: "https://deneme.myideasoft.com/panel/auth?client_id=7_abc&response_type=code&state=S" };
+    else if (yol === "/pazaryeri/ideasoft/yetki-tamamla") json = { baglantiId: "b-is", basarili: true, mesaj: "İdeaSoft bağlantısı çalışıyor; son sipariş #120." };
     else if (yol === "/ebelge/uygulamalar") json = { efatura: { acik: false }, earsiv: { acik: false }, eirsaliye: { acik: false } };
     else return route.fallback();
     await route.fulfill({ json });
   });
-  await page.goto("/panel/ayarlar/pazaryerleri");
+  await page.goto(adres);
   return istekler;
 }
 
@@ -37,11 +39,11 @@ test("katalog: kategoriler, bağlı işareti ve Yakında talebi", async ({ page 
   await page.getByRole("button", { name: "E-ticaret sitesi", exact: true }).click();
   await expect(page.locator(".entegrasyon-kart", { hasText: "Trendyol" })).toHaveCount(0);
   await expect(page.locator(".entegrasyon-kart", { hasText: "WooCommerce" })).toBeVisible();
-  const ideasoft = page.locator(".entegrasyon-kart", { hasText: "İdeaSoft" });
-  await expect(ideasoft.getByText("Yakında")).toBeVisible();
-  await ideasoft.getByRole("button", { name: "İlgileniyorum" }).click();
-  await expect(ideasoft.getByText("Talep alındı")).toBeVisible();
-  expect(istekler).toContainEqual({ yol: "/pazaryeri/entegrasyon-talepleri", yontem: "POST", govde: { saglayici: "ideasoft" } });
+  const tsoft = page.locator(".entegrasyon-kart", { hasText: "T-Soft" });
+  await expect(tsoft.getByText("Yakında")).toBeVisible();
+  await tsoft.getByRole("button", { name: "İlgileniyorum" }).click();
+  await expect(tsoft.getByText("Talep alındı")).toBeVisible();
+  expect(istekler).toContainEqual({ yol: "/pazaryeri/entegrasyon-talepleri", yontem: "POST", govde: { saglayici: "tsoft" } });
 });
 
 test("Shopify bağlantısı: alanlar, varsayılan cari, sınama", async ({ page }) => {
@@ -59,4 +61,23 @@ test("Shopify bağlantısı: alanlar, varsayılan cari, sınama", async ({ page 
   expect(istekler.map((i) => `${i.yontem} ${i.yol}`)).toEqual(["POST /baglantilar", "POST /pazaryeri/baglantilar/b-sh/varsayilan-alici", "POST /baglantilar/b-sh/test", "POST /baglantilar/b-sh/aktif-et", "POST /pazaryeri/baglantilar/b-sh/sina"]);
   expect(istekler[0].govde).toEqual({ aile: "pazaryeri", saglayici: "shopify", config: { kullaniciAdi: "magazam", saticiId: "cid", parola: "sec" } });
   expect(istekler[1].govde).toEqual({ cariId: "00000000-0000-4000-8000-0000000000c1" });
+});
+
+test("İdeaSoft: dönüş adresi gösterilir, yetki ver İdeaSoft paneline götürür (ETC-12)", async ({ page }) => {
+  await page.route("https://deneme.myideasoft.com/**", (r) => r.fulfill({ contentType: "text/html", body: "<h1>IdeaSoft yetki</h1>" }));
+  const istekler = await kur(page, [{ id: "b-is", aile: "pazaryeri", saglayici: "ideasoft", durum: "pasif", kullaniciAdiMaskeli: "***" }]);
+  await page.locator(".entegrasyon-kart", { hasText: "İdeaSoft" }).getByRole("button", { name: /İdeaSoft bağlantısını düzenle/ }).click();
+  const pencere = page.getByRole("dialog", { name: "İdeaSoft bağlantısı" });
+  const origin = new URL(page.url()).origin;
+  await expect(pencere.getByText(`${origin}/panel/ayarlar/pazaryerleri/ideasoft`)).toBeVisible();
+  await pencere.getByRole("button", { name: "İdeaSoft'ta yetki ver" }).click();
+  await expect(page).toHaveURL(/deneme\.myideasoft\.com\/panel\/auth/);
+  expect(istekler).toContainEqual({ yol: "/pazaryeri/baglantilar/b-is/ideasoft/yetki", yontem: "POST", govde: { donusAdresi: `${origin}/panel/ayarlar/pazaryerleri/ideasoft` } });
+});
+
+test("İdeaSoft dönüşü: kod sunucuya bir kez iletilir ve adresten silinir (ETC-12)", async ({ page }) => {
+  const istekler = await kur(page, [], "/panel/ayarlar/pazaryerleri/ideasoft?code=KOD&state=DURUM1234567890ab");
+  await expect(page.getByText("Yetki alındı. İdeaSoft bağlantısı çalışıyor; son sipariş #120.")).toBeVisible();
+  expect(istekler.filter((i) => i.yol === "/pazaryeri/ideasoft/yetki-tamamla")).toEqual([{ yol: "/pazaryeri/ideasoft/yetki-tamamla", yontem: "POST", govde: { code: "KOD", state: "DURUM1234567890ab" } }]);
+  expect(new URL(page.url()).search).toBe("");
 });

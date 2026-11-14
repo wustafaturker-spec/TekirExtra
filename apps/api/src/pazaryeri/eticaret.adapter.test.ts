@@ -25,9 +25,9 @@ afterEach(() => { istekler.length = 0; yanitlar = []; anahtarOnbelleginiSil(); }
 
 describe("ortak kurallar (ETC-03/04)", () => {
   it("kayıt dört siteyi ve dört pazaryerini içerir", () => {
-    expect(ADAPTORLU_SAGLAYICILAR.sort()).toEqual(["amazon_tr", "hepsiburada", "ikas", "n11", "shopify", "ticimax", "trendyol", "woocommerce"]);
+    expect(ADAPTORLU_SAGLAYICILAR.sort()).toEqual(["amazon_tr", "hepsiburada", "ideasoft", "ikas", "n11", "shopify", "ticimax", "trendyol", "woocommerce"]);
     expect(adaptorCoz("trendyol")?.barkodZorunlu).toBe(true);
-    expect(adaptorCoz("ideasoft")).toBeNull();
+    expect(adaptorCoz("tsoft")).toBeNull();
   });
 
   it("ilk imleç son 30 gün; bozuk imleç baştan", () => {
