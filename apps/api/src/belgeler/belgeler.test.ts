@@ -434,6 +434,26 @@ describe("BelgelerService", () => {
     });
   });
 
+  it("siparişten açılmış taslak irsaliye silinince teslim miktarı geri alınır, sipariş yeniden açılır", async () => {
+    const irsaliye = { id: "irs9", tur: "irsaliye", durum: "taslak", kaynakBelgeId: "sip9", satirlar: [{ stokId: "stk1", varyantId: null, miktar: D("5"), birim: "metre", kaynakSatirId: "s9" }] };
+    const siparis = { id: "sip9", tur: "siparis", yon: "alis", durum: "kismen_kapandi", depoId: null, faturaId: null, satirlar: [{ miktar: D("10000"), teslimEdilenMiktar: D("0") }] };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      firsatBelgeBagi: { count: vi.fn().mockResolvedValue(0) },
+      belge: { findUnique: vi.fn().mockResolvedValueOnce(irsaliye).mockResolvedValueOnce(siparis), update: vi.fn(), delete: vi.fn(), updateMany: vi.fn() },
+      belgeSatir: { update: vi.fn() },
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+    vi.spyOn(servis, "getir").mockResolvedValue(irsaliye as any);
+
+    await servis.sil("irs9");
+
+    expect(tx.belgeSatir.update).toHaveBeenCalledWith({ where: { id: "s9" }, data: { teslimEdilenMiktar: { decrement: D("5") } } });
+    expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "sip9" }, data: { durum: "onaylandi" } });
+    expect(tx.belge.delete).toHaveBeenCalledWith({ where: { id: "irs9" } });
+  });
+
   describe("iptal edilmiş siparişin irsaliyesi iptal edilince", () => {
     /** Sipariş 10 onaylandı, 4'ü irsaliyeyle teslim edildi; sipariş iptali yalnız 6'yı çözdü. */
     const kur = (siparisDurumu: string) => {

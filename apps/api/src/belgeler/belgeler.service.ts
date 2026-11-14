@@ -830,6 +830,13 @@ export class BelgelerService {
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM belgeler WHERE id=${id}::uuid AND tenant_id=${tenantId}::uuid FOR UPDATE`;
       if (await tx.firsatBelgeBagi.count({ where: { tenantId, belgeId: id } })) throw new ConflictException("Fırsat bağı geçmişi olan teklif silinemez; belgeyi iptal edebilirsiniz");
+      // Siparişten açılan irsaliye, taslakken bile sipariş satırının teslim miktarını artırır (kısmi
+      // teslim). Silinen taslağın miktarı iptaldeki gibi geri alınır; yoksa sipariş "kısmen teslim
+      // alındı" kalır ve kalan miktar eksik görünür.
+      if (belge.tur === "irsaliye") {
+        const kayit = await tx.belge.findUnique({ where: { id }, select: { kaynakBelgeId: true, satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, kaynakSatirId: true } } } });
+        if (kayit) await this.teslimGeriAl(tx, kayit.satirlar, kayit.kaynakBelgeId);
+      }
       await tx.belge.delete({ where: { id } });
       await this.oncekiSurumuGeriAc(tx, belge);
     });
