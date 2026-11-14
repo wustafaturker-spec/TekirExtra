@@ -58,6 +58,10 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "cerez"));
   await page.route("**/api/v1/platform/auth/ben", (r) => r.fulfill({ json: { eposta: "ekip@example.test", rol: "yonetici" } }));
   await page.route("**/api/v1/platform/istatistikler?*", yanit);
+  await page.route("**/api/v1/platform/entegrasyon-talepleri", (r) => r.fulfill({ json: [
+    { saglayici: "tsoft", ad: "T-Soft", firmaSayisi: 2, sonTalep: "2026-11-10T09:00:00Z" },
+    { saglayici: "ideasoft", ad: "İdeaSoft", firmaSayisi: 5, sonTalep: "2026-11-12T09:00:00Z" },
+  ] }));
 });
 
 test("dönem/paket filtreleri korunur, kart aynı kapsamın firma ayrıntısını açar", async ({ page }) => {
@@ -250,4 +254,12 @@ test("tarihsel eksik gözlem sıfır veya canlı veriyle doldurulmaz", async ({ 
   await expect(alan.getByText("Karşılaştırma için ölçüm eksik")).toHaveCount(13);
   await expect(alan.getByRole("button", { name: "Sonraki", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Bekleyen operasyon işleri" })).toContainText("7 iş");
+});
+
+test("entegrasyon talepleri platform başına firma sayısıyla, çoktan aza gösterilir (ETC-02)", async ({ page }) => {
+  await page.goto("/platform/istatistikler");
+  const kart = page.locator(".card", { has: page.getByText("Entegrasyon talepleri", { exact: true }) });
+  await expect(kart.getByRole("row").nth(1)).toContainText("İdeaSoft");
+  await expect(kart.getByRole("row").nth(1)).toContainText("5");
+  await expect(kart.getByRole("row").nth(2)).toContainText("T-Soft");
 });

@@ -10,6 +10,7 @@ import { platformApi } from "@/lib/platform-api";
 import { type FirmaIstatistikRaporu, type Metrikler, MODUL_ADI, donemFarki } from "@/lib/platform-istatistikleri";
 import { PLANLAR, tarih } from "@/lib/platform-firmalar";
 import { PlatformBuyumeOzeti } from "@/components/platform-buyume-ozeti";
+import { PlatformEntegrasyonTalepleri } from "@/components/platform-entegrasyon-talepleri";
 import { PlatformKullanimaBaslama, PlatformBekleyenIsler } from "@/components/platform-kullanim-operasyon";
 import { PlatformOperasyonGecmisi } from "@/components/platform-operasyon-gecmisi";
 
@@ -100,6 +101,7 @@ function Istatistikler() {
         {([["toplam", "Tüm firmalar", "hepsi"], ["aktif", "Aboneliği aktif", "aktif"], ["deneme", "Deneme", "deneme"], ["geciken", "Ödemesi geciken", "askiyaAlinacak"], ["yaklasan", "7 günde yenilenecek", "yenilenecek"], ["baglantiHatali", "Bağlantı hatası olan", "baglantiHatali"], ["askida", "Askıda", "askida"], ["iptal", "İptal", "iptal"], ["talep", "Bekleyen paket talebi", "talep"]] as const).map(([kod, ad, goster]) => <Link className="platform-metric" key={kod} href={firmaYolu(goster)}><span>{ad}</span><strong>{sayi(veri.guncel[kod])}</strong><small>Firmalarda incele</small></Link>)}
       </div></section>{veri.odeme && <Card title="Dönemdeki sorunlu ödeme denemeleri"><p>Seçili dönemde başarısız ödeme denemesi: <strong>{sayi(veri.odeme.sayilar.basarisiz)}</strong>; sonuçlanmayan: <strong>{sayi(veri.odeme.sayilar.sonuclanmadi)}</strong>. <Link href={`/platform/odeme-raporu?${new URLSearchParams({ sekme: "sorunlu", baslangic, bitis, plan, ...(firma ? { firma } : {}), durum: "basarisiz" })}`}>Sorunlu tahsilat raporunu aç</Link><small className="subtle"> Denemenin başlatıldığı Türkiye günü ve firmanın güncel paketi kullanılır. Test ve canlı ortam dahildir. Bugün seçiliyse sayılar gün boyunca değişebilir.</small></p></Card>}
       <Card title="Güncel paket dağılımı"><TableWrap><thead><tr><th>Paket</th><th>Firma</th></tr></thead><tbody>{veri.guncel.planlar.map((p) => <tr key={p.kod}><td><Link href={firmaYolu("hepsi", p.kod)}>{planAdi(p.kod)}</Link></td><td>{sayi(p.adet)}</td></tr>)}{!veri.guncel.planlar.length && <tr><td colSpan={2}>Seçili kapsamda firma yok.</td></tr>}</tbody></TableWrap></Card>
+      <PlatformEntegrasyonTalepleri />
       {veri.operasyon && <PlatformBekleyenIsler veri={veri.operasyon} filtreYaz={filtreYaz} />}
       {veri.operasyonGecmisi && <PlatformOperasyonGecmisi veri={veri.operasyonGecmisi} filtreYaz={filtreYaz} />}
       <Card id="istatistik-firmalar" title="Ölçülen günlerde gözlenen firmalar"><Field label="Firma ayrıntı ölçütü"><Select value={olcut} onChange={(e) => filtreYaz({ olcut: e.target.value })}><option value="etkin">Giriş veya modül işlemi yapan</option><option value="giris">Giriş yapan</option><option value="islem">Modül işlemi yapan</option></Select></Field>
