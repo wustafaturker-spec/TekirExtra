@@ -147,6 +147,9 @@ describe("kendiliğinden Telegram mesajları (CNL-06/07/08/12)", () => {
     const sabah = new Date(`${trSimdi(gun).gun}T09:00:00+03:00`);
     const once = gelen(A).length;
     await gonderici.tara(sabah);
+    // İz kaydının zamanı veritabanı saatidir; taklit edilen gün bugün değilse (hafta sonu/tatil) "günde bir"
+    // koruması kaydı görsün diye gönderim zamanı taklit edilen ana çekilir.
+    await yonetim.telegramMesaji.updateMany({ where: { tenantId: A.tenant, yon: "giden", tur: "brifing" }, data: { createdAt: sabah } });
     await gonderici.tara(new Date(sabah.getTime() + 60_000));
     const brifingler = gelen(A).slice(once).filter((m) => m.startsWith("☀️ Günlük brifing"));
     expect(brifingler).toHaveLength(1);

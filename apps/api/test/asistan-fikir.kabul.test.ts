@@ -114,10 +114,14 @@ describe("haftalık fikirler (CNL-11)", () => {
     await yonetim.modulAyar.create({ data: { tenantId: T, modul: "telegram", ayarlar: { etkin: true, tutarGoster: true } } });
     await yonetim.telegramBagi.create({ data: { tenantId: T, userId: YON, telegramKullaniciId: BigInt(HESAP), sohbetId: BigInt(HESAP), oturumSurumu: 0, rizaAt: new Date(), createdAt: new Date(Date.now() - 86_400_000) } });
     await gonderici.tara(new Date(buHafta.getTime() - 2 * 3_600_000)); // 08:30: pencere dışı
-    expect(giden.filter((g) => String(g.govde.text ?? "").startsWith("💡"))).toHaveLength(0);
+    expect(giden.filter((g) => String(g.govde.chat_id) === String(HESAP) && String(g.govde.text ?? "").startsWith("💡"))).toHaveLength(0);
     await gonderici.tara(buHafta);
+    // İz kaydının zamanı veritabanı saatidir; taklit edilen gün bugün değilse "haftada bir" koruması
+    // kaydı görsün diye gönderim zamanı taklit edilen ana çekilir.
+    await yonetim.telegramMesaji.updateMany({ where: { tenantId: T, yon: "giden", tur: "fikir" }, data: { createdAt: buHafta } });
     await gonderici.tara(new Date(buHafta.getTime() + 60_000));
-    const fikirMesajlari = giden.filter((g) => String(g.govde.text ?? "").startsWith("💡"));
+    // Kalıcı kabul veritabanında önceki koşuların firmaları da taranır; yalnız bu koşunun hesabı sayılır.
+    const fikirMesajlari = giden.filter((g) => String(g.govde.chat_id) === String(HESAP) && String(g.govde.text ?? "").startsWith("💡"));
     expect(fikirMesajlari).toHaveLength(2);
     expect(String(fikirMesajlari[0].govde.text)).toContain("https://panel.ornek/panel/raporlar?rapor=stok.hareketsiz");
     const dugmeler = (fikirMesajlari[0].govde.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> }).inline_keyboard.flat().map((d) => d.callback_data);
