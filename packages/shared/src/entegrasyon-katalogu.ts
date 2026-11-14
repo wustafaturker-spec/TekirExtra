@@ -55,7 +55,8 @@ export const ENTEGRASYON_KATALOGU: readonly KatalogKaydi[] = [
   { kod: "ticimax", ad: "Ticimax", kategori: "eticaret", durum: "etkin", logo: "ticimax.svg",
     alanlar: [{ alan: "servisAdresi", etiket: "Site adresi", ipucu: "https://www.magazam.com", zorunlu: true }, { alan: "apiAnahtari", etiket: "Web servis yetki kodu", gizli: true, zorunlu: true }],
     anahtarYeri: "Ticimax yönetim paneli › Ayarlar › Web Servis Ayarları › yetki kodu (Sipariş ve Ürün servis yetkileri açık)." },
-  { kod: "ideasoft", ad: "İdeaSoft", kategori: "eticaret", durum: "etkin", yetkiAkisi: "oauth",
+  // ETC-12: adaptör hazır, gerçek mağazayla denenmedi (deneme hesabında API kapalı) → "Yakında"; açmak için durum "etkin".
+  { kod: "ideasoft", ad: "İdeaSoft", kategori: "eticaret", durum: "yakinda", yetkiAkisi: "oauth",
     alanlar: [{ alan: "servisAdresi", etiket: "Mağaza adresi", ipucu: "https://magazam.myideasoft.com", zorunlu: true }, { alan: "saticiId", etiket: "Client ID", zorunlu: true }, { alan: "parola", etiket: "Client Secret", gizli: true, zorunlu: true }],
     anahtarYeri: "İdeaSoft yönetim paneli › Entegrasyonlar › API › Ekle: Yönlendirme (Redirect) adresine aşağıdaki dönüş adresini yazın; izinler: sipariş okuma, ürün okuma ve yazma. Client ID ve Client Secret'ı buraya girip kaydedin, ardından \"İdeaSoft'ta yetki ver\" ile onaylayın." },
   { kod: "tsoft", ad: "T-Soft", kategori: "eticaret", durum: "yakinda", logo: "tsoft.svg" },

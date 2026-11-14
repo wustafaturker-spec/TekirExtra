@@ -63,18 +63,6 @@ test("Shopify bağlantısı: alanlar, varsayılan cari, sınama", async ({ page 
   expect(istekler[1].govde).toEqual({ cariId: "00000000-0000-4000-8000-0000000000c1" });
 });
 
-test("İdeaSoft: dönüş adresi gösterilir, yetki ver İdeaSoft paneline götürür (ETC-12)", async ({ page }) => {
-  await page.route("https://deneme.myideasoft.com/**", (r) => r.fulfill({ contentType: "text/html", body: "<h1>IdeaSoft yetki</h1>" }));
-  const istekler = await kur(page, [{ id: "b-is", aile: "pazaryeri", saglayici: "ideasoft", durum: "pasif", kullaniciAdiMaskeli: "***" }]);
-  await page.locator(".entegrasyon-kart", { hasText: "İdeaSoft" }).getByRole("button", { name: /İdeaSoft bağlantısını düzenle/ }).click();
-  const pencere = page.getByRole("dialog", { name: "İdeaSoft bağlantısı" });
-  const origin = new URL(page.url()).origin;
-  await expect(pencere.getByText(`${origin}/panel/ayarlar/pazaryerleri/ideasoft`)).toBeVisible();
-  await pencere.getByRole("button", { name: "İdeaSoft'ta yetki ver" }).click();
-  await expect(page).toHaveURL(/deneme\.myideasoft\.com\/panel\/auth/);
-  expect(istekler).toContainEqual({ yol: "/pazaryeri/baglantilar/b-is/ideasoft/yetki", yontem: "POST", govde: { donusAdresi: `${origin}/panel/ayarlar/pazaryerleri/ideasoft` } });
-});
-
 test("İdeaSoft dönüşü: kod sunucuya bir kez iletilir ve adresten silinir (ETC-12)", async ({ page }) => {
   const istekler = await kur(page, [], "/panel/ayarlar/pazaryerleri/ideasoft?code=KOD&state=DURUM1234567890ab");
   await expect(page.getByText("Yetki alındı. İdeaSoft bağlantısı çalışıyor; son sipariş #120.")).toBeVisible();
