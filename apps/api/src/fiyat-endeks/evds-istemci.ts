@@ -52,20 +52,12 @@ export function evdsYanitiniAyristir(govde: unknown, evdsKodlari: readonly strin
   return sonuc;
 }
 
-/** Aylık serilerin aralıktaki değerleri. Ağ, yetki ya da biçim hatasında `EvdsHatasi`. */
-export async function evdsAylikDegerler(
-  anahtar: string,
-  evdsKodlari: readonly string[],
-  baslangic: Date,
-  bitis: Date,
-  istek: typeof fetch = fetch,
-): Promise<Map<string, EvdsDegeri[]>> {
+/** EVDS'ye kimlikli JSON isteği; ağ, yetki ya da biçim hatasında `EvdsHatasi`. */
+async function evdsJson(anahtar: string, yol: string, istek: typeof fetch): Promise<unknown> {
   if (!anahtar) throw new EvdsHatasi("EVDS API anahtarı (TCMB_EVDS_API_KEY) tanımlı değil.");
-  if (!evdsKodlari.length) return new Map();
-  const adres = `${EVDS_TABAN_ADRESI}/series=${evdsKodlari.map(encodeURIComponent).join("-")}&startDate=${ddmmyyyy(baslangic)}&endDate=${ddmmyyyy(bitis)}&type=json`;
   let yanit: Response;
   try {
-    yanit = await istek(adres, { headers: { key: anahtar, Accept: "application/json" }, signal: AbortSignal.timeout(ZAMAN_ASIMI_MS), redirect: "manual" });
+    yanit = await istek(`${EVDS_TABAN_ADRESI}/${yol}`, { headers: { key: anahtar, Accept: "application/json" }, signal: AbortSignal.timeout(ZAMAN_ASIMI_MS), redirect: "manual" });
   } catch (hata) {
     throw new EvdsHatasi(`EVDS'ye ulaşılamadı (${hata instanceof Error ? hata.name : "ağ hatası"}).`);
   }
@@ -77,7 +69,55 @@ export async function evdsAylikDegerler(
     await yanit.body?.cancel().catch(() => undefined);
     throw new EvdsHatasi("EVDS JSON yerine başka bir içerik döndürdü; servis adresi değişmiş olabilir.");
   }
-  let govde: unknown;
-  try { govde = await yanit.json(); } catch { throw new EvdsHatasi("EVDS yanıtı okunamadı."); }
+  try { return await yanit.json(); } catch { throw new EvdsHatasi("EVDS yanıtı okunamadı."); }
+}
+
+/** Aylık serilerin aralıktaki değerleri. Ağ, yetki ya da biçim hatasında `EvdsHatasi`. */
+export async function evdsAylikDegerler(
+  anahtar: string,
+  evdsKodlari: readonly string[],
+  baslangic: Date,
+  bitis: Date,
+  istek: typeof fetch = fetch,
+): Promise<Map<string, EvdsDegeri[]>> {
+  if (!anahtar) throw new EvdsHatasi("EVDS API anahtarı (TCMB_EVDS_API_KEY) tanımlı değil.");
+  if (!evdsKodlari.length) return new Map();
+  const govde = await evdsJson(anahtar, `series=${evdsKodlari.map(encodeURIComponent).join("-")}&startDate=${ddmmyyyy(baslangic)}&endDate=${ddmmyyyy(bitis)}&type=json`, istek);
   return evdsYanitiniAyristir(govde, evdsKodlari);
+}
+
+/* ─── Katalog (platform seçicisi) ─────────────────────────────────────── */
+
+export interface EvdsGrubu { kod: string; ad: string; siklik: string; baslangic: string | null; bitis: string | null; kaynak: string | null; arsiv: boolean }
+export interface EvdsSerisi { kod: string; ad: string; siklik: string; baslangic: string | null; bitis: string | null; seviye: number | null; ustKod: string | null }
+
+const metin = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+const bosNull = (v: unknown) => metin(v) || null;
+const liste = (g: unknown): Record<string, unknown>[] => (Array.isArray(g) ? g.filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : []);
+
+/** Veri grupları: kod, ad, sıklık, tarih aralığı. "(Arşiv)" adlı gruplar güncellenmez. */
+export function evdsGruplariniAyristir(govde: unknown): EvdsGrubu[] {
+  return liste(govde).map((g) => {
+    const ad = metin(g.DATAGROUP_NAME);
+    return { kod: metin(g.DATAGROUP_CODE), ad, siklik: metin(g.FREQUENCY_STR), baslangic: bosNull(g.START_DATE), bitis: bosNull(g.END_DATE), kaynak: bosNull(g.DATASOURCE), arsiv: /\(Arşiv\)/i.test(ad) };
+  }).filter((g) => g.kod && g.ad);
+}
+
+export function evdsSerileriniAyristir(govde: unknown): EvdsSerisi[] {
+  return liste(govde).map((s) => ({
+    kod: metin(s.SERIE_CODE), ad: metin(s.SERIE_NAME), siklik: metin(s.FREQUENCY_STR),
+    baslangic: bosNull(s.START_DATE), bitis: bosNull(s.END_DATE),
+    seviye: s.SEVIYE === null || s.SEVIYE === undefined || s.SEVIYE === "" || !Number.isFinite(Number(s.SEVIYE)) ? null : Number(s.SEVIYE),
+    // EVDS üst serisi olmayanda "-1" döndürür.
+    ustKod: metin(s.UST_SERIE_CODE) === "-1" ? null : bosNull(s.UST_SERIE_CODE),
+  })).filter((s) => s.kod && s.ad);
+}
+
+export async function evdsGruplari(anahtar: string, istek: typeof fetch = fetch): Promise<EvdsGrubu[]> {
+  return evdsGruplariniAyristir(await evdsJson(anahtar, "datagroups/mode=0&type=json", istek));
+}
+
+export async function evdsGrupSerileri(anahtar: string, grupKodu: string, istek: typeof fetch = fetch): Promise<EvdsSerisi[]> {
+  if (!/^[A-Za-z0-9_]{2,60}$/.test(grupKodu)) throw new EvdsHatasi("Geçersiz EVDS grup kodu.");
+  return evdsSerileriniAyristir(await evdsJson(anahtar, `serieList/code=${grupKodu}&type=json`, istek));
 }

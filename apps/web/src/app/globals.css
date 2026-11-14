@@ -6272,3 +6272,7 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .endeks-secim { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
 .endeks-secim label { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
 .endeks-tablo td.is-bos { color: var(--text-muted); }
+.evds-secici { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.evds-secici > summary { cursor: pointer; margin-bottom: .75rem; }
+.evds-secici__tablo { max-height: 420px; overflow-y: auto; }
+.evds-secici__tablo tr[aria-disabled="true"] > td { color: var(--text-muted); }

@@ -3,7 +3,11 @@ import { ConfigService } from "@nestjs/config";
 import type { PrismaClient } from "@prisma/client";
 import { PrismaService } from "../core/prisma.service";
 import { cekimDurumuYaz, degerleriYaz, donemMetni, zincirKatsayisiGuncelle } from "./endeks-deposu";
-import { evdsAylikDegerler, EvdsHatasi } from "./evds-istemci";
+import { evdsAylikDegerler, evdsGrupSerileri, evdsGruplari, EvdsHatasi, type EvdsGrubu, type EvdsSerisi } from "./evds-istemci";
+
+/** Platform seçicisinin katalog önbelleği: EVDS kataloğu nadiren değişir, her aramada istenmez. */
+const KATALOG_ONBELLEK_MS = 24 * 60 * 60 * 1000;
+const GRUP_SERI_ONBELLEK_SINIRI = 200;
 
 /** İlk doldurmada geriye bakılan yıl (END-03: en az 10 yıl). */
 export const ILK_DOLDURMA_YIL = 10;
@@ -33,6 +37,30 @@ export class EndeksService {
   private readonly logger = new Logger(EndeksService.name);
 
   constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
+
+  private gruplar?: { at: number; liste: Promise<EvdsGrubu[]> };
+  private readonly grupSerileri = new Map<string, { at: number; liste: Promise<EvdsSerisi[]> }>();
+
+  /** END-26 seçici: EVDS veri grupları (24 saat önbellekli; hata önbelleğe alınmaz). */
+  evdsGruplari(): Promise<EvdsGrubu[]> {
+    if (!this.gruplar || Date.now() - this.gruplar.at > KATALOG_ONBELLEK_MS) {
+      const liste = evdsGruplari(this.anahtar());
+      this.gruplar = { at: Date.now(), liste };
+      liste.catch(() => { if (this.gruplar?.liste === liste) this.gruplar = undefined; });
+    }
+    return this.gruplar.liste;
+  }
+
+  /** END-26 seçici: bir gruptaki seriler (grup başına 24 saat önbellekli). */
+  evdsGrupSerileri(grupKodu: string): Promise<EvdsSerisi[]> {
+    const kayit = this.grupSerileri.get(grupKodu);
+    if (kayit && Date.now() - kayit.at <= KATALOG_ONBELLEK_MS) return kayit.liste;
+    if (this.grupSerileri.size >= GRUP_SERI_ONBELLEK_SINIRI) this.grupSerileri.delete(this.grupSerileri.keys().next().value!);
+    const liste = evdsGrupSerileri(this.anahtar(), grupKodu);
+    this.grupSerileri.set(grupKodu, { at: Date.now(), liste });
+    liste.catch(() => { if (this.grupSerileri.get(grupKodu)?.liste === liste) this.grupSerileri.delete(grupKodu); });
+    return liste;
+  }
 
   anahtarTanimli(): boolean {
     return Boolean(this.config.get<string>("TCMB_EVDS_API_KEY")?.trim());

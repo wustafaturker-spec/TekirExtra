@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { aylikDonem, EVDS_TABAN_ADRESI, evdsAylikDegerler, EvdsHatasi, evdsYanitiniAyristir } from "./evds-istemci";
+import { aylikDonem, EVDS_TABAN_ADRESI, evdsAylikDegerler, evdsGrupSerileri, evdsGruplariniAyristir, EvdsHatasi, evdsSerileriniAyristir, evdsYanitiniAyristir } from "./evds-istemci";
 import { ayAraligi } from "./fiyat-endeks-hesap";
 import { rolErisimi, fiyatEndeksAyariSemasi, FIYAT_ENDEKS_VARSAYILAN } from "./fiyat-endeks-erisim";
 
@@ -71,4 +71,30 @@ describe("END-23 rol erişimi", () => {
 
 it("ay aralığı 60 ayı doğru sayar", () => {
   expect(ayAraligi("2021-12-01", "2026-11-01")).toHaveLength(60);
+});
+
+describe("EVDS kataloğu (platform seçicisi)", () => {
+  it("grupları ayrıştırır ve arşivi işaretler", () => {
+    const g = evdsGruplariniAyristir([
+      { DATAGROUP_CODE: "bie_tukfiy2025", DATAGROUP_NAME: "Tüketici Fiyat Endeksi (2025=100)", FREQUENCY_STR: "AYLIK", START_DATE: "01-01-2005", END_DATE: "01-10-2026", DATASOURCE: "TÜİK" },
+      { DATAGROUP_CODE: "bie_tukfiy4", DATAGROUP_NAME: "Tüketici Fiyat Endeksi (2003=100) (Arşiv) (Arşiv)", FREQUENCY_STR: "AYLIK" },
+      { DATAGROUP_NAME: "kodsuz" }, null,
+    ]);
+    expect(g.map((x) => [x.kod, x.arsiv])).toEqual([["bie_tukfiy2025", false], ["bie_tukfiy4", true]]);
+    expect(g[0]).toMatchObject({ siklik: "AYLIK", baslangic: "01-01-2005", kaynak: "TÜİK" });
+  });
+
+  it("serileri ayrıştırır; seviye yoksa null", () => {
+    const s = evdsSerileriniAyristir([
+      { SERIE_CODE: "TP.TUKFIY2025.GENEL", SERIE_NAME: "Genel Endeks", FREQUENCY_STR: "AYLIK", SEVIYE: "1", UST_SERIE_CODE: "-1" },
+      { SERIE_CODE: "TP.TUKFIY2025.01", SERIE_NAME: "01. Gıda", FREQUENCY_STR: "AYLIK", SEVIYE: "", UST_SERIE_CODE: "TP.TUKFIY2025.GENEL" },
+    ]);
+    expect(s.map((x) => [x.kod, x.seviye, x.ustKod])).toEqual([["TP.TUKFIY2025.GENEL", 1, null], ["TP.TUKFIY2025.01", null, "TP.TUKFIY2025.GENEL"]]);
+  });
+
+  it("geçersiz grup kodunda ağa gitmez", async () => {
+    const istek = vi.fn();
+    await expect(evdsGrupSerileri("k", "bie/../x", istek as unknown as typeof fetch)).rejects.toThrow(EvdsHatasi);
+    expect(istek).not.toHaveBeenCalled();
+  });
 });

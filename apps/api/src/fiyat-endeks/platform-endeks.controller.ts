@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Query } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { PlatformUcu } from "../auth/public.decorator";
@@ -106,6 +106,39 @@ export class PlatformEndeksController {
     ]);
     const zincir = g.oncekiSeriKodu !== undefined ? await zincirKatsayisiGuncelle(db, seriKodu) : undefined;
     return { kod: seriKodu, ...(zincir !== undefined ? { zincir } : {}) };
+  }
+
+  private async evds<T>(is: () => Promise<T>): Promise<T> {
+    try { return await is(); } catch (hata) {
+      if (hata instanceof EvdsHatasi) throw new BadGatewayException(hata.message);
+      throw hata;
+    }
+  }
+
+  /**
+   * Seçici: EVDS veri grupları. Arama ad ve kodda, Türkçe harf duyarsız; arşiv
+   * grupları istenmedikçe gizlenir. En çok 100 sonuç; aylık gruplar önce.
+   */
+  @Get("evds/gruplar")
+  async evdsGruplari(@Query("ara") ara?: string, @Query("arsiv") arsiv?: string) {
+    const gruplar = await this.evds(() => this.endeks.evdsGruplari());
+    const norm = (v: string) => v.toLocaleLowerCase("tr-TR");
+    const kelimeler = norm((ara ?? "").trim().slice(0, 100)).split(/\s+/).filter(Boolean);
+    const uyan = gruplar.filter((g) => (arsiv === "1" || !g.arsiv) && kelimeler.every((k) => norm(`${g.ad} ${g.kod}`).includes(k)));
+    uyan.sort((a, b) => Number(b.siklik === "AYLIK") - Number(a.siklik === "AYLIK") || a.ad.localeCompare(b.ad, "tr"));
+    return { toplam: uyan.length, gruplar: uyan.slice(0, 100) };
+  }
+
+  /** Seçici: gruptaki seriler; katalogda kayıtlı olanlar işaretlenir. */
+  @Get("evds/gruplar/:grup/seriler")
+  async evdsGrupSerileri(@Param("grup") grup: string) {
+    if (!/^[A-Za-z0-9_]{2,60}$/.test(grup)) throw new BadRequestException("Geçersiz EVDS grup kodu.");
+    const [seriler, kayitli] = await Promise.all([
+      this.evds(() => this.endeks.evdsGrupSerileri(grup)),
+      this.platform.db.endeksSerisi.findMany({ select: { kod: true, evdsKodu: true } }),
+    ]);
+    const kayitliKod = new Map(kayitli.map((k) => [k.evdsKodu, k.kod]));
+    return { seriler: seriler.map((s) => ({ ...s, kayitliKod: kayitliKod.get(s.kod.toUpperCase()) ?? null })) };
   }
 
   /** EVDS kodunu kayıt yazmadan sınar: son 24 ayın son değeri. */
