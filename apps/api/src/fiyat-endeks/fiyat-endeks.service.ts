@@ -34,14 +34,15 @@ export class FiyatEndeksService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const erisim = await fiyatEndeksErisimi(tx, tenantId, rol);
       const [seriler, listeler] = await Promise.all([
-        tx.endeksSerisi.findMany({ where: { etkin: true }, orderBy: [{ sira: "asc" }, { kod: "asc" }], select: { kod: true, ad: true, bazYili: true, kaynak: true, sonDonem: true, sonBasariliAt: true } }),
+        tx.endeksSerisi.findMany({ where: { etkin: true }, orderBy: [{ sira: "asc" }, { kod: "asc" }], select: { kod: true, ad: true, tur: true, bazYili: true, kaynak: true, sonDonem: true, sonBasariliAt: true } }),
         erisim.satis ? tx.fiyatListesi.findMany({ where: { aktif: true }, orderBy: { ad: "asc" }, select: { id: true, ad: true, dovizCinsi: true } }) : Promise.resolve([]),
       ]);
       return {
         erisim,
         endeksler: [
-          ...seriler.map((s) => ({ kod: s.kod, ad: s.ad, tur: "endeks" as const, bazYili: s.bazYili, kaynak: s.kaynak, sonDonem: s.sonDonem?.toISOString().slice(0, 7) ?? null, guncellendiAt: s.sonBasariliAt })),
-          ...Object.entries(KUR_ENDEKSLERI).map(([kod, ad]) => ({ kod, ad, tur: "kur" as const, bazYili: null, kaynak: "TCMB", sonDonem: null, guncellendiAt: null })),
+          ...seriler.map((s) => ({ kod: s.kod, ad: s.ad, tur: s.tur === "kur" ? "kur" as const : "endeks" as const, bazYili: s.bazYili, kaynak: s.kaynak, sonDonem: s.tur === "kur" ? null : s.sonDonem?.toISOString().slice(0, 7) ?? null, guncellendiAt: s.sonBasariliAt })),
+          // Katalogda olmayan (durdurulmuş ya da silinmiş) kur yine günlük kurlardan hesaplanabilir.
+          ...Object.entries(KUR_ENDEKSLERI).filter(([kod]) => !seriler.some((s) => s.kod === kod)).map(([kod, ad]) => ({ kod, ad, tur: "kur" as const, bazYili: null, kaynak: "TCMB", sonDonem: null, guncellendiAt: null })),
         ],
         fiyatListeleri: listeler,
         buAy: buAy().slice(0, 7),

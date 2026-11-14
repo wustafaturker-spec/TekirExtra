@@ -183,7 +183,7 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
             <li>Fiyat, kesinleşmiş faturaların satırlarından aylık miktar ağırlıklı ortalamadır: KDV hariç, satır ve genel iskonto düşülmüş tutar × belge kuru ÷ ana birime ({anaBirim}) çevrilmiş miktar. İade, proforma, taslak, iptal ve bedelsiz satırlar girmez.</li>
             <li>Bir ayda {sonuc.esik.enAzSatir} fatura satırından az varsa o ay “yetersiz veri”dir; önceki ayın fiyatı taşınmaz.</li>
             <li>Reel değişim = (1 + fiyat değişimi) ÷ (1 + endeks değişimi) − 1. Endekse göre fiyat = baz fiyat × son endeks ÷ baz endeks.</li>
-            <li>Karşılaştırma, hem fiyatı hem endeksi olan son aya kadar yapılır. Endeksler TCMB EVDS'den (TÜİK), kurlar TCMB döviz alış kurlarının aylık ortalamasından gelir; * işaretli ay ay başından bugüne ortalamadır.</li>
+            <li>Karşılaştırma, hem fiyatı hem endeksi olan son aya kadar yapılır. Endeksler ve kurlar TCMB EVDS'den gelir: endeksler TÜİK'in aylık değerleri, kurlar TCMB döviz alış kurunun aylık ortalamasıdır; * işaretli ay ay başından bugüne ortalamadır.</li>
             {sonuc.endeksler.filter((e) => e.bazYili).map((e) => <li key={e.kod}>{e.ad}: baz {e.bazYili}, son açıklanan dönem {e.sonDonem?.slice(0, 7) ?? "—"}.</li>)}
           </ul>
         </details>

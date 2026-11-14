@@ -98,3 +98,18 @@ describe("EVDS kataloğu (platform seçicisi)", () => {
     expect(istek).not.toHaveBeenCalled();
   });
 });
+
+describe("günlük seriyi aylık ortalamayla çekme (kur)", () => {
+  it("seri başına avg ve aylık sıklık ister; yanıt aylık ayrıştırılır", async () => {
+    const istek = vi.fn(async () => new Response(JSON.stringify({ items: [{ Tarih: "2026-10", TP_DK_USD_A_YTL: "49.31119048", TP_DK_EUR_A_YTL: "55.31326667" }] }), { headers: { "content-type": "application/json" } }));
+    const r = await evdsAylikDegerler("k", ["TP.DK.USD.A.YTL", "TP.DK.EUR.A.YTL"], new Date("2026-10-01T00:00:00Z"), new Date("2026-11-14T00:00:00Z"), istek as unknown as typeof fetch, { gunlukOrtalama: true });
+    const [adres] = istek.mock.calls[0] as unknown as [string];
+    expect(adres.endsWith("&type=json&frequency=5&aggregationTypes=avg-avg")).toBe(true);
+    expect(r.get("TP.DK.USD.A.YTL")).toEqual([{ donem: "2026-10-01", deger: "49.31119048" }]);
+  });
+  it("aylık seride sıklık parametresi eklenmez", async () => {
+    const istek = vi.fn(async () => new Response(JSON.stringify({ items: [] }), { headers: { "content-type": "application/json" } }));
+    await evdsAylikDegerler("k", ["TP.X"], new Date(), new Date(), istek as unknown as typeof fetch);
+    expect((istek.mock.calls[0] as unknown as [string])[0]).not.toContain("frequency");
+  });
+});

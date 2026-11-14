@@ -21,6 +21,8 @@ const { baglamlaCalistir } = await import("../src/core/istek-baglami");
 const { FiyatEndeksService } = await import("../src/fiyat-endeks/fiyat-endeks.service");
 const { aylikToplamlar } = await import("../src/fiyat-endeks/fiyat-endeks-veri");
 const { raporTanimiAl } = await import("../src/core/raporlar/rapor-kayit");
+const { degerleriYaz } = await import("../src/fiyat-endeks/endeks-deposu");
+const { endeksVerisi } = await import("../src/fiyat-endeks/fiyat-endeks-veri");
 await import("../src/fiyat-endeks/fiyat-endeks.raporlar");
 
 const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
@@ -28,6 +30,7 @@ const prisma = new PrismaService();
 const servis = new FiyatEndeksService(prisma);
 const ek = String(Date.now()).slice(-9);
 const SERI = `KABUL${ek}`;
+const KUR = `KABULKUR${ek}`;
 const A = { tenant: randomUUID(), yonetici: randomUUID(), satis: randomUUID(), liste: randomUUID(), cariListeli: randomUUID(), cariListesiz: randomUUID(), stok: randomUUID() };
 const B = { tenant: randomUUID(), yonetici: randomUUID(), cari: randomUUID(), stok: randomUUID() };
 
@@ -80,7 +83,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await yonetim.endeksSerisi.deleteMany({ where: { kod: SERI } });
+  await yonetim.endeksSerisi.deleteMany({ where: { kod: { in: [SERI, KUR] } } });
   await yonetim.$disconnect();
   await prisma.$disconnect();
 });
@@ -165,5 +168,20 @@ describe("toplu rapor (END-12)", () => {
     expect(satirlar).toHaveLength(1);
     expect(satirlar[0]).toMatchObject({ stokId: A.stok, reelDegisim: "-1.22", durum: "Endeksin gerisinde" });
     await expect(ile(A.tenant, A.satis, "satis", () => prisma.tenantIslem(A.tenant, (tx) => tanim.calistir({ filtreler: { baslangic: "2026-01-01", bitis: "2026-03-31", endeks: SERI, taraf: "alis" } }, { tenantId: A.tenant, tx })))).rejects.toThrow(/Alış fiyatı/);
+  });
+});
+
+describe("kur serisi: EVDS aylık ortalaması", () => {
+  it("içinde bulunulan ay her çekimde güncellenir ama revizyon sayılmaz; geçmiş ay değişirse revizyondur", async () => {
+    await yonetim.endeksSerisi.create({ data: { kod: KUR, evdsKodu: `TP.KABULKUR.${ek}`, ad: "Kabul kuru", kaynakSiklik: "gunluk", tur: "kur" } });
+    await degerleriYaz(yonetim, KUR, [{ donem: "2026-10-01", deger: "49.31" }, { donem: "2026-11-01", deger: "50.00" }], "evds", "2026-11-01");
+    const ikinci = await degerleriYaz(yonetim, KUR, [{ donem: "2026-10-01", deger: "49.31" }, { donem: "2026-11-01", deger: "50.02" }], "evds", "2026-11-01");
+    expect(ikinci).toMatchObject({ yeni: 0, revize: 0 });
+    const ucuncu = await degerleriYaz(yonetim, KUR, [{ donem: "2026-10-01", deger: "49.35" }], "evds", "2026-11-01");
+    expect(ucuncu.revize).toBe(1);
+    const v = await prisma.tenantIslem(A.tenant, (tx) => endeksVerisi(tx, KUR, "2026-10-01", "2026-11-01"));
+    expect(v.tur).toBe("kur");
+    expect([...v.degerler.entries()].map(([a, d]) => [a, d.toString()]).sort()).toEqual([["2026-10-01", "49.35"], ["2026-11-01", "50.02"]]);
+    expect(await yonetim.endeksDegerRevizyonu.count({ where: { seriKodu: KUR } })).toBe(1);
   });
 });

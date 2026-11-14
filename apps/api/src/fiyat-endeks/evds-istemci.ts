@@ -72,17 +72,23 @@ async function evdsJson(anahtar: string, yol: string, istek: typeof fetch): Prom
   try { return await yanit.json(); } catch { throw new EvdsHatasi("EVDS yanıtı okunamadı."); }
 }
 
-/** Aylık serilerin aralıktaki değerleri. Ağ, yetki ya da biçim hatasında `EvdsHatasi`. */
+/**
+ * Aylık değerler. `gunlukOrtalama`: günlük seri (döviz kuru) EVDS'de aylık
+ * ortalamaya çevrilir (`frequency=5`, seri başına `avg`); içinde bulunulan ay
+ * ay başından bugüne ortalamadır. Ağ, yetki ya da biçim hatasında `EvdsHatasi`.
+ */
 export async function evdsAylikDegerler(
   anahtar: string,
   evdsKodlari: readonly string[],
   baslangic: Date,
   bitis: Date,
   istek: typeof fetch = fetch,
+  secenek: { gunlukOrtalama?: boolean } = {},
 ): Promise<Map<string, EvdsDegeri[]>> {
   if (!anahtar) throw new EvdsHatasi("EVDS API anahtarı (TCMB_EVDS_API_KEY) tanımlı değil.");
   if (!evdsKodlari.length) return new Map();
-  const govde = await evdsJson(anahtar, `series=${evdsKodlari.map(encodeURIComponent).join("-")}&startDate=${ddmmyyyy(baslangic)}&endDate=${ddmmyyyy(bitis)}&type=json`, istek);
+  const ortalama = secenek.gunlukOrtalama ? `&frequency=5&aggregationTypes=${evdsKodlari.map(() => "avg").join("-")}` : "";
+  const govde = await evdsJson(anahtar, `series=${evdsKodlari.map(encodeURIComponent).join("-")}&startDate=${ddmmyyyy(baslangic)}&endDate=${ddmmyyyy(bitis)}&type=json${ortalama}`, istek);
   return evdsYanitiniAyristir(govde, evdsKodlari);
 }
 

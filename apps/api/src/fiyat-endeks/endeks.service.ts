@@ -70,11 +70,11 @@ export class EndeksService {
     return this.config.get<string>("TCMB_EVDS_API_KEY")?.trim() ?? "";
   }
 
-  /** Platform "sına": EVDS kodunun son 24 ayı; kayıt yazılmaz. */
-  async sina(evdsKodu: string) {
+  /** Platform "sına": EVDS kodunun son 24 ayı; kayıt yazılmaz. Günlük seride aylık ortalama istenir. */
+  async sina(evdsKodu: string, kaynakSiklik: "aylik" | "gunluk" = "aylik") {
     const bitis = new Date();
-    const degerler = (await evdsAylikDegerler(this.anahtar(), [evdsKodu], ayEkle(ayBasi(bitis), -24), bitis)).get(evdsKodu) ?? [];
-    if (!degerler.length) throw new EvdsHatasi("Bu kodla son 24 ayda aylık değer gelmedi; kodu ve sıklığı kontrol edin.");
+    const degerler = (await evdsAylikDegerler(this.anahtar(), [evdsKodu], ayEkle(ayBasi(bitis), -24), bitis, fetch, { gunlukOrtalama: kaynakSiklik === "gunluk" })).get(evdsKodu) ?? [];
+    if (!degerler.length) throw new EvdsHatasi(kaynakSiklik === "gunluk" ? "Bu kodla son 24 ayda değer gelmedi; kodu kontrol edin." : "Bu kodla son 24 ayda aylık değer gelmedi; kod ya da sıklık yanlış olabilir (günlük seriyse \"günlük → aylık ortalama\" seçin).");
     const son = degerler[degerler.length - 1];
     return { ayAdedi: degerler.length, ilkDonem: degerler[0].donem, sonDonem: son.donem, sonDeger: son.deger };
   }
@@ -97,10 +97,17 @@ export class EndeksService {
         : s.sonDonem ? ayEkle(s.sonDonem, -REVIZYON_PENCERESI_AY)
           : ayEkle(ayBasi(bugun), -12 * ILK_DOLDURMA_YIL));
     const baslangic = new Date(Math.min(...baslangiclar.map((t) => t.getTime())));
+    // Aylık seriler ve aylık ortalamaya çevrilen günlük seriler ayrı istekte çekilir.
+    const buAyMetni = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7) + "-01";
 
     let veriler: Map<string, { donem: string; deger: string }[]>;
     try {
-      veriler = await evdsAylikDegerler(this.anahtar(), seriler.map((s) => s.evdsKodu), baslangic, bugun);
+      veriler = new Map();
+      for (const gunluk of [false, true]) {
+        const grup = seriler.filter((s) => (s.kaynakSiklik === "gunluk") === gunluk);
+        if (!grup.length) continue;
+        for (const [k, v] of await evdsAylikDegerler(this.anahtar(), grup.map((s) => s.evdsKodu), baslangic, bugun, fetch, { gunlukOrtalama: gunluk })) veriler.set(k, v);
+      }
     } catch (hata) {
       const mesaj = hata instanceof EvdsHatasi ? hata.message : "EVDS çekimi beklenmeyen bir hatayla durdu.";
       if (!(hata instanceof EvdsHatasi)) this.logger.error(`Endeks çekimi: ${hata instanceof Error ? hata.message : String(hata)}`);
@@ -118,7 +125,7 @@ export class EndeksService {
           sonuclar.push({ kod: s.kod, basarili: false, hata: mesaj });
           continue;
         }
-        const yazim = await degerleriYaz(db, s.kod, degerler, "evds");
+        const yazim = await degerleriYaz(db, s.kod, degerler, "evds", s.kaynakSiklik === "gunluk" ? buAyMetni : null);
         const sonDonem = degerler.map((d) => d.donem).sort().at(-1)!;
         const eskiSon = s.sonDonem ? donemMetni(s.sonDonem) : null;
         await cekimDurumuYaz(db, s.kod, { hata: null, sonDonem: eskiSon && eskiSon > sonDonem ? eskiSon : sonDonem });

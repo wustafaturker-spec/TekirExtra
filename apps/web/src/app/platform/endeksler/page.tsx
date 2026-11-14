@@ -8,7 +8,7 @@ import { platformApi } from "@/lib/platform-api";
 import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 
 interface Seri {
-  kod: string; evdsKodu: string; ad: string; siklik: string; bazYili: string | null; kaynak: string; etkin: boolean; sira: number;
+  kod: string; evdsKodu: string; ad: string; siklik: string; kaynakSiklik: "aylik" | "gunluk"; tur: "endeks" | "kur"; bazYili: string | null; kaynak: string; etkin: boolean; sira: number;
   oncekiSeriKodu: string | null; zincirKatsayisi: string | null; zincirDonemi: string | null;
   sonCekimAt: string | null; sonBasariliAt: string | null; sonDonem: string | null; sonHata: string | null;
   degerSayisi: number; ilkDonem: string | null;
@@ -52,7 +52,7 @@ export default function PlatformEndeksler() {
     <Alert tone="error">{hata || listeHatasi}</Alert>
     <Alert tone="success">{basari}</Alert>
     {veri && !veri.anahtarTanimli && <Alert tone="warning">EVDS API anahtarı (TCMB_EVDS_API_KEY) sunucuda tanımlı değil; çekim ve sınama yapılamaz.</Alert>}
-    <div className="platform-workflow"><LineChart size={20} aria-hidden="true" /><div><strong>Worker serileri günde dört kez çeker.</strong><span>Son açıklanan dönemden 6 ay geriye bakılır; TÜİK revizyonları revizyon geçmişine düşer. Kur karşılaştırması TCMB günlük kurlarından yapılır, burada yönetilmez.</span></div></div>
+    <div className="platform-workflow"><LineChart size={20} aria-hidden="true" /><div><strong>Worker serileri günde dört kez çeker.</strong><span>Son açıklanan dönemden 6 ay geriye bakılır; TÜİK revizyonları revizyon geçmişine düşer. Döviz kurları EVDS'den aylık ortalama olarak gelir; içinde bulunulan ayın değeri her çekimde güncellenir ve revizyon sayılmaz.</span></div></div>
 
     <Card title="Seriler" pad={false}>
       <div className="platform-list-caption" role="status">{yukleniyor ? "Seriler yükleniyor…" : `${veri?.seriler.length ?? 0} seri`}</div>
@@ -63,7 +63,7 @@ export default function PlatformEndeksler() {
             <tr key={s.kod} className="row-link" tabIndex={0} role="button" aria-label={`${s.ad} ayrıntısı`} aria-pressed={secili === s.kod}
               onClick={() => setSecili(s.kod)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSecili(s.kod); } }}>
               <td data-label="Kod"><strong>{s.kod}</strong></td>
-              <td data-label="Seri">{s.ad}<div className="muted">{s.evdsKodu}</div></td>
+              <td data-label="Seri">{s.ad}<div className="muted">{s.evdsKodu}{s.kaynakSiklik === "gunluk" ? " · günlük → aylık ortalama" : ""}</div>{s.tur === "kur" && <Badge variant="info">Kur</Badge>}</td>
               <td data-label="Baz">{s.bazYili ?? "—"}</td>
               <td data-label="Son dönem">{ay(s.sonDonem)}</td>
               <td data-label="Değer">{s.degerSayisi}<div className="muted">{s.ilkDonem ? `${ay(s.ilkDonem)}'dan` : ""}</div></td>
@@ -144,12 +144,13 @@ function YeniSeri({ seriler, islem, calistir, anahtarVar }: { seriler: Seri[]; i
   const kimlik = useId();
   const [kod, setKod] = useState(""), [evdsKodu, setEvdsKodu] = useState(""), [ad, setAd] = useState("");
   const [bazYili, setBazYili] = useState(""), [kaynak, setKaynak] = useState("TÜİK"), [onceki, setOnceki] = useState("");
-  const [sinama, setSinama] = useState<{ evdsKodu: string; metin: string } | null>(null);
+  const [kaynakSiklik, setKaynakSiklik] = useState<"aylik" | "gunluk">("aylik"), [tur, setTur] = useState<"endeks" | "kur">("endeks");
+  const [sinama, setSinama] = useState<{ evdsKodu: string; siklik: string; metin: string } | null>(null);
 
-  const sina = (kodu = evdsKodu) => calistir(async () => {
-    const r = await platformApi<{ ayAdedi: number; ilkDonem: string; sonDonem: string; sonDeger: string }>("/platform/endeksler/sina", { method: "POST", body: JSON.stringify({ evdsKodu: kodu }) });
-    const metin = `${kodu.toUpperCase()}: son 24 ayda ${r.ayAdedi} değer; son dönem ${ay(r.sonDonem)} = ${sayi(r.sonDeger)}.`;
-    setSinama({ evdsKodu: kodu.trim().toUpperCase(), metin });
+  const sina = (kodu = evdsKodu, siklik = kaynakSiklik) => calistir(async () => {
+    const r = await platformApi<{ ayAdedi: number; ilkDonem: string; sonDonem: string; sonDeger: string }>("/platform/endeksler/sina", { method: "POST", body: JSON.stringify({ evdsKodu: kodu, kaynakSiklik: siklik }) });
+    const metin = `${kodu.toUpperCase()}${siklik === "gunluk" ? " (aylık ortalama)" : ""}: son 24 ayda ${r.ayAdedi} değer; son dönem ${ay(r.sonDonem)} = ${sayi(r.sonDeger)}.`;
+    setSinama({ evdsKodu: kodu.trim().toUpperCase(), siklik, metin });
     return metin;
   });
   /** Seçiciden gelen seri formu doldurur ve hemen sınanır; kod önerisi düzenlenebilir. */
@@ -160,28 +161,43 @@ function YeniSeri({ seriler, islem, calistir, anahtarVar }: { seriler: Seri[]; i
     setAd(`${grupAdi} — ${s.ad}`.slice(0, 160));
     setBazYili(/\((\d{4}(?:-\d{4})?=100)\)/.exec(g.ad)?.[1] ?? "");
     if (g.kaynak) setKaynak(g.kaynak.slice(0, 60));
-    void sina(s.kod);
+    // Günlük seri (döviz kuru) EVDS'de aylık ortalamaya çevrilerek çekilir.
+    const siklik = s.siklik === "GÜNLÜK" ? "gunluk" : "aylik";
+    setKaynakSiklik(siklik); setTur(/^TP\.DK\./i.test(s.kod) ? "kur" : "endeks");
+    void sina(s.kod, siklik);
   };
   const ekle = (e: FormEvent) => {
     e.preventDefault();
     void calistir(async () => {
-      await platformApi("/platform/endeksler", { method: "POST", body: JSON.stringify({ kod: kod.trim(), evdsKodu: evdsKodu.trim(), ad: ad.trim(), bazYili: bazYili.trim() || null, kaynak: kaynak.trim() || "TÜİK", oncekiSeriKodu: onceki || null }) });
-      setKod(""); setEvdsKodu(""); setAd(""); setBazYili(""); setOnceki(""); setSinama(null);
+      await platformApi("/platform/endeksler", { method: "POST", body: JSON.stringify({ kod: kod.trim(), evdsKodu: evdsKodu.trim(), ad: ad.trim(), bazYili: bazYili.trim() || null, kaynak: kaynak.trim() || "TÜİK", oncekiSeriKodu: onceki || null, kaynakSiklik, tur }) });
+      setKod(""); setEvdsKodu(""); setAd(""); setBazYili(""); setOnceki(""); setSinama(null); setKaynakSiklik("aylik"); setTur("endeks");
       return `${kod.trim()} eklendi. Değerleri doldurmak için seriyi seçip “Şimdi çek” deyin.`;
     });
   };
-  const sinandi = sinama?.evdsKodu === evdsKodu.trim().toUpperCase();
+  const sinandi = sinama?.evdsKodu === evdsKodu.trim().toUpperCase() && sinama.siklik === kaynakSiklik;
 
   return <Card title="Yeni seri">
     {anahtarVar && <EvdsSecici onSec={secildi} />}
     <form className="stack" onSubmit={ekle}>
-      <p className="muted">EVDS seri kodunu önce sınayın; yalnız aylık seriler eklenir. Kod firmaların ekranında ve yapay zekâ araçlarında kullanılır.</p>
+      <p className="muted">EVDS seri kodunu önce sınayın. Aylık seriler olduğu gibi, günlük seriler (döviz kurları) aylık ortalamaya çevrilerek saklanır. Kod firmaların ekranında ve yapay zekâ araçlarında kullanılır.</p>
       <div className="form-grid">
         <Field label="Kod" htmlFor={`${kimlik}-kod`}><Input id={`${kimlik}-kod`} value={kod} onChange={(e) => setKod(e.target.value.toUpperCase())} placeholder="TUFE_GIDA" maxLength={40} required pattern="[A-Z][A-Z0-9_]{1,39}" /></Field>
         <Field label="EVDS seri kodu" htmlFor={`${kimlik}-evds`}><Input id={`${kimlik}-evds`} value={evdsKodu} onChange={(e) => setEvdsKodu(e.target.value)} placeholder="TP.TUKFIY2025.01" maxLength={80} required /></Field>
         <Field label="Ad" htmlFor={`${kimlik}-ad`}><Input id={`${kimlik}-ad`} value={ad} onChange={(e) => setAd(e.target.value)} maxLength={160} required /></Field>
         <Field label="Baz yılı" htmlFor={`${kimlik}-baz`}><Input id={`${kimlik}-baz`} value={bazYili} onChange={(e) => setBazYili(e.target.value)} maxLength={20} placeholder="2025=100" /></Field>
         <Field label="Kaynak" htmlFor={`${kimlik}-kaynak`}><Input id={`${kimlik}-kaynak`} value={kaynak} onChange={(e) => setKaynak(e.target.value)} maxLength={60} /></Field>
+        <Field label="EVDS'deki sıklık" htmlFor={`${kimlik}-siklik`}>
+          <Select id={`${kimlik}-siklik`} value={kaynakSiklik} onChange={(e) => setKaynakSiklik(e.target.value as "aylik" | "gunluk")}>
+            <option value="aylik">Aylık seri</option>
+            <option value="gunluk">Günlük seri → aylık ortalama</option>
+          </Select>
+        </Field>
+        <Field label="Tür" htmlFor={`${kimlik}-tur`}>
+          <Select id={`${kimlik}-tur`} value={tur} onChange={(e) => setTur(e.target.value as "endeks" | "kur")}>
+            <option value="endeks">Endeks</option>
+            <option value="kur">Kur (içinde bulunulan ay kısmi ortalama)</option>
+          </Select>
+        </Field>
         <Field label="Zincirlenecek önceki seri" htmlFor={`${kimlik}-onceki`}>
           <Select id={`${kimlik}-onceki`} value={onceki} onChange={(e) => setOnceki(e.target.value)}>
             <option value="">— Yok —</option>
@@ -247,11 +263,11 @@ function EvdsSecici({ onSec }: { onSec: (s: EvdsSeri, g: EvdsGrup) => void }) {
       </div>
       <Field label="Serilerde süz" htmlFor={`${kimlik}-seri`}><Input id={`${kimlik}-seri`} value={seriAra} onChange={(e) => setSeriAra(e.target.value)} placeholder="ör. gıda, genel" maxLength={100} /></Field>
       <Alert tone="error">{seriler.hata}</Alert>
-      <div className="platform-list-caption" role="status">{seriler.yukleniyor ? "Seriler yükleniyor…" : `${gorunenSeriler.length} seri · yalnız aylık ve kayıtlı olmayan seriler seçilebilir`}</div>
+      <div className="platform-list-caption" role="status">{seriler.yukleniyor ? "Seriler yükleniyor…" : `${gorunenSeriler.length} seri · aylık ve günlük (aylık ortalamayla) kayıtlı olmayan seriler seçilebilir`}</div>
       {gorunenSeriler.length > 0 && <TableWrap className="platform-responsive-table evds-secici__tablo">
         <thead><tr><th>Seri</th><th>EVDS kodu</th><th>Sıklık</th><th>Dönem</th><th>Durum</th></tr></thead>
         <tbody>{gorunenSeriler.map((s) => {
-          const secilir = s.siklik === "AYLIK" && !s.kayitliKod;
+          const secilir = (s.siklik === "AYLIK" || s.siklik === "GÜNLÜK") && !s.kayitliKod;
           const sec = () => onSec(s, grup);
           return <tr key={s.kod} className={secilir ? "row-link" : undefined} tabIndex={secilir ? 0 : undefined} role={secilir ? "button" : undefined} aria-disabled={!secilir || undefined}
             aria-label={secilir ? `${s.ad} serisini forma al` : undefined} onClick={secilir ? sec : undefined} onKeyDown={secilir ? satirTusu(sec) : undefined}>
@@ -259,7 +275,7 @@ function EvdsSecici({ onSec }: { onSec: (s: EvdsSeri, g: EvdsGrup) => void }) {
             <td data-label="EVDS kodu"><code>{s.kod}</code></td>
             <td data-label="Sıklık">{s.siklik || "—"}</td>
             <td data-label="Dönem">{aralik(s.baslangic, s.bitis)}</td>
-            <td data-label="Durum">{s.kayitliKod ? <Badge variant="success">Kayıtlı: {s.kayitliKod}</Badge> : s.siklik !== "AYLIK" ? <Badge variant="neutral">Aylık değil</Badge> : <Badge variant="info">Seç</Badge>}</td>
+            <td data-label="Durum">{s.kayitliKod ? <Badge variant="success">Kayıtlı: {s.kayitliKod}</Badge> : !secilir ? <Badge variant="neutral">Desteklenmiyor</Badge> : s.siklik === "GÜNLÜK" ? <Badge variant="info">Seç (aylık ortalama)</Badge> : <Badge variant="info">Seç</Badge>}</td>
           </tr>;
         })}</tbody>
       </TableWrap>}

@@ -19,7 +19,7 @@ export interface YazimSonucu { yeni: number; revize: number; elleUyusmaz: number
  * Değerleri yazar. Aynı dönem farklı gelirse (TÜİK revizyonu ya da elle
  * girilmiş değerin EVDS'deki karşılığı) eski değer revizyon tablosuna düşer.
  */
-export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDegeri[], kaynak: "evds" | "elle"): Promise<YazimSonucu> {
+export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDegeri[], kaynak: "evds" | "elle", kismiDonem?: string | null): Promise<YazimSonucu> {
   const sonuc: YazimSonucu = { yeni: 0, revize: 0, elleUyusmaz: 0 };
   if (!degerler.length) return sonuc;
   const mevcut = new Map(
@@ -36,6 +36,11 @@ export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDeger
     if (eski.deger.equals(deger)) {
       // Elle girilmiş değer EVDS'de aynı geldiyse kaynak EVDS olur; revizyon değildir.
       if (eski.kaynak !== kaynak && kaynak === "evds") islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { kaynak, alindiAt: simdi } }));
+      continue;
+    }
+    // Kur serisinde içinde bulunulan ay ay başından bugüne ortalamadır; her çekimde değişir, revizyon sayılmaz.
+    if (kismiDonem && d.donem === kismiDonem && eski.kaynak === kaynak) {
+      islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, alindiAt: simdi } }));
       continue;
     }
     if (eski.kaynak === "elle" && kaynak === "evds") sonuc.elleUyusmaz++;
@@ -87,6 +92,7 @@ export async function zincirKatsayisiGuncelle(db: Db, kod: string): Promise<{ ka
 export interface SeriOkumasi {
   kod: string;
   ad: string;
+  tur: "endeks" | "kur";
   bazYili: string | null;
   sonDonem: string | null;
   /** dönem (YYYY-MM-01) → değer; zincirlenen aylar dahil. */
@@ -113,5 +119,5 @@ export async function seriOku(db: Okuyucu, kod: string, baslangic: string, bitis
       zincirlenenDonemSayisi++;
     }
   }
-  return { kod: seri.kod, ad: seri.ad, bazYili: seri.bazYili, sonDonem: seri.sonDonem ? donemMetni(seri.sonDonem) : null, degerler, zincirlenenDonemSayisi };
+  return { kod: seri.kod, ad: seri.ad, tur: seri.tur === "kur" ? "kur" : "endeks", bazYili: seri.bazYili, sonDonem: seri.sonDonem ? donemMetni(seri.sonDonem) : null, degerler, zincirlenenDonemSayisi };
 }

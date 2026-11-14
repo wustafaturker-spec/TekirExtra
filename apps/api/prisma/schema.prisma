@@ -8779,8 +8779,12 @@ model EndeksSerisi {
   /// TCMB EVDS seri kodu (ör. TP.TUKFIY2025.GENEL); platformda sınanarak girilir.
   evdsKodu        String    @unique @map("evds_kodu") @db.VarChar(80)
   ad              String    @db.VarChar(160)
-  /// Yalnız aylık seriler (kur günlük olduğu için tcmb_kurlari'ndan okunur).
+  /// Depodaki sıklık: her zaman aylık.
   siklik          String    @default("aylik") @db.VarChar(10)
+  /// EVDS'deki sıklık: aylik = seri aylıktır; gunluk = günlük seri EVDS'de aylık ortalamaya çevrilerek çekilir (döviz kurları).
+  kaynakSiklik    String    @default("aylik") @map("kaynak_siklik") @db.VarChar(10)
+  /// endeks | kur — kurda içinde bulunulan ayın değeri ay başından bugüne ortalamadır.
+  tur             String    @default("endeks") @db.VarChar(10)
   bazYili         String?   @map("baz_yili") @db.VarChar(20)
   kaynak          String    @default("TÜİK") @db.VarChar(60)
   etkin           Boolean   @default(true)

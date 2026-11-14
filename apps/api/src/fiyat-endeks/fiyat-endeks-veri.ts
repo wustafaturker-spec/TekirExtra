@@ -6,7 +6,11 @@ import type { FiyatTarafi } from "./fiyat-endeks-erisim";
 
 type Tx = Prisma.TransactionClient;
 
-/** END-02: kur karşılaştırması TCMB günlük kurlarının aylık ortalamasıdır (alış); kopyalanmaz. */
+/**
+ * END-02: kur karşılaştırması TCMB döviz alış kurunun aylık ortalamasıdır.
+ * Asıl kaynak ortak endeks deposundaki USD/EUR serileridir (EVDS aylık
+ * ortalaması); katalogda değer yoksa günlük `tcmb_kurlari`'ndan hesaplanır.
+ */
 export const KUR_ENDEKSLERI = { USD: "ABD doları (TCMB döviz alış, aylık ortalama)", EUR: "Euro (TCMB döviz alış, aylık ortalama)" } as const;
 export type KurEndeksi = keyof typeof KUR_ENDEKSLERI;
 export const kurEndeksiMi = (kod: string): kod is KurEndeksi => kod in KUR_ENDEKSLERI;
@@ -87,6 +91,8 @@ export interface EndeksVerisi {
 
 /** Endeks ya da kur serisinin aralıktaki aylık değerleri. Bilinmeyen kod 400. */
 export async function endeksVerisi(tx: Tx, kod: string, baslangic: string, bitis: string): Promise<EndeksVerisi> {
+  const seri = await seriOku(tx, kod, baslangic, bitis);
+  if (seri && (seri.degerler.size || !kurEndeksiMi(kod))) return seri;
   if (kurEndeksiMi(kod)) {
     const sonrakiAy = new Date(`${bitis}T00:00:00.000Z`);
     sonrakiAy.setUTCMonth(sonrakiAy.getUTCMonth() + 1);
@@ -103,7 +109,5 @@ export async function endeksVerisi(tx: Tx, kod: string, baslangic: string, bitis
       zincirlenenDonemSayisi: 0,
     };
   }
-  const seri = await seriOku(tx, kod, baslangic, bitis);
-  if (!seri) throw new BadRequestException(`Bilinmeyen endeks: ${kod}`);
-  return { ...seri, tur: "endeks" };
+  throw new BadRequestException(`Bilinmeyen endeks: ${kod}`);
 }

@@ -7,10 +7,10 @@ import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
 import { donemMetni, zincirKatsayisiGuncelle } from "./endeks-deposu";
 import { EndeksService } from "./endeks.service";
 import { EvdsHatasi } from "./evds-istemci";
-import { kurEndeksiMi } from "./fiyat-endeks-veri";
 
-const kod = z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,39}$/, "Kod büyük harf, rakam ve alt çizgiden oluşmalı (ör. TUFE)")
-  .refine((k) => !kurEndeksiMi(k), "USD ve EUR kur karşılaştırması için ayrılmıştır");
+const kod = z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,39}$/, "Kod büyük harf, rakam ve alt çizgiden oluşmalı (ör. TUFE)");
+const kaynakSiklik = z.enum(["aylik", "gunluk"]);
+const tur = z.enum(["endeks", "kur"]);
 const evdsKodu = z.string().trim().toUpperCase().regex(/^TP\.[A-Z0-9_.]{1,76}$/, "EVDS seri kodu TP. ile başlamalı (ör. TP.TUKFIY2025.GENEL)");
 const ortak = {
   ad: z.string().trim().min(3, "Ad en az 3 karakter").max(160),
@@ -19,9 +19,10 @@ const ortak = {
   sira: z.number().int().min(0).max(10_000).optional(),
   oncekiSeriKodu: kod.nullable().optional(),
 };
-const ekleSemasi = z.object({ kod, evdsKodu, ...ortak }).strict();
-const guncelleSemasi = z.object({ ...ortak, ad: ortak.ad.optional(), etkin: z.boolean().optional() }).strict();
-const sinaSemasi = z.object({ evdsKodu }).strict();
+// Kaynak sıklığı eklemede belirlenir, sonradan değişmez (değerler farklı yöntemle hesaplanmış olurdu).
+const ekleSemasi = z.object({ kod, evdsKodu, ...ortak, kaynakSiklik: kaynakSiklik.default("aylik"), tur: tur.default("endeks") }).strict();
+const guncelleSemasi = z.object({ ...ortak, ad: ortak.ad.optional(), etkin: z.boolean().optional(), tur: tur.optional() }).strict();
+const sinaSemasi = z.object({ evdsKodu, kaynakSiklik: kaynakSiklik.default("aylik") }).strict();
 const cekSemasi = z.object({ kod: kod.optional(), gecmisYil: z.number().int().min(1).max(40).optional() }).strict();
 
 function ayristir<T>(sema: z.ZodType<T>, govde: unknown): T {
@@ -57,7 +58,7 @@ export class PlatformEndeksController {
       seriler: seriler.map((s) => {
         const c = sayim.get(s.kod);
         return {
-          kod: s.kod, evdsKodu: s.evdsKodu, ad: s.ad, siklik: s.siklik, bazYili: s.bazYili, kaynak: s.kaynak, etkin: s.etkin, sira: s.sira,
+          kod: s.kod, evdsKodu: s.evdsKodu, ad: s.ad, siklik: s.siklik, kaynakSiklik: s.kaynakSiklik, tur: s.tur, bazYili: s.bazYili, kaynak: s.kaynak, etkin: s.etkin, sira: s.sira,
           oncekiSeriKodu: s.oncekiSeriKodu, zincirKatsayisi: s.zincirKatsayisi?.toString() ?? null, zincirDonemi: s.zincirDonemi ? donemMetni(s.zincirDonemi) : null,
           sonCekimAt: s.sonCekimAt, sonBasariliAt: s.sonBasariliAt, sonDonem: s.sonDonem ? donemMetni(s.sonDonem) : null, sonHata: s.sonHata,
           degerSayisi: c?._count._all ?? 0, ilkDonem: c?._min.donem ? donemMetni(c._min.donem) : null,
@@ -73,8 +74,8 @@ export class PlatformEndeksController {
     if (g.oncekiSeriKodu && !(await db.endeksSerisi.findUnique({ where: { kod: g.oncekiSeriKodu } }))) throw new BadRequestException("Zincirlenecek önceki seri bulunamadı.");
     try {
       await db.$transaction([
-        db.endeksSerisi.create({ data: { kod: g.kod, evdsKodu: g.evdsKodu, ad: g.ad, bazYili: g.bazYili ?? null, kaynak: g.kaynak ?? "TÜİK", sira: g.sira ?? 100, oncekiSeriKodu: g.oncekiSeriKodu ?? null } }),
-        this.olay("endeks_serisi_eklendi", { kod: g.kod, evdsKodu: g.evdsKodu, ad: g.ad }),
+        db.endeksSerisi.create({ data: { kod: g.kod, evdsKodu: g.evdsKodu, ad: g.ad, bazYili: g.bazYili ?? null, kaynak: g.kaynak ?? "TÜİK", sira: g.sira ?? 100, oncekiSeriKodu: g.oncekiSeriKodu ?? null, kaynakSiklik: g.kaynakSiklik, tur: g.tur } }),
+        this.olay("endeks_serisi_eklendi", { kod: g.kod, evdsKodu: g.evdsKodu, ad: g.ad, kaynakSiklik: g.kaynakSiklik, tur: g.tur }),
       ]);
     } catch (hata) {
       if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Bu kod ya da EVDS kodu zaten kayıtlı.");
@@ -99,6 +100,7 @@ export class PlatformEndeksController {
       ...(g.ad !== undefined ? { ad: g.ad } : {}), ...(g.bazYili !== undefined ? { bazYili: g.bazYili } : {}),
       ...(g.kaynak !== undefined ? { kaynak: g.kaynak } : {}), ...(g.sira !== undefined ? { sira: g.sira } : {}),
       ...(g.etkin !== undefined ? { etkin: g.etkin } : {}), ...(g.oncekiSeriKodu !== undefined ? { oncekiSeriKodu: g.oncekiSeriKodu } : {}),
+      ...(g.tur !== undefined ? { tur: g.tur } : {}),
     };
     await db.$transaction([
       db.endeksSerisi.update({ where: { kod: seriKodu }, data: veri }),
@@ -145,7 +147,8 @@ export class PlatformEndeksController {
   @Post("sina")
   async sina(@Body() govde: unknown) {
     try {
-      return await this.endeks.sina(ayristir(sinaSemasi, govde).evdsKodu);
+      const g = ayristir(sinaSemasi, govde);
+      return await this.endeks.sina(g.evdsKodu, g.kaynakSiklik);
     } catch (hata) {
       if (hata instanceof EvdsHatasi) throw new BadGatewayException(hata.message);
       throw hata;
