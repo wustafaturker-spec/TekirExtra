@@ -14,6 +14,7 @@ const AYRI_EKRANLAR = [
   { modul: "vergi", ad: "Vergi ve SGK Takvimi", aciklama: "KDV, muhtasar ve SGK için son tarih, ön hesap tutar ve ödeme takibi (ayrı ekran)", href: "/panel/raporlar/vergi-takvimi" },
   { modul: "kasa_banka", ad: "Nakit Akışı Tahmini", aciklama: "Vadeli alacak, borç, çek ve planlı ödemelerden ileriye dönük nakit pozisyonu (ayrı ekran)", href: "/panel/nakit-akisi" },
   { modul: "stok", ad: "SMM & Kârlılık", aciklama: "Satılan malın maliyeti ve brüt kâr; ağırlıklı ortalama ya da FIFO (ayrı ekran)", href: "/panel/stok/smm" },
+  { modul: "stok", ad: "Endeksli Artışlar", aciklama: "Kira ve tekrarlayan faturada TÜFE/Yİ-ÜFE'ye bağlı yıllık artış önerileri ve kuralları (ayrı ekran)", href: "/panel/raporlar/endeksli-artislar" },
   { modul: "fatura", ad: "Fatura Pivotu", aciklama: "Fatura kalemlerini iki boyutta toplar; cari × ay, ürün × depo… (ayrı ekran)", href: "/panel/fatura/pivot" },
 ];
 

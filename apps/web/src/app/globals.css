@@ -2826,7 +2826,7 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 @media (max-width: 620px) { .recipe-hero, .recipe-section-head, .recipe-actions { align-items: stretch; flex-direction: column; gap: .8rem; } .recipe-setup__fields, .recipe-summary { grid-template-columns: 1fr; } .recipe-summary__lead { grid-column: auto; } .recipe-actions .row-tight { align-items: stretch; flex-direction: column; } }
 
 /* ─── Stok kartı profili ──────────────────────────────────────────────── */
-.stock-detail-page { display: grid; gap: 1rem; }
+.stock-detail-page { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
 .stock-profile { background: linear-gradient(125deg, #0f172a, #172554 55%, #164e63); border: 1px solid rgba(255,255,255,.08); border-radius: 1rem; box-shadow: var(--shadow-md); color: #fff; overflow: hidden; }
 .stock-profile__top { align-items: center; border-bottom: 1px solid rgba(255,255,255,.1); display: flex; justify-content: space-between; padding: .65rem 1.25rem; }
 .stock-profile__top .btn { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.15); color: #fff; }

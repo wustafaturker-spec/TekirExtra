@@ -87,7 +87,7 @@ registerRapor({
   filtreler: [
     { alan: "baslangic", ad: "Başlangıç", tip: "tarih", zorunlu: true },
     { alan: "bitis", ad: "Bitiş", tip: "tarih", zorunlu: true },
-    { alan: "maliyetKaynagi", ad: "Maliyet kaynağı", tip: "secim", secenekler: [{ deger: "alis", ad: "Alış faturaları (gerçekleşen alış fiyatı)" }, { deger: "cikis", ad: "Stok çıkış maliyeti (ağırlıklı ortalama)" }] },
+    { alan: "maliyetKaynagi", ad: "Maliyet kaynağı (boşsa alış faturaları)", tip: "secim", secenekler: [{ deger: "alis", ad: "Alış faturaları (gerçekleşen alış fiyatı)" }, { deger: "cikis", ad: "Stok çıkış maliyeti (ağırlıklı ortalama)" }] },
     { alan: "yalnizEsikUstu", ad: "Yalnız eşiği aşanlar", tip: "onay" },
     { alan: "stok", ad: "Ürün", tip: "stok" },
   ],
@@ -186,7 +186,7 @@ registerRapor({
   filtreler: [
     { alan: "baslangic", ad: "Başlangıç", tip: "tarih", zorunlu: true },
     { alan: "bitis", ad: "Bitiş", tip: "tarih", zorunlu: true },
-    { alan: "endeks", ad: "Endeks", tip: "secim", secenekler: [{ deger: "YIUFE", ad: "Yİ-ÜFE" }, { deger: "TUFE", ad: "TÜFE" }] },
+    { alan: "endeks", ad: "Endeks (boşsa Yİ-ÜFE)", tip: "secim", secenekler: [{ deger: "YIUFE", ad: "Yİ-ÜFE" }, { deger: "TUFE", ad: "TÜFE" }] },
     { alan: "yalnizUstunde", ad: "Yalnız endeksin üzerinde zam", tip: "onay" },
     { alan: "cari", ad: "Tedarikçi", tip: "cari" },
     { alan: "stok", ad: "Ürün", tip: "stok" },
