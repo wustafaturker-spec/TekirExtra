@@ -71,7 +71,7 @@ async function bootstrap(): Promise<void> {
     if (!sonuc.izinli) {
       res.setHeader("Retry-After", String(Math.max(1, Math.ceil((sonuc.sifirlamaMs - simdi) / 1000))));
       metrics.increment("rate_limit_rejections_total", { path: rotaEtiketi(req) });
-      structuredLogger.warn("rate_limit_rejected", { path: gizliYolMaskele(req.path), ip: anahtar, source: sonuc.kaynak });
+      structuredLogger.warn("rate_limit_rejected", { path: gizliYolMaskele(req.path ?? ""), ip: anahtar, source: sonuc.kaynak });
       return res.status(429).json({ mesaj: "Çok fazla istek. Lütfen daha sonra tekrar deneyin." });
     }
     next();
