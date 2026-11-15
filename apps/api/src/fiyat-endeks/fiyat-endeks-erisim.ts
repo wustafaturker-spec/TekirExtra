@@ -15,10 +15,22 @@ export const FIYAT_ENDEKS_MODULU = "fiyat_endeks";
 export const FIYAT_ENDEKS_ROLLERI = ["muhasebe", "satis", "salt_okunur", "mali_musavir", "maliyet_muhasebesi", "uretim_planlama", "depo"] as const satisfies readonly Rol[];
 const rolListesi = z.array(z.enum(FIYAT_ENDEKS_ROLLERI)).max(FIYAT_ENDEKS_ROLLERI.length)
   .refine((r) => new Set(r).size === r.length, "Rol tekrar edemez");
-export const fiyatEndeksAyariSemasi = z.object({ satisRolleri: rolListesi, alisRolleri: rolListesi }).strict();
+export const fiyatEndeksAyariSemasi = z.object({
+  satisRolleri: rolListesi, alisRolleri: rolListesi,
+  /** END-13: maliyet artışı satış fiyatı artışını bu kadar puan aşınca ürün marj makası listesinde işaretlenir. */
+  makasEsigi: z.number().min(1).max(100).optional(),
+}).strict();
 export type FiyatEndeksAyari = z.infer<typeof fiyatEndeksAyariSemasi>;
 /** Varsayılan: muhasebe iki tarafa da erişir, diğer roller kapalı (yönetici değiştirene kadar). */
-export const FIYAT_ENDEKS_VARSAYILAN: FiyatEndeksAyari = { satisRolleri: ["muhasebe"], alisRolleri: ["muhasebe"] };
+export const FIYAT_ENDEKS_VARSAYILAN: FiyatEndeksAyari = { satisRolleri: ["muhasebe"], alisRolleri: ["muhasebe"], makasEsigi: 10 };
+export const VARSAYILAN_MAKAS_ESIGI = 10;
+
+/** END-13: kiracının marj makası eşiği (puan). */
+export async function makasEsigi(tx: Prisma.TransactionClient, tenantId: string): Promise<number> {
+  const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: FIYAT_ENDEKS_MODULU } }, select: { ayarlar: true } });
+  const ayar = fiyatEndeksAyariSemasi.safeParse(kayit?.ayarlar ?? FIYAT_ENDEKS_VARSAYILAN);
+  return ayar.success ? ayar.data.makasEsigi ?? VARSAYILAN_MAKAS_ESIGI : VARSAYILAN_MAKAS_ESIGI;
+}
 
 export type FiyatTarafi = "satis" | "alis";
 export interface FiyatEndeksErisimi { satis: boolean; alis: boolean }

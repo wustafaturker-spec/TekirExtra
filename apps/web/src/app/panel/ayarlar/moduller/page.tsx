@@ -40,6 +40,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     baslik: "Fiyat ve Endeks Analizi", ikon: "📈", alanlar: [
       { ad: "satisRolleri", etiket: "Satış fiyatı tarafını görebilecek roller", tip: "rolListesi", roller: FIYAT_ENDEKS_ROLLERI, ipucu: "Yönetici her zaman görür. Satış fiyatlarının TÜFE, Yİ-ÜFE ve kurla karşılaştırması (stok kartı › Fiyat ve endeks, rapor kataloğu)." },
       { ad: "alisRolleri", etiket: "Alış fiyatı ve maliyet tarafını görebilecek roller", tip: "rolListesi", roller: FIYAT_ENDEKS_ROLLERI, ipucu: "Yönetici her zaman görür. Alış fiyatları tedarikçi koşullarını gösterdiği için ayrı açılır. Özel roldeki “Raporlar” kutusu kapalıysa iki taraf da kapanır." },
+      { ad: "makasEsigi", etiket: "Marj makası eşiği (puan)", tip: "sayi", min: 1, max: 100, ipucu: "Maliyet artışı satış fiyatı artışını bu kadar puan aşan ürünler Raporlar › Marj Makası'nda işaretlenir. Varsayılan 10." },
     ],
   },
   crm_belge_baglari: {

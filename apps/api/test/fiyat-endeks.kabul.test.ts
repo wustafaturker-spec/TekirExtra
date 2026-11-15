@@ -24,6 +24,7 @@ const { raporTanimiAl } = await import("../src/core/raporlar/rapor-kayit");
 const { degerleriYaz } = await import("../src/fiyat-endeks/endeks-deposu");
 const { endeksVerisi } = await import("../src/fiyat-endeks/fiyat-endeks-veri");
 await import("../src/fiyat-endeks/fiyat-endeks.raporlar");
+await import("../src/fiyat-endeks/fiyat-endeks-makas.raporlar");
 
 const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
 const prisma = new PrismaService();
@@ -206,6 +207,47 @@ describe("ek fiyat çizgileri (END-07)", () => {
     const sat = await ile(A.tenant, A.satis, "satis", () => servis.urun(A.stok, { ...sorgu, cizgiler: ["liste", "maliyet", "sonAlis"] }));
     expect(sat.ekCizgiler.map((x) => x.anahtar)).toEqual(["liste:kart"]);
     expect(sat.uyarilar.join(" ")).toMatch(/Maliyet ve son alış fiyatı alış tarafındadır/);
+  });
+});
+
+describe("marj makası ve tedarikçi zam denetimi (END-13/14)", () => {
+  const eklenenYiufe: Date[] = [];
+  afterAll(async () => { await yonetim.endeksDegeri.deleteMany({ where: { seriKodu: "YIUFE", donem: { in: eklenenYiufe } } }); });
+  it("maliyeti satıştan hızlı artan ürün eşikle işaretlenir; dövizde sabit fiyatın TL artışı kur etkisi sayılır", async () => {
+    // Ocak ve Mart alışları: TL 10 adet × 90 ve USD 10 adet × 3 USD (kur 30) → 90/adet; Mart 120/adet (USD kur 40).
+    await fatura(A.tenant, A.cariListesiz, A.stok, "2026-01-20", [{ miktar: "10", matrah: "900" }], "kesin", "alis");
+    await fatura(A.tenant, A.cariListesiz, A.stok, "2026-03-20", [{ miktar: "10", matrah: "1200" }], "kesin", "alis");
+    for (const [tarih, kur] of [["2026-01-21", "30"], ["2026-03-21", "40"]] as const) {
+      await yonetim.fatura.create({ data: { tenantId: A.tenant, cariId: A.cariListeli, tip: "alis", durum: "kesin", tarih: ay(tarih), dovizCinsi: "USD", kur,
+        toplamBrut: "30", toplamMatrah: "30", genelToplam: "30", toplamSatirIskontosu: "0", genelIskontoToplam: "0", toplamKdv: "0", toplamTevkifat: "0", toplamNetKdv: "0",
+        satirlar: { create: [{ tenantId: A.tenant, stokId: A.stok, miktar: "10", birim: "adet", birimFiyat: "3", matrah: "30", toplamTutar: "30", kdvTutari: "0", netKdvTutari: "0" }] } } });
+    }
+    for (const [d, v] of [["2026-01-01", "100"], ["2026-03-01", "110"]] as const) {
+      if (!(await yonetim.endeksDegeri.findUnique({ where: { seriKodu_donem: { seriKodu: "YIUFE", donem: ay(d) } } }))) {
+        await yonetim.endeksDegeri.create({ data: { seriKodu: "YIUFE", donem: ay(d), deger: v } }); eklenenYiufe.push(ay(d));
+      }
+    }
+    const calistir = (kod: string, filtreler: Record<string, string | boolean>, userId = A.yonetici, rol: Rol = "yonetici") =>
+      ile(A.tenant, userId, rol, () => prisma.tenantIslem(A.tenant, (tx) => raporTanimiAl(kod)!.calistir({ filtreler }, { tenantId: A.tenant, tx })));
+
+    const makas = await calistir("stok.marj_makasi", { baslangic: "2026-01-01", bitis: "2026-03-31" });
+    expect(makas).toHaveLength(1);
+    expect(makas[0]).toMatchObject({ stokId: A.stok, bazAy: "2026-01", sonAy: "2026-03", bazSatis: "105.4545", sonSatis: "125.0000", bazMaliyet: "90.0000", sonMaliyet: "120.0000",
+      satisDegisim: "18.53", maliyetDegisim: "33.33", makas: "14.80", bazMarj: "14.66", sonMarj: "4.00", marjDegisim: "-10.66", durum: "Maliyet satış fiyatından hızlı arttı (eşik 10 puan)" });
+    // Eşik kiracı ayarıdır.
+    const ayar = await yonetim.modulAyar.findUniqueOrThrow({ where: { tenantId_modul: { tenantId: A.tenant, modul: "fiyat_endeks" } } });
+    await yonetim.modulAyar.update({ where: { id: ayar.id }, data: { ayarlar: { ...(ayar.ayarlar as object), makasEsigi: 20 } } });
+    expect(await calistir("stok.marj_makasi", { baslangic: "2026-01-01", bitis: "2026-03-31", yalnizEsikUstu: true })).toEqual([]);
+    await yonetim.modulAyar.update({ where: { id: ayar.id }, data: { ayarlar: ayar.ayarlar as object } });
+    // Satış rolünün alış erişimi yok (önceki testte yalnız satış tarafı açıldı).
+    await expect(calistir("stok.marj_makasi", { baslangic: "2026-01-01", bitis: "2026-03-31" }, A.satis, "satis")).rejects.toThrow(/Alış fiyatı ve maliyet/);
+
+    const zam = await calistir("stok.tedarikci_zam", { baslangic: "2026-01-01", bitis: "2026-03-31" });
+    const tl = zam.find((z) => z.dovizCinsi === "TRY"), usd = zam.find((z) => z.dovizCinsi === "USD");
+    expect(tl).toMatchObject({ cariId: A.cariListesiz, bazAy: "2026-01", sonAy: "2026-03", bazFiyat: "90.0000", sonFiyat: "120.0000", tlDegisim: "33.33", endeksDegisim: "10.00", endeksFarki: "23.33", dovizDegisim: null, durum: "Endeksin üzerinde zam" });
+    expect(usd).toMatchObject({ cariId: A.cariListeli, tlDegisim: "33.33", dovizDegisim: "0.00", kurDegisim: "33.33", durum: "Dövizde fiyat sabit; TL artışı kur etkisi" });
+    expect(zam[0].endeksFarki).toBe("23.33");
+    await expect(calistir("stok.tedarikci_zam", { baslangic: "2026-01-01", bitis: "2026-03-31" }, A.satis, "satis")).rejects.toThrow(/Alış fiyatı ve maliyet/);
   });
 });
 
