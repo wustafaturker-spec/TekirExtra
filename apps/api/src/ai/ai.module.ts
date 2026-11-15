@@ -1,4 +1,5 @@
 import { Module, forwardRef } from "@nestjs/common";
+import "./ai-kullanim.raporlar";
 import { AiOnayOzetiController } from "./onay/ai-onay-ozeti.controller";
 import { SohbetEkController } from "./ajan/sohbet-ek.controller";
 import { EklerModule } from "../ekler/ekler.module";

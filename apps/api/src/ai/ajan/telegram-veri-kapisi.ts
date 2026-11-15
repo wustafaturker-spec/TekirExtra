@@ -37,6 +37,8 @@ export const TELEGRAM_RAPOR_KARARI: Record<string, { acik: boolean; neden?: stri
   "fatura.satis-kirilimlari": { acik: true },
   "fatura.taslaklar": { acik: true },
   "genel.kar-zarar-ozeti": { acik: true },
+  // AI-101: yalnız sayım/oran/maliyet, içerik yok; rapor rolü (yalnız yönetici) Telegram'da da geçerli.
+  "genel.yapay_zeka_kullanimi": { acik: true },
   "kasa_banka.bakiyeler": { acik: true },
   "kasa_banka.komisyonlar": { acik: true },
   "kasa_banka.mutabakat": { acik: false, neden: "banka satırları maaş havalelerini içerir" },
