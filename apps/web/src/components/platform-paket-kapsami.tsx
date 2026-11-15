@@ -3,9 +3,14 @@ import { useId } from "react";
 import { PAKET_MODUL_KODLARI, PAKET_MODUL_ADLARI, PAKET_MODUL_BAGIMLILIKLARI, PAKET_KOTA_KODLARI, PAKET_KOTA_TANIMLARI, PAKET_OZELLIK_KODLARI, PAKET_OZELLIKLERI, type PaketKapsamSozlesmesi } from "@tekirextra/shared";
 import { Field, Input, TableWrap } from "@/components/ui";
 
+/**
+ * Yeni kapsam bütün modüller ve sınırsız kotayla başlar. 0 "hiç kayıt yok"
+ * demektir; yalnız plan özelliği seçmek için kapsamı açan yönetici farkında
+ * olmadan firmaları kilitlemesin (2026-11-15: kurumsal v3 bu yüzden atanamadı).
+ */
 export function bosPaketKapsami(): PaketKapsamSozlesmesi {
   return { semaSurumu: 1, moduller: [...PAKET_MODUL_KODLARI], kotalar: {
-    kullanici: { sinir: 0, uyariYuzdesi: 80 }, cari: { sinir: 0, uyariYuzdesi: 80 }, stok: { sinir: 0, uyariYuzdesi: 80 }, aylikFatura: { sinir: 0, uyariYuzdesi: 80 },
+    kullanici: { sinir: null, uyariYuzdesi: 80 }, cari: { sinir: null, uyariYuzdesi: 80 }, stok: { sinir: null, uyariYuzdesi: 80 }, aylikFatura: { sinir: null, uyariYuzdesi: 80 },
   } };
 }
 export function PlatformPaketKapsamEditoru({ etkin, onEtkin, deger, onDegis, mesgul, hata }: {
