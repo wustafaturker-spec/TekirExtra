@@ -25,6 +25,7 @@ const { degerleriYaz } = await import("../src/fiyat-endeks/endeks-deposu");
 const { endeksVerisi } = await import("../src/fiyat-endeks/fiyat-endeks-veri");
 await import("../src/fiyat-endeks/fiyat-endeks.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-makas.raporlar");
+await import("../src/fiyat-endeks/fiyat-endeks-erime.raporlar");
 
 const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
 const prisma = new PrismaService();
@@ -263,6 +264,23 @@ describe("fiyat güncelleme önerisi (END-16)", () => {
     expect(r.satirlar[0]).toMatchObject({ durum: "oneri", bazAy: "2026-01-01", sonAy: "2026-04-01", endeksDegisim: "25.00", yeniFiyat: "144.3800", fark: "28.8800" });
     expect((await yonetim.fiyatListesiKalem.findFirstOrThrow({ where: { listeId: A.liste, stokId: A.stok } })).fiyat.toString()).toBe("115.5");
     await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.fiyatOnerisi(istek))).rejects.toThrow(/abonelik planınızda açık değil/);
+  });
+});
+
+describe("müşteri fiyat erimesi (END-15)", () => {
+  it("müşteri × ürün reel değişim ve son fiyat değişikliği; eşik ve yetki", async () => {
+    const calistir = (filtreler: Record<string, string | boolean>, userId = A.yonetici, rol: Rol = "yonetici") =>
+      ile(A.tenant, userId, rol, () => prisma.tenantIslem(A.tenant, (tx) => raporTanimiAl("stok.musteri_fiyat_erimesi")!.calistir({ filtreler }, { tenantId: A.tenant, tx })));
+    // Listeli müşteri: Ocak 2320/22 = 105,45; Şubat 110 → Şubat'ta değişti. Listesiz: Şubat birimsiz/bedelsiz (girmez), Mart 125.
+    const r = await calistir({ baslangic: "2026-01-01", bitis: "2026-03-31", endeks: "TUFE" });
+    const listeli = r.find((x) => x.cariId === A.cariListeli && x.stokId === A.stok)!;
+    expect(listeli).toMatchObject({ bazAy: "2026-01", sonAy: "2026-02", sonDegisiklik: "2026-02", ayniFiyatAy: 1, bazFiyat: "105.4545", sonFiyat: "110.0000", fiyatDegisim: "4.31" });
+    // TÜFE kabul DB'de bu aylar için değer yoksa endeks/ reel boş kalır; değer varsa hesaplanır.
+    expect(listeli.durum).toMatch(/Endeks|açıklanmadı/);
+    const esikli = await calistir({ baslangic: "2026-01-01", bitis: "2026-03-31", esikAy: "1", yalnizGuncellenmeyen: true });
+    expect(esikli.every((x) => Number(x.ayniFiyatAy) >= 1)).toBe(true);
+    await expect(calistir({ baslangic: "2026-01-01", bitis: "2026-03-31", esikAy: "0" })).rejects.toThrow(/1–60/);
+    await expect(ile(B.tenant, B.yonetici, "yonetici", () => prisma.tenantIslem(B.tenant, (tx) => raporTanimiAl("stok.musteri_fiyat_erimesi")!.calistir({ filtreler: { baslangic: "2026-01-01", bitis: "2026-03-31" } }, { tenantId: B.tenant, tx })))).rejects.toThrow(/abonelik planınızda açık değil/);
   });
 });
 

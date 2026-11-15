@@ -11,6 +11,7 @@ import { FiyatEndeksService } from "./fiyat-endeks.service";
 import { PlatformEndeksController } from "./platform-endeks.controller";
 import "./fiyat-endeks.raporlar";
 import "./fiyat-endeks-makas.raporlar";
+import "./fiyat-endeks-erime.raporlar";
 
 /** END: fiyat ve endeks analizi (ortak endeks deposu, platform yönetimi, ürün karşılaştırması, toplu rapor). */
 @Module({

@@ -155,8 +155,8 @@ registerRapor({
   },
 });
 
-/** END-14: tedarikçi × ürün × belge dövizi aylık alış toplamları. */
-async function tedarikciToplamlari(tx: Prisma.TransactionClient, g: { baslangic: string; bitisHaric: string; cariId: string | null; stokId: string | null }) {
+/** END-14/15: cari × ürün × belge dövizi aylık alış (tedarikçi) ya da satış (müşteri) toplamları. */
+export async function cariUrunToplamlari(tx: Prisma.TransactionClient, g: { baslangic: string; bitisHaric: string; cariId: string | null; stokId: string | null; tip?: "alis" | "satis" }) {
   await ozelPlan(tx);
   const satirlar = await tx.$queryRaw<{ cari_id: string; stok_id: string; doviz: string; ay: string; tl: D; dvz: D; miktar: D; satir: number }[]>`
     SELECT f.cari_id::text AS cari_id, fs.stok_id::text AS stok_id, f.doviz_cinsi::text AS doviz,
@@ -169,7 +169,7 @@ async function tedarikciToplamlari(tx: Prisma.TransactionClient, g: { baslangic:
       SELECT CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
         ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END AS katsayi
     ) k ON k.katsayi IS NOT NULL
-    WHERE f.durum = 'kesin' AND f.tip = 'alis'::"FaturaTip" AND fs.miktar > 0 AND fs.matrah > 0
+    WHERE f.durum = 'kesin' AND f.tip = ${g.tip ?? "alis"}::"FaturaTip" AND fs.miktar > 0 AND fs.matrah > 0
       AND f.tarih >= ${g.baslangic}::date AND f.tarih < ${g.bitisHaric}::date
       ${g.cariId ? Prisma.sql`AND f.cari_id = ${g.cariId}::uuid` : Prisma.empty}
       ${g.stokId ? Prisma.sql`AND fs.stok_id = ${g.stokId}::uuid` : Prisma.empty}
@@ -214,7 +214,7 @@ registerRapor({
     const erisim = await fiyatEndeksErisimi(tx, tenantId, aktifBaglam().rol);
     tarafDenetle(erisim, "alis");
     const endeksKodu = f.endeks === "TUFE" ? "TUFE" : "YIUFE";
-    const toplamlar = await tedarikciToplamlari(tx, {
+    const toplamlar = await cariUrunToplamlari(tx, {
       baslangic, bitisHaric: ayKaydir(bitis, 1),
       cariId: typeof f.cari === "string" && f.cari ? f.cari : null,
       stokId: typeof f.stok === "string" && f.stok ? f.stok : null,

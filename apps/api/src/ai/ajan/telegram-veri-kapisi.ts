@@ -50,6 +50,7 @@ export const TELEGRAM_RAPOR_KARARI: Record<string, { acik: boolean; neden?: stri
   "stok.fiyat_endeks": { acik: false, neden: "alış fiyatı ve tedarikçi koşullarını gösterebilir; erişimi yöneticinin rol seçimine bağlıdır (END-23)" },
   "stok.marj_makasi": { acik: false, neden: "alış maliyetini ve brüt marjı gösterir (END-13, END-23 alış tarafı)" },
   "stok.tedarikci_zam": { acik: false, neden: "tedarikçi alış fiyatlarını gösterir (END-14, END-23 alış tarafı)" },
+  "stok.musteri_fiyat_erimesi": { acik: false, neden: "müşteriye özel fiyatları gösterir; erişimi yöneticinin rol seçimine bağlıdır (END-15, END-23)" },
   "stok.hareket-ozeti": { acik: true },
   "stok.hareketsiz": { acik: true },
   "stok.kritik-stok": { acik: true },
