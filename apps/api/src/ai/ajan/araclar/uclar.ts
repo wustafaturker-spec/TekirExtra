@@ -32,6 +32,7 @@ import { PersonelController } from "../../../personel/personel.controller";
 import { PersonelRaporController } from "../../../personel/personel-rapor.controller";
 import { IzinController } from "../../../personel/izin.controller";
 import { SelfServisDavetController } from "../../../personel/self-servis.controller";
+import { FiyatEndeksController } from "../../../fiyat-endeks/fiyat-endeks.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -148,6 +149,10 @@ export const UC = {
   // AI-76: bütçe ve nakit.
   butceKarsilastirma: uc(ButceController, "karsilastirma", "GET /butce/:yil/karsilastirma"),
   nakitPozisyon: uc(NakitAkisiController, "pozisyon", "GET /nakit-akisi/pozisyon"),
+  // END-21: fiyat–endeks
+  fiyatEndeksSecenekleri: uc(FiyatEndeksController, "secenekler", "GET /fiyat-endeks/secenekler"),
+  fiyatEndeksEndeks: uc(FiyatEndeksController, "endeks", "GET /fiyat-endeks/endeks/:kod"),
+  fiyatEndeksUrun: uc(FiyatEndeksController, "urun", "GET /fiyat-endeks/urun/:stokId"),
 
   // AI-77: Düzeltme Merkezi, bildirimler, dönem kapatma kontrolleri.
   duzeltmeListe: uc(DuzeltmelerController, "listele", "GET /duzeltmeler"),

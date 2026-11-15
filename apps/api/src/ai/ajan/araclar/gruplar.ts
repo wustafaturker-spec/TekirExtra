@@ -20,6 +20,7 @@ export const ARAC_GRUPLARI = {
   uretim: "Üretim emirleri (arama, ayrıntı, taslak, planlama, malzeme ayırma, kapatma, iptal), reçete, kapasite, kalite, üretim maliyeti.",
   personel: "Personel kadrosu, izin talepleri ve bakiyesi, avans özeti, bilgi talepleri, toplu personel maliyeti; izin ve bilgi talebi onay/ret.",
   crm: "CRM satış fırsatları: arama, ayrıntı, yeni fırsat, fırsattan teklif, güncelleme ve aşama değişikliği.",
+  endeks: "Enflasyon (TÜFE, Yİ-ÜFE) ve kur endeksleri; ürün fiyatının endeksle karşılaştırması ve reel değişimi.",
 } as const;
 
 export type AracGrubu = keyof typeof ARAC_GRUPLARI;
@@ -37,6 +38,7 @@ export const GRUP_ARACLARI: Record<AracGrubu, string[]> = {
   uretim: ["uretim_ozeti", "uretim_emri_ara", "uretim_emri_getir", "uretim_kapasite", "recete_getir", "kalite_kontrolleri", "uretim_maliyet_raporu", "uretim_emri_taslagi_olustur", "uretim_emrini_planla", "uretim_malzemesini_rezerve_et", "uretim_emrini_iptal_et", "uretim_emrini_kapat"],
   personel: ["personel_ara", "personel_getir", "personel_ozeti", "personel_maliyet_raporu", "izin_talepleri", "izin_bakiyesi", "avans_ozeti", "bilgi_talepleri", "izin_talebini_onayla", "izin_talebini_reddet", "bilgi_talebini_onayla", "bilgi_talebini_reddet"],
   crm: ["crm_firsat_ara", "crm_firsat_getir", "crm_firsat_olustur", "crm_firsattan_teklif", "crm_firsat_guncelle", "crm_firsat_asama_degistir"],
+  endeks: ["endeks_getir", "fiyat_endeks_karsilastir"],
 };
 
 const ARACIN_GRUBU = new Map<string, AracGrubu>(
@@ -66,12 +68,13 @@ const SOZCUK_GRUPLARI: Array<[RegExp, AracGrubu[]]> = [
   [/uretim|imalat|emir|recete|kapasite|kalite|is merkezi|mamul/, ["uretim"]],
   [/personel|calisan|izin|bordro|maas|avans|kadro|ise giris|isten|departman/, ["personel"]],
   [/firsat|huni|lead|aday musteri|pazarlik|kazanil|kaybedil|crm/, ["crm"]],
+  [/enflasyon|tufe|ufe|endeks|reel|zam orani|zamlar|kur artis|dolar|euro|evds/, ["endeks"]],
 ];
 
 /** AI-78 ekran kaydı türü → grup. */
 const EKRAN_GRUPLARI: Record<string, AracGrubu[]> = {
   cari: ["tahsilat", "satis", "kart"],
-  stok: ["kart", "satis"],
+  stok: ["kart", "satis", "endeks"],
   fatura: ["satis", "tahsilat"],
   belge: ["satis"],
   gelen_efatura: ["gelen_ebelge"],

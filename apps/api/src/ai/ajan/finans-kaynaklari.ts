@@ -82,6 +82,40 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
     kaynak.uyarilar.push(...temel.uyarilar);
     return [kaynak];
   }
+  // END-21: endeks ve fiyat–endeks karşılaştırması. Yüzdeler "%", endeks değerleri "puan"; seri adı, dönem, son açıklanan ay ve alınma zamanı kartta.
+  if (arac === "endeks_getir") {
+    if (typeof r.kod !== "string" || !Array.isArray(r.degerler)) return [];
+    const o = nesne(r.ozet), ad = metin(r.ad) || r.kod, birim = r.tur === "kur" ? "TRY" : "puan";
+    const k: FinansKaynagi = { ...temel, uyarilar: [], baslik: ad, adres: "/panel/stok", donem: { baslangic: gun(`${metin(o.ilkAy)}-01`), bitis: gun(`${metin(o.sonAy)}-01`), aciklama: "Endeks dönemi (ay)" }, kalemler: [] };
+    k.kalemler = [
+      ...kalemler(o, [["ilkDeger", `${ad} — ${metin(o.ilkAy)}`], ["sonDeger", `${ad} — ${metin(o.sonAy)}`]], birim, k.uyarilar),
+      ...kalemler(o, [["donemDegisimi", `Dönem değişimi (${metin(o.ilkAy)} – ${metin(o.sonAy)})`], ["sonYillikDegisim", `Yıllık değişim (${metin(o.sonAy)})`]], "%", k.uyarilar),
+    ];
+    if (!o.sonAy) for (const d of r.degerler.slice(-1)) { const x = nesne(d); k.kalemler.push(...kalemler(x, [["deger", `${ad} — ${metin(x.ay)}`]], birim, k.uyarilar), ...kalemler(x, [["yillikDegisim", `Yıllık değişim (${metin(x.ay)})`]], "%", k.uyarilar)); }
+    k.uyarilar.push(`Kaynak: ${metin(r.kaynak) || "TCMB EVDS"}; son açıklanan dönem ${metin(r.sonAciklananDonem) || "—"}; alındı ${metin(r.guncellendiAt) || "—"}.`);
+    if (Array.isArray(r.uyarilar)) k.uyarilar.push(...r.uyarilar.filter((x): x is string => typeof x === "string").slice(0, 5).map((x) => x.slice(0, 300)));
+    return k.kalemler.length ? [k] : [];
+  }
+  if (arac === "fiyat_endeks_karsilastir") {
+    const stok = nesne(r.stok), endeksAdi = new Map((Array.isArray(r.endeksler) ? r.endeksler : []).map((e) => [metin(nesne(e).kod), nesne(e)] as const));
+    if (typeof stok.id !== "string" || !uuid.test(stok.id) || !Array.isArray(r.seriler)) return [];
+    const birim = metin(stok.anaBirim) || "birim";
+    return r.seriler.slice(0, 6).flatMap((sx) => {
+      const s = nesne(sx);
+      return (Array.isArray(s.karsilastirmalar) ? s.karsilastirmalar : []).slice(0, 4).flatMap((kx) => {
+        const c = nesne(kx), e = endeksAdi.get(metin(c.endeks)) ?? {};
+        const k: FinansKaynagi = { ...temel, uyarilar: [], baslik: `${metin(stok.ad) || "Ürün"} — ${metin(s.ad)} × ${metin(e.ad) || metin(c.endeks)}`, adres: adres.stok(stok.id as string),
+          donem: { baslangic: gun(c.bazAy), bitis: gun(c.sonAy), aciklama: "Baz ay – son karşılaştırılan ay" }, kalemler: [] };
+        k.kalemler = [
+          ...kalemler(c, [["bazFiyat", `Baz ay fiyatı (TL/${birim})`], ["sonFiyat", `Son ay fiyatı (TL/${birim})`], ["olmasiGerekenFiyat", `Endekse göre fiyat (TL/${birim})`], ["fark", `Fark (TL/${birim})`]], "TRY", k.uyarilar),
+          ...kalemler(c, [["fiyatDegisim", "Fiyat değişimi"], ["endeksDegisim", "Endeks değişimi"], ["reelDegisim", "Reel değişim"]], "%", k.uyarilar),
+        ];
+        if (typeof c.neden === "string") k.uyarilar.push(c.neden.slice(0, 300));
+        k.uyarilar.push(`Endeks: ${metin(e.ad) || metin(c.endeks)}${e.bazYili ? ` (baz ${metin(e.bazYili)})` : ""}; son açıklanan dönem ${metin(e.sonAciklananDonem) || "—"}.`);
+        return k.kalemler.length || k.uyarilar.length ? [k] : [];
+      });
+    });
+  }
   if (["cari_ara", "cari_getir", "fatura_ara", "fatura_getir", "belge_ara", "belge_getir"].includes(arac)) {
     const liste = Array.isArray(r.kayitlar) ? r.kayitlar : [r];
     return liste.slice(0, 20).flatMap(x => {

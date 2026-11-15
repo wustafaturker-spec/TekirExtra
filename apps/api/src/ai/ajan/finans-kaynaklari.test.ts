@@ -78,3 +78,44 @@ describe("kaynaklı finans verileri", () => {
     expect(k.uyarilar).toEqual(["Maliyet kaydı eksik"]);
   });
 });
+
+describe("END-21 fiyat–endeks kaynak kartları", () => {
+  const simdi = new Date("2026-11-15T09:00:00Z");
+  it("endeks_getir: ilk/son değer puan, değişimler yüzde; kaynak, son açıklanan ay ve alınma zamanı uyarıda", () => {
+    const k = finansKaynaklariCikar("endeks_getir", JSON.stringify({
+      kod: "TUFE", ad: "TÜFE genel", tur: "endeks", kaynak: "TÜİK", sonAciklananDonem: "2026-10", guncellendiAt: "2026-11-03T10:05:00.000Z",
+      degerler: [{ ay: "2025-11", deger: "3000.0000" }, { ay: "2026-10", deger: "3900.5000" }],
+      ozet: { ilkAy: "2025-11", sonAy: "2026-10", ilkDeger: "3000.0000", sonDeger: "3900.5000", donemDegisimi: "30.02", sonYillikDegisim: "32.87" },
+      uyarilar: ["TÜFE genel: en son 2026-10 dönemi açıklandı."],
+    }), simdi);
+    expect(k).toHaveLength(1);
+    expect(k[0].kalemler).toEqual([
+      { ad: "TÜFE genel — 2025-11", deger: "3000.0000", paraBirimi: "puan" },
+      { ad: "TÜFE genel — 2026-10", deger: "3900.5000", paraBirimi: "puan" },
+      { ad: "Dönem değişimi (2025-11 – 2026-10)", deger: "30.02", paraBirimi: "%" },
+      { ad: "Yıllık değişim (2026-10)", deger: "32.87", paraBirimi: "%" },
+    ]);
+    expect(k[0].donem).toMatchObject({ baslangic: "2025-11-01", bitis: "2026-10-01" });
+    expect(k[0].uyarilar.join(" ")).toMatch(/son açıklanan dönem 2026-10; alındı 2026-11-03/);
+  });
+  it("fiyat_endeks_karsilastir: seri × endeks başına kart; tutarlar TRY, oranlar yüzde; neden uyarıya düşer", () => {
+    const stokId = "6f1c2b8e-4a5d-4c3b-9e2f-1a2b3c4d5e6f";
+    const k = finansKaynaklariCikar("fiyat_endeks_karsilastir", JSON.stringify({
+      stok: { id: stokId, kod: "U1", ad: "Ürün", anaBirim: "adet" },
+      endeksler: [{ kod: "TUFE", ad: "TÜFE genel", bazYili: "2025=100", sonAciklananDonem: "2026-10" }],
+      seriler: [{ ad: "Satış fiyatı (tüm satışlar)", karsilastirmalar: [
+        { endeks: "TUFE", bazAy: "2026-01-01", sonAy: "2026-03-01", bazFiyat: "105.4545", sonFiyat: "125.0000", fiyatDegisim: "18.53", endeksDegisim: "20.00", reelDegisim: "-1.22", olmasiGerekenFiyat: "126.5455", fark: "-1.5455", neden: null },
+      ] }, { ad: "Alış", karsilastirmalar: [{ endeks: "TUFE", bazAy: "2026-01-01", sonAy: null, bazFiyat: null, neden: "Baz ayda bu ürünün faturası yok." }] }],
+    }), simdi);
+    expect(k).toHaveLength(2);
+    expect(k[0]).toMatchObject({ baslik: "Ürün — Satış fiyatı (tüm satışlar) × TÜFE genel", adres: `/panel/stok/${stokId}`, donem: { baslangic: "2026-01-01", bitis: "2026-03-01" } });
+    expect(k[0].kalemler.find((x) => x.ad === "Reel değişim")).toEqual({ ad: "Reel değişim", deger: "-1.22", paraBirimi: "%" });
+    expect(k[0].kalemler.find((x) => x.ad.startsWith("Endekse göre"))).toEqual({ ad: "Endekse göre fiyat (TL/adet)", deger: "126.5455", paraBirimi: "TRY" });
+    expect(k[1].kalemler).toEqual([]);
+    expect(k[1].uyarilar[0]).toBe("Baz ayda bu ürünün faturası yok.");
+  });
+  it("geçersiz stok kimliği ya da şekilsiz çıktı kart üretmez", () => {
+    expect(finansKaynaklariCikar("fiyat_endeks_karsilastir", JSON.stringify({ stok: { id: "x" }, seriler: [] }), simdi)).toEqual([]);
+    expect(finansKaynaklariCikar("endeks_getir", JSON.stringify({ endeksler: [] }), simdi)).toEqual([]);
+  });
+});

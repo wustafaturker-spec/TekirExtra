@@ -16,6 +16,13 @@ export class FiyatEndeksController {
     return this.servis.secenekler();
   }
 
+  /** END-21: endeks/kur serisinin aylık değerleri ve değişimi (asistan aracı bu ucu çağırır). */
+  @Get("endeks/:kod")
+  endeks(@Param("kod") kod: string, @Query("baslangic") baslangic: string, @Query("bitis") bitis: string) {
+    if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(kod)) throw new BadRequestException("Geçersiz endeks kodu");
+    return this.servis.endeks(kod, { baslangic: baslangic ?? "", bitis: bitis ?? "" });
+  }
+
   @Get("urun/:stokId")
   urun(@Param("stokId", ParseUUIDPipe) stokId: string, @Query() q: Record<string, string | undefined>) {
     const sonuc = urunSorgusuSemasi.safeParse({

@@ -161,6 +161,16 @@ describe("ürün karşılaştırması", () => {
   });
 });
 
+describe("endeks ucu (END-21)", () => {
+  it("aylık değer ve değişimler uygulamada hesaplanır; plan özelliği kapalı firmada açılmaz", async () => {
+    const r = await ile(A.tenant, A.yonetici, "yonetici", () => servis.endeks(SERI, { baslangic: "2026-01", bitis: "2026-03" }));
+    expect(r.degerler.map((d) => [d.ay, d.deger, d.aylikDegisim])).toEqual([["2026-01", "100.0000", null], ["2026-02", "110.0000", "10.00"], ["2026-03", "120.0000", "9.09"]]);
+    expect(r.ozet).toMatchObject({ ilkAy: "2026-01", sonAy: "2026-03", donemDegisimi: "20.00" });
+    await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.endeks(SERI, { baslangic: "2026-01", bitis: "2026-03" }))).rejects.toThrow(/abonelik planınızda açık değil/);
+    await expect(ile(A.tenant, A.yonetici, "yonetici", () => servis.endeks(SERI, { baslangic: "2026-03", bitis: "2026-01" }))).rejects.toThrow(/sonra olamaz/);
+  });
+});
+
 describe("ek fiyat çizgileri (END-07)", () => {
   const sorgu = { baslangic: "2026-01", bitis: "2026-03", endeksler: [SERI], satisKapsami: "tum" as const, listeler: [], alis: false };
   it("kart fiyatı yatay referans; liste geçmişi dönemden sonra başladıysa boş; maliyet ve son alış aylık", async () => {

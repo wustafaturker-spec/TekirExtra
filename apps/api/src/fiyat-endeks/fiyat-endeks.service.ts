@@ -54,6 +54,46 @@ export class FiyatEndeksService {
     });
   }
 
+  /**
+   * END-21: bir endeks ya da kur serisinin aylık değerleri ve değişimleri
+   * (asistanın `endeks_getir` aracı). Fiyat verisi içermez; yine de plan
+   * özelliği ve satış ya da alış tarafından birine erişim ister.
+   */
+  async endeks(kod: string, s: { baslangic: string; bitis: string }) {
+    const { tenantId, rol } = aktifBaglam();
+    const baslangic = ayBasiMetni(s.baslangic), bitis = ayBasiMetni(s.bitis);
+    if (!baslangic || !bitis) throw new BadRequestException("Ay YYYY-MM biçiminde olmalıdır");
+    const aylar = ayAraligi(baslangic, bitis);
+    if (!aylar.length) throw new BadRequestException("Başlangıç ayı bitiş ayından sonra olamaz.");
+    if (aylar.length > 120) throw new BadRequestException("Dönem en çok 120 ay olabilir.");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const erisim = await fiyatEndeksErisimi(tx, tenantId, rol);
+      if (!erisim.satis && !erisim.alis) throw new ForbiddenException("Fiyat ve endeks analizine erişiminiz yok.");
+      const e = await endeksVerisi(tx, kod, ayKaydir(baslangic, -12), bitis);
+      const seri = await tx.endeksSerisi.findUnique({ where: { kod }, select: { sonBasariliAt: true, kaynak: true } });
+      const D = (v: string | number) => new Prisma.Decimal(v);
+      const yuzde = (a: Prisma.Decimal, b: Prisma.Decimal) => a.div(b).sub(1).mul(100).toDecimalPlaces(2).toFixed(2);
+      const degerler = aylar.map((ay) => {
+        const d = e.degerler.get(ay), once = e.degerler.get(ayKaydir(ay, -1)), gecenYil = e.degerler.get(ayKaydir(ay, -12));
+        return { ay: ay.slice(0, 7), deger: d ? d.toFixed(4) : null, aylikDegisim: d && once ? yuzde(d, once) : null, yillikDegisim: d && gecenYil ? yuzde(d, gecenYil) : null };
+      });
+      const dolu = degerler.filter((d) => d.deger !== null);
+      const ilk = dolu[0], son = dolu.at(-1);
+      const kismiAy = e.tur === "kur" && bitis === buAy() ? bitis.slice(0, 7) : null;
+      return {
+        kod: e.kod, ad: e.ad, tur: e.tur, bazYili: e.bazYili, kaynak: seri?.kaynak ?? "TCMB",
+        sonAciklananDonem: e.sonDonem ? e.sonDonem.slice(0, 7) : null, guncellendiAt: seri?.sonBasariliAt ?? null,
+        degerler,
+        ozet: ilk && son && ilk !== son ? { ilkAy: ilk.ay, sonAy: son.ay, ilkDeger: ilk.deger, sonDeger: son.deger, donemDegisimi: yuzde(D(son.deger!), D(ilk.deger!)), sonYillikDegisim: son.yillikDegisim } : null,
+        uyarilar: [
+          ...(e.tur === "endeks" && (!e.sonDonem || e.sonDonem < bitis) ? [`${e.ad}: en son ${e.sonDonem ? e.sonDonem.slice(0, 7) : "—"} dönemi açıklandı.`] : []),
+          ...(kismiAy ? [`${kismiAy} kur değeri ay başından bugüne ortalamadır.`] : []),
+          ...(e.zincirlenenDonemSayisi ? [`${e.zincirlenenDonemSayisi} ay önceki baz yılı serisinden zincirlendi.`] : []),
+        ],
+      };
+    });
+  }
+
   /** END-08…11: tek ürünün fiyat serileri ve seçilen endekslerle karşılaştırması. */
   async urun(stokId: string, s: UrunSorgusu) {
     const { tenantId, rol } = aktifBaglam();

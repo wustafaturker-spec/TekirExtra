@@ -14,6 +14,8 @@ export const TELEGRAM_KAPALI_ARACLAR = new Set([
   "personel_ozeti", "personel_maliyet_raporu", "avans_ozeti",
   // Alıcı adı + tutar: personele yapılan ödeme kişinin ücretidir.
   "odeme_talimatlari",
+  // END-21: toplu raporla (stok.fiyat_endeks) aynı gerekçe — alış fiyatı ve tedarikçi koşulunu gösterebilir.
+  "fiyat_endeks_karsilastir",
 ]);
 
 /**
