@@ -4,11 +4,13 @@ import { hassasCoz, hassasSifrele } from "../../personel/personel-hassas";
 import { HttpException } from "@nestjs/common";
 import type { z } from "zod";
 import { baglamAl } from "../../core/istek-baglami";
-import type { AiAracliSohbetGirdisi, AiAracliYanit, AiMultimodalGirdi, AiProviderTuru, IAiProvider } from "./ai-provider.interface";
+import { SAGLAYICI_ZAMAN_ASIMI_MS, type AiAracliSohbetGirdisi, type AiAracliYanit, type AiMultimodalGirdi, type AiProviderTuru, type IAiProvider } from "./ai-provider.interface";
 import { TanimsizAiProvider } from "./tanimsiz-ai.provider";
 import { AiProviderFactory, type TenantAiYapilandirma } from "./ai-provider.factory";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "../ayarlar/ai-aktarim-politikasi";
 import { AiBosYanitHatasi } from './ai-bos-yanit';
+import { SaglayiciHatasi, ozelZamanAsimi, zamanAsimiyla } from "./aracli-ortak";
+import { bekle, denemeKarari, onarimTalimati, TOPLAM_SURE_MS, type DenemeNedeni } from "./dayaniklilik";
 import { AiSinirHatasi, buAyMaliyeti, butceDenetle, kiraciButceKurali, maliyetHesapla, platformAnahtariMi, type ButceKurali } from "./ai-butce";
 
 /** AI-11: kiracının API anahtarı şifreli saklanır; ekranda yalnız son 4 karakter. */
@@ -53,6 +55,15 @@ export function ozellikModeli(ayar: Pick<TenantAiAyari, "modelAdi" | "ekonomikMo
 /** Yurt dışı onayının kapsadığı modeller; birden çok model virgülle saklanır. */
 export const onayModelleri = (deger: string | null | undefined) => new Set((deger ?? "").split(",").map((m) => m.trim()).filter(Boolean));
 
+/**
+ * AI-102: kullanılan modelden farklı ilk tanımlı model (önce ana, sonra ekonomik, sonra güçlü);
+ * ayrı güçlü sağlayıcının modeli başka anahtar/onay taşıdığı için yedek olmaz.
+ */
+export function yedekModelSec(ayar: Pick<TenantAiAyari, "modelAdi" | "ekonomikModelAdi" | "gucluModelAdi"> & { gucluSaglayici?: string | null }, kullanilan: string | null | undefined): string | null {
+  const adaylar = [ayar.modelAdi?.trim(), ayar.ekonomikModelAdi?.trim(), ayar.gucluSaglayici ? null : ayar.gucluModelAdi?.trim()];
+  return adaylar.find((m): m is string => Boolean(m) && m !== kullanilan) ?? null;
+}
+
 /** Ayarın kullanabileceği bütün modeller; onay hepsini kapsamalıdır. */
 export function ayarModelleri(ayar: Pick<TenantAiAyari, "ekonomikModelAdi" | "gucluModelAdi"> & { gucluSaglayici?: string | null }, anaModel: string | null | undefined): string[] {
   // AI-81: ayrı güçlü sağlayıcının modeli ana onaya girmez; onun onayı ayrıdır.
@@ -71,44 +82,83 @@ export const ONAY_YOK_MESAJI =
 /** Türkiye gününe göre bugünün tarihi (DATE kolonu için). */
 const bugunGunu = () => new Date(`${new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" })}T00:00:00Z`);
 
-type Izleyici = (islem: string, baslangic: number, kullanim?: { girisToken?: number; cikisToken?: number }, hata?: unknown, tahmin?: { girdi: unknown; cikti: unknown }) => Promise<void>;
+type Izleyici = (saglayici: IAiProvider, islem: string, baslangic: number, kullanim?: { girisToken?: number; cikisToken?: number }, hata?: unknown, tahmin?: { girdi: unknown; cikti: unknown }, deneme?: { no: number; neden: DenemeNedeni | null }) => Promise<void>;
 
 /**
  * AI-15: her model çağrısından önce kiracının günlük toplamı sınırla
  * karşılaştırılır, sonra kullanıcı + özellik sayacı artırılır. AI-28: aylık
  * bütçe (ve platform anahtarında platform tavanı) da aynı anda denetlenir.
+ * AI-102: geçici hatada sınırlı yeniden deneme, onaylı yedek modele geçiş,
+ * boş yanıtta tek tekrar ve şema onarımı; her deneme ayrıca sayılır,
+ * bütçeden geçer ve ayrı iz satırı yazar. Yedeğe geçildiyse bu örnek
+ * sonraki çağrılarda da yedekle devam eder.
  */
 class SayacliSaglayici implements IAiProvider {
+  private aktif: IAiProvider;
+  private yedek: IAiProvider | null;
   constructor(
-    private readonly temel: IAiProvider,
+    temel: IAiProvider,
     private readonly say: () => Promise<void>,
     private readonly izle: Izleyici,
-  ) {}
-  get saglayiciAdi() { return this.temel.saglayiciAdi; }
-  get modelAdi() { return this.temel.modelAdi; }
-  get sonKullanim() { return this.temel.sonKullanim; }
-  private async olc<T>(islem: string, girdi: unknown, calistir: () => Promise<T>): Promise<T> {
-    await this.say();
-    const baslangic = Date.now();
-    const oncekiKullanim = this.temel.sonKullanim;
-    const yeniKullanim = () => this.temel.sonKullanim !== oncekiKullanim ? this.temel.sonKullanim : undefined;
-    try {
-      const sonuc = await calistir();
-      await this.izle(islem, baslangic, yeniKullanim(), undefined, { girdi, cikti: sonuc });
-      return sonuc;
-    } catch (hata) {
-      await this.izle(islem, baslangic, yeniKullanim(), hata);
-      throw hata;
+    yedek: IAiProvider | null = null,
+  ) {
+    this.aktif = temel;
+    this.yedek = yedek;
+  }
+  get saglayiciAdi() { return this.aktif.saglayiciAdi; }
+  get modelAdi() { return this.aktif.modelAdi; }
+  get sonKullanim() { return this.aktif.sonKullanim; }
+  private async olc<T>(islem: string, girdi: unknown, calistir: (p: IAiProvider, onarim: string | null) => Promise<T>, yapilandirilmis = false): Promise<T> {
+    const ilk = Date.now();
+    const ozelSure = ozelZamanAsimi();
+    // Görsel girdide model değişmez: yedek model görseli okuyamayabilir (OCR kendi yedeğini yönetir).
+    const yedekKullanilabilir = !(girdi as AiMultimodalGirdi | undefined)?.gorselBase64;
+    const d = { ayniModelTekrar: 0, yedegeGecildi: false, bosTekrarYapildi: false, onarimYapildi: false };
+    let onarim: string | null = null;
+    let neden: DenemeNedeni | null = null;
+    for (let no = 1; ; no++) {
+      await this.say();
+      const saglayici = this.aktif;
+      const baslangic = Date.now();
+      const oncekiKullanim = saglayici.sonKullanim;
+      const yeniKullanim = () => saglayici.sonKullanim !== oncekiKullanim ? saglayici.sonKullanim : undefined;
+      const sure = Math.min(ozelSure ?? SAGLAYICI_ZAMAN_ASIMI_MS, TOPLAM_SURE_MS - (baslangic - ilk));
+      try {
+        const sonuc = await zamanAsimiyla(sure, () => calistir(saglayici, onarim));
+        await this.izle(saglayici, islem, baslangic, yeniKullanim(), undefined, { girdi, cikti: sonuc }, { no, neden });
+        return sonuc;
+      } catch (hata) {
+        await this.izle(saglayici, islem, baslangic, yeniKullanim(), hata, undefined, { no, neden });
+        const karar = denemeKarari(hata, {
+          ...d, yapilandirilmis, ozelZamanAsimi: ozelSure !== undefined,
+          yedekVar: yedekKullanilabilir && this.yedek !== null, kalanMs: TOPLAM_SURE_MS - (Date.now() - ilk),
+        });
+        if (!karar) {
+          if (hata instanceof AiBosYanitHatasi && d.bosTekrarYapildi) hata.tekrarlandi = true;
+          throw hata;
+        }
+        neden = karar.neden;
+        if (karar.neden === "yeniden_deneme") d.ayniModelTekrar++;
+        else if (karar.neden === "bos_yanit") d.bosTekrarYapildi = true;
+        else if (karar.neden === "sema_onarimi") { d.onarimYapildi = true; onarim = onarimTalimati(hata); }
+        else if (karar.neden === "yedek_model" && this.yedek) {
+          d.yedegeGecildi = true;
+          d.ayniModelTekrar = 0;
+          this.aktif = this.yedek;
+          this.yedek = null;
+        }
+        await bekle(karar.beklemeMs);
+      }
     }
   }
   async yapilandirilmisUretim<T>(girdi: AiMultimodalGirdi, sema: z.ZodType<T>): Promise<T> {
-    return this.olc("yapilandirilmis_uretim", girdi, () => this.temel.yapilandirilmisUretim(girdi, sema));
+    return this.olc("yapilandirilmis_uretim", girdi, (p, onarim) => p.yapilandirilmisUretim(onarim ? { ...girdi, prompt: girdi.prompt + onarim } : girdi, sema), true);
   }
   async metinUret(girdi: AiMultimodalGirdi): Promise<string> {
-    return this.olc("metin", girdi, () => this.temel.metinUret(girdi));
+    return this.olc("metin", girdi, (p) => p.metinUret(girdi));
   }
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
-    return this.olc("aracli_sohbet", girdi, () => this.temel.aracliSohbet(girdi));
+    return this.olc("aracli_sohbet", girdi, (p) => p.aracliSohbet(girdi));
   }
 }
 
@@ -182,7 +232,12 @@ export async function kiraciSaglayicisi(
   // AI-31: kiracı kendi anahtarını girmemişse dış sağlayıcı çağrısını platform öder.
   const platformAnahtari = !ayar?.apiKey?.trim() && DIS_SAGLAYICILAR.includes(temel.saglayiciAdi);
   const butce = await prisma.tenantIslem(tenantId, (tx) => kiraciButceKurali(tx, tenantId, ayar, platformAnahtari));
-  return { saglayici: sayacliSar(prisma, tenantId, secenek.ozellik, temel, sinir, butce), ozelTalimatlar };
+  // AI-102: yedek model aynı sağlayıcı/anahtarla firmanın tanımlı diğer modelidir; dış sağlayıcıda onay onu da kapsamalıdır.
+  const yedekModel = ayar ? yedekModelSec(ayar, temel.modelAdi) : null;
+  const yedek = yedekModel && (!DIS_SAGLAYICILAR.includes(temel.saglayiciAdi) || onayModelleri(ayar!.yurtDisiOnayModel).has(yedekModel))
+    ? AiProviderFactory.uret({ ...ayardanYapilandirma(ayar!), modelAdi: yedekModel })
+    : null;
+  return { saglayici: sayacliSar(prisma, tenantId, secenek.ozellik, temel, sinir, butce, yedek), ozelTalimatlar };
 }
 
 /** AI-81: güçlü sağlayıcı; kendi anahtarı, onayı ve fiyatı; günlük sınır ve aylık bütçe ortaktır. */
@@ -201,20 +256,20 @@ async function gucluSaglayicisi(prisma: PrismaService, tenantId: string, ayar: T
 }
 
 /** Çağrı sayacı, sınır/bütçe denetimi ve çağrı izi; iki sağlayıcı kolu da bundan geçer. */
-function sayacliSar(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, temel: IAiProvider, sinir: number, butce: ButceKurali): IAiProvider {
-  const izle: Izleyici = async (islem, baslangic, kullanim, hata, tahmin) => {
+function sayacliSar(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, temel: IAiProvider, sinir: number, butce: ButceKurali, yedek: IAiProvider | null = null): IAiProvider {
+  const izle: Izleyici = async (saglayici, islem, baslangic, kullanim, hata, tahmin, deneme) => {
     const userId = baglamAl()?.userId;
     if (!userId) return;
-    const hataSinifi = hata instanceof AiBosYanitHatasi ? hata.telemetriSinifi : hata instanceof HttpException ? `HTTP_${hata.getStatus()}` : hata instanceof Error ? hata.name.slice(0, 100) : hata ? "BilinmeyenHata" : null;
+    const hataSinifi = hata instanceof AiBosYanitHatasi || hata instanceof SaglayiciHatasi ? hata.telemetriSinifi : hata instanceof HttpException ? `HTTP_${hata.getStatus()}` : hata instanceof Error ? hata.name.slice(0, 100) : hata ? "BilinmeyenHata" : null;
     // Başarısız çağrıda yalnız sağlayıcının bildirdiği token ücretlenir; tahmin yapılmaz.
     const maliyet = maliyetHesapla(butce.fiyat, kullanim, tahmin ?? null);
     await prisma.tenantIslem(tenantId, (tx) => tx.aiCagriIz.create({ data: {
-      tenantId, userId, ozellik, saglayici: temel.saglayiciAdi,
-      model: temel.modelAdi ?? null, islem, sureMs: Math.max(0, Date.now() - baslangic), basarili: !hata, hataSinifi,
+      tenantId, userId, ozellik, saglayici: saglayici.saglayiciAdi,
+      model: saglayici.modelAdi ?? null, islem, deneme: deneme?.no ?? 1, denemeNedeni: deneme?.neden ?? null, sureMs: Math.max(0, Date.now() - baslangic), basarili: !hata, hataSinifi,
       girisToken: maliyet.girisToken, cikisToken: maliyet.cikisToken, maliyetUsd: maliyet.maliyetUsd, maliyetTahmini: maliyet.tahmini,
     } })).catch(() => undefined);
   };
-  return new SayacliSaglayici(temel, () => cagriSay(prisma, tenantId, ozellik, sinir, butce), izle);
+  return new SayacliSaglayici(temel, () => cagriSay(prisma, tenantId, ozellik, sinir, butce), izle, yedek);
 }
 
 export const VARSAYILAN_GUNLUK_SINIR = 1000;

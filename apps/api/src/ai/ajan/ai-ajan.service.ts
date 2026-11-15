@@ -538,7 +538,7 @@ export class AiAjanService {
             if (yanit.metin.trim() || yanit.aracCagrilari.length) break;
             throw new AiBosYanitHatasi(g.saglayici.saglayiciAdi);
           } catch (hata) {
-            if (hata instanceof AiBosYanitHatasi && hata.tekrarDenenebilir && deneme < BOS_YANIT_DENEMESI) continue;
+            if (hata instanceof AiBosYanitHatasi && hata.tekrarDenenebilir && !hata.tekrarlandi && deneme < BOS_YANIT_DENEMESI) continue;
             throw hata;
           }
         }

@@ -20,6 +20,8 @@ export function geminiYanitEngelli(t: BosYanitTanisi): boolean {
 export class AiBosYanitHatasi extends ServiceUnavailableException {
   readonly telemetriSinifi: string;
   readonly tekrarDenenebilir: boolean;
+  /** AI-102: sağlayıcı katmanı zaten bir kez tekrar denedi; üst katman yeniden denemez. */
+  tekrarlandi = false;
   constructor(readonly saglayici: AiProviderTuru, readonly tani: BosYanitTanisi = { bitisKodu: null, engellemeKodu: null, adaySayisi: 0, parcaSayisi: 0 }) {
     const sebep = tani.engellemeKodu && tani.engellemeKodu !== 'BLOCK_REASON_UNSPECIFIED' ? `ENGEL_${tani.engellemeKodu}` : tani.bitisKodu ?? 'NEDEN_YOK';
     const sinif = `AI_BOS_YANIT_${sebep}`;

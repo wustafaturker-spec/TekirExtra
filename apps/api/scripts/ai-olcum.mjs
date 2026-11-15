@@ -46,8 +46,13 @@ async function olc(tx) {
     SELECT durum, coalesce(hata_sinifi, '-') AS sinif, count(*)::int AS adet,
       percentile_cont(0.5) WITHIN GROUP (ORDER BY sure_ms)::int AS sure_p50
     FROM ai_ocr_denetimleri GROUP BY 1, 2 ORDER BY adet DESC`);
+  // AI-102: yeniden deneme / yedek model / boş yanıt / şema onarımı denemeleri ve sonuçları.
+  const denemeler = await tx.$queryRawUnsafe(`
+    SELECT deneme_nedeni AS neden, count(*)::int AS adet, count(*) FILTER (WHERE basarili)::int AS basarili
+    FROM ai_cagri_izleri WHERE deneme_nedeni IS NOT NULL AND created_at >= now() - interval '30 days'
+    GROUP BY 1 ORDER BY 2 DESC`);
   const aktarim = await tx.$queryRawUnsafe(`SELECT count(*)::int AS parti, count(*) FILTER (WHERE geri_alindi_at IS NOT NULL)::int AS geri_alinan FROM veri_aktarimlari`);
-  return { p30: await pencere(30), p90: await pencere(90), hatalar, geriBildirim, geriBildirimDegerleri, ekstre, ocr, aktarim: aktarim[0] };
+  return { p30: await pencere(30), p90: await pencere(90), hatalar, denemeler, geriBildirim, geriBildirimDegerleri, ekstre, ocr, aktarim: aktarim[0] };
 }
 
 /** AI-96 için: `SISTEM_USER_ID` kullanan kaynak dosyaları (test hariç). */
@@ -79,6 +84,10 @@ function rapor(o, envanter) {
   }
   s.push("### Başarısız çağrıların hata sınıfları (90 gün, en sık 25)", "", "| Özellik | Hata sınıfı | Adet |", "|---|---|---|");
   for (const r of o.hatalar) s.push(`| ${r.ozellik} | ${r.sinif} | ${sayi(r.adet)} |`);
+  s.push("", "### Yeniden denemeler (AI-102, 30 gün)", "", "| Neden | Deneme | Başarılı |", "|---|---|---|");
+  for (const r of o.denemeler) s.push(`| ${r.neden} | ${sayi(r.adet)} | ${yuzde(r.basarili, r.adet)} |`);
+  if (!o.denemeler.length) s.push("| — | 0 | |");
+  s.push("", "Not: 2026-11-15 öncesi izlerde `HTTP_503`, sağlayıcıya ulaşılamayan her durumu (ağ, zaman aşımı, 4xx/5xx) kapsar; sonrasında `SAGLAYICI_*` sınıfları ayrıdır.");
   s.push("", "## (b) Asistan yanıtlarında kullanıcı geri bildirimi", "", "| Kanal | Asistan yanıtı | Geri bildirimli | Olumsuz (yanlış + eksik) | Olumlu (doğru) | Olumsuz / bildirimli |", "|---|---|---|---|---|---|");
   for (const r of o.geriBildirim) s.push(`| ${r.kanal} | ${sayi(r.yanit)} | ${sayi(r.bildirimli)} | ${sayi(r.olumsuz)} | ${sayi(r.olumlu)} | ${yuzde(r.olumsuz, r.bildirimli)} |`);
   s.push("", `Kayıtlı geri bildirim değerleri: ${o.geriBildirimDegerleri.map((g) => `\`${g.deger}\` ${g.adet}`).join(", ") || "yok"}.`, "");

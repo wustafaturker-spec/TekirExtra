@@ -68,7 +68,7 @@ describe("AiProviderFactory", () => {
     vi.mocked(lookup).mockResolvedValueOnce([{ address: "127.0.0.1", family: 4 }] as never);
     const fetchSahte = vi.fn();
     vi.stubGlobal("fetch", fetchSahte);
-    await expect(AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-x", baseUrl: "https://ai.example.com/v1" }).metinUret({ prompt: "x" })).rejects.toThrow(/yanıt vermedi/);
+    await expect(AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-x", baseUrl: "https://ai.example.com/v1" }).metinUret({ prompt: "x" })).rejects.toThrow(/özel veya yerel bir ağa/);
     expect(fetchSahte).not.toHaveBeenCalled();
 
     vi.mocked(lookup).mockResolvedValueOnce([{ address: "93.184.215.14", family: 4 }] as never);

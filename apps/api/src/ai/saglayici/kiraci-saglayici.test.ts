@@ -89,8 +89,8 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
     await olarak(() => kiraciSaglayicisi(basit.prisma as never, TENANT, { ozellik: "ozet" }));
     const karmasik = kur(yerelAyar);
     await olarak(() => kiraciSaglayicisi(karmasik.prisma as never, TENANT, { ozellik: "teklif" }));
-    expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("hizli:3b");
-    expect((uretimler[1] as { modelAdi: string }).modelAdi).toBe("derin:14b");
+    // AI-102: her yönlendirmenin ardından yedek model (ilk tanımlı diğer model) de üretilir.
+    expect((uretimler as { modelAdi: string }[]).map((u) => u.modelAdi)).toEqual(["hizli:3b", "varsayilan:7b", "derin:14b", "varsayilan:7b"]);
 
     uretimler.length = 0;
     const disAyar = {
@@ -106,8 +106,13 @@ describe("kiracı sağlayıcısı: KVKK onayı ve kullanım sınırı (AI-14/15)
     uretimler.length = 0;
     const kapsayan = kur({ ...disAyar, yurtDisiOnayModel: "gpt-onayli, gpt-ucuz, gpt-guclu" });
     const ucuz = await olarak(() => kiraciSaglayicisi(kapsayan.prisma as never, TENANT, { ozellik: "ondenetim" }));
-    expect((uretimler[0] as { modelAdi: string }).modelAdi).toBe("gpt-ucuz");
+    expect((uretimler as { modelAdi: string }[]).map((u) => u.modelAdi)).toEqual(["gpt-ucuz", "gpt-onayli"]);
     expect(ucuz.saglayici.saglayiciAdi).toBe("openai");
+
+    // Yedek model dış sağlayıcıda onay kapsamında değilse üretilmez.
+    uretimler.length = 0;
+    await olarak(() => kiraciSaglayicisi(kur({ ...disAyar, yurtDisiOnayModel: "gpt-ucuz" }).prisma as never, TENANT, { ozellik: "ondenetim" }));
+    expect((uretimler as { modelAdi: string }[]).map((u) => u.modelAdi)).toEqual(["gpt-ucuz"]);
   });
 
   it("onay varsa çalışır ve her çağrıyı kullanıcı + özellik bazında sayar", async () => {

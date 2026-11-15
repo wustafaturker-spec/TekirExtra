@@ -1,4 +1,4 @@
-import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { lookup } from "node:dns/promises";
 import { disFetch, ozelIpMi } from "../../core/guvenlik/dis-istek";
@@ -15,6 +15,11 @@ export function zamanAsimiyla<T>(ms: number, is: () => Promise<T>): Promise<T> {
   return zamanAsimiBaglami.run(ms, is);
 }
 
+/** AI-102: çağıran özel zaman aşımı koyduysa (ör. OCR güçlü model denemesi) dayanıklılığı da o yönetir. */
+export function ozelZamanAsimi(): number | undefined {
+  return zamanAsimiBaglami.getStore();
+}
+
 export async function dnsAdresiniDogrula(url: string): Promise<void> {
   const anaMakine = new URL(url).hostname.replace(/^\[|\]$/g, "");
   const adresler = await lookup(anaMakine, { all: true, verbatim: true });
@@ -22,6 +27,25 @@ export async function dnsAdresiniDogrula(url: string): Promise<void> {
     throw new ServiceUnavailableException("Sağlayıcı adresi özel veya yerel bir ağa çözümleniyor.");
   }
 }
+
+/**
+ * AI-102: sağlayıcı isteğinin başarısızlık türü. Kullanıcıya dönen durum yine
+ * 503'tür; izde ve yeniden deneme kararında tür ayrılır. Yalnız geçici
+ * hatalar (ağ, zaman aşımı, 408/429/5xx) yeniden denenir; 400/401/403 ve
+ * yönlendirme denenmez.
+ */
+export class SaglayiciHatasi extends ServiceUnavailableException {
+  constructor(mesaj: string, readonly tur: "zaman_asimi" | "ag" | "http" | "yonlendirme", readonly httpDurumu: number | null = null) {
+    super(mesaj);
+  }
+  get gecici(): boolean {
+    return this.tur === "ag" || this.tur === "zaman_asimi" || (this.tur === "http" && this.httpDurumu !== null && (GECICI_HTTP.has(this.httpDurumu) || this.httpDurumu >= 500));
+  }
+  get telemetriSinifi(): string {
+    return this.tur === "http" ? `SAGLAYICI_HTTP_${this.httpDurumu}` : this.tur === "zaman_asimi" ? "SAGLAYICI_ZAMAN_ASIMI" : this.tur === "ag" ? "SAGLAYICI_AG" : "SAGLAYICI_YONLENDIRME";
+  }
+}
+const GECICI_HTTP = new Set([408, 425, 429]);
 
 /** Sağlayıcıya zaman aşımlı JSON isteği; özel adreslerde DNS kontrolü ve yönlendirme yasağı uygulanır. */
 export async function saglayiciIstegi(ad: string, url: string, basliklar: Record<string, string>, govde: unknown, secenek: { dnsDogrula?: boolean } = {}): Promise<any> {
@@ -37,18 +61,21 @@ export async function saglayiciIstegi(ad: string, url: string, basliklar: Record
       redirect: "manual",
     });
   } catch (hata) {
+    // DNS/özel ağ reddi gibi kendi kararlarımız olduğu gibi geçer; geçici değildir.
+    if (hata instanceof HttpException) throw hata;
     logger.warn(`${ad} isteği başarısız: ${String(hata)}`);
-    throw new ServiceUnavailableException(`${ad} yanıt vermedi.`);
+    const zamanAsimi = hata instanceof Error && (hata.name === "TimeoutError" || hata.name === "AbortError");
+    throw new SaglayiciHatasi(zamanAsimi ? `${ad} zamanında yanıt vermedi.` : `${ad} yanıt vermedi.`, zamanAsimi ? "zaman_asimi" : "ag");
   }
   if (yanit.status >= 300 && yanit.status < 400) {
     logger.warn(`${ad} güvenlik nedeniyle HTTP yönlendirmesi izlenmedi.`);
-    throw new ServiceUnavailableException(`${ad} isteği güvenli olmayan bir yönlendirme döndürdü.`);
+    throw new SaglayiciHatasi(`${ad} isteği güvenli olmayan bir yönlendirme döndürdü.`, "yonlendirme", yanit.status);
   }
   if (!yanit.ok) {
     // Sağlayıcı hata gövdesi kullanıcı metnini/anahtarını yansıtabilir; loga alınmaz.
     logger.warn(`${ad} HTTP ${yanit.status}`);
     await yanit.body?.cancel().catch(() => undefined);
-    throw new ServiceUnavailableException(`${ad} isteği reddetti (HTTP ${yanit.status}). Ayrıntı sunucu kaydında.`);
+    throw new SaglayiciHatasi(`${ad} isteği reddetti (HTTP ${yanit.status}). Ayrıntı sunucu kaydında.`, "http", yanit.status);
   }
   return yanit.json();
 }

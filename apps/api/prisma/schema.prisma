@@ -7344,6 +7344,10 @@ model AiCagriIz {
   maliyetUsd     Decimal? @map("maliyet_usd") @db.Decimal(12, 8)
   /// AI-30: sağlayıcı token sayısı döndürmediğinde maliyet metin uzunluğundan tahmin edildi.
   maliyetTahmini Boolean  @default(false) @map("maliyet_tahmini")
+  /// AI-102: aynı isteğin kaçıncı denemesi (1 = ilk).
+  deneme         Int      @default(1) @db.SmallInt
+  /// AI-102: bu denemenin nedeni: "yeniden_deneme", "yedek_model", "bos_yanit", "sema_onarimi".
+  denemeNedeni   String?  @map("deneme_nedeni") @db.VarChar(40)
   createdAt      DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
