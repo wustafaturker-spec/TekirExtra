@@ -142,6 +142,45 @@ describe("PosService (P1-6)", () => {
     });
   });
 
+  describe("SEC-22 dönüş çağrısında firma ve kayıt doğrulaması", () => {
+    const kayit = (o: Record<string, unknown> = {}) => ({ id: "t1", durum: "baslatildi", saglayiciToken: "tok", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "iyzico", baglanti: { sifreliConfig: "x" } }, ...o });
+    const txKur = (k: unknown) => ({ posTahsilat: { findUnique: vi.fn().mockResolvedValue(k), updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, auditLog: { create: vi.fn() } });
+
+    it("iyzico ödemesi başka tahsilat için başlatılmışsa (conversationId) kaydedilmez, ret firmanın denetim kaydına yazılır", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({ basarili: true, odemeId: "pay", conversationId: "baska-tahsilat", tutar: 1000, fiyat: 1000, odenen: 1000, taksit: 1, dovizCinsi: "TRY" } as never);
+      const tx = txKur(kayit());
+      await expect(kur(tx).service.callback("t1", "t1", "tok")).rejects.toThrow(/doğrulanamadı/);
+      expect(tx.posTahsilat.updateMany).not.toHaveBeenCalled();
+      expect(tx.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ tenantId: "t1", userId: null, islem: "pos_donusu_reddedildi", varlikId: "t1", detay: { saglayici: "iyzico", neden: "kimlik_uyusmuyor" } }) });
+      casus.mockRestore();
+    });
+
+    it("token uyuşmazsa denetim kaydı yazılır; kayıt o firmada yoksa (sahte firma adresi) yazılmaz ve sağlayıcıya gidilmez", async () => {
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu");
+      const tx = txKur(kayit());
+      await expect(kur(tx).service.callback("t1", "t1", "sahte")).rejects.toThrow(/tokenı/);
+      expect(tx.auditLog.create.mock.calls[0][0].data.detay).toEqual({ saglayici: "iyzico", neden: "token_uyusmuyor" });
+      const yok = txKur(null);
+      await expect(kur(yok).service.callback("t2", "t1", "tok")).rejects.toThrow(/tokenı/);
+      expect(yok.auditLog.create).not.toHaveBeenCalled();
+      expect(casus).not.toHaveBeenCalled();
+      expect(JSON.stringify(tx.auditLog.create.mock.calls)).not.toContain("sahte");
+      casus.mockRestore();
+    });
+
+    it("PayTR'de başka üye işyeri ve geçersiz imza reddedilir ve nedenleriyle kaydedilir", async () => {
+      const paytrKayit = kayit({ posHesap: { saglayici: "paytr", baglanti: { sifreliConfig: "x" } } });
+      const govde = { hash: "h", merchant_oid: "oid", status: "success", total_amount: "100000", payment_amount: "100000", payment_type: "card", currency: "TL", callback_id: "t1", installment_count: "1" };
+      const tx = txKur(paytrKayit);
+      await expect(kur(tx).service.paytrCallback("t1", "t1", { ...govde, merchant_id: "baska-isyeri" } as never)).rejects.toThrow(/imzası/);
+      const casus = vi.spyOn(PaytrAdapter.prototype, "callbackDogrula").mockReturnValue(false);
+      await expect(kur(tx).service.paytrCallback("t1", "t1", { ...govde, merchant_id: undefined } as never)).rejects.toThrow(/imzası/);
+      expect(tx.auditLog.create.mock.calls.map((c) => c[0].data.detay.neden)).toEqual(["uye_isyeri_uyusmuyor", "imza_gecersiz"]);
+      expect(tx.posTahsilat.updateMany).not.toHaveBeenCalled();
+      casus.mockRestore();
+    });
+  });
+
   describe("KSB-43 sağlayıcıya iade", () => {
     const odenmis = (saglayici: "iyzico" | "paytr", ek: Record<string, unknown> = {}) => ({
       id: "t1", durum: "odendi", tutar: D(1000), dovizCinsi: "TRY", posHesapId: "p1", cariId: "c1", faturaId: null, hareketId: "h0", kanal: "baglanti",

@@ -65,6 +65,8 @@ export class IyzicoAdapter {
     return {
       basarili: veri.paymentStatus === "SUCCESS",
       odemeId: veri.paymentId ? String(veri.paymentId) : undefined,
+      // SEC-22: ödeme başlatılırken tahsilat kimliği verilir; dönüşte aynı kayda ait olduğu doğrulanır.
+      conversationId: metin(veri.conversationId),
       tutar: Number(veri.paidPrice ?? veri.price ?? 0),
       // KSB-36: sepet tutarı (tahsilat) ile müşterinin ödediği (vade farkı dahil) ayrı döner.
       fiyat: Number(veri.price ?? veri.paidPrice ?? 0),

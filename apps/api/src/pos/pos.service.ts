@@ -297,23 +297,39 @@ export class PosService {
     }
   }
 
+  /**
+   * SEC-22: dönüş adresindeki firma kimliği yalnız arama kapsamıdır (RLS). Firma,
+   * o kapsamda bulunan tahsilat kaydı ve sağlayıcının kanıtıyla (iyzico: saklı token +
+   * firmanın anahtarıyla sorgu + conversationId; PayTR: firmanın üye işyeri no'su ve
+   * imzası) doğrulanır; başka firmaya düşülmez. Ret, kayıt o firmada varsa firmanın
+   * denetim kaydına yazılır (yoksa yalnız sunucu günlüğüne: sahte adresle başka firmanın
+   * kaydı doldurulamaz). Sır, token ve imza yazılmaz.
+   */
+  private async donusuReddet(tenantId: string, tahsilatId: string, kayitVar: boolean, saglayici: "iyzico" | "paytr", neden: string, mesaj: string): Promise<never> {
+    this.logger.warn(`POS dönüşü reddedildi (${saglayici}, ${neden}, kayıt ${kayitVar ? "var" : "yok"})`);
+    if (kayitVar) {
+      try {
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.create({
+          data: { tenantId, userId: null, islem: "pos_donusu_reddedildi", varlik: "pos_tahsilat", varlikId: tahsilatId, detay: { saglayici, neden } },
+        }));
+      } catch { /* ret kaydı yazılamasa da istek reddedilir */ }
+    }
+    throw new BadRequestException(mesaj);
+  }
+
   async paytrCallback(tenantId: string, tahsilatId: string, girdi: PaytrCallback) {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { posHesap: { include: { baglanti: true } } } }),
     );
-    if (
-      !kayit?.posHesap.baglanti ||
-      kayit.posHesap.saglayici !== "paytr" ||
-      girdi.callback_id !== tahsilatId.replace(/-/g, "") ||
-      girdi.status !== "success"
-    )
-      throw new BadRequestException("Geçersiz PayTR bildirimi");
+    if (!kayit?.posHesap.baglanti || kayit.posHesap.saglayici !== "paytr") return this.donusuReddet(tenantId, tahsilatId, Boolean(kayit), "paytr", "kayit_yok", "Geçersiz PayTR bildirimi");
+    if (girdi.callback_id !== tahsilatId.replace(/-/g, "")) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "kimlik_uyusmuyor", "Geçersiz PayTR bildirimi");
+    if (girdi.status !== "success") throw new BadRequestException("Geçersiz PayTR bildirimi");
     const config = this.paytrConfig(kayit.posHesap.baglanti.sifreliConfig);
-    if (girdi.merchant_id !== config.merchantId || !new PaytrAdapter().callbackDogrula(config, girdi))
-      throw new BadRequestException("PayTR bildirim imzası geçersiz");
+    if (girdi.merchant_id !== config.merchantId) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "uye_isyeri_uyusmuyor", "PayTR bildirim imzası geçersiz");
+    if (!new PaytrAdapter().callbackDogrula(config, girdi)) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "imza_gecersiz", "PayTR bildirim imzası geçersiz");
     const doviz = girdi.currency === "TL" ? "TRY" : girdi.currency;
     if (doviz !== kayit.dovizCinsi || !new Prisma.Decimal(girdi.payment_amount).div(100).equals(kayit.tutar))
-      throw new BadRequestException("PayTR ödeme tutarı veya dövizi uyuşmuyor");
+      return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "tutar_uyusmuyor", "PayTR ödeme tutarı veya dövizi uyuşmuyor");
     // KSB-36: total_amount müşterinin ödediğidir (vade farkı dahil); taksit gelmezse tek çekim.
     await this.odemeyiKaydet(tenantId, kayit, girdi.merchant_oid, "PayTR kart tahsilatı", {
       taksit: Number(girdi.installment_count) || 1,
@@ -1010,9 +1026,13 @@ export class PosService {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { posHesap: { include: { baglanti: true } } } }),
     );
-    if (!kayit || !kayit.saglayiciToken || kayit.saglayiciToken !== token) throw new BadRequestException("Geçersiz ödeme callback tokenı");
+    if (!kayit || !kayit.saglayiciToken || kayit.saglayiciToken !== token)
+      return this.donusuReddet(tenantId, tahsilatId, Boolean(kayit), "iyzico", kayit ? "token_uyusmuyor" : "kayit_yok", "Geçersiz ödeme callback tokenı");
     if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari };
     const sonuc = await new IyzicoAdapter().odemeSonucu(this.config(kayit.posHesap.baglanti!.sifreliConfig), token);
+    // SEC-22: sağlayıcının döndürdüğü ödeme bu tahsilat için başlatılmış olmalı (boş gelirse token eşleşmesi yeterli sayılır).
+    if (sonuc.conversationId && sonuc.conversationId !== kayit.id)
+      return this.donusuReddet(tenantId, tahsilatId, true, "iyzico", "kimlik_uyusmuyor", "Ödeme doğrulanamadı");
     // KSB-36: vade farkı müşteriye yansıtılmışsa ödenen sepet tutarından büyüktür; sepet tutarı tahsilata eşit olmalı.
     if (!sonuc.basarili || !this.iyzicoUyusur(kayit, sonuc)) {
       // Süresi dolmuş/iptal talebin durumu korunur; yalnız açık talep başarısız sayılır.
@@ -1076,6 +1096,7 @@ export class PosService {
       return { odendi: false, mesaj: `iyzico'da tamamlanmış ödeme bulunamadı (${hata instanceof Error ? hata.message : String(hata)})` };
     }
     if (!sonuc.basarili) return { odendi: false, mesaj: "iyzico'da tamamlanmış ödeme yok; müşteri henüz ödememiş" };
+    if (sonuc.conversationId && sonuc.conversationId !== kayit.id) return { odendi: false, mesaj: "iyzico'daki ödeme bu talebe ait değil; kayıt yapılmadı" };
     if (!this.iyzicoUyusur(kayit, sonuc)) {
       this.logger.warn(`iyzico sorgusu tahsilatla uyuşmadı: ${id}`);
       return { odendi: false, mesaj: "iyzico ödemesi tahsilat tutarı ya da dövizi ile uyuşmuyor; iyzico panelinden kontrol edin" };
