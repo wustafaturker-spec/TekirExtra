@@ -4,7 +4,7 @@ import { registerRapor, type RaporSatiri } from "../core/raporlar/rapor-kayit";
 import { aktifBaglam } from "../core/istek-baglami";
 import { FIYAT_ENDEKS_ROLLERI, fiyatEndeksErisimi, makasEsigi, tarafDenetle } from "./fiyat-endeks-erisim";
 import { ayAraligi, ayBasiMetni, ayKaydir, EN_AZ_SATIR, type AylikToplam } from "./fiyat-endeks-hesap";
-import { aylikToplamlar, endeksVerisi } from "./fiyat-endeks-veri";
+import { aylikToplamlar, endeksVerisi, ozelPlan } from "./fiyat-endeks-veri";
 
 /**
  * END-13 marj makası ve END-14 tedarikçi zam denetimi. İkisi de alış
@@ -67,6 +67,7 @@ export function makasDurumu(m: NonNullable<ReturnType<typeof marjMakasi>>, esik:
 
 /** END-13 maliyet kaynağı: alış faturaları ya da stok çıkışlarının ağırlıklı maliyeti. */
 async function cikisMaliyetleri(tx: Prisma.TransactionClient, baslangic: string, bitisHaric: string, stokId: string | null) {
+  await ozelPlan(tx);
   const satirlar = await tx.$queryRaw<{ stok_id: string; ay: string; tutar: D; miktar: D; satir: number }[]>`
     SELECT stok_id::text AS stok_id, to_char(date_trunc('month', tarih), 'YYYY-MM-01') AS ay,
       SUM(ABS(miktar) * maliyet) AS tutar, SUM(ABS(miktar)) AS miktar, COUNT(*)::int AS satir
@@ -156,6 +157,7 @@ registerRapor({
 
 /** END-14: tedarikçi × ürün × belge dövizi aylık alış toplamları. */
 async function tedarikciToplamlari(tx: Prisma.TransactionClient, g: { baslangic: string; bitisHaric: string; cariId: string | null; stokId: string | null }) {
+  await ozelPlan(tx);
   const satirlar = await tx.$queryRaw<{ cari_id: string; stok_id: string; doviz: string; ay: string; tl: D; dvz: D; miktar: D; satir: number }[]>`
     SELECT f.cari_id::text AS cari_id, fs.stok_id::text AS stok_id, f.doviz_cinsi::text AS doviz,
       to_char(date_trunc('month', f.tarih), 'YYYY-MM-01') AS ay,

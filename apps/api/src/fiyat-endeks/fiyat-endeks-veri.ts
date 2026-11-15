@@ -28,6 +28,16 @@ export interface ToplamSatiri {
 }
 
 /**
+ * END-25: Prisma hazırlanmış sorgu kullanır; PostgreSQL 5 çalışmadan sonra
+ * genel plana geçer ve ürün süzgecini/RLS koşulunu bilmeden kötü plan seçer
+ * (24 aylık ekran 0,2 sn'den 1,3 sn'ye çıkıyordu). İşlem boyunca sorguya
+ * özel plan zorlanır; SET LOCAL işlem bitince kendiliğinden düşer.
+ */
+export async function ozelPlan(tx: Tx): Promise<void> {
+  await tx.$executeRawUnsafe("SET LOCAL plan_cache_mode = force_custom_plan");
+}
+
+/**
  * END-06: kesin faturalardan aylık gerçekleşen fiyat toplamları. Satır
  * matrahı (KDV hariç, satır ve genel iskonto düşülmüş) × belge kuru = TL;
  * miktar ana birime çevrilir. İade, proforma, taslak ve iptal girmez;
@@ -44,6 +54,7 @@ export async function aylikToplamlar(tx: Tx, g: {
   listeler?: string[] | null;
 }): Promise<ToplamSatiri[]> {
   const listeli = Boolean(g.listeler?.length);
+  await ozelPlan(tx);
   const satirlar = await tx.$queryRaw<{ stok_id: string; grup: string | null; ay: string; tutar: Prisma.Decimal; miktar: Prisma.Decimal; satir: number; birimsiz: number; bugunku_liste: number }[]>`
     SELECT fs.stok_id::text AS stok_id,
       ${listeli ? Prisma.sql`COALESCE(f.fiyat_listesi_id, c.fiyat_listesi_id)::text` : Prisma.sql`'tum'`} AS grup,

@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { ayKaydir } from "./fiyat-endeks-hesap";
+import { ozelPlan } from "./fiyat-endeks-veri";
 
 /**
  * END-07: grafiğe eklenen diğer fiyat çizgileri. Faturadan gelen gerçekleşen
@@ -88,6 +89,7 @@ export async function listeFiyatCizgileri(tx: Tx, g: { stokId: string; aylar: st
  */
 export async function maliyetCizgisi(tx: Tx, g: { stokId: string; varyantId: string | null; aylar: string[]; bazFiyat: D | null }): Promise<EkCizgi> {
   const bas = g.aylar[0], sonHaric = ayKaydir(g.aylar[g.aylar.length - 1], 1);
+  await ozelPlan(tx);
   const satirlar = await tx.$queryRaw<{ ay: string; deger: Prisma.Decimal | null }[]>`
     SELECT to_char(date_trunc('month', tarih), 'YYYY-MM-01') AS ay,
       SUM(ABS(miktar) * maliyet) / NULLIF(SUM(ABS(miktar)), 0) AS deger
@@ -107,6 +109,7 @@ export async function maliyetCizgisi(tx: Tx, g: { stokId: string; varyantId: str
  */
 export async function sonAlisCizgisi(tx: Tx, g: { stokId: string; varyantId: string | null; aylar: string[]; bazFiyat: D | null }): Promise<EkCizgi> {
   const sonHaric = ayKaydir(g.aylar[g.aylar.length - 1], 1);
+  await ozelPlan(tx);
   const satirlar = await tx.$queryRaw<{ ay: string; fiyat: Prisma.Decimal }[]>`
     WITH alislar AS (
       SELECT f.tarih, f.created_at, fs.matrah * f.kur / NULLIF(fs.miktar * k.katsayi, 0) AS fiyat
