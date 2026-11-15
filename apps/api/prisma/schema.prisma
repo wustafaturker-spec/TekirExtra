@@ -124,6 +124,8 @@ enum DuzeltmeTuru {
 
 model Tenant {
   fiyatListesiFiyatGecmisi FiyatListesiFiyatGecmisi[]
+  endeksArtisKurallari     EndeksArtisKurali[]
+  endeksArtisOnerileri     EndeksArtisOnerisi[]
   entegrasyonTalepleri EntegrasyonTalebi[]
   iletiSablonlari      IletiSablonu[]
   asistanFikirleri       AsistanFikri[]
@@ -3869,6 +3871,9 @@ model TekrarlayanFatura {
   notSablonu       String?          @map("not_sablonu")
   faturalananDonem FaturalananDonem @default(bu_donem) @map("faturalanan_donem")
   fiyatKaynagi     TekrarFiyatKaynagi @default(sablon) @map("fiyat_kaynagi")
+  /// END-17: onaylanan endeksli artışlar şablon fiyatlarına çarpan olarak uygulanır (şablon çoğunlukla kesin faturadır, değiştirilmez).
+  fiyatCarpani     Decimal          @default(1) @map("fiyat_carpani") @db.Decimal(18, 8)
+  endeksArtisKurali EndeksArtisKurali?
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
@@ -5215,6 +5220,7 @@ model KiraSozlesme {
   kategori  MasrafKategori @relation(fields: [kategoriId], references: [id])
   cari      CariHesap?     @relation(fields: [cariId], references: [id])
   masraflar Masraf[]
+  endeksArtisKurali EndeksArtisKurali?
 
   @@index([tenantId, aktif, baslangicTarihi])
   @@map("kira_sozlesmeleri")
@@ -8801,7 +8807,8 @@ model EndeksSerisi {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  degerler EndeksDegeri[]
+  degerler      EndeksDegeri[]
+  artisKurallari EndeksArtisKurali[]
 
   @@map("endeks_serileri")
 }
@@ -8837,4 +8844,60 @@ model EndeksDegerRevizyonu {
 
   @@index([seriKodu, donem])
   @@map("endeks_deger_revizyonlari")
+}
+
+/// END-17: kira sözleşmesi ya da tekrarlayan fatura başına endeksli artış kuralı (kayıt başına tek).
+model EndeksArtisKurali {
+  id                  String     @id @default(uuid()) @db.Uuid
+  tenantId            String     @map("tenant_id") @db.Uuid
+  kiraSozlesmeId      String?    @unique @map("kira_sozlesme_id") @db.Uuid
+  tekrarlayanFaturaId String?    @unique @map("tekrarlayan_fatura_id") @db.Uuid
+  seriKodu            String     @map("seri_kodu") @db.VarChar(40)
+  /// yillik | oniki_ay_ortalama
+  olcu                String     @db.VarChar(20)
+  /// 1–12: artışın uygulanacağı ay; hesap bir önceki ayın endeksiyle yapılır.
+  artisAyi            Int        @map("artis_ayi")
+  /// Yüzde üst sınır (ör. 25.00); null = sınırsız.
+  ustSinir            Decimal?   @map("ust_sinir") @db.Decimal(7, 2)
+  aktif               Boolean    @default(true)
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kiraSozlesme      KiraSozlesme?        @relation(fields: [kiraSozlesmeId], references: [id], onDelete: Cascade)
+  tekrarlayanFatura TekrarlayanFatura?   @relation(fields: [tekrarlayanFaturaId], references: [id], onDelete: Cascade)
+  seri              EndeksSerisi         @relation(fields: [seriKodu], references: [kod], onDelete: Restrict)
+  oneriler          EndeksArtisOnerisi[]
+
+  @@index([tenantId, aktif, artisAyi])
+  @@map("endeks_artis_kurallari")
+}
+
+/// END-17: artış ayında üretilen öneri; onaylanınca kaynak kayıt güncellenir. Silinmez, karar verilince değişmez.
+model EndeksArtisOnerisi {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  kuralId        String    @map("kural_id") @db.Uuid
+  yil            Int
+  seriKodu       String    @map("seri_kodu") @db.VarChar(40)
+  olcu           String    @db.VarChar(20)
+  sonAy          DateTime  @map("son_ay") @db.Date
+  hesaplananOran Decimal   @map("hesaplanan_oran") @db.Decimal(9, 2)
+  uygulananOran  Decimal   @map("uygulanan_oran") @db.Decimal(9, 2)
+  eskiBedel      Decimal   @map("eski_bedel") @db.Decimal(18, 8)
+  yeniBedel      Decimal   @map("yeni_bedel") @db.Decimal(18, 8)
+  /// Hesapta kullanılan dönemler, değerler, ortalamalar ve (tekrarlayan faturada) çarpanlar.
+  hesap          Json
+  /// bekliyor | onaylandi | reddedildi
+  durum          String    @default("bekliyor") @db.VarChar(12)
+  kararVerenId   String?   @map("karar_veren_id") @db.Uuid
+  kararAt        DateTime? @map("karar_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kural  EndeksArtisKurali @relation(fields: [kuralId], references: [id], onDelete: Cascade)
+
+  @@unique([kuralId, yil])
+  @@index([tenantId, durum])
+  @@map("endeks_artis_onerileri")
 }

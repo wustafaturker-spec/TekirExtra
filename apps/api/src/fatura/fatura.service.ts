@@ -277,6 +277,8 @@ export class FaturaService {
       });
       const uretilenIds: string[] = [];
       const guncelFiyatlilar: { planId: string; ad: string; faturaId: string }[] = [];
+      // END-17: onaylanmış endeksli artış şablon fiyatlarına çarpan olarak uygulanır.
+      const carpanlilar: { planId: string; ad: string; faturaId: string; carpan: Prisma.Decimal }[] = [];
       const kursuzlar: { planId: string; ad: string; dovizCinsi: string; tarih: string }[] = [];
       let kotaDoldu = false;
       for (const plan of planlar) {
@@ -317,6 +319,7 @@ export class FaturaService {
             }
             uretilenIds.push(yeni.id);
             if (plan.fiyatKaynagi === "guncel") guncelFiyatlilar.push({ planId: plan.id, ad: plan.ad, faturaId: yeni.id });
+            else if (plan.fiyatCarpani && !new Prisma.Decimal(plan.fiyatCarpani).equals(1)) carpanlilar.push({ planId: plan.id, ad: plan.ad, faturaId: yeni.id, carpan: new Prisma.Decimal(plan.fiyatCarpani) });
             planUretimAdedi += 1;
             sonUretimTarihi = tarih;
           }
@@ -327,7 +330,7 @@ export class FaturaService {
           aktif: plan.bitisTarihi ? tarih <= plan.bitisTarihi : true,
         }});
       }
-      return { uretilenIds, guncelFiyatlilar, kursuzlar, kotaDoldu };
+      return { uretilenIds, guncelFiyatlilar, carpanlilar, kursuzlar, kotaDoldu };
     });
     // Kilit bırakıldıktan sonra: güncelleme kendi işlemini ve doğrulamalarını açar.
     const fiyatUyarilari: { planId: string; ad: string; faturaId: string; sorunlar: string[] }[] = [];
@@ -335,7 +338,30 @@ export class FaturaService {
       const sorunlar = await this.guncelFiyatlariUygula(g.faturaId);
       if (sorunlar.length) fiyatUyarilari.push({ ...g, sorunlar });
     }
+    for (const c of uretim.carpanlilar) {
+      const sorunlar = await this.carpaniUygula(c.faturaId, c.carpan);
+      if (sorunlar.length) fiyatUyarilari.push({ planId: c.planId, ad: c.ad, faturaId: c.faturaId, sorunlar });
+    }
     return { uretilenAdet: uretim.uretilenIds.length, faturaIds: uretim.uretilenIds, kotaDoldu: uretim.kotaDoldu, kursuzlar: uretim.kursuzlar, fiyatUyarilari };
+  }
+
+  /**
+   * END-17: onaylanmış endeksli artışın çarpanını taslağın birim fiyatlarına
+   * olağan güncelleme yolundan uygular (toplamlar, vergiler yeniden hesaplanır).
+   * Hata taslağı bozmaz; taslak şablon fiyatıyla kalır ve uyarı döner.
+   */
+  private async carpaniUygula(faturaId: string, carpan: Prisma.Decimal): Promise<string[]> {
+    const { tenantId } = aktifBaglam();
+    try {
+      const birimFiyatlari = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const f = await tx.fatura.findUniqueOrThrow({ where: { id: faturaId }, select: { satirlar: { select: { id: true, birimFiyat: true } } } });
+        return new Map(f.satirlar.map((x) => [x.id, x.birimFiyat.mul(carpan).toDecimalPlaces(4).toFixed(4)]));
+      });
+      if (birimFiyatlari.size) await this.guncelle(faturaId, {}, { birimFiyatlari });
+      return [];
+    } catch (hata) {
+      return [`Endeksli artış çarpanı uygulanamadı, taslak şablon fiyatlarıyla kaldı: ${hata instanceof Error ? hata.message : String(hata)}`];
+    }
   }
 
   /**

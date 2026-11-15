@@ -33,6 +33,7 @@ const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
   { yol: "/panel/uretim/maliyet", roller: ["muhasebe", "salt_okunur", "uretim_planlama", "maliyet_muhasebesi"] }, // API uretim/maliyet-raporu ile aynı roller.
   { yol: "/panel/stok/maliyet", roller: [] }, // Yeniden hesaplama API'si yalnız yöneticiye açık.
   { yol: "/panel/raporlar/gelir-gider", roller: FINANS_ROLLERI },
+  { yol: "/panel/raporlar/endeksli-artislar", roller: FINANS_ROLLERI }, // END-17: API artış uçlarıyla aynı roller.
   { yol: "/panel/raporlar/kdv-disi-vergiler", roller: ["muhasebe", "mali_musavir"] },
   { yol: "/panel/raporlar/pesin-vergiler", roller: ["muhasebe", "mali_musavir"] },
   { yol: "/panel/raporlar/vergi-takvimi", roller: ["muhasebe", "mali_musavir"] },
