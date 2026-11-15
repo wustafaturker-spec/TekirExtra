@@ -23,6 +23,7 @@ import { EklerService, type YuklenenDosya } from "../../ekler/ekler.service";
 import { ublOzeti } from "./ubl-ozeti";
 import { acikYazmaIstegiVar } from "./yazma-niyeti";
 import { telegramAraclari } from "./telegram-veri-kapisi";
+import { AiIptalHatasi, iptalSinyaliyle } from "../saglayici/aracli-ortak";
 
 /**
  * AI-82: akışlı yanıtın olayları. Yanıt metni yanıt denetiminden (uydurma
@@ -281,6 +282,13 @@ function durumBaglami(durumlar: DogrulanmisDurum[]): string {
  * Kimlik ve rol yalnız oturumdan gelir; model yalnız kullanıcının rolüyle
  * erişebildiği araçları görür. Onaya tabi araçlar işlem yapmaz, talep açar.
  */
+/** AI-99: durdurulan yanıtın metni; açılmış onay talepleri geri alınmış gösterilmez. */
+function durdurmaYaniti(talepSayisi: number): string {
+  return talepSayisi
+    ? "Yanıt durduruldu. Durdurulana kadar açılan onay talepleri onayınızı bekliyor."
+    : "Yanıt durduruldu.";
+}
+
 @Injectable()
 export class AiAjanService {
   private readonly logger = new Logger(AiAjanService.name);
@@ -480,7 +488,12 @@ export class AiAjanService {
     kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "gorev" });
 
   /** Model–araç döngüsü: araç çağrılarını yürütür, uydurma yanıtı denetler (AI-05). */
-  private async dongu(g: {
+  /** AI-99: kullanıcının durdurması döngüdeki her model isteğine (ve yeniden denemelerine) taşınır. */
+  private dongu(g: Parameters<AiAjanService["donguIc"]>[0]) {
+    return iptalSinyaliyle(g.sinyal, () => this.donguIc(g));
+  }
+
+  private async donguIc(g: {
     saglayici: IAiProvider;
     sistemRol: string;
     mesajlar: AiSohbetMesaji[];
@@ -521,11 +534,9 @@ export class AiAjanService {
     const acikYazmaIstegi = acikYazmaIstegiVar(g.kullaniciTalebi);
 
     for (let tur = 0; tur < EN_COK_TUR && cevap === null; tur++) {
-      // AI-82: durdurma turlar arasında uygulanır; süren model çağrısı yarıda kesilmez.
+      // AI-82/AI-99: durdurma turlar arasında da uygulanır; süren model isteği sağlayıcı katmanında kesilir.
       if (g.sinyal?.aborted) {
-        cevap = talepler.length
-          ? "Yanıt durduruldu. Durdurulana kadar açılan onay talepleri onayınızı bekliyor."
-          : "Yanıt durduruldu.";
+        cevap = durdurmaYaniti(talepler.length);
         break;
       }
       g.olay?.({ tur: "dusunuyor", adim: tur + 1 });
@@ -543,6 +554,7 @@ export class AiAjanService {
           }
         }
       } catch (hata) {
+        if (hata instanceof AiIptalHatasi || g.sinyal?.aborted) { cevap = durdurmaYaniti(talepler.length); break; }
         if (!kaynaklar.length) throw hata;
         ({ cevap, finansAciklama } = finansAciklamasiniDogrula(null, kaynaklar));
         this.logger.warn('Finans kaynağı alındıktan sonra model yanıtı alınamadı; kaynak özeti korundu');
@@ -590,6 +602,8 @@ export class AiAjanService {
       }
       mesajlar.push({ rol: "asistan", metin: yanit.metin, aracCagrilari: yanit.aracCagrilari, ham: yanit.ham });
       for (const cagri of yanit.aracCagrilari) {
+        // AI-99: durdurulduktan sonra yeni araç çağrısı ya da onay talebi başlatılmaz; süren araç tamamlanır.
+        if (g.sinyal?.aborted) break;
         if (cagri.ad === GRUP_ACMA_ARACI && gruplar) {
           const istenen = Array.isArray(cagri.girdi?.gruplar) ? cagri.girdi.gruplar.filter((x): x is AracGrubu => typeof x === "string" && x in ARAC_GRUPLARI) : [];
           istenen.forEach((x) => gruplar.add(x));

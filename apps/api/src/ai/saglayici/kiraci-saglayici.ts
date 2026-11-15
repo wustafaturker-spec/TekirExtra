@@ -9,7 +9,7 @@ import { TanimsizAiProvider } from "./tanimsiz-ai.provider";
 import { AiProviderFactory, type TenantAiYapilandirma } from "./ai-provider.factory";
 import { AI_AKTARIM_POLITIKA_SURUMU } from "../ayarlar/ai-aktarim-politikasi";
 import { AiBosYanitHatasi } from './ai-bos-yanit';
-import { SaglayiciHatasi, ozelZamanAsimi, zamanAsimiyla } from "./aracli-ortak";
+import { AiIptalHatasi, SaglayiciHatasi, iptalEdildiyseDur, iptalSinyali, ozelZamanAsimi, zamanAsimiyla } from "./aracli-ortak";
 import { bekle, denemeKarari, onarimTalimati, TOPLAM_SURE_MS, type DenemeNedeni } from "./dayaniklilik";
 import { AiSinirHatasi, buAyMaliyeti, butceDenetle, kiraciButceKurali, maliyetHesapla, platformAnahtariMi, type ButceKurali } from "./ai-butce";
 
@@ -117,6 +117,8 @@ class SayacliSaglayici implements IAiProvider {
     let onarim: string | null = null;
     let neden: DenemeNedeni | null = null;
     for (let no = 1; ; no++) {
+      // AI-99: durdurulan istekte yeni deneme sayılmaz ve başlamaz.
+      iptalEdildiyseDur();
       await this.say();
       const saglayici = this.aktif;
       const baslangic = Date.now();
@@ -147,7 +149,7 @@ class SayacliSaglayici implements IAiProvider {
           this.aktif = this.yedek;
           this.yedek = null;
         }
-        await bekle(karar.beklemeMs);
+        await bekle(karar.beklemeMs, iptalSinyali());
       }
     }
   }
@@ -260,7 +262,7 @@ function sayacliSar(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi
   const izle: Izleyici = async (saglayici, islem, baslangic, kullanim, hata, tahmin, deneme) => {
     const userId = baglamAl()?.userId;
     if (!userId) return;
-    const hataSinifi = hata instanceof AiBosYanitHatasi || hata instanceof SaglayiciHatasi ? hata.telemetriSinifi : hata instanceof HttpException ? `HTTP_${hata.getStatus()}` : hata instanceof Error ? hata.name.slice(0, 100) : hata ? "BilinmeyenHata" : null;
+    const hataSinifi = hata instanceof AiBosYanitHatasi || hata instanceof SaglayiciHatasi || hata instanceof AiIptalHatasi ? hata.telemetriSinifi : hata instanceof HttpException ? `HTTP_${hata.getStatus()}` : hata instanceof Error ? hata.name.slice(0, 100) : hata ? "BilinmeyenHata" : null;
     // Başarısız çağrıda yalnız sağlayıcının bildirdiği token ücretlenir; tahmin yapılmaz.
     const maliyet = maliyetHesapla(butce.fiyat, kullanim, tahmin ?? null);
     await prisma.tenantIslem(tenantId, (tx) => tx.aiCagriIz.create({ data: {

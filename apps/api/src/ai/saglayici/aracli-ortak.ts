@@ -15,6 +15,29 @@ export function zamanAsimiyla<T>(ms: number, is: () => Promise<T>): Promise<T> {
   return zamanAsimiBaglami.run(ms, is);
 }
 
+/**
+ * AI-99: kullanıcının durdurması sağlayıcı isteğine kadar taşınır. Sinyal
+ * bağlamla taşınır (sağlayıcı imzaları değişmez); süre sınırıyla birleşir.
+ */
+const iptalBaglami = new AsyncLocalStorage<AbortSignal>();
+export function iptalSinyaliyle<T>(sinyal: AbortSignal | undefined, is: () => Promise<T>): Promise<T> {
+  return sinyal ? iptalBaglami.run(sinyal, is) : is();
+}
+export function iptalSinyali(): AbortSignal | undefined {
+  return iptalBaglami.getStore();
+}
+
+/** AI-99: kullanıcı durdurdu; yeniden denenmez, izde "IPTAL" sınıfıyla görünür. */
+export class AiIptalHatasi extends HttpException {
+  readonly telemetriSinifi = "IPTAL";
+  constructor() {
+    super("Yanıt durduruldu.", 499);
+  }
+}
+export function iptalEdildiyseDur(): void {
+  if (iptalBaglami.getStore()?.aborted) throw new AiIptalHatasi();
+}
+
 /** AI-102: çağıran özel zaman aşımı koyduysa (ör. OCR güçlü model denemesi) dayanıklılığı da o yönetir. */
 export function ozelZamanAsimi(): number | undefined {
   return zamanAsimiBaglami.getStore();
@@ -50,6 +73,9 @@ const GECICI_HTTP = new Set([408, 425, 429]);
 /** Sağlayıcıya zaman aşımlı JSON isteği; özel adreslerde DNS kontrolü ve yönlendirme yasağı uygulanır. */
 export async function saglayiciIstegi(ad: string, url: string, basliklar: Record<string, string>, govde: unknown, secenek: { dnsDogrula?: boolean } = {}): Promise<any> {
   let yanit: Response;
+  const iptal = iptalBaglami.getStore();
+  iptalEdildiyseDur();
+  const sure = AbortSignal.timeout(zamanAsimiBaglami.getStore() ?? SAGLAYICI_ZAMAN_ASIMI_MS);
   try {
     if (secenek.dnsDogrula) await dnsAdresiniDogrula(url);
     // SEC-08: kiracı adresinde bağlantı IP'si de denetlenir (DNS rebinding).
@@ -57,12 +83,13 @@ export async function saglayiciIstegi(ad: string, url: string, basliklar: Record
       method: "POST",
       headers: { "Content-Type": "application/json", ...basliklar },
       body: JSON.stringify(govde),
-      signal: AbortSignal.timeout(zamanAsimiBaglami.getStore() ?? SAGLAYICI_ZAMAN_ASIMI_MS),
+      signal: iptal ? AbortSignal.any([sure, iptal]) : sure,
       redirect: "manual",
     });
   } catch (hata) {
     // DNS/özel ağ reddi gibi kendi kararlarımız olduğu gibi geçer; geçici değildir.
     if (hata instanceof HttpException) throw hata;
+    if (iptal?.aborted) throw new AiIptalHatasi();
     logger.warn(`${ad} isteği başarısız: ${String(hata)}`);
     const zamanAsimi = hata instanceof Error && (hata.name === "TimeoutError" || hata.name === "AbortError");
     throw new SaglayiciHatasi(zamanAsimi ? `${ad} zamanında yanıt vermedi.` : `${ad} yanıt vermedi.`, zamanAsimi ? "zaman_asimi" : "ag");

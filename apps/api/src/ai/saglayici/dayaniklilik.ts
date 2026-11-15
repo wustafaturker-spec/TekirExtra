@@ -1,7 +1,7 @@
 import { ZodError } from "zod";
 import { AiSinirHatasi } from "./ai-butce";
 import { AiBosYanitHatasi } from "./ai-bos-yanit";
-import { SaglayiciHatasi } from "./aracli-ortak";
+import { AiIptalHatasi, SaglayiciHatasi } from "./aracli-ortak";
 
 /**
  * AI-102: sağlayıcı dayanıklılığı. Bir model isteği (tek kullanıcı eylemi)
@@ -43,7 +43,7 @@ export function semaHatasiMi(hata: unknown): boolean {
 }
 
 export function denemeKarari(hata: unknown, d: DenemeDurumu): DenemeKarari {
-  if (hata instanceof AiSinirHatasi) return null;
+  if (hata instanceof AiSinirHatasi || hata instanceof AiIptalHatasi) return null;
   if (d.kalanMs < ASGARI_KALAN_MS) return null;
   if (hata instanceof AiBosYanitHatasi) {
     return hata.tekrarDenenebilir && !d.bosTekrarYapildi ? { neden: "bos_yanit", beklemeMs: 0 } : null;
@@ -66,4 +66,7 @@ export function onarimTalimati(hata: unknown): string {
   return `\n\nÖNEMLİ: Önceki yanıtın istenen JSON şemasına uymadı${alanlar.length ? ` (sorunlu alanlar: ${alanlar.join(", ")})` : " (geçerli JSON değildi)"}. Yalnız şemaya uyan geçerli JSON döndür; açıklama ya da kod bloğu ekleme.`;
 }
 
-export const bekle = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
+/** Bekleme; kullanıcı durdurursa hemen biter (AI-99). */
+export const bekle = (ms: number, iptal?: AbortSignal) => (ms > 0 && !iptal?.aborted
+  ? new Promise<void>((r) => { const t = setTimeout(r, ms); iptal?.addEventListener("abort", () => { clearTimeout(t); r(); }, { once: true }); })
+  : Promise.resolve());

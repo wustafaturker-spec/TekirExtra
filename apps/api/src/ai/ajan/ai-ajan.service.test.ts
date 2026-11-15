@@ -10,6 +10,7 @@ import { aracEtiketi, AiAjanService } from "./ai-ajan.service";
 import { AracYurutucu } from "./arac-yurutucu";
 import { finansOlgulari } from "./finans-aciklama";
 import { AiBosYanitHatasi } from '../saglayici/ai-bos-yanit';
+import { AiIptalHatasi, iptalSinyali } from "../saglayici/aracli-ortak";
 
 const KIMLIK = { tenantId: "11111111-1111-1111-1111-111111111111", userId: "22222222-2222-2222-2222-222222222222" };
 const CARI_ID = "3f2b6c1e-8d4a-4c2b-9a1e-5b7c8d9e0f12";
@@ -838,6 +839,48 @@ describe("akışlı yanıt (AI-82)", () => {
     const y = await istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle("Rapor", undefined, undefined, [], { sinyal: durdur.signal }));
     expect(y.cevap).toBe("Yanıt durduruldu.");
     expect(k.saglayici.girdiler).toHaveLength(0);
+  });
+
+  it("AI-99: model beklerken durdurulursa sinyal sağlayıcıya ulaşır, istek kesilir, yeni tur başlamaz", async () => {
+    const k = kur([]);
+    const durdur = new AbortController();
+    let gorulen: AbortSignal | undefined;
+    const sohbet = vi.spyOn(k.saglayici, "aracliSohbet").mockImplementation(async () => {
+      gorulen = iptalSinyali();
+      setTimeout(() => durdur.abort(), 5);
+      await new Promise((_, ret) => gorulen!.addEventListener("abort", () => ret(new AiIptalHatasi()), { once: true }));
+      throw new Error("ulaşılmamalı");
+    });
+    const y = await istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle("Rapor", undefined, undefined, [], { sinyal: durdur.signal }));
+    expect(gorulen).toBe(durdur.signal);
+    expect(y.cevap).toBe("Yanıt durduruldu.");
+    expect(sohbet).toHaveBeenCalledTimes(1);
+  });
+
+  it("AI-99: araç turları arasında durdurulursa sıradaki araç ve model turu çalışmaz", async () => {
+    const durdur = new AbortController();
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "cari_ara", girdi: { arama: "A" } }, { id: "c2", ad: "stok_ara", girdi: { arama: "B" } }] },
+      { metin: "olmamalı", aracCagrilari: [] },
+    ], { ucSonucu: () => { durdur.abort(); return { kayitlar: [] }; } });
+    const y = await istekBaglami.run({ deger: { ...KIMLIK, rol: "yonetici" as never } }, () => k.service.mesajiIsle("Ara", undefined, undefined, [], { sinyal: durdur.signal }));
+    expect(y.cevap).toBe("Yanıt durduruldu.");
+    expect(y.araclar.map((a) => a.ad)).toEqual(["cari_ara"]);
+    expect(k.saglayici.girdiler).toHaveLength(1);
+  });
+
+  it("AI-99: onay talebi açıldıktan sonra durdurulursa talep korunur ve geri alınmış gösterilmez", async () => {
+    const durdur = new AbortController();
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "belge_onayla", girdi: { belgeId: BELGE_ID } }] },
+      { metin: "olmamalı", aracCagrilari: [] },
+    ], { ucSonucu: (yol) => (yol === "GET /belgeler/:id" ? { tur: "teklif", no: null, cari: { unvan: "Kaya Ltd" }, genelToplam: "1200", dovizCinsi: "TRY", durum: "taslak" } : {}) });
+    const olustur = k.onay.olustur.getMockImplementation()!;
+    k.onay.olustur.mockImplementation(async (g) => { const t = await olustur(g); durdur.abort(); return t; });
+    const y = await istekBaglami.run({ deger: { ...KIMLIK, rol: "yonetici" as never } }, () => k.service.mesajiIsle("teklifi onayla", undefined, undefined, [], { sinyal: durdur.signal }));
+    expect(y.onayTalepleri.map((t) => t.id)).toEqual(["talep-1"]);
+    expect(y.cevap).toMatch(/^Yanıt durduruldu\. Durdurulana kadar açılan onay talepleri onayınızı bekliyor\./);
+    expect(k.saglayici.girdiler).toHaveLength(1);
   });
 
   it("araç etiketi tanımsız araçta addan türetilir", () => {

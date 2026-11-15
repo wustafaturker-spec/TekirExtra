@@ -6,7 +6,7 @@ import { istekBaglami } from "../../core/istek-baglami";
 import { AiBosYanitHatasi } from "./ai-bos-yanit";
 import { AiSinirHatasi } from "./ai-butce";
 import { AiProviderFactory } from "./ai-provider.factory";
-import { SaglayiciHatasi, zamanAsimiyla } from "./aracli-ortak";
+import { AiIptalHatasi, iptalSinyaliyle, saglayiciIstegi, SaglayiciHatasi, zamanAsimiyla } from "./aracli-ortak";
 import { denemeKarari, onarimTalimati, type DenemeDurumu } from "./dayaniklilik";
 import { kiraciSaglayicisi } from "./kiraci-saglayici";
 import { MockAiProvider } from "./mock-ai.provider";
@@ -166,5 +166,39 @@ describe("AI-102 sağlayıcı sarmalayıcısında dayanıklılık", () => {
     const o = await olarak(() => kiraciSaglayicisi(kur(AYAR).prisma as never, "t", { ozellik: "ozet" }));
     await expect(calistir(() => zamanAsimiyla(5_000, () => o.saglayici.metinUret({ prompt: "x" })))).rejects.toBeInstanceOf(SaglayiciHatasi);
     expect(c3).toHaveLength(1);
+  });
+});
+
+describe("AI-99 iptalin sağlayıcıya taşınması", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it("sağlayıcı isteği kullanıcı sinyaliyle kesilir; önceden durdurulmuşsa hiç gitmez", async () => {
+    const fetchSahte = vi.fn((_u: string, init: RequestInit) => new Promise((_, ret) => init.signal!.addEventListener("abort", () => ret(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true })));
+    vi.stubGlobal("fetch", fetchSahte);
+    const durdur = new AbortController();
+    const istek = iptalSinyaliyle(durdur.signal, () => saglayiciIstegi("Test", "https://ai.example.com", {}, {}));
+    setTimeout(() => durdur.abort(), 5);
+    await expect(istek).rejects.toBeInstanceOf(AiIptalHatasi);
+    expect(fetchSahte).toHaveBeenCalledTimes(1);
+    await expect(iptalSinyaliyle(durdur.signal, () => saglayiciIstegi("Test", "https://ai.example.com", {}, {}))).rejects.toBeInstanceOf(AiIptalHatasi);
+    expect(fetchSahte).toHaveBeenCalledTimes(1);
+  });
+
+  it("iptal yeniden denenmez, 'IPTAL' sınıfıyla izlenir; bekleme sırasında durdurma yeni denemeyi önler", async () => {
+    expect(denemeKarari(new AiIptalHatasi(), d({ yedekVar: true }))).toBeNull();
+    const cagrilar = saglayicilar({ ucuz: [firlat(new AiIptalHatasi())] });
+    const { prisma, tx } = kur(AYAR);
+    const { saglayici } = await olarak(() => kiraciSaglayicisi(prisma as never, "t", { ozellik: "ozet" }));
+    await expect(olarak(() => saglayici.metinUret({ prompt: "x" }))).rejects.toBeInstanceOf(AiIptalHatasi);
+    expect(cagrilar).toHaveLength(1);
+    expect(tx.aiCagriIz.create.mock.calls[0][0].data).toMatchObject({ basarili: false, hataSinifi: "IPTAL" });
+
+    const durdur = new AbortController();
+    const c2 = saglayicilar({ ucuz: [() => { setTimeout(() => durdur.abort(), 5); throw h503(); }, () => "olmamalı"] });
+    const k2 = kur(AYAR);
+    const s2 = await olarak(() => kiraciSaglayicisi(k2.prisma as never, "t", { ozellik: "ozet" }));
+    await expect(olarak(() => iptalSinyaliyle(durdur.signal, () => s2.saglayici.metinUret({ prompt: "x" })))).rejects.toBeInstanceOf(AiIptalHatasi);
+    expect(c2).toHaveLength(1);
+    expect(k2.tx.aiKullanim.upsert).toHaveBeenCalledTimes(1);
   });
 });
