@@ -4,7 +4,11 @@ import { PosService } from "./pos.service";
 import { IyzicoAdapter } from "./iyzico.adapter";
 import { PaytrAdapter } from "./paytr.adapter";
 
-vi.mock("../core/kripto", () => ({ coz: () => JSON.stringify({ kullaniciAdi: "api", parola: "gizli", servisAdresi: "https://sandbox-api.iyzipay.com" }) }));
+vi.mock("../core/kripto", () => ({
+  coz: () => JSON.stringify({ kullaniciAdi: "api", parola: "gizli", servisAdresi: "https://sandbox-api.iyzipay.com" }),
+  // SEC-23: türetilmiş anahtar sabit sırla.
+  turetilmisAnahtar: (...p: string[]) => require("node:crypto").createHmac("sha256", "test-sirri").update(p.join(":")).digest("hex"),
+}));
 
 // KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
 vi.mock("../fatura/denklestirme", async (orijinal) => ({
@@ -140,6 +144,14 @@ describe("PosService (P1-6)", () => {
       expect(tx.posTahsilat.updateMany.mock.calls[0][0].data).toMatchObject({ durum: "basarisiz" });
       casus.mockRestore();
     });
+  });
+
+  it("SEC-23: makbuz yanlış anahtarla açılmaz; anahtar sorguda aranmaz, türetilmiş ya da eski özetle doğrulanır", async () => {
+    const tahsilat = { id: "t1", hareket: { id: "h1" }, makbuzAnahtarOzeti: null };
+    const tx = { posTahsilat: { findFirst: vi.fn().mockResolvedValue(tahsilat) }, tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "F" }) } };
+    const { service } = kur(tx);
+    await expect(service.makbuzPdf("t1", "t1", "0".repeat(64))).rejects.toThrow(/bulunamadı/);
+    expect(tx.posTahsilat.findFirst.mock.calls[0][0].where).toEqual({ id: "t1", durum: "odendi", hareketId: { not: null } });
   });
 
   describe("SEC-22 dönüş çağrısında firma ve kayıt doğrulaması", () => {

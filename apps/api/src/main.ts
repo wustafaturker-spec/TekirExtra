@@ -18,6 +18,7 @@ import { DagitikRateLimiter } from "./core/guvenlik/rate-limiter";
 
 import { json, urlencoded } from "express";
 import { XML_YUKLEME_SINIRI_MB, XML_YUKLEME_YOLLARI } from "./core/govde-sinirlari";
+import { gizliYolMaskele } from "./core/observability/exception.filter";
 
 // Örnek sırlarla üretimde açılmaz; uygulama başlatılmadan önce denetlenir.
 uretimSirlariniDenetle();
@@ -52,7 +53,7 @@ async function bootstrap(): Promise<void> {
       const durationMs = Date.now() - started;
       // Günlüğe gerçek yol, metriğe rota kalıbı yazılır (sayaç tablosu sınırlı kalsın).
       metrics.observeHttp(durationMs, { method: req.method, route: rotaEtiketi(req), status: res.statusCode });
-      structuredLogger.info("http_request", { requestId, method: req.method, path: req.path ?? "unknown", statusCode: res.statusCode, durationMs });
+      structuredLogger.info("http_request", { requestId, method: req.method, path: gizliYolMaskele(req.path ?? "unknown"), statusCode: res.statusCode, durationMs });
     });
     next();
   });
@@ -70,7 +71,7 @@ async function bootstrap(): Promise<void> {
     if (!sonuc.izinli) {
       res.setHeader("Retry-After", String(Math.max(1, Math.ceil((sonuc.sifirlamaMs - simdi) / 1000))));
       metrics.increment("rate_limit_rejections_total", { path: rotaEtiketi(req) });
-      structuredLogger.warn("rate_limit_rejected", { path: req.path, ip: anahtar, source: sonuc.kaynak });
+      structuredLogger.warn("rate_limit_rejected", { path: gizliYolMaskele(req.path), ip: anahtar, source: sonuc.kaynak });
       return res.status(429).json({ mesaj: "Çok fazla istek. Lütfen daha sonra tekrar deneyin." });
     }
     next();

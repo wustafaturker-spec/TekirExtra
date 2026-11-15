@@ -56,6 +56,11 @@ export function paketKotaHatasi(hata: unknown): HttpException | null {
   return null;
 }
 
+/** SEC-23: açık bağlantı anahtarı taşıyan yollar günlüğe anahtarsız yazılır. */
+export function gizliYolMaskele(yol: string): string {
+  return yol.replace(/(\/pos\/makbuz\/[^/]+\/[^/]+\/)[^/]+/, "$1***");
+}
+
 @Catch()
 export class ObservabilityExceptionFilter implements ExceptionFilter {
   constructor(private readonly metrics: MetricsService, private readonly hataKaydi?: HataKayitService) {}
@@ -81,7 +86,7 @@ export class ObservabilityExceptionFilter implements ExceptionFilter {
     const logAlanlari = {
       requestId,
       method: req.method,
-      path: req.path,
+      path: gizliYolMaskele(req.path),
       statusCode: status,
     };
     if (yogun) {

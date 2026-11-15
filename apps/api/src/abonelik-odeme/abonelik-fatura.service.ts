@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CariService } from "../cari/cari.service";
@@ -180,7 +179,6 @@ export class AbonelikFaturaService implements OnModuleInit, OnModuleDestroy {
         saglayiciOdemeId: g.ayrinti.saglayiciOdemeId,
         hareketId: g.hareketId,
         odemeTarihi: g.odemeTarihi,
-        makbuzAnahtari: randomBytes(32).toString("hex"),
         ...tahminiKomisyonAlanlari(g.tutar, pos, 1),
         ...(g.ayrinti.kesinti ? saglayiciKesintiAlanlari(g.tutar, g.ayrinti.kesinti) : {}),
       },

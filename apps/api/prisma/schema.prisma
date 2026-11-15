@@ -4545,7 +4545,10 @@ model PosTahsilat {
   odemeTarihi          DateTime?         @map("odeme_tarihi")
   sonKullanimTarihi    DateTime?         @map("son_kullanim_tarihi")
   denemeSayisi         Int               @default(1) @map("deneme_sayisi")
-  makbuzAnahtari       String            @unique @map("makbuz_anahtari")
+  /// SEC-23: eski düz anahtar (yalnız 2026-11-15 öncesi kayıtlar; yeni kayıtta boş). Ayrı onayla temizlenecek.
+  makbuzAnahtari       String?           @unique @map("makbuz_anahtari")
+  /// SEC-23: eski anahtarın SHA-256 özeti; müşterinin sakladığı eski bağlantıyı doğrular.
+  makbuzAnahtarOzeti   String?           @map("makbuz_anahtar_ozeti") @db.VarChar(64)
   epostaGonderimTarihi DateTime?         @map("eposta_gonderim_tarihi")
   epostaHatasi         String?           @map("eposta_hatasi")
   smsGonderimTarihi    DateTime?         @map("sms_gonderim_tarihi")

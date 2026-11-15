@@ -63,6 +63,7 @@ import { babsMutabakatHtml } from "./babs-pdf";
 
 const AY_ADLARI = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 import { cariHareketKurTipi } from "@tekirextra/shared";
+import { makbuzYolu } from "../pos/makbuz-anahtari";
 
 /** CARI-28: kullanıcının elle girdiği, silinebilen hareket kaynakları. */
 const ELLE_HAREKET_KAYNAKLARI = ["manuel", "acilis"];
@@ -1184,9 +1185,9 @@ export class CariService {
     const posKaynaklari = hareketler.filter((h) => h.kaynakTur === "pos_tahsilat" && h.kaynakRef).map((h) => h.kaynakRef!);
     const posTahsilatlari = posKaynaklari.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findMany({
       where: { id: { in: posKaynaklari }, durum: "odendi", hareketId: { not: null } },
-      select: { id: true, makbuzAnahtari: true },
+      select: { id: true },
     })) : [];
-    const posMakbuzHaritasi = new Map(posTahsilatlari.map((p) => [p.id, `/pos/makbuz/${tenantId}/${p.id}/${p.makbuzAnahtari}`]));
+    const posMakbuzHaritasi = new Map(posTahsilatlari.map((p) => [p.id, makbuzYolu(tenantId, p.id)]));
     // CARI-24/25: hareket türü, belge no, ödeme şekli ve (ayrıntılıda) kalemler.
     const ayrintilar = await this.prisma.tenantIslem(tenantId, (tx) => ekstreAyrintilari(tx, tenantId, hareketler, tur === "ayrintili"));
     const devirBakiyesi = oncekiHareketler.reduce((toplam, h) => h.tip === "borc" ? toplam.add(h.tutarTry) : toplam.sub(h.tutarTry), new Prisma.Decimal(0));
