@@ -2,7 +2,9 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
-import { fiyatEndeksErisimi } from "./fiyat-endeks-erisim";
+import { fiyatEndeksErisimi, teklifEsikleri } from "./fiyat-endeks-erisim";
+import { teklifUyarilari, type TeklifUyarisi } from "./teklif-uyarisi";
+import { kurCoz } from "../doviz/kur-coz";
 import { ayAraligi, ayBasiMetni, ayKaydir, endeksNormalle, fiyatSerisiHesapla, type AylikToplam } from "./fiyat-endeks-hesap";
 import { aylikToplamlar, endeksVerisi, KUR_ENDEKSLERI } from "./fiyat-endeks-veri";
 import { EK_CIZGILER, listeFiyatCizgileri, maliyetCizgisi, sonAlisCizgisi, type EkCizgi } from "./fiyat-endeks-cizgiler";
@@ -142,6 +144,39 @@ export class FiyatEndeksService {
         satirlar,
         ozet: { oneri: satirlar.filter((r) => r.durum === "oneri").length, toplam: satirlar.length },
       };
+    });
+  }
+
+  /**
+   * END-20: açık satış tekliflerinde (taslak/onaylı, geçerliliği bitmemiş)
+   * kur ya da TÜFE değişimi kiracı eşiğini aştıysa uyarılar. Yazmaz.
+   * Teklif ekranı ve takip rozeti çağırır; en çok 100 belge.
+   */
+  async teklifUyarilari(belgeIdler: string[]): Promise<Record<string, TeklifUyarisi[]>> {
+    const { tenantId, rol } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const erisim = await fiyatEndeksErisimi(tx, tenantId, rol);
+      if (!erisim.satis) throw new ForbiddenException("Satış fiyatı tarafına erişiminiz yok.");
+      const bugun = new Date(new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }) + "T00:00:00.000Z");
+      const teklifler = await tx.belge.findMany({
+        where: { id: { in: belgeIdler.slice(0, 100) }, tur: "teklif", yon: "satis", durum: { in: ["taslak", "onaylandi"] }, OR: [{ gecerlilikTarihi: null }, { gecerlilikTarihi: { gte: bugun } }] },
+        select: { id: true, tarih: true, dovizCinsi: true, kur: true },
+      });
+      if (!teklifler.length) return {};
+      const esik = await teklifEsikleri(tx, tenantId);
+      const enEski = teklifler.map((t) => t.tarih.toISOString().slice(0, 7) + "-01").sort()[0];
+      const tufe = await endeksVerisi(tx, "TUFE", enEski, buAy());
+      const bugunkuKurlar = new Map<string, Prisma.Decimal | null>();
+      const kur = async (doviz: string, tarih: Date) => kurCoz(tx, tenantId, doviz, tarih, "alis");
+      const sonuc: Record<string, TeklifUyarisi[]> = {};
+      for (const t of teklifler) {
+        const kurDovizi = t.dovizCinsi === "TRY" ? "USD" : t.dovizCinsi;
+        if (!bugunkuKurlar.has(kurDovizi)) bugunkuKurlar.set(kurDovizi, await kur(kurDovizi, bugun));
+        const onceki = t.dovizCinsi === "TRY" ? await kur("USD", t.tarih) : t.kur;
+        const u = teklifUyarilari({ teklifAyi: t.tarih.toISOString().slice(0, 7) + "-01", doviz: t.dovizCinsi, oncekiKur: onceki, bugunkuKur: bugunkuKurlar.get(kurDovizi) ?? null, kurDovizi, endeks: tufe.degerler, endeksAdi: "TÜFE", esik });
+        if (u.length) sonuc[t.id] = u;
+      }
+      return sonuc;
     });
   }
 

@@ -19,10 +19,21 @@ export const fiyatEndeksAyariSemasi = z.object({
   satisRolleri: rolListesi, alisRolleri: rolListesi,
   /** END-13: maliyet artışı satış fiyatı artışını bu kadar puan aşınca ürün marj makası listesinde işaretlenir. */
   makasEsigi: z.number().min(1).max(100).optional(),
+  /** END-20: açık teklifte teklif tarihinden bu yana kur bu yüzdeyi aşınca uyarı. */
+  teklifKurEsigi: z.number().min(0.1).max(100).optional(),
+  /** END-20: açık teklifte teklif ayından bu yana TÜFE bu yüzdeyi aşınca uyarı. */
+  teklifEndeksEsigi: z.number().min(0.1).max(100).optional(),
 }).strict();
 export type FiyatEndeksAyari = z.infer<typeof fiyatEndeksAyariSemasi>;
 /** Varsayılan: muhasebe iki tarafa da erişir, diğer roller kapalı (yönetici değiştirene kadar). */
-export const FIYAT_ENDEKS_VARSAYILAN: FiyatEndeksAyari = { satisRolleri: ["muhasebe"], alisRolleri: ["muhasebe"], makasEsigi: 10 };
+export const FIYAT_ENDEKS_VARSAYILAN: FiyatEndeksAyari = { satisRolleri: ["muhasebe"], alisRolleri: ["muhasebe"], makasEsigi: 10, teklifKurEsigi: 3, teklifEndeksEsigi: 2 };
+
+/** END-20: kiracının teklif uyarısı eşikleri (yüzde). */
+export async function teklifEsikleri(tx: Prisma.TransactionClient, tenantId: string): Promise<{ kur: number; endeks: number }> {
+  const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: FIYAT_ENDEKS_MODULU } }, select: { ayarlar: true } });
+  const ayar = fiyatEndeksAyariSemasi.safeParse(kayit?.ayarlar ?? FIYAT_ENDEKS_VARSAYILAN);
+  return { kur: (ayar.success ? ayar.data.teklifKurEsigi : undefined) ?? 3, endeks: (ayar.success ? ayar.data.teklifEndeksEsigi : undefined) ?? 2 };
+}
 export const VARSAYILAN_MAKAS_ESIGI = 10;
 
 /** END-13: kiracının marj makası eşiği (puan). */

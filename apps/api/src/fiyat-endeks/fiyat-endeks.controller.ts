@@ -31,6 +31,14 @@ export class FiyatEndeksController {
     return this.servis.fiyatOnerisi(sonuc.data);
   }
 
+  /** END-20: açık satış tekliflerinin kur/endeks uyarıları (`ids` virgülle, en çok 100). */
+  @Get("teklif-uyarilari")
+  teklifUyarilari(@Query("ids") ids?: string) {
+    const liste = (ids ?? "").split(",").map((x) => x.trim()).filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+    if (!liste.length) return {};
+    return this.servis.teklifUyarilari(liste);
+  }
+
   @Get("urun/:stokId")
   urun(@Param("stokId", ParseUUIDPipe) stokId: string, @Query() q: Record<string, string | undefined>) {
     const sonuc = urunSorgusuSemasi.safeParse({

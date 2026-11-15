@@ -310,6 +310,33 @@ describe("alacağın erime maliyeti (END-19)", () => {
   });
 });
 
+describe("teklif geçerlilik uyarısı (END-20)", () => {
+  const ids = { acik: randomUUID(), suresiBitti: randomUUID(), alis: randomUUID() };
+  let kurEklendi = false;
+  const bugun = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
+  afterAll(async () => {
+    await yonetim.belge.deleteMany({ where: { id: { in: Object.values(ids) } } });
+    if (kurEklendi) await yonetim.tcmbKuru.deleteMany({ where: { dovizCinsi: "USD", tarih: ay(bugun), kaynak: "kabul" } });
+  });
+  it("yalnız açık satış teklifinde, kur eşiği aşılınca uyarı; süresi biten ve alış teklifi dışarıda", async () => {
+    if (!(await yonetim.tcmbKuru.findFirst({ where: { dovizCinsi: "USD", tarih: ay(bugun) } }))) {
+      await yonetim.tcmbKuru.create({ data: { tarih: ay(bugun), dovizCinsi: "USD", dovizAlis: "45", dovizSatis: "45.2", kaynak: "kabul" } });
+      kurEklendi = true;
+    }
+    const ortak = { tenantId: A.tenant, cariId: A.cariListesiz, tur: "teklif" as const, tarih: ay("2026-08-10"), dovizCinsi: "USD" as const, kur: "40", toplamBrut: "0", toplamSatirIskontosu: "0", genelIskontoToplam: "0", toplamMatrah: "0", toplamKdv: "0", toplamNetKdv: "0", genelToplam: "0" };
+    await yonetim.belge.createMany({ data: [
+      { ...ortak, id: ids.acik, yon: "satis", durum: "onaylandi" },
+      { ...ortak, id: ids.suresiBitti, yon: "satis", durum: "onaylandi", gecerlilikTarihi: ay("2026-08-20") },
+      { ...ortak, id: ids.alis, yon: "alis", durum: "onaylandi" },
+    ] });
+    const bugunkuKur = Number((await yonetim.tcmbKuru.findFirstOrThrow({ where: { dovizCinsi: "USD", tarih: { lte: ay(bugun) } }, orderBy: { tarih: "desc" } })).dovizAlis);
+    const r = await ile(A.tenant, A.yonetici, "yonetici", () => servis.teklifUyarilari(Object.values(ids)));
+    expect(Object.keys(r)).toEqual(Math.abs(bugunkuKur / 40 - 1) >= 0.03 ? [ids.acik] : []);
+    if (r[ids.acik]) expect(r[ids.acik].find((u) => u.tur === "kur")?.mesaj).toMatch(/Teklif kuru 40\.0000/);
+    await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.teklifUyarilari([ids.acik]))).rejects.toThrow(/abonelik planınızda açık değil/);
+  });
+});
+
 describe("toplu rapor (END-12)", () => {
   it("firmanın ürünlerini endeksin gerisinde kalan önce listeler; yetkisi olmayan taraf reddedilir", async () => {
     const tanim = raporTanimiAl("stok.fiyat_endeks")!;

@@ -41,6 +41,8 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "satisRolleri", etiket: "Satış fiyatı tarafını görebilecek roller", tip: "rolListesi", roller: FIYAT_ENDEKS_ROLLERI, ipucu: "Yönetici her zaman görür. Satış fiyatlarının TÜFE, Yİ-ÜFE ve kurla karşılaştırması (stok kartı › Fiyat ve endeks, rapor kataloğu)." },
       { ad: "alisRolleri", etiket: "Alış fiyatı ve maliyet tarafını görebilecek roller", tip: "rolListesi", roller: FIYAT_ENDEKS_ROLLERI, ipucu: "Yönetici her zaman görür. Alış fiyatları tedarikçi koşullarını gösterdiği için ayrı açılır. Özel roldeki “Raporlar” kutusu kapalıysa iki taraf da kapanır." },
       { ad: "makasEsigi", etiket: "Marj makası eşiği (puan)", tip: "sayi", min: 1, max: 100, ipucu: "Maliyet artışı satış fiyatı artışını bu kadar puan aşan ürünler Raporlar › Marj Makası'nda işaretlenir. Varsayılan 10." },
+      { ad: "teklifKurEsigi", etiket: "Teklif uyarısı: kur değişimi eşiği (%)", tip: "sayi", min: 0.1, max: 100, ipucu: "Açık satış teklifinde teklif tarihinden bu yana kur (TL teklifte USD) bu kadar değişirse teklif ekranında ve listede uyarı çıkar. Varsayılan %3." },
+      { ad: "teklifEndeksEsigi", etiket: "Teklif uyarısı: TÜFE değişimi eşiği (%)", tip: "sayi", min: 0.1, max: 100, ipucu: "Teklif ayından bu yana TÜFE bu kadar artarsa uyarı çıkar. Varsayılan %2." },
     ],
   },
   crm_belge_baglari: {

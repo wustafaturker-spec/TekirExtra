@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
 import { TeklifTakipPaneli, TeklifTakipRozeti } from "@/components/teklif-takip-paneli";
+import { TeklifEndeksRozeti, TeklifEndeksUyariKutusu, useTeklifUyarilari } from "@/components/teklif-endeks-uyarisi";
 import { api, ApiHata, apiPdfAc, kimlikliFetch, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
@@ -288,6 +289,8 @@ function durumRozet(durum: string) {
 export default function BelgelerSayfasi() {
   const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
   const [belgeler, setBelgeler] = useState<Belge[]>([]);
+  // END-20: açık satış tekliflerinin kur/endeks uyarıları (listede rozet).
+  const teklifUyarilari = useTeklifUyarilari(belgeler.filter((b) => b.tur === "teklif" && b.yon === "satis" && (b.durum === "taslak" || b.durum === "onaylandi")).map((b) => b.id));
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [stoklar, setStoklar] = useState<Stok[]>([]);
   const [turFiltre, setTurFiltre] = useState<TurFiltre>("tumu");
@@ -1977,6 +1980,7 @@ export default function BelgelerSayfasi() {
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(detay.genelToplam, detay.dovizCinsi)}</span></div>
               <small className="muted">{detay.satirlar.length} kalem</small>
             </div>
+            {detay.tur === "teklif" && detay.yon === "satis" && (detay.durum === "taslak" || detay.durum === "onaylandi") && <TeklifEndeksUyariKutusu belgeId={detay.id} />}
             {detay.tur === "teklif" && detay.yon === "satis" && detay.durum !== "taslak" && (
               <TeklifTakipPaneli belgeId={detay.id} belgeDurumu={detay.durum} onDegisti={() => void yukle()} />
             )}
@@ -2246,7 +2250,7 @@ export default function BelgelerSayfasi() {
                   <td>{b.cari.unvan}</td>
                   <td>{b.tarih}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(b.genelToplam, b.dovizCinsi)}</td>
-                  <td><span style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap" }}>{durumRozet(b.durum)}{sureRozeti(b.faturalamaSuresi)}<TeklifTakipRozeti takip={b.teklifTakibi} /></span></td>
+                  <td><span style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap" }}>{durumRozet(b.durum)}{sureRozeti(b.faturalamaSuresi)}<TeklifTakipRozeti takip={b.teklifTakibi} /><TeklifEndeksRozeti uyarilar={teklifUyarilari[b.id]} /></span></td>
                 </tr>
               ))
             )}
