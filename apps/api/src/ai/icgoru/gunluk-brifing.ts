@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eirsaliyeYanitSuresi } from "@tekirextra/shared";
 import type { UcTanimi } from "../ajan/uc-cagirici";
 import { UC } from "../ajan/araclar/uclar";
+import { ozetSatiri, type FiyatEndeksOzeti } from "../../fiyat-endeks/endeks-icgoru";
 import type { IAiProvider } from "../saglayici/ai-provider.interface";
 
 /**
@@ -27,6 +28,8 @@ export interface BrifingVerisi {
   gelenIrsaliye?: { yanitiYaklasan: { no: string; gonderen: string; sonGun: string }[]; yanitBekleyen: number };
   duzeltme?: { acik: number; kritik: number; banaAtanan: number; slaAsan: number };
   kritikStok?: number;
+  /** END-22: fiyat–endeks bulguları (plan özelliği ve rol erişimi varsa). */
+  fiyatEndeks?: FiyatEndeksOzeti;
 }
 
 const gunEkle = (gun: string, n: number) => {
@@ -49,7 +52,7 @@ async function bolum<T>(f: () => Promise<T>): Promise<T | undefined> {
 }
 
 export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise<BrifingVerisi> {
-  const [vade, nakit, asistanOnay, satinAlma, gelen, irsaliye, duzeltme, stok] = await Promise.all([
+  const [vade, nakit, asistanOnay, satinAlma, gelen, irsaliye, duzeltme, stok, fiyatEndeks] = await Promise.all([
     bolum(async () => {
       const r = await oku<any>(UC.vadesiGecenler, []);
       return {
@@ -81,6 +84,8 @@ export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise
       return { acik: Number(r.acik ?? 0), kritik: Number(r.kritik ?? 0), banaAtanan: Number(r.banaAtanan ?? 0), slaAsan: Number(r.slaAsan ?? 0) };
     }),
     bolum(async () => Number((await oku<any>(UC.stokKritik, [])).kritikStok ?? 0)),
+    // END-22: plan özelliği kapalıysa ya da rol erişemiyorsa uç reddeder, bölüm atlanır.
+    bolum(async () => oku<FiyatEndeksOzeti>(UC.fiyatEndeksOzet, [])),
   ]);
 
   const veri: BrifingVerisi = { bugun };
@@ -113,6 +118,7 @@ export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise
   }
   if (duzeltme) veri.duzeltme = duzeltme;
   if (stok !== undefined) veri.kritikStok = stok;
+  if (fiyatEndeks) veri.fiyatEndeks = fiyatEndeks;
   return veri;
 }
 
@@ -144,6 +150,7 @@ export function brifingMetni(v: BrifingVerisi): string {
   }
   if (v.duzeltme && v.duzeltme.acik) s.push(`• Düzeltme Merkezi: ${v.duzeltme.acik} açık kayıt (${v.duzeltme.kritik} kritik, ${v.duzeltme.slaAsan} süresi geçmiş, ${v.duzeltme.banaAtanan} size atanmış).`);
   if (v.kritikStok) s.push(`• Kritik seviyenin altında ${v.kritikStok} stok kartı var.`);
+  if (v.fiyatEndeks) { const satir = ozetSatiri(v.fiyatEndeks); if (satir) s.push(satir); }
   if (s.length === 1) s.push("Bugün için dikkat gerektiren bir kayıt yok.");
   return s.join("\n");
 }

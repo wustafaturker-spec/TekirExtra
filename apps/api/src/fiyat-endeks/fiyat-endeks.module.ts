@@ -4,6 +4,7 @@ import { MevzuatModule } from "../mevzuat/mevzuat.module";
 import { EndeksArtisController } from "./endeks-artis.controller";
 import { EndeksArtisService } from "./endeks-artis.service";
 import { EndeksArtisZamanlayiciService } from "./endeks-artis-zamanlayici.service";
+import { EndeksDuyurusuService } from "./endeks-duyurusu.service";
 import { EndeksZamanlayiciService } from "./endeks-zamanlayici.service";
 import { EndeksService } from "./endeks.service";
 import { FiyatEndeksController } from "./fiyat-endeks.controller";
@@ -17,7 +18,7 @@ import "./fiyat-endeks-erime.raporlar";
 @Module({
   imports: [MevzuatModule, BildirimlerModule],
   controllers: [FiyatEndeksController, PlatformEndeksController, EndeksArtisController],
-  providers: [EndeksService, EndeksZamanlayiciService, FiyatEndeksService, EndeksArtisService, EndeksArtisZamanlayiciService],
+  providers: [EndeksService, EndeksZamanlayiciService, FiyatEndeksService, EndeksArtisService, EndeksArtisZamanlayiciService, EndeksDuyurusuService],
   exports: [EndeksService, FiyatEndeksService],
 })
 export class FiyatEndeksModule {}

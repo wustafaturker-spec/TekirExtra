@@ -4,6 +4,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { fiyatEndeksErisimi, teklifEsikleri } from "./fiyat-endeks-erisim";
 import { teklifUyarilari, type TeklifUyarisi } from "./teklif-uyarisi";
+import { fiyatEndeksOzeti } from "./endeks-icgoru";
 import { kurCoz } from "../doviz/kur-coz";
 import { ayAraligi, ayBasiMetni, ayKaydir, endeksNormalle, fiyatSerisiHesapla, type AylikToplam } from "./fiyat-endeks-hesap";
 import { aylikToplamlar, endeksVerisi, KUR_ENDEKSLERI } from "./fiyat-endeks-veri";
@@ -145,6 +146,12 @@ export class FiyatEndeksService {
         ozet: { oneri: satirlar.filter((r) => r.durum === "oneri").length, toplam: satirlar.length },
       };
     });
+  }
+
+  /** END-22: brifing için son 12 ayın deterministik fiyat–endeks bulguları (rolün göremediği taraf atlanır). */
+  async ozet() {
+    const { tenantId, rol } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => fiyatEndeksOzeti(tx, tenantId, await fiyatEndeksErisimi(tx, tenantId, rol)), { timeout: 60_000 });
   }
 
   /**

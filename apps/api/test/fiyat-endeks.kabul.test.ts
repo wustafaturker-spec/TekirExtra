@@ -357,6 +357,25 @@ describe("reel göster (END-18)", () => {
   });
 });
 
+describe("brifing ve içgörü (END-22)", () => {
+  it("özet uçtan, yeni endeks duyurusu tek bildirim ve tek içgörü; plan kapalı firmaya düşmez", async () => {
+    const { BildirimService } = await import("../src/bildirimler/bildirim.service");
+    const { EndeksDuyurusuService } = await import("../src/fiyat-endeks/endeks-duyurusu.service");
+    const o = await ile(A.tenant, A.yonetici, "yonetici", () => servis.ozet());
+    expect(o).toMatchObject({ erisilemeyen: [] });
+    expect(typeof o.makasAcilan).toBe("number");
+    const duyuru = new EndeksDuyurusuService(prisma, new BildirimService(prisma));
+    const yeni = [{ kod: SERI, ad: "Kabul endeksi", donem: "2026-05-01" }];
+    await duyuru.duyur(yeni);
+    await duyuru.duyur(yeni);
+    const bildirimler = await yonetim.bildirim.findMany({ where: { birlesimAnahtari: `endeks-aciklandi:${SERI}:2026-05-01` }, select: { tenantId: true } });
+    expect(new Set(bildirimler.map((b) => b.tenantId))).toEqual(new Set([A.tenant]));
+    expect(bildirimler).toHaveLength(1);
+    expect(await yonetim.aiIcgoru.count({ where: { tenantId: A.tenant, tekilAnahtar: `fiyat-endeks:${SERI}:2026-05-01` } })).toBe(1);
+    expect(await yonetim.aiIcgoru.count({ where: { tenantId: B.tenant, tekilAnahtar: { startsWith: "fiyat-endeks:" } } })).toBe(0);
+  }, 300_000);
+});
+
 describe("toplu rapor (END-12)", () => {
   it("firmanın ürünlerini endeksin gerisinde kalan önce listeler; yetkisi olmayan taraf reddedilir", async () => {
     const tanim = raporTanimiAl("stok.fiyat_endeks")!;

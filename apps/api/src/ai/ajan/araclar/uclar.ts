@@ -153,6 +153,7 @@ export const UC = {
   fiyatEndeksSecenekleri: uc(FiyatEndeksController, "secenekler", "GET /fiyat-endeks/secenekler"),
   fiyatEndeksEndeks: uc(FiyatEndeksController, "endeks", "GET /fiyat-endeks/endeks/:kod"),
   fiyatEndeksUrun: uc(FiyatEndeksController, "urun", "GET /fiyat-endeks/urun/:stokId"),
+  fiyatEndeksOzet: uc(FiyatEndeksController, "ozet", "GET /fiyat-endeks/ozet"),
 
   // AI-77: Düzeltme Merkezi, bildirimler, dönem kapatma kontrolleri.
   duzeltmeListe: uc(DuzeltmelerController, "listele", "GET /duzeltmeler"),

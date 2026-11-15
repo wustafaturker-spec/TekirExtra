@@ -31,6 +31,12 @@ export class FiyatEndeksController {
     return this.servis.fiyatOnerisi(sonuc.data);
   }
 
+  /** END-22: son 12 ayın fiyat–endeks bulguları (günlük brifing bu ucu çağırır). */
+  @Get("ozet")
+  ozet() {
+    return this.servis.ozet();
+  }
+
   /** END-20: açık satış tekliflerinin kur/endeks uyarıları (`ids` virgülle, en çok 100). */
   @Get("teklif-uyarilari")
   teklifUyarilari(@Query("ids") ids?: string) {

@@ -38,6 +38,15 @@ const tam = {
 };
 
 describe("günlük brifing (AI-83)", () => {
+  it("END-22: fiyat–endeks bölümü uç erişilebilirse eklenir, bulgu yoksa satır çıkmaz; uç reddederse bölüm atlanır", async () => {
+    const ozet = { donem: { baslangic: "2025-10-01", bitis: "2026-09-30" }, makasAcilan: 3, endeksUstuTedarikci: { sayi: 2, ornekler: [] }, reelGerileyen: { sayi: 5, ornekler: [] }, erisilemeyen: [] };
+    const v = await brifingVerisiTopla(okuyucu({ ...tam, "GET /fiyat-endeks/ozet": () => ozet }), BUGUN);
+    expect(brifingMetni(v)).toContain("• Fiyat ve endeks (son 12 ay): 3 üründe marj makası açıldı; 2 tedarikçi Yİ-ÜFE'nin üzerinde zam yaptı; 5 ürünün satış fiyatı TÜFE karşısında reel geriledi.");
+    const bos = await brifingVerisiTopla(okuyucu({ ...tam, "GET /fiyat-endeks/ozet": () => ({ ...ozet, makasAcilan: 0, endeksUstuTedarikci: { sayi: 0, ornekler: [] }, reelGerileyen: null }) }), BUGUN);
+    expect(brifingMetni(bos)).not.toContain("Fiyat ve endeks");
+    expect((await brifingVerisiTopla(okuyucu(tam), BUGUN)).fiyatEndeks).toBeUndefined();
+  });
+
   it("bölümleri toplar; ticari faturada 8 günlük süresi dolmak üzere olanı bulur", async () => {
     const v = await brifingVerisiTopla(okuyucu(tam), BUGUN);
     expect(v.vade?.enEskiAlacaklar.map((a) => a.cari)).toEqual(["Deniz", "Yıldız", "Kaya"]);
