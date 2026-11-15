@@ -45,6 +45,8 @@ export interface FinansGirdisi {
   sonEtkilesim: Date | null;
   /** Tedarikçi yönü: bizim ona borçlarımız. */
   borclarimiz: { vadesiGecmisTry: number; yakinVadeTry: number };
+  /** END-19: açık alacağın endeks karşısında reel erimesi (fiyat–endeks plan özelliği açıksa). */
+  alacakErimesi?: { kayipTry: number; endeksAdi: string; sonEndeksAyi: string | null } | null;
 }
 
 export interface SatisGirdisi {
@@ -72,6 +74,8 @@ export const DURUM_ESIKLERI = {
   kotulesmeGun: 10,
   /** Açık bakiye varken bu kadar gündür etkileşim yoksa bilgi. */
   sessizlikGun: 90,
+  /** END-19: açık alacağın reel erimesi bakiyenin bu oranını aşınca bilgi. */
+  erimeOrani: 0.005,
 } as const;
 
 /** Panel en çok bu kadar bulgu gösterir (CARI-43). */
@@ -173,6 +177,17 @@ export function durumBulgulari(g: DurumGirdisi): DurumBulgusu[] {
         kod: "cek_vadesi", onem: "bilgi",
         mesaj: `${f.yaklasanCek.sayi} çek/senedin (${tl(f.yaklasanCek.tutarTry)}) vadesi 7 gün içinde; ilki ${tarihMetni(f.yaklasanCek.enYakinVade)}.`,
         kanit: { etiket: "Çek/senet portföyü", adres: "/panel/kasa-banka/cek-senet" },
+      });
+    }
+
+    // END-19: erime açık bakiyenin %0,5'inden azsa gösterilmez (bilgi kirliliği).
+    const erime = f.alacakErimesi;
+    if (erime && f.acikBakiyeTry > 0 && erime.kayipTry >= Math.max(1, f.acikBakiyeTry * DURUM_ESIKLERI.erimeOrani)) {
+      bulgular.push({
+        kod: "alacak_erimesi", onem: "bilgi",
+        mesaj: `Açık alacak (${tl(f.acikBakiyeTry)}) doğduğu aydan bu yana ${erime.endeksAdi} karşısında reel olarak yaklaşık ${tl(erime.kayipTry)} eridi${erime.sonEndeksAyi ? ` (son açıklanan ay ${erime.sonEndeksAyi.slice(0, 7)})` : ""}.`,
+        kanit: { etiket: "Tahsilat performansı raporu", adres: "/panel/raporlar?rapor=cari.tahsilat-performansi&f.erimeEndeksi=TUFE" },
+        eylem: { etiket: "Vade hatırlatması gönder", adres: "/panel/cari/vade-hatirlatma" },
       });
     }
 

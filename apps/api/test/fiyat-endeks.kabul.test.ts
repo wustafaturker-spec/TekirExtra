@@ -26,6 +26,7 @@ const { endeksVerisi } = await import("../src/fiyat-endeks/fiyat-endeks-veri");
 await import("../src/fiyat-endeks/fiyat-endeks.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-makas.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-erime.raporlar");
+await import("../src/cari/cari.raporlar");
 
 const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
 const prisma = new PrismaService();
@@ -281,6 +282,31 @@ describe("müşteri fiyat erimesi (END-15)", () => {
     expect(esikli.every((x) => Number(x.ayniFiyatAy) >= 1)).toBe(true);
     await expect(calistir({ baslangic: "2026-01-01", bitis: "2026-03-31", esikAy: "0" })).rejects.toThrow(/1–60/);
     await expect(ile(B.tenant, B.yonetici, "yonetici", () => prisma.tenantIslem(B.tenant, (tx) => raporTanimiAl("stok.musteri_fiyat_erimesi")!.calistir({ filtreler: { baslangic: "2026-01-01", bitis: "2026-03-31" } }, { tenantId: B.tenant, tx })))).rejects.toThrow(/abonelik planınızda açık değil/);
+  });
+});
+
+describe("alacağın erime maliyeti (END-19)", () => {
+  const cari = randomUUID(), ekli: Date[] = [];
+  afterAll(async () => {
+    await yonetim.cariHareket.deleteMany({ where: { cariId: cari } });
+    await yonetim.cariHesap.deleteMany({ where: { id: cari } });
+    await yonetim.endeksDegeri.deleteMany({ where: { seriKodu: "TUFE", donem: { in: ekli } } });
+  });
+  it("tahsilat performansı: erime endeksi seçilince tahsilatta reel kayıp; plan kapalıysa reddedilir", async () => {
+    await yonetim.cariHesap.create({ data: { id: cari, tenantId: A.tenant, kod: `ER${ek}`, unvan: "Erime müşterisi", tip: "musteri" } });
+    await yonetim.cariHareket.createMany({ data: [
+      { tenantId: A.tenant, cariId: cari, tip: "borc", tutar: "1000", tutarTry: "1000", tarih: ay("2020-01-15") },
+      { tenantId: A.tenant, cariId: cari, tip: "alacak", tutar: "1000", tutarTry: "1000", tarih: ay("2020-06-10") },
+    ] });
+    for (const [d, v] of [["2020-01-01", "100"], ["2020-06-01", "125"]] as const) {
+      if (!(await yonetim.endeksDegeri.findUnique({ where: { seriKodu_donem: { seriKodu: "TUFE", donem: ay(d) } } }))) { await yonetim.endeksDegeri.create({ data: { seriKodu: "TUFE", donem: ay(d), deger: v } }); ekli.push(ay(d)); }
+    }
+    const calistir = (tenantId: string, userId: string, filtreler: Record<string, string>) => ile(tenantId, userId, "yonetici", () => prisma.tenantIslem(tenantId, (tx) => raporTanimiAl("cari.tahsilat-performansi")!.calistir({ filtreler }, { tenantId, tx })));
+    const sat = (await calistir(A.tenant, A.yonetici, { erimeEndeksi: "TUFE" })).find((r) => r.cariId === cari);
+    // Ocak 100 → Haziran 125: 1000 × (1 − 100/125) = 200
+    expect(sat).toMatchObject({ tahsilEdilen: "1000.00", tahsilatErimesi: "200.00", acikErimesi: "0.00" });
+    expect((await calistir(A.tenant, A.yonetici, {})).find((r) => r.cariId === cari)).toMatchObject({ tahsilatErimesi: null, acikErimesi: null });
+    await expect(calistir(B.tenant, B.yonetici, { erimeEndeksi: "TUFE" })).rejects.toThrow(/plan özelliğini gerektirir/);
   });
 });
 

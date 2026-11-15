@@ -18,6 +18,14 @@ function finans(ek: Partial<FinansGirdisi> = {}): FinansGirdisi {
 const kodlar = (g: Partial<DurumGirdisi>) => durumBulgulari({ bugun: BUGUN, cari: CARI, ...g }).map((b) => `${b.kod}:${b.onem}`);
 
 describe("Cari Durum Paneli bulguları (CARI-44)", () => {
+  it("END-19: alacak erimesi bakiyenin %0,5'ini aşınca bilgi; altında ya da hesaplanmamışsa yok", () => {
+    // sessizlik bulgusu karışmasın diye son etkileşim yeni
+    const yeni = { sonEtkilesim: new Date("2026-10-10T09:00:00Z") };
+    expect(kodlar({ finans: finans({ ...yeni, acikBakiyeTry: 10000, alacakErimesi: { kayipTry: 120, endeksAdi: "TÜFE", sonEndeksAyi: "2026-09-01" } }) })).toContain("alacak_erimesi:bilgi");
+    expect(kodlar({ finans: finans({ ...yeni, acikBakiyeTry: 10000, alacakErimesi: { kayipTry: 40, endeksAdi: "TÜFE", sonEndeksAyi: "2026-09-01" } }) })).not.toContain("alacak_erimesi:bilgi");
+    expect(kodlar({ finans: finans({ ...yeni, acikBakiyeTry: 10000, alacakErimesi: null }) })).not.toContain("alacak_erimesi:bilgi");
+  });
+
   it("sorun yoksa bulgu yoktur", () => {
     expect(kodlar({ finans: finans(), satis: { bitenTeklifler: [], bekleyenSiparisler: [] } })).toEqual([]);
   });

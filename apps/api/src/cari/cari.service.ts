@@ -5,6 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { planOzelligiAcik } from "../core/abonelik-erisim.service";
+import { erimeHesapla, enEskiAy } from "../fiyat-endeks/alacak-erimesi";
+import { endeksVerisi } from "../fiyat-endeks/fiyat-endeks-veri";
+import { ayKaydir } from "../fiyat-endeks/fiyat-endeks-hesap";
+import { tahsilatFifo } from "./cari.raporlar";
 import { eksikTahminleriTamamla, isabetSatirlari } from "./tahmin-isabeti-kaynak";
 import { isabetOzeti } from "./tahmin-isabeti";
 import { Prisma } from "@prisma/client";
@@ -960,6 +965,17 @@ export class CariService {
           sonEtkilesim: sonEtkilesim?.tarih ?? null,
           borclarimiz: { vadesiGecmisTry: vadesiGecmis(borc), yakinVadeTry: borc.yakinVadeTry },
         };
+        // END-19: plan özelliği açıksa açık alacağın TÜFE karşısındaki reel erimesi (bilgi; yalnız tam finans görenlere).
+        if (finansGorur && (await planOzelligiAcik(tx, tenantId, "fiyatEndeksAnalizi"))) {
+          const acik = tahsilatFifo(hareketler).acikBorclar;
+          const kalemler = acik.map((b) => ({ dogus: b.tarih, bitis: simdi, tutar: b.kalan.toFixed(2) }));
+          const bas = enEskiAy(kalemler);
+          if (bas) {
+            const buAy = simdi.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7) + "-01";
+            const e = erimeHesapla(kalemler, (await endeksVerisi(tx, "TUFE", ayKaydir(bas, -12), buAy)).degerler);
+            finans.alacakErimesi = { kayipTry: Number(e.kayip), endeksAdi: "TÜFE", sonEndeksAyi: e.sonEndeksAyi };
+          }
+        }
         gostergeler = {
           bakiyeTry: risk.bakiyeTry.toFixed(2),
           vadesiGecmisTry: finans.vadesiGecmisTry.toFixed(2),

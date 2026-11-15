@@ -1,4 +1,8 @@
+import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { erimeHesapla } from "../fiyat-endeks/alacak-erimesi";
+import { endeksVerisi } from "../fiyat-endeks/fiyat-endeks-veri";
+import { planOzelligiAcik } from "../core/abonelik-erisim.service";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
 import { cariYaslandirmalari } from "./cari-risk";
 import { babsEsigi, babsKalemleri, babsOzeti, type BabsDurumu } from "./babs";
@@ -268,16 +272,28 @@ registerRapor({
   modul: "cari",
   ad: "Tahsilat Performansı",
   aciklama:
-    "Borçların alacak kayıtlarıyla FIFO kapanmasına göre ortalama tahsilat süresi",
-  filtreler: [ETIKET_FILTRESI],
+    "Borçların alacak kayıtlarıyla FIFO kapanmasına göre ortalama tahsilat süresi; erime endeksi seçilirse alacağın enflasyon karşısındaki reel kaybı",
+  filtreler: [ETIKET_FILTRESI,
+    // END-19: seçilirse tahsilatta ve açık alacakta reel kayıp hesaplanır (fiyat–endeks plan özelliği).
+    { alan: "erimeEndeksi", ad: "Erime endeksi (boşsa hesaplanmaz)", tip: "secim", secenekler: [{ deger: "TUFE", ad: "TÜFE" }, { deger: "YIUFE", ad: "Yİ-ÜFE" }] }],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
     { alan: "tahsilEdilen", baslik: "Tahsil Edilen (TL)", tip: "para", toplam: true },
     { alan: "ortalamaGun", baslik: "Ortalama Süre (Gün)", tip: "sayi" },
     { alan: "acikBakiye", baslik: "Açık Bakiye (TL)", tip: "para", toplam: true },
+    { alan: "tahsilatErimesi", baslik: "Tahsilatta Reel Kayıp (TL)", tip: "para", toplam: true },
+    { alan: "acikErimesi", baslik: "Açık Alacakta Reel Kayıp (TL)", tip: "para", toplam: true },
   ],
-  async calistir(girdi, { tx }) {
+  async calistir(girdi, { tx, tenantId }) {
+    const erimeKodu = girdi.filtreler?.erimeEndeksi === "TUFE" || girdi.filtreler?.erimeEndeksi === "YIUFE" ? String(girdi.filtreler.erimeEndeksi) : null;
+    let erimeDegerleri: Map<string, Prisma.Decimal> | null = null;
+    if (erimeKodu) {
+      if (!(await planOzelligiAcik(tx, tenantId, "fiyatEndeksAnalizi"))) throw new BadRequestException("Erime hesabı fiyat ve endeks analizi plan özelliğini gerektirir.");
+      const bugun = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7) + "-01";
+      erimeDegerleri = (await endeksVerisi(tx, erimeKodu, "2000-01-01", bugun)).degerler;
+    }
+    const simdi = new Date();
     const cariler = await tx.cariHesap.findMany({
       where: { aktif: true, ...etiketKosulu(girdi.filtreler?.etiket) },
       select: { id: true, kod: true, unvan: true },
@@ -299,6 +315,8 @@ registerRapor({
       for (const c of parca) {
         const r = tahsilatFifo(cariHareketleri.get(c.id) ?? []);
         if (r.tahsilEdilen <= 0.005 && r.acikBakiye <= 0.005) continue;
+        const tahsilatErimesi = erimeDegerleri ? erimeHesapla(r.kapanislar.map((k) => ({ dogus: k.borcTarih, bitis: k.tahsilTarih, tutar: k.tutar.toFixed(2) })), erimeDegerleri).kayip : null;
+        const acikErimesi = erimeDegerleri ? erimeHesapla(r.acikBorclar.map((b) => ({ dogus: b.tarih, bitis: simdi, tutar: b.kalan.toFixed(2) })), erimeDegerleri).kayip : null;
         sonuc.push({
           cariId: c.id,
           kod: c.kod,
@@ -306,6 +324,8 @@ registerRapor({
           tahsilEdilen: r.tahsilEdilen.toFixed(2),
           ortalamaGun: r.ortalamaGun,
           acikBakiye: r.acikBakiye.toFixed(2),
+          tahsilatErimesi,
+          acikErimesi,
         });
       }
     }
@@ -322,12 +342,15 @@ registerRapor({
 export function tahsilatFifo(hareketler: { tip: string; tutarTry: Prisma.Decimal | number | string; tarih: Date }[]) {
   const GUN_MS = 24 * 60 * 60 * 1000;
   const acikBorclar: { tarih: Date; kalan: number }[] = [];
+  /** END-19: her kapanışın borç ve tahsilat tarihi (erime hesabı için). */
+  const kapanislar: { borcTarih: Date; tahsilTarih: Date; tutar: number }[] = [];
   let avans = 0, agirlikliGun = 0, tahsilEdilen = 0;
   for (const h of hareketler) {
     const tutar = Number(h.tutarTry);
     if (h.tip === "borc") {
       const avanstan = Math.min(avans, tutar);
       avans -= avanstan; tahsilEdilen += avanstan;
+      if (avanstan > 0.005) kapanislar.push({ borcTarih: h.tarih, tahsilTarih: h.tarih, tutar: avanstan });
       if (tutar - avanstan > 0.005) acikBorclar.push({ tarih: h.tarih, kalan: tutar - avanstan });
       continue;
     }
@@ -336,6 +359,7 @@ export function tahsilatFifo(hareketler: { tip: string; tutarTry: Prisma.Decimal
       const borc = acikBorclar[0];
       const kapanan = Math.min(borc.kalan, kalan);
       agirlikliGun += Math.max(0, Math.floor((h.tarih.getTime() - borc.tarih.getTime()) / GUN_MS)) * kapanan;
+      kapanislar.push({ borcTarih: borc.tarih, tahsilTarih: h.tarih, tutar: kapanan });
       tahsilEdilen += kapanan; borc.kalan -= kapanan; kalan -= kapanan;
       if (borc.kalan <= 0.005) acikBorclar.shift();
     }
@@ -345,6 +369,8 @@ export function tahsilatFifo(hareketler: { tip: string; tutarTry: Prisma.Decimal
     tahsilEdilen,
     ortalamaGun: tahsilEdilen > 0 ? Math.round(agirlikliGun / tahsilEdilen) : null,
     acikBakiye: acikBorclar.reduce((t, b) => t + b.kalan, 0),
+    kapanislar,
+    acikBorclar,
   };
 }
 
