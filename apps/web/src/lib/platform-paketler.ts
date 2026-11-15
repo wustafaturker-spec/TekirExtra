@@ -54,6 +54,8 @@ export interface PaketAtamaOnizlemesi {
   kayitlar: { tenantId: string; unvan: string; kaynakSurumId: string; donemler: PaketFiyatEtkiRaporu["kayitlar"][number]["donemler"];
     oncekiLimitler: Record<string, number | null>; sonrakiLimitler: Record<string, number | null>;
     oncekiDepolama?: { sinirBayt: string | null; uyariYuzdesi: number } | null; sonrakiDepolama?: { sinirBayt: string | null; uyariYuzdesi: number } | null;
+    /** PLT-126: kayıtlı fiyatı olmayan abonelik; fiyat koşulu değişmez. */
+    teklifli?: boolean;
     kullanim?: Record<string, number> | null; oncekiModuller?: string[]; sonrakiModuller?: string[]; kapananModuller?: string[]; acilanModuller?: string[] }[];
 }
 export interface PlanliPaketAtamaListesi {

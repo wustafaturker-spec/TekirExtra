@@ -29,7 +29,10 @@ export function atamaOnizlemesiniSun(r: PaketAtamaKaydi) {
         oncekiLimitler: once.limitler, sonrakiLimitler: sonra.limitler,
         oncekiDepolama: once.semaSurumu === 2 ? once.kapsamSozlesmesi.depolama ?? null : null,
         sonrakiDepolama: sonra.semaSurumu === 2 ? sonra.kapsamSozlesmesi.depolama ?? null : null,
-        ...paketFiyatEtkisi(a, { planKodu: r.veri.hedefPlanKodu, fiyatlandirma: r.veri.fiyatlandirma }) };
+        // PLT-126: teklifli (kayıtlı fiyatı olmayan) abonelikte fiyat koşulu değişmez; hedef fiyat gösterilmez.
+        ...(sonra.fiyatlandirma === null
+          ? { teklifli: true, karsilastirilabilir: false, neden: "teklifli_fiyat_degismez" as const, donemler: [] }
+          : { teklifli: false, ...paketFiyatEtkisi(a, { planKodu: r.veri.hedefPlanKodu, fiyatlandirma: r.veri.fiyatlandirma }) }) };
     }),
   };
 }
@@ -50,7 +53,8 @@ export function atamaHatasiniCevir(e: unknown): never {
     atama_hedef_uygun_degil: "Yayınlanmış, fiyatlı ve kapsam sözleşmesi olan bir sürüm seçin.",
     atama_fiyat_henuz_gecerli_degil: "Hedef sürümün fiyat geçerlilik tarihi henüz gelmedi.",
     atama_abonelik_yok: "Seçilen firmanın abonelik kaydı yok.",
-    atama_abonelik_uygun_degil: "Yalnız kayıtlı fiyatı olan aktif veya deneme abonelikleri atanabilir.",
+    atama_abonelik_uygun_degil: "Yalnız aktif veya deneme abonelikleri atanabilir; kayıtlı fiyatı olmayan (teklifli) abonelik yalnız kapsam atamasıyla geçer.",
+    atama_teklifli_ayni_paket: "Kayıtlı fiyatı olmayan (teklifli) abonelik yalnız kendi paketinin sürümüne kapsam atamasıyla geçirilebilir.",
     atama_zaten_hedefte: "Seçilen firma zaten hedef sürümde.",
     atama_donem_eksik: "Hedef sürüm, mevcut aboneliğin tüm fiyat dönemlerini içermeli.",
     atama_plan_tarih: "İleri tarih yarından başlayarak en çok 366 gün sonrası olabilir.",

@@ -47,7 +47,7 @@ export function PlatformPaketAtama({ rapor, onUygulandi }: { rapor: PaketFiyatEt
           const paketGecisineUygun = kapsam && r.kaynakSurumId !== null;
           const secilebilir = r.karsilastirilabilir || paketGecisineUygun;
           return <label key={r.tenantId}><input type="checkbox" checked={secili.includes(r.tenantId)} disabled={!secilebilir || r.kaynakSurumId === rapor.hedefSurumId}
-            onChange={(e) => setSecili((s) => e.target.checked ? [...s, r.tenantId] : s.filter((id) => id !== r.tenantId))} /> {r.unvan}{!secilebilir ? " · Kayıtlı abonelik koşulu yok" : !r.karsilastirilabilir ? " · Farklı paket; önizlemede fiyatlar ayrı gösterilir" : r.kaynakSurumId === rapor.hedefSurumId ? " · Zaten hedef sürümde" : ""}</label>;
+            onChange={(e) => setSecili((s) => e.target.checked ? [...s, r.tenantId] : s.filter((id) => id !== r.tenantId))} /> {r.unvan}{kapsam && r.donemler.length > 0 && r.donemler.every((d) => !d.once) && r.kaynakSurumId !== rapor.hedefSurumId ? " · Teklifli — yalnız kapsam atanır, fiyat koşulu değişmez" : ""}{!secilebilir ? " · Kayıtlı abonelik koşulu yok" : !r.karsilastirilabilir ? " · Farklı paket; önizlemede fiyatlar ayrı gösterilir" : r.kaynakSurumId === rapor.hedefSurumId ? " · Zaten hedef sürümde" : ""}</label>;
         })}
       </fieldset>
       <Field label="Uygulama zamanı"><Select disabled={mesgul} value={tur} onChange={(e) => setTur(e.target.value as typeof tur)}><option value="bugun">Bugün</option><option value="tarih">İleri tarih</option><option value="donem_sonu">Firmanın dönem sonunda</option></Select></Field>
@@ -62,6 +62,7 @@ export function PlatformPaketAtama({ rapor, onUygulandi }: { rapor: PaketFiyatEt
       {onizleme.uygulanacakAt && <p>Planlanan uygulama zamanı (Türkiye): {new Date(onizleme.uygulanacakAt).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}. Bu zamandan sonra koşullar doğrulanarak uygulanır. Bu onay işlemi planı kaydeder; abonelik koşulları uygulama zamanına kadar korunur.</p>}
       <p>Neden: {onizleme.neden}</p>
       <TableWrap><thead><tr><th>Firma / dönem</th><th>Kayıtlı bedel</th><th>Hedef bedel</th><th>Dönem bedeli farkı</th></tr></thead><tbody>
+        {onizleme.kayitlar.filter((r) => r.teklifli).map((r) => <tr key={`${r.tenantId}:teklifli`}><td>{r.unvan}</td><td colSpan={3}>Teklifli abonelik — fiyat koşulu değişmez; yalnız modül, kota ve plan özellikleri hedef sürüme geçer.</td></tr>)}
         {onizleme.kayitlar.flatMap((r) => r.donemler.map((d) => <tr key={`${r.tenantId}:${d.aySayisi}`}><td>{r.unvan} · {d.aySayisi} ay</td><td>{bedel(d.once)}</td><td>{bedel(d.sonra)}</td><td>{bedel(d.fark)}</td></tr>))}
       </tbody></TableWrap>
       {onizleme.atamaKapsami === "kapsam" && onizleme.kayitlar.map((r) => <section key={r.tenantId} aria-label={`${r.unvan} kapsam etkisi`}>
