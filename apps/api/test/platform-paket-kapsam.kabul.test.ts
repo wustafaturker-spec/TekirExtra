@@ -59,10 +59,20 @@ describe("paket erişim ve kota sözleşmesi — gerçek PostgreSQL", () => {
     { kotalar: { ...kapsam().kotalar, cari: { sinir: 2147483648, uyariYuzdesi: 80 } } },
     { kotalar: { ...kapsam().kotalar, cari: { sinir: 1, uyariYuzdesi: 100 } } },
     { kotalar: { ...kapsam().kotalar, cari: { sinir: 1, uyariYuzdesi: 80, birim: "MB" } } },
+    { ozellikler: { bilinmeyen: true } }, { ozellikler: { telegramOzelBot: "evet" } }, { ozellikler: [] },
+    { moduller: ["cari"], ozellikler: { fiyatEndeksAnalizi: true } }, { moduller: ["cari"], ozellikler: { telegramOzelBot: true } },
   ])("API/DB aynı geçersiz kapsamı reddeder: %j", async (ek) => {
     const g = { ...kapsam(), ...ek }; expect(paketKapsamSemasi.safeParse(g).success).toBe(false);
     await expect(db.$executeRaw`UPDATE platform_paket_surumleri SET kapsam_sozlesmesi=${JSON.stringify(g)}::jsonb,kilit_surumu=kilit_surumu+1 WHERE id=${taslakId}::uuid`).rejects.toThrow();
     expect((await db.platformPaketSurumu.findUniqueOrThrow({ where: { id: taslakId } })).kapsamSozlesmesi).toBeNull();
+  });
+  it("plan özellikleri DB tetikleyicisinden geçer (CNL-19/END)", async () => {
+    let d = await db.platformPaketSurumu.findUniqueOrThrow({ where: { id: taslakId } });
+    const g = { ...kapsam(), ozellikler: { telegramOzelBot: true, fiyatEndeksAnalizi: false } };
+    d = await yonetici(() => servis.guncelle(paketId, taslakId, { ...icerik, kapsamSozlesmesi: g, kilitSurumu: d.kilitSurumu }));
+    expect(d.kapsamSozlesmesi).toEqual(g);
+    d = await yonetici(() => servis.guncelle(paketId, taslakId, { ...icerik, kapsamSozlesmesi: { ...kapsam(), moduller: ["cari", "raporlar"], ozellikler: { fiyatEndeksAnalizi: true } }, kilitSurumu: d.kilitSurumu }));
+    d = await yonetici(() => servis.guncelle(paketId, taslakId, { ...icerik, kapsamSozlesmesi: null, kilitSurumu: d.kilitSurumu })); expect(d.kapsamSozlesmesi).toBeNull();
   });
   it("geçerli kapsam yayımlanır, DB'de sabitlenir ve kaynak taslağa kopyalanır", async () => {
     const once = await admin.tenantAbonelik.findUniqueOrThrow({ where: { tenantId: firma } });
