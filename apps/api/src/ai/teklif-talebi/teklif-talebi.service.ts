@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { Rol } from "@tekirextra/shared";
 import { BildirimService } from "../../bildirimler/bildirim.service";
 import { aktifBaglam, baglamlaCalistir } from "../../core/istek-baglami";
+import { kullaniciAdinaCalistir } from "../../core/kullanici-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { AracYurutucu, hataMetni } from "../ajan/arac-yurutucu";
 import { adres } from "../ajan/araclar/arac";
@@ -587,7 +588,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     const sorumlu = await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findFirst({ where: { id: ayar.sorumluUserId!, tenantId, aktif: true, rol: { in: [...TEKLIF_TALEBI_ROLLERI] } }, select: { id: true, rol: true } }));
     if (!sorumlu) { this.logger.warn(`Teklif talebi sorumlusu etkin değil ya da yetkisiz (${tenantId}); tarama atlandı`); return 0; }
     const acildi = new Date(ayar.acildiAt!);
-    return baglamlaCalistir({ tenantId, userId: sorumlu.id, rol: sorumlu.rol as Rol }, async () => {
+    return kullaniciAdinaCalistir(this.prisma, tenantId, sorumlu.id, async () => {
       let islenen = 0;
       // Yeni e-postalar ve zamanı gelen hatalar.
       const yeniler = await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEposta.findMany({
@@ -636,7 +637,7 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     const alindi = await this.prisma.tenantIslem(tenantId, (tx) => tx.epostaTeklifIslemi.updateMany({ where: { id: k.id, durum: "cari_onayi_bekliyor" }, data: cariId ? { durum: "isleniyor", cariId, updatedAt: new Date() } : { durum: "cari_yok", uyarilar: [`Cari açma talebi ${talep.durum === "reddedildi" ? "reddedildi" : talep.durum === "suresi_doldu" ? "süresi doldu" : "tamamlanamadı"}; taslak hazırlanmadı.`], updatedAt: new Date() } }));
     if (!alindi.count || !cariId) return alindi.count;
     if (!talep.user.aktif) return 0;
-    await baglamlaCalistir({ tenantId, userId: talep.userId, rol: talep.user.rol as Rol }, () => this.isle({ ...k, cariId }));
+    await kullaniciAdinaCalistir(this.prisma, tenantId, talep.userId, () => this.isle({ ...k, cariId }));
     return 1;
   }
 }

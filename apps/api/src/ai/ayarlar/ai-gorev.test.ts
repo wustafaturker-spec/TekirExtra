@@ -29,8 +29,10 @@ describe("görev zamanlaması (AI-16)", () => {
 });
 
 describe("görev yürütme (AI-16)", () => {
-  function kur(sahip: { id: string; rol: string } | null = { id: "u1", rol: "muhasebe" }) {
-    const tx = { user: { findFirst: vi.fn().mockResolvedValue(sahip) }, tenantAiGorev: { update: vi.fn() } };
+  function kur(sahip: { id: string; rol: string; ozelRolId?: string | null; ozelRol?: { kapaliKutular: string[] } | null } | null = { id: "u1", rol: "muhasebe" }) {
+    // AI-94: çözümleyici aynı kullanıcıyı aktiflik ve özel rolüyle yeniden okur.
+    const kayit = sahip ? { aktif: true, ozelRolId: null, ozelRol: null, ...sahip } : null;
+    const tx = { user: { findFirst: vi.fn().mockResolvedValue(kayit) }, tenantAiGorev: { update: vi.fn() } };
     const prisma = { tenantIslem: (_t: string, fn: (x: typeof tx) => unknown) => fn(tx) };
     let gorulenBaglam: unknown;
     const ajan = { gorevYurut: vi.fn(async () => { gorulenBaglam = baglamAl(); return { cevap: "3 cari, 120.000 TL", araclar: [] }; }) };
@@ -48,6 +50,42 @@ describe("görev yürütme (AI-16)", () => {
     expect(k.baglam()).toEqual({ tenantId: "t", userId: "u1", rol: "muhasebe" });
     expect(k.tx.tenantAiGorev.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ sonSonuc: "3 cari, 120.000 TL" }) }));
     expect(k.bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "yapay_zeka", kullaniciIdler: ["u1"], roller: [] }));
+  });
+
+  it("AI-95: özel rolün kapattığı kutular görev bağlamına taşınır; pasifleşen sahip için görev çalışmaz", async () => {
+    const k = kur({ id: "u1", rol: "muhasebe", ozelRolId: "or1", ozelRol: { kapaliKutular: ["kasa_banka"] } });
+    await k.y.yurut("t", g() as never, { bildir: false });
+    expect(k.baglam()).toEqual({ tenantId: "t", userId: "u1", rol: "muhasebe", ozelRol: { id: "or1", kapali: ["kasa_banka"] } });
+    const p = kur();
+    // İlk okuma (görev sahibi) etkin, çözümleyicinin okuması arada pasifleşmiş kullanıcı.
+    p.tx.user.findFirst.mockResolvedValueOnce({ id: "u1", rol: "muhasebe" }).mockResolvedValueOnce({ aktif: false, rol: "muhasebe", ozelRolId: null, ozelRol: null });
+    const r = await p.y.yurut("t", g() as never, { bildir: false });
+    expect(r.basarili).toBe(false);
+    expect(r.metin).toMatch(/artık etkin değil/);
+    expect(p.ajan.gorevYurut).not.toHaveBeenCalled();
+  });
+
+  it("AI-97: kapalı sağlayıcı başarı sayılmaz; sahipliği kaybeden worker sonuç yazmaz ve bildirmez", async () => {
+    const k = kur();
+    k.ajan.gorevYurut.mockResolvedValueOnce({ cevap: "", araclar: [], kapali: "Yapay zekâ sağlayıcısı tanımlı değil." } as never);
+    const r = await k.y.yurut("t", g() as never, { bildir: true });
+    expect(r).toMatchObject({ basarili: false, metin: "Çalışmadı: Yapay zekâ sağlayıcısı tanımlı değil." });
+    expect(k.bildirimler.uret).not.toHaveBeenCalled();
+    const p = kur();
+    const r2 = await p.y.yurut("t", g() as never, { bildir: true, halaSahipMi: async () => false });
+    expect(r2.sahiplikKaybedildi).toBe(true);
+    expect(p.tx.tenantAiGorev.update).not.toHaveBeenCalled();
+    expect(p.bildirimler.uret).not.toHaveBeenCalled();
+  });
+
+  it("AI-97: çalışma kaydı yalnız sahiplik anahtarıyla ve 'calisiyor' durumunda güncellenir", async () => {
+    const k = kur();
+    const updateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const yonetim = { tenantAiGorevCalisma: { updateMany } };
+    const yaz = (k.y as unknown as { calismaYaz: (y: unknown, c: unknown, d: unknown) => Promise<boolean> }).calismaYaz.bind(k.y);
+    expect(await yaz(yonetim, { id: "c1", anahtar: "a1" }, { durum: "basarili" })).toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: "c1", sahiplikAnahtari: "a1", durum: "calisiyor" }, data: { durum: "basarili" } });
+    expect(await yaz(yonetim, { id: "c1", anahtar: "a1" }, { durum: "basarili" })).toBe(false);
   });
 
   it("NAKIT_TAHSILAT görevi modeli çağırmadan analiz eder, önemi bildirime taşır (AI-23)", async () => {

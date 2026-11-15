@@ -5,6 +5,7 @@ import { BildirimService } from "../bildirimler/bildirim.service";
 import { BildirimUreticiService } from "../bildirimler/bildirim-uretici.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
+import { kullaniciAdinaCalistir } from "../core/kullanici-baglami";
 import { PrismaService } from "../core/prisma.service";
 import {
   adimiOnaylayabilir, ISLEM_ADLARI, kuralSec, kuralSemasi, onayliYurut, onayModulu, onayYurutmesi, OnayGerekliHatasi,
@@ -150,10 +151,8 @@ export class OnayService {
     let hata: string | null = null;
     try {
       if (!yurutucu) throw new Error("Bu işlemin yürütücüsü tanımlı değil");
-      const sahip = await this.prisma.tenantIslem(t.tenantId, (tx) => tx.user.findUnique({ where: { id: t.talepEdenId }, select: { id: true, rol: true, aktif: true, ozelRolId: true } }));
-      if (!sahip?.aktif) throw new Error("Talep eden kullanıcı artık etkin değil; işlem yapılmadı");
-      // Talep edenin adına, onun rolüyle yürütülür (özel rol daraltması ekrandaki uçta zaten denetlendi).
-      sonucVeri = await baglamlaCalistir({ tenantId: t.tenantId, userId: sahip.id, rol: sahip.rol as Rol }, () => onayliYurut(t.id, async () => {
+      // AI-95: talep edenin adına, onay anındaki güncel rol ve özel rolüyle yürütülür; pasifse işlem yapılmaz.
+      sonucVeri = await kullaniciAdinaCalistir(this.prisma, t.tenantId, t.talepEdenId, () => onayliYurut(t.id, async () => {
         if (t.hedefId && t.hedefOzeti && yurutucu.hedefOzeti) {
           const guncel = await yurutucu.hedefOzeti(t.hedefId);
           if (guncel !== t.hedefOzeti) { durum = "gecersiz"; return null; }

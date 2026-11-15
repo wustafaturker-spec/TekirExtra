@@ -1,9 +1,10 @@
 import { ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
-import { PrismaClient, type TenantAiGorev } from "@prisma/client";
+import { PrismaClient, type Prisma, type TenantAiGorev } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
 import { BildirimService } from "../../bildirimler/bildirim.service";
+import { kullaniciAdinaCalistir } from "../../core/kullanici-baglami";
 import { baglamlaCalistir } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { AiAjanService } from "../ajan/ai-ajan.service";
@@ -65,7 +66,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Sahibin bağlamında çalıştırır; sonucu kaydeder. `bildir` zamanlanmış çalışmada sonucu bildirime çevirir. */
-  async yurut(tenantId: string, gorev: TenantAiGorev, secenek: { bildir?: boolean } = {}): Promise<{ metin: string; basarili: boolean; sinir?: boolean }> {
+  async yurut(tenantId: string, gorev: TenantAiGorev, secenek: { bildir?: boolean; halaSahipMi?: () => Promise<boolean> } = {}): Promise<{ metin: string; basarili: boolean; sinir?: boolean; sahiplikKaybedildi?: boolean }> {
     const sahip = gorev.userId
       ? await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findFirst({ where: { id: gorev.userId!, aktif: true }, select: { id: true, rol: true } }))
       : null;
@@ -81,7 +82,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     } else if (brifing) {
       // AI-83: bölümler sahibin rolüyle uçlardan okunur; model yalnız öncelik yazar (ekonomik, sayılar kaynaktan).
       try {
-        const sonuc = await baglamlaCalistir({ tenantId, userId: sahip.id, rol: sahip.rol as Rol }, async () => {
+        const sonuc = await kullaniciAdinaCalistir(this.prisma, tenantId, sahip.id, async () => {
           const veri = await brifingVerisiTopla((uc, arg) => this.uc.cagir(uc, arg), trSimdi().gun);
           const duz = brifingMetni(veri);
           const saglayici = await kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "ozet" }).then((x) => x.saglayici).catch(() => null);
@@ -96,7 +97,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     } else if (nakitTahsilat) {
       // AI-23: deterministik analiz; model, AI-14 onayı ve AI-15 sayacı devreye girmez.
       try {
-        const { icerik } = await baglamlaCalistir({ tenantId, userId: sahip.id, rol: sahip.rol as Rol }, () => this.icgoru.analizEt({ gorevId: gorev.id }));
+        const { icerik } = await kullaniciAdinaCalistir(this.prisma, tenantId, sahip.id, () => this.icgoru.analizEt({ gorevId: gorev.id }));
         metin = icgoruMetni(icerik);
         onem = icerik.onem;
       } catch (hata) {
@@ -105,17 +106,24 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
       }
     } else {
       try {
-        const sonuc = await baglamlaCalistir({ tenantId, userId: sahip.id, rol: sahip.rol as Rol }, () => this.ajan.gorevYurut(gorev.ad, gorev.gorevTalimati));
-        metin = sonuc.kapali ? `Çalışmadı: ${sonuc.kapali}` : sonuc.cevap;
+        const sonuc = await kullaniciAdinaCalistir(this.prisma, tenantId, sahip.id, () => this.ajan.gorevYurut(gorev.ad, gorev.gorevTalimati));
+        // AI-97: kapalı/tanımsız sağlayıcı başarı sayılmaz; yeniden denenir, son denemede bildirilir.
+        if (sonuc.kapali) { metin = `Çalışmadı: ${sonuc.kapali}`; basarili = false; }
+        else metin = sonuc.cevap;
       } catch (hata) {
         metin = `Çalışmadı: ${hata instanceof Error ? hata.message : String(hata)}`;
         basarili = false;
         sinir = hata instanceof AiSinirHatasi;
       }
     }
+    // AI-97: iş uzun sürerken sahiplik başka worker'a geçtiyse bu worker sonuç yazmaz ve bildirim üretmez.
+    if (secenek.halaSahipMi && !(await secenek.halaSahipMi())) {
+      this.logger.warn(`AI görevi sahipliği kaybedildi (${gorev.id}); sonuç yazılmadı.`);
+      return { metin, basarili, sahiplikKaybedildi: true };
+    }
     await this.prisma.tenantIslem(tenantId, (tx) => tx.tenantAiGorev.update({ where: { id: gorev.id }, data: { sonCalisma: new Date(), sonSonuc: metin } }));
     if (secenek.bildir && sahip && basarili) {
-      await baglamlaCalistir({ tenantId, userId: sahip.id, rol: sahip.rol as Rol }, () =>
+      await kullaniciAdinaCalistir(this.prisma, tenantId, sahip.id, () =>
         this.bildirimler.uret({
           tur: "yapay_zeka", onem, baslik: brifing ? gorev.ad : `Görev: ${gorev.ad}`, aciklama: metin.slice(0, 1500),
           birlesimAnahtari: `yapay_zeka:gorev:${gorev.id}:${trSimdi().gun}`, kaynakTur: "ai_gorev", kaynakRef: gorev.id,
@@ -146,6 +154,17 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         kullaniciIdler: gorev.userId ? [gorev.userId] : [],
       }),
     ).catch((hata: unknown) => this.logger.warn(`Görev hata bildirimi üretilemedi: ${String(hata)}`));
+  }
+
+  /** AI-97: çalışma kaydı yalnız sahiplik anahtarı hâlâ bu worker'daysa güncellenir. */
+  private async calismaYaz(yonetim: PrismaClient, calisma: { id: string; anahtar: string }, data: Prisma.TenantAiGorevCalismaUpdateManyMutationInput): Promise<boolean> {
+    const r = await yonetim.tenantAiGorevCalisma.updateMany({ where: { id: calisma.id, sahiplikAnahtari: calisma.anahtar, durum: "calisiyor" }, data });
+    if (r.count === 0) this.logger.warn(`AI görevi çalışmasının sahipliği kaybedildi (${calisma.id}); sonuç yazılmadı.`);
+    return r.count === 1;
+  }
+
+  private async halaSahip(yonetim: PrismaClient, calisma: { id: string; anahtar: string }): Promise<boolean> {
+    return (await yonetim.tenantAiGorevCalisma.count({ where: { id: calisma.id, sahiplikAnahtari: calisma.anahtar, durum: "calisiyor" } })) === 1;
   }
 
   /** Benzersiz gün kaydı ve sahiplik belirteci, süreçler arası atomik kilittir. */
@@ -217,25 +236,24 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
           if (!calisma) continue;
           try {
             const sahip = g.userId ? await this.prisma.tenantIslem(g.tenantId, (tx) => tx.user.findFirst({ where: { id: g.userId!, aktif: true }, select: { id: true, rol: true } })) : null;
-            const kosul = sahip ? await baglamlaCalistir({ tenantId: g.tenantId, userId: sahip.id, rol: sahip.rol as Rol }, () => this.kosulSaglandi(g)) : true;
+            const kosul = sahip ? await kullaniciAdinaCalistir(this.prisma, g.tenantId, sahip.id, () => this.kosulSaglandi(g)) : true;
             if (!kosul) {
-              await yonetim.tenantAiGorevCalisma.update({ where: { id: calisma.id }, data: { durum: "kosul_saglanmadi", bittiAt: new Date(), sonuc: "Tetikleyici koşulu sağlanmadı." } });
+              if (!(await this.calismaYaz(yonetim, calisma, { durum: "kosul_saglanmadi", bittiAt: new Date(), sonuc: "Tetikleyici koşulu sağlanmadı." }))) continue;
               await yonetim.tenantAiGorev.update({ where: { id: g.id }, data: { sonTetikGunu: new Date(`${simdi.gun}T00:00:00Z`) } });
               continue;
             }
-            const sonuc = await this.yurut(g.tenantId, g, { bildir: true });
+            const sonuc = await this.yurut(g.tenantId, g, { bildir: true, halaSahipMi: () => this.halaSahip(yonetim, calisma) });
+            if (sonuc.sahiplikKaybedildi) continue;
             if (!sonuc.basarili) throw sonuc.sinir ? new GorevSinirHatasi(sonuc.metin) : new Error(sonuc.metin);
-            await yonetim.tenantAiGorevCalisma.update({ where: { id: calisma.id }, data: { durum: "basarili", bittiAt: new Date(), sonuc: sonuc.metin, sonrakiDenemeAt: null } });
+            if (!(await this.calismaYaz(yonetim, calisma, { durum: "basarili", bittiAt: new Date(), sonuc: sonuc.metin, sonrakiDenemeAt: null }))) continue;
             await yonetim.tenantAiGorev.update({ where: { id: g.id }, data: { sonTetikGunu: new Date(`${simdi.gun}T00:00:00Z`) } });
           } catch (hata) {
             const mesaj = hata instanceof Error ? hata.message : String(hata);
             const sinirda = hata instanceof GorevSinirHatasi;
             const sonDeneme = sinirda || calisma.deneme >= AZAMI_DENEME;
-            await yonetim.tenantAiGorevCalisma.update({
-              where: { id: calisma.id },
-              // Sınır hatasında deneme hakkı bitmiş sayılır; çalışma bugün yeniden sahiplenilmez.
-              data: { durum: "hata", bittiAt: new Date(), hata: mesaj.slice(0, 2000), sonrakiDenemeAt: sonDeneme ? null : new Date(Date.now() + BES_DAKIKA_MS * calisma.deneme), ...(sinirda ? { deneme: AZAMI_DENEME } : {}) },
-            });
+            // Sınır hatasında deneme hakkı bitmiş sayılır; çalışma bugün yeniden sahiplenilmez.
+            const yazildi = await this.calismaYaz(yonetim, calisma, { durum: "hata", bittiAt: new Date(), hata: mesaj.slice(0, 2000), sonrakiDenemeAt: sonDeneme ? null : new Date(Date.now() + BES_DAKIKA_MS * calisma.deneme), ...(sinirda ? { deneme: AZAMI_DENEME } : {}) });
+            if (!yazildi) continue;
             if (sonDeneme) await yonetim.tenantAiGorev.update({ where: { id: g.id }, data: { sonTetikGunu: new Date(`${simdi.gun}T00:00:00Z`) } });
             if (sonDeneme) await this.sonHatayiBildir(g, mesaj, sinirda);
             this.logger.error(`AI görevi çalıştırılamadı (${g.id}, deneme ${calisma.deneme}/${AZAMI_DENEME}): ${mesaj}`);

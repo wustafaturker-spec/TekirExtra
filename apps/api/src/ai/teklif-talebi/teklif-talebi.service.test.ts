@@ -12,6 +12,8 @@ const TEKLIF = { teklifTalebi: true, guven: 0.92, gerekce: "fiyat istiyor", firm
 function kur(o: { kisiYetkisiz?: boolean; vknKartlari?: string[]; telefonKartlari?: string[]; zatenKayitli?: boolean; talep?: Record<string, unknown>; fiyatsiz?: string[]; eposta?: Partial<typeof EPOSTA>; kartlar?: string[]; kisiler?: string[]; cikarim?: unknown; secimler?: unknown; stok?: Record<string, unknown[]>; mevcut?: Record<string, unknown> | null; rol?: string; hafiza?: Record<string, unknown>; kartlarDb?: Record<string, { kod: string; ad: string; anaBirim: string; varyantlar?: Record<string, string> }> } = {}) {
   const kayitlar = new Map<string, Record<string, any>>();
   const tx = {
+    // AI-94: kullanıcı adına devam eden işin bağlamı güncel kullanıcı kaydından kurulur.
+    user: { findFirst: vi.fn().mockResolvedValue({ aktif: true, rol: o.rol ?? "muhasebe", ozelRolId: null, ozelRol: null }) },
     gelenEposta: { findFirst: vi.fn().mockResolvedValue({ ...EPOSTA, ...o.eposta }) },
     cariHesap: {
       findMany: vi.fn(async (q: { where: Record<string, any> }) => {
