@@ -12,11 +12,13 @@ interface Seri {
   oncekiSeriKodu: string | null; zincirKatsayisi: string | null; zincirDonemi: string | null;
   sonCekimAt: string | null; sonBasariliAt: string | null; sonDonem: string | null; sonHata: string | null;
   degerSayisi: number; ilkDonem: string | null;
+  /** END-05/04 */
+  elleDegerSayisi: number; gorulmemisRevizyon: number;
 }
 interface Liste { anahtarTanimli: boolean; seriler: Seri[] }
 interface Degerler {
-  degerler: { donem: string; deger: string; kaynak: string; alindiAt: string }[];
-  revizyonlar: { donem: string; eskiDeger: string; yeniDeger: string; eskiKaynak: string; yeniKaynak: string; degistiAt: string }[];
+  degerler: { donem: string; deger: string; kaynak: string; aciklama: string | null; alindiAt: string }[];
+  revizyonlar: { donem: string; eskiDeger: string; yeniDeger: string; eskiKaynak: string; yeniKaynak: string; degistiAt: string; gorulduAt: string | null }[];
 }
 interface CekimSonucu { kod: string; basarili: boolean; hata?: string; yeni?: number; revize?: number }
 
@@ -68,7 +70,9 @@ export default function PlatformEndeksler() {
               <td data-label="Son dönem">{ay(s.sonDonem)}</td>
               <td data-label="Değer">{s.degerSayisi}<div className="muted">{s.ilkDonem ? `${ay(s.ilkDonem)}'dan` : ""}</div></td>
               <td data-label="Son çekim">{zaman(s.sonCekimAt)}{s.sonHata && <div><Badge variant="danger">{s.sonHata}</Badge></div>}</td>
-              <td data-label="Durum"><Badge variant={s.etkin ? "success" : "neutral"}>{s.etkin ? "Etkin" : "Durduruldu"}</Badge></td>
+              <td data-label="Durum"><Badge variant={s.etkin ? "success" : "neutral"}>{s.etkin ? "Etkin" : "Durduruldu"}</Badge>
+                {s.gorulmemisRevizyon > 0 && <div><Badge variant="warning">{s.gorulmemisRevizyon} değişiklik görülmedi</Badge></div>}
+                {s.elleDegerSayisi > 0 && <div className="muted">{s.elleDegerSayisi} elle değer</div>}</td>
             </tr>
           ))}
         </tbody>
@@ -85,6 +89,9 @@ function SeriAyrintisi({ seri, seriler, islem, calistir, cek }: { seri: Seri; se
   const { veri, yukleniyor, yenile } = usePlatformVerisi<Degerler>(`/platform/endeksler/${encodeURIComponent(seri.kod)}/degerler`);
   const [ad, setAd] = useState(seri.ad), [bazYili, setBazYili] = useState(seri.bazYili ?? ""), [kaynak, setKaynak] = useState(seri.kaynak);
   const [sira, setSira] = useState(String(seri.sira)), [onceki, setOnceki] = useState(seri.oncekiSeriKodu ?? ""), [yil, setYil] = useState("10");
+  const [elleDonem, setElleDonem] = useState(""), [elleDeger, setElleDeger] = useState(""), [elleAciklama, setElleAciklama] = useState("");
+  const buAy = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7);
+  const gecenAy = (() => { const [y, a] = buAy.split("-").map(Number); return new Date(Date.UTC(y, a - 2, 1)).toISOString().slice(0, 7); })();
   useEffect(() => { if (!islem) yenile(); }, [islem, yenile]);
   const son36 = (veri?.degerler ?? []).slice(0, 36).reverse();
 
@@ -99,6 +106,20 @@ function SeriAyrintisi({ seri, seriler, islem, calistir, cek }: { seri: Seri; se
     await platformApi(`/platform/endeksler/${encodeURIComponent(seri.kod)}`, { method: "PATCH", body: JSON.stringify({ etkin: !seri.etkin }) });
     return seri.etkin ? `${seri.kod} durduruldu; mevcut değerler okunmaya devam eder.` : `${seri.kod} yeniden etkin.`;
   });
+
+  const elleGir = (e: FormEvent) => {
+    e.preventDefault();
+    void calistir(async () => {
+      await platformApi(`/platform/endeksler/${encodeURIComponent(seri.kod)}/elle`, { method: "POST", body: JSON.stringify({ donem: elleDonem, deger: elleDeger.trim().replace(",", "."), aciklama: elleAciklama.trim() }) });
+      setElleDeger(""); setElleAciklama("");
+      return `${seri.kod} ${elleDonem} değeri elle girildi. EVDS aynı dönemi farklı getirirse değer EVDS'ninkiyle değişir ve burada uyarı çıkar.`;
+    });
+  };
+  const goruldu = () => calistir(async () => {
+    const r = await platformApi<{ adet: number }>(`/platform/endeksler/${encodeURIComponent(seri.kod)}/revizyonlar/goruldu`, { method: "POST" });
+    return `${r.adet} değişiklik görüldü olarak işaretlendi.`;
+  });
+  const gorulmemis = (veri?.revizyonlar ?? []).filter((r) => !r.gorulduAt);
 
   return <Card title={`${seri.kod} — ${seri.ad}`} actions={<div className="row" style={{ gap: ".5rem" }}>
     <Button disabled={islem} onClick={() => void cek(seri.kod)}>Şimdi çek</Button>
@@ -124,18 +145,34 @@ function SeriAyrintisi({ seri, seriler, islem, calistir, cek }: { seri: Seri; se
       <Field label="Geçmişi doldur (yıl)" htmlFor={`${kimlik}-yil`}><Input id={`${kimlik}-yil`} type="number" min={1} max={40} value={yil} onChange={(e) => setYil(e.target.value)} style={{ width: 100 }} /></Field>
       <Button disabled={islem || !(Number(yil) >= 1 && Number(yil) <= 40)} onClick={() => void cek(seri.kod, Number(yil))}>Geçmişi doldur</Button>
     </div>
+    <details style={{ marginTop: "1rem" }}>
+      <summary className="card__title" style={{ cursor: "pointer" }}>Elle değer gir (EVDS erişilemezse)</summary>
+      <form className="stack" onSubmit={elleGir}>
+        <p className="muted">Yalnız tamamlanmış aylar girilir; EVDS'den gelmiş değer elle değiştirilemez. Değer “elle” işaretlenir ve firmalar aynı seriyi okur. EVDS aynı dönemi farklı getirirse EVDS'nin değeri geçerli olur ve fark bu ekranda uyarı olarak kalır.</p>
+        <div className="form-grid">
+          <Field label="Dönem" htmlFor={`${kimlik}-elle-donem`}><Input id={`${kimlik}-elle-donem`} type="month" value={elleDonem} max={gecenAy} onChange={(e) => setElleDonem(e.target.value)} required /></Field>
+          <Field label="Değer" htmlFor={`${kimlik}-elle-deger`}><Input id={`${kimlik}-elle-deger`} inputMode="decimal" value={elleDeger} onChange={(e) => setElleDeger(e.target.value)} placeholder="ör. 3245.67" maxLength={21} required /></Field>
+          <Field label="Dayanak" htmlFor={`${kimlik}-elle-aciklama`}><Input id={`${kimlik}-elle-aciklama`} value={elleAciklama} onChange={(e) => setElleAciklama(e.target.value)} placeholder="ör. TÜİK bülteni 03.12.2026" minLength={5} maxLength={300} required /></Field>
+        </div>
+        <div><Button type="submit" disabled={islem || !elleDonem || !elleDeger.trim() || elleAciklama.trim().length < 5}>Elle kaydet</Button></div>
+      </form>
+    </details>
     <h3 className="card__title" style={{ marginTop: "1.25rem" }}>Son 36 ay</h3>
     {yukleniyor ? <p className="muted">Değerler yükleniyor…</p> : son36.length
       ? <EndeksGrafigi baslik={`${seri.ad} son 36 ay`} etiketler={son36.map((d) => ay(d.donem))} seriler={[{ ad: seri.ad, renk: 1, degerler: son36.map((d) => Number(d.deger)) }]} />
       : <p className="muted">Henüz değer yok; “Şimdi çek” ile doldurun.</p>}
     {veri && veri.degerler.length > 0 && <TableWrap className="platform-responsive-table">
       <thead><tr><th>Dönem</th><th>Değer</th><th>Kaynak</th><th>Alındı</th></tr></thead>
-      <tbody>{veri.degerler.slice(0, 24).map((d) => <tr key={d.donem}><td data-label="Dönem">{ay(d.donem)}</td><td data-label="Değer">{sayi(d.deger)}</td><td data-label="Kaynak"><Badge variant={d.kaynak === "elle" ? "warning" : "neutral"}>{d.kaynak === "elle" ? "Elle" : "EVDS"}</Badge></td><td data-label="Alındı">{zaman(d.alindiAt)}</td></tr>)}</tbody>
+      <tbody>{veri.degerler.slice(0, 24).map((d) => <tr key={d.donem}><td data-label="Dönem">{ay(d.donem)}</td><td data-label="Değer">{sayi(d.deger)}</td><td data-label="Kaynak"><Badge variant={d.kaynak === "elle" ? "warning" : "neutral"}>{d.kaynak === "elle" ? "Elle" : "EVDS"}</Badge>{d.aciklama && <div className="muted">{d.aciklama}</div>}</td><td data-label="Alındı">{zaman(d.alindiAt)}</td></tr>)}</tbody>
     </TableWrap>}
-    <h3 className="card__title" style={{ marginTop: "1.25rem" }}>Revizyon geçmişi</h3>
+    <div className="between" style={{ marginTop: "1.25rem", gap: ".5rem", flexWrap: "wrap" }}>
+      <h3 className="card__title" style={{ margin: 0 }}>Revizyon geçmişi</h3>
+      {gorulmemis.length > 0 && <Button size="sm" disabled={islem} onClick={() => void goruldu()}>{gorulmemis.length} değişikliği görüldü işaretle</Button>}
+    </div>
+    {gorulmemis.some((r) => r.eskiKaynak === "elle") && <Alert tone="warning">Elle girilen {gorulmemis.filter((r) => r.eskiKaynak === "elle").length} değer EVDS'den farklı geldi; artık EVDS değeri kullanılıyor.</Alert>}
     {veri?.revizyonlar.length ? <TableWrap className="platform-responsive-table">
       <thead><tr><th>Dönem</th><th>Eski</th><th>Yeni</th><th>Zaman</th></tr></thead>
-      <tbody>{veri.revizyonlar.map((r, i) => <tr key={i}><td data-label="Dönem">{ay(r.donem)}</td><td data-label="Eski">{sayi(r.eskiDeger)} ({r.eskiKaynak})</td><td data-label="Yeni">{sayi(r.yeniDeger)} ({r.yeniKaynak})</td><td data-label="Zaman">{zaman(r.degistiAt)}</td></tr>)}</tbody>
+      <tbody>{veri.revizyonlar.map((r, i) => <tr key={i}><td data-label="Dönem">{ay(r.donem)}{!r.gorulduAt && <> <Badge variant="warning">Görülmedi</Badge></>}</td><td data-label="Eski">{sayi(r.eskiDeger)} ({r.eskiKaynak === "elle" ? "elle" : "EVDS"})</td><td data-label="Yeni">{sayi(r.yeniDeger)} ({r.yeniKaynak === "elle" ? "elle" : "EVDS"})</td><td data-label="Zaman">{zaman(r.degistiAt)}</td></tr>)}</tbody>
     </TableWrap> : <p className="muted">Kaynak geçmiş bir dönemi değiştirmedi.</p>}
   </Card>;
 }

@@ -19,7 +19,9 @@ export interface YazimSonucu { yeni: number; revize: number; elleUyusmaz: number
  * Değerleri yazar. Aynı dönem farklı gelirse (TÜİK revizyonu ya da elle
  * girilmiş değerin EVDS'deki karşılığı) eski değer revizyon tablosuna düşer.
  */
-export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDegeri[], kaynak: "evds" | "elle", kismiDonem?: string | null): Promise<YazimSonucu> {
+export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDegeri[], kaynak: "evds" | "elle", kismiDonem?: string | null, aciklama?: string | null): Promise<YazimSonucu> {
+  // END-05: dayanak açıklaması yalnız elle girilen değerde tutulur; EVDS değeri yazılınca boşalır.
+  const not = kaynak === "elle" ? aciklama ?? null : null;
   const sonuc: YazimSonucu = { yeni: 0, revize: 0, elleUyusmaz: 0 };
   if (!degerler.length) return sonuc;
   const mevcut = new Map(
@@ -32,10 +34,11 @@ export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDeger
   for (const d of degerler) {
     const eski = mevcut.get(d.donem);
     const deger = D(d.deger);
-    if (!eski) { yeniler.push({ seriKodu, donem: donemTarihi(d.donem), deger, kaynak, alindiAt: simdi }); continue; }
+    if (!eski) { yeniler.push({ seriKodu, donem: donemTarihi(d.donem), deger, kaynak, aciklama: not, alindiAt: simdi }); continue; }
     if (eski.deger.equals(deger)) {
       // Elle girilmiş değer EVDS'de aynı geldiyse kaynak EVDS olur; revizyon değildir.
-      if (eski.kaynak !== kaynak && kaynak === "evds") islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { kaynak, alindiAt: simdi } }));
+      if (eski.kaynak !== kaynak && kaynak === "evds") islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { kaynak, aciklama: null, alindiAt: simdi } }));
+      else if (kaynak === "elle" && eski.kaynak === "elle" && (eski.aciklama ?? null) !== not) islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { aciklama: not } }));
       continue;
     }
     // Kur serisinde içinde bulunulan ay ay başından bugüne ortalamadır; her çekimde değişir, revizyon sayılmaz.
@@ -46,8 +49,10 @@ export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDeger
     if (eski.kaynak === "elle" && kaynak === "evds") sonuc.elleUyusmaz++;
     sonuc.revize++;
     islemler.push(
-      db.endeksDegerRevizyonu.create({ data: { seriKodu, donem: eski.donem, eskiDeger: eski.deger, yeniDeger: deger, eskiKaynak: eski.kaynak, yeniKaynak: kaynak } }),
-      db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, kaynak, alindiAt: simdi } }),
+      db.endeksDegerRevizyonu.create({ data: { seriKodu, donem: eski.donem, eskiDeger: eski.deger, yeniDeger: deger, eskiKaynak: eski.kaynak, yeniKaynak: kaynak,
+        // Platform yöneticisinin kendi düzeltmesi uyarı üretmez; EVDS'den gelen fark görülene kadar uyarıdır.
+        gorulduAt: kaynak === "elle" ? simdi : null } }),
+      db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, kaynak, aciklama: not, alindiAt: simdi } }),
     );
   }
   if (yeniler.length) islemler.unshift(db.endeksDegeri.createMany({ data: yeniler, skipDuplicates: true }));

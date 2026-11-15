@@ -8813,6 +8813,8 @@ model EndeksDegeri {
   deger    Decimal      @db.Decimal(20, 6)
   /// evds | elle
   kaynak   String       @default("evds") @db.VarChar(10)
+  /// END-05: elle girilen değerin dayanağı (ör. "TÜİK bülteni 03.12.2026"); EVDS değeri yazılınca boşalır.
+  aciklama String?      @db.VarChar(300)
   alindiAt DateTime     @default(now()) @map("alindi_at")
   seri     EndeksSerisi @relation(fields: [seriKodu], references: [kod], onDelete: Cascade, onUpdate: Cascade)
 
@@ -8830,6 +8832,8 @@ model EndeksDegerRevizyonu {
   eskiKaynak String   @map("eski_kaynak") @db.VarChar(10)
   yeniKaynak String   @map("yeni_kaynak") @db.VarChar(10)
   degistiAt  DateTime @default(now()) @map("degisti_at")
+  /// END-04/05: platform yöneticisi revizyonu (özellikle elle girilen değerin EVDS'den farklı gelmesi) gördü olarak işaretleyince dolar.
+  gorulduAt  DateTime? @map("goruldu_at")
 
   @@index([seriKodu, donem])
   @@map("endeks_deger_revizyonlari")

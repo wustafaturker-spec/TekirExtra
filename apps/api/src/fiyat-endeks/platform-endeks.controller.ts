@@ -4,7 +4,7 @@ import { z } from "zod";
 import { PlatformUcu } from "../auth/public.decorator";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { PlatformPrismaService } from "../mevzuat/platform-prisma.service";
-import { donemMetni, zincirKatsayisiGuncelle } from "./endeks-deposu";
+import { degerleriYaz, donemMetni, donemTarihi, zincirKatsayisiGuncelle } from "./endeks-deposu";
 import { EndeksService } from "./endeks.service";
 import { EvdsHatasi } from "./evds-istemci";
 
@@ -24,6 +24,14 @@ const ekleSemasi = z.object({ kod, evdsKodu, ...ortak, kaynakSiklik: kaynakSikli
 const guncelleSemasi = z.object({ ...ortak, ad: ortak.ad.optional(), etkin: z.boolean().optional(), tur: tur.optional() }).strict();
 const sinaSemasi = z.object({ evdsKodu, kaynakSiklik: kaynakSiklik.default("aylik") }).strict();
 const cekSemasi = z.object({ kod: kod.optional(), gecmisYil: z.number().int().min(1).max(40).optional() }).strict();
+/** END-05: dönem YYYY-MM; değer pozitif, en çok 6 ondalık; dayanak zorunlu. */
+const elleSemasi = z.object({
+  donem: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Dönem YYYY-AA biçiminde olmalı (ör. 2026-10)"),
+  deger: z.string().trim().regex(/^\d{1,13}(\.\d{1,6})?$/, "Değer pozitif sayı olmalı (en çok 6 ondalık, nokta ile)").refine((v) => Number(v) > 0, "Değer sıfırdan büyük olmalı"),
+  aciklama: z.string().trim().min(5, "Dayanağı yazın (ör. TÜİK bülteni, tarih)").max(300),
+}).strict();
+/** İçinde bulunulan ay (Türkiye saati) YYYY-MM-01. */
+const buAy = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7) + "-01";
 
 function ayristir<T>(sema: z.ZodType<T>, govde: unknown): T {
   const r = sema.safeParse(govde ?? {});
@@ -48,11 +56,15 @@ export class PlatformEndeksController {
   @Get()
   async listele() {
     const db = this.platform.db;
-    const [seriler, sayimlar] = await Promise.all([
+    const [seriler, sayimlar, elleSayim, uyariSayim] = await Promise.all([
       db.endeksSerisi.findMany({ orderBy: [{ sira: "asc" }, { kod: "asc" }] }),
       db.endeksDegeri.groupBy({ by: ["seriKodu"], _count: { _all: true }, _min: { donem: true }, _max: { donem: true } }),
+      db.endeksDegeri.groupBy({ by: ["seriKodu"], where: { kaynak: "elle" }, _count: { _all: true } }),
+      db.endeksDegerRevizyonu.groupBy({ by: ["seriKodu"], where: { gorulduAt: null }, _count: { _all: true } }),
     ]);
     const sayim = new Map(sayimlar.map((s) => [s.seriKodu, s]));
+    const elle = new Map(elleSayim.map((s) => [s.seriKodu, s._count._all]));
+    const uyari = new Map(uyariSayim.map((s) => [s.seriKodu, s._count._all]));
     return {
       anahtarTanimli: this.endeks.anahtarTanimli(),
       seriler: seriler.map((s) => {
@@ -62,6 +74,7 @@ export class PlatformEndeksController {
           oncekiSeriKodu: s.oncekiSeriKodu, zincirKatsayisi: s.zincirKatsayisi?.toString() ?? null, zincirDonemi: s.zincirDonemi ? donemMetni(s.zincirDonemi) : null,
           sonCekimAt: s.sonCekimAt, sonBasariliAt: s.sonBasariliAt, sonDonem: s.sonDonem ? donemMetni(s.sonDonem) : null, sonHata: s.sonHata,
           degerSayisi: c?._count._all ?? 0, ilkDonem: c?._min.donem ? donemMetni(c._min.donem) : null,
+          elleDegerSayisi: elle.get(s.kod) ?? 0, gorulmemisRevizyon: uyari.get(s.kod) ?? 0,
         };
       }),
     };
@@ -174,8 +187,39 @@ export class PlatformEndeksController {
       db.endeksDegerRevizyonu.findMany({ where: { seriKodu }, orderBy: { degistiAt: "desc" }, take: 200 }),
     ]);
     return {
-      degerler: degerler.map((d) => ({ donem: donemMetni(d.donem), deger: d.deger.toString(), kaynak: d.kaynak, alindiAt: d.alindiAt })),
-      revizyonlar: revizyonlar.map((r) => ({ donem: donemMetni(r.donem), eskiDeger: r.eskiDeger.toString(), yeniDeger: r.yeniDeger.toString(), eskiKaynak: r.eskiKaynak, yeniKaynak: r.yeniKaynak, degistiAt: r.degistiAt })),
+      degerler: degerler.map((d) => ({ donem: donemMetni(d.donem), deger: d.deger.toString(), kaynak: d.kaynak, aciklama: d.aciklama, alindiAt: d.alindiAt })),
+      revizyonlar: revizyonlar.map((r) => ({ donem: donemMetni(r.donem), eskiDeger: r.eskiDeger.toString(), yeniDeger: r.yeniDeger.toString(), eskiKaynak: r.eskiKaynak, yeniKaynak: r.yeniKaynak, degistiAt: r.degistiAt, gorulduAt: r.gorulduAt })),
     };
+  }
+
+  /**
+   * END-05: EVDS uzun süre erişilemezse bir dönemin değeri dayanağıyla elle
+   * girilir. Yalnız tamamlanmış aylar; EVDS'den gelmiş değer elle ezilmez.
+   * EVDS aynı dönemi farklı getirirse değer EVDS'ninkiyle değişir ve fark
+   * "görülmedi" uyarısı olarak kalır.
+   */
+  @Post(":kod/elle")
+  async elleGir(@Param("kod") seriKodu: string, @Body() govde: unknown) {
+    const g = ayristir(elleSemasi, govde);
+    const db = this.platform.db;
+    const seri = await db.endeksSerisi.findUnique({ where: { kod: seriKodu }, select: { kod: true, sonDonem: true } });
+    if (!seri) throw new NotFoundException("Seri bulunamadı");
+    const donem = `${g.donem}-01`;
+    if (donem >= buAy()) throw new BadRequestException("Yalnız tamamlanmış aylar elle girilebilir.");
+    const mevcut = await db.endeksDegeri.findUnique({ where: { seriKodu_donem: { seriKodu, donem: donemTarihi(donem) } }, select: { kaynak: true, deger: true } });
+    if (mevcut?.kaynak === "evds") throw new ConflictException(`Bu dönemin EVDS değeri var (${mevcut.deger.toString()}); elle değiştirilemez.`);
+    await degerleriYaz(db, seriKodu, [{ donem, deger: g.deger }], "elle", null, g.aciklama);
+    if (!seri.sonDonem || donemMetni(seri.sonDonem) < donem) await db.endeksSerisi.update({ where: { kod: seriKodu }, data: { sonDonem: donemTarihi(donem) } });
+    await this.olay("endeks_degeri_elle_girildi", { kod: seriKodu, donem, deger: g.deger, aciklama: g.aciklama, onceki: mevcut ? mevcut.deger.toString() : null });
+    return { kod: seriKodu, donem, deger: g.deger };
+  }
+
+  /** END-04/05: serinin görülmemiş revizyonlarını (elle–EVDS farkı dahil) görüldü işaretler. */
+  @Post(":kod/revizyonlar/goruldu")
+  async revizyonlarGoruldu(@Param("kod") seriKodu: string) {
+    const db = this.platform.db;
+    const r = await db.endeksDegerRevizyonu.updateMany({ where: { seriKodu, gorulduAt: null }, data: { gorulduAt: new Date() } });
+    if (r.count) await this.olay("endeks_revizyonlari_goruldu", { kod: seriKodu, adet: r.count });
+    return { adet: r.count };
   }
 }
