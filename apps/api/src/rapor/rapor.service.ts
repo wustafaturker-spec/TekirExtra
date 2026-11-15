@@ -1,3 +1,6 @@
+import { planOzelligiAcik } from "../core/abonelik-erisim.service";
+import { endeksVerisi } from "../fiyat-endeks/fiyat-endeks-veri";
+import { reelDegerleyici } from "../fiyat-endeks/reel";
 import { vadesiGecmisAcilisKalemleri } from "./acilis-kalemleri";
 import { fifoDegerleri, satisSatirlari } from "../stok/satis-ozeti";
 import { BadRequestException, Injectable } from "@nestjs/common";
@@ -316,7 +319,7 @@ export class RaporService {
    * de aynı fonksiyonu kullanır. Mevcut stok değeri bilgi olarak döner, gelire
    * ve net farka katılmaz.
    */
-  async gelirGiderRaporu(baslangicMetni?: string, bitisMetni?: string) {
+  async gelirGiderRaporu(baslangicMetni?: string, bitisMetni?: string, reelEndeks?: string) {
     const { tenantId } = aktifBaglam();
 
     const simdi = new Date();
@@ -342,6 +345,19 @@ export class RaporService {
       const toplamGider = toplam(kalemler, (k) => k.tur === "gider");
       const netFark = Math.round((toplamGelir - toplamGider) * 100) / 100;
 
+      // END-18: reel göster — her kalem kendi ayının endeksinden dönem sonu fiyatlarına taşınır (yalnız gösterim).
+      let reel: { endeks: string; bazAy: string; toplamGelir: string; toplamGider: string; netFark: string; satisHasilati: string } | null = null;
+      if (reelEndeks === "TUFE" || reelEndeks === "YIUFE") {
+        if (!(await planOzelligiAcik(tx, tenantId, "fiyatEndeksAnalizi"))) throw new BadRequestException("Reel gösterim fiyat ve endeks analizi plan özelliğini gerektirir.");
+        const bitisAyi = bitis.toISOString().slice(0, 7) + "-01";
+        const r = reelDegerleyici((await endeksVerisi(tx, reelEndeks, "2000-01-01", bitisAyi)).degerler, bitisAyi);
+        if (!r) throw new BadRequestException("Seçilen endeksin dönem için açıklanmış değeri yok.");
+        const reelToplam = (kosul: (k: (typeof kalemler)[number]) => boolean) =>
+          kalemler.filter(kosul).reduce((t, k) => t.add(new Prisma.Decimal(k.tutarTry).mul(r.carpan(k.tarih) ?? 1)), new Prisma.Decimal(0));
+        const g = reelToplam((k) => k.tur === "gelir"), gd = reelToplam((k) => k.tur === "gider");
+        reel = { endeks: reelEndeks === "TUFE" ? "TÜFE" : "Yİ-ÜFE", bazAy: r.bazAy.slice(0, 7), toplamGelir: g.toFixed(2), toplamGider: gd.toFixed(2), netFark: g.sub(gd).toFixed(2), satisHasilati: reelToplam((k) => k.anahtar === "satis:ticari_satis").toFixed(2) };
+      }
+
       return {
         baslangicTarihi: baslangic.toISOString().slice(0, 10),
         bitisTarihi: bitis.toISOString().slice(0, 10),
@@ -362,6 +378,7 @@ export class RaporService {
           eksiStokSayisi: envanter.eksiStokSayisi,
         },
         karZarar,
+        reel,
         kesilenStopajTry: kesilenStopaj.reduce((t, k) => t.add(k.tutarTry), new Prisma.Decimal(0)).toFixed(2),
         gelirKategorileri: kategoriOzeti(kalemler, "gelir"),
         giderKategorileri: kategoriOzeti(kalemler, "gider"),

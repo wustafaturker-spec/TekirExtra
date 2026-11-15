@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useAdresDurumu } from "@/lib/adres-durumu";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { ayBasiTR, bugunTR, gunEkleTR, gunTR, yilBasiTR, csvHucresi } from "@tekirextra/shared";
 
 interface GelirGiderOzet {
@@ -68,6 +68,8 @@ interface GelirGiderRaporYaniti {
   gelirKategorileri: KategoriKirilim[];
   giderKategorileri: KategoriKirilim[];
   kalemler: GelirGiderKalem[];
+  /** END-18: reel göster seçiliyse dönem sonu fiyatlarıyla toplamlar. */
+  reel?: { endeks: string; bazAy: string; toplamGelir: string; toplamGider: string; netFark: string; satisHasilati: string } | null;
 }
 
 export default function GelirGiderRaporuSayfasi() {
@@ -84,6 +86,10 @@ export default function GelirGiderRaporuSayfasi() {
   const [turFiltresi, setTurFiltresi] = useState<"hepsi" | "gelir" | "gider">("hepsi");
 
   const [veri, setVeri] = useState<GelirGiderRaporYaniti | null>(null);
+  // END-18: reel göster yalnız fiyat–endeks analizi açık firmada (seçenekler 403 dönerse gizli).
+  const [reelEndeks, setReelEndeks] = useState<"" | "TUFE" | "YIUFE">("");
+  const [reelAcik, setReelAcik] = useState(false);
+  useEffect(() => { api("/fiyat-endeks/secenekler").then(() => setReelAcik(true)).catch(() => setReelAcik(false)); }, []);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState("");
 
@@ -91,7 +97,7 @@ export default function GelirGiderRaporuSayfasi() {
     setYukleniyor(true);
     setHata("");
     try {
-      const parametreler = new URLSearchParams({ baslangic, bitis });
+      const parametreler = new URLSearchParams({ baslangic, bitis, ...(reelEndeks ? { reelEndeks } : {}) });
       const sonuc = await api<GelirGiderRaporYaniti>(`/rapor/gelir-gider?${parametreler.toString()}`);
       setVeri(sonuc);
     } catch (e) {
@@ -99,7 +105,7 @@ export default function GelirGiderRaporuSayfasi() {
     } finally {
       setYukleniyor(false);
     }
-  }, [baslangic, bitis]);
+  }, [baslangic, bitis, reelEndeks]);
 
   useEffect(() => {
     if (adresHazir) void raporYukle();
@@ -205,6 +211,13 @@ export default function GelirGiderRaporuSayfasi() {
               <Button size="sm" type="button" onClick={() => hizliTarihAyarla("son30Gun")}>Son 30 Gün</Button>
               <Button size="sm" type="button" onClick={() => hizliTarihAyarla("buYil")}>Bu Yıl</Button>
             </div>
+            {reelAcik && <Field label="Reel göster" htmlFor="gelir-gider-reel">
+              <Select id="gelir-gider-reel" value={reelEndeks} onChange={(e) => setReelEndeks(e.target.value as "" | "TUFE" | "YIUFE")}>
+                <option value="">Kapalı (nominal)</option>
+                <option value="TUFE">TÜFE ile</option>
+                <option value="YIUFE">Yİ-ÜFE ile</option>
+              </Select>
+            </Field>}
           </div>
 
           {/* Rapor Versiyon Tabları */}
@@ -231,6 +244,19 @@ export default function GelirGiderRaporuSayfasi() {
 
       {!yukleniyor && veri && (
         <>
+          {veri.reel && (
+            <Card title={`Nominal ve reel (${veri.reel.endeks} ile, ${veri.reel.bazAy} fiyatlarıyla)`} style={{ marginBottom: "1.5rem" }}>
+              <TableWrap>
+                <thead><tr><th></th><th className="num">Nominal</th><th className="num">Reel</th><th className="num">Fark</th></tr></thead>
+                <tbody>
+                  {([["Satış hasılatı", veri.ozet.satisHasilati, veri.reel.satisHasilati], ["Toplam gelir", veri.ozet.toplamGelir, veri.reel.toplamGelir], ["Toplam gider", veri.ozet.toplamGider, veri.reel.toplamGider], ["Gelir − gider", veri.ozet.netFark, veri.reel.netFark]] as const).map(([ad, n, r]) => (
+                    <tr key={ad}><td>{ad}</td><td className="num money">{tl(n)}</td><td className="num money">{tl(r)}</td><td className="num money">{tl(Number(r) - Number(n))}</td></tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+              <p className="muted" style={{ marginTop: ".5rem" }}>Her kalem kendi ayının endeksinden {veri.reel.bazAy} ayına taşındı: reel = nominal × endeks({veri.reel.bazAy}) ÷ endeks(kalemin ayı). Yalnız gösterimdir; kayıtlar ve kâr/zarar tablosu değişmez.</p>
+            </Card>
+          )}
           {/* Özet KPI Kartları */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
             <Card style={{ borderLeft: "4px solid #16a34a" }}>

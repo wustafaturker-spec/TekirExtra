@@ -107,7 +107,8 @@ export class RaporController {
   async gelirGiderRaporu(
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
+    @Query("reelEndeks") reelEndeks?: string,
   ) {
-    return this.raporService.gelirGiderRaporu(baslangic, bitis);
+    return this.raporService.gelirGiderRaporu(baslangic, bitis, reelEndeks);
   }
 }

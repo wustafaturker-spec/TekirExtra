@@ -27,6 +27,7 @@ await import("../src/fiyat-endeks/fiyat-endeks.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-makas.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-erime.raporlar");
 await import("../src/cari/cari.raporlar");
+await import("../src/fatura/fatura.raporlar");
 
 const yonetim = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE });
 const prisma = new PrismaService();
@@ -334,6 +335,25 @@ describe("teklif geçerlilik uyarısı (END-20)", () => {
     expect(Object.keys(r)).toEqual(Math.abs(bugunkuKur / 40 - 1) >= 0.03 ? [ids.acik] : []);
     if (r[ids.acik]) expect(r[ids.acik].find((u) => u.tur === "kur")?.mesaj).toMatch(/Teklif kuru 40\.0000/);
     await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.teklifUyarilari([ids.acik]))).rejects.toThrow(/abonelik planınızda açık değil/);
+  });
+});
+
+describe("reel göster (END-18)", () => {
+  const ekli: Date[] = [];
+  afterAll(async () => { await yonetim.endeksDegeri.deleteMany({ where: { seriKodu: "TUFE", donem: { in: ekli } } }); });
+  it("dönemsel özet: net satış dönem sonu fiyatlarıyla yan sütunda; seçilmezse boş; plan kapalıysa reddedilir", async () => {
+    const mevcut = await yonetim.endeksDegeri.findMany({ where: { seriKodu: "TUFE", donem: { in: [ay("2026-01-01"), ay("2026-02-01"), ay("2026-03-01")] } } });
+    if (mevcut.length) return; // kabul DB'sinde başka testin TÜFE'si varsa beklenen sayılar değişir; bu durumda atla
+    for (const [d, v] of [["2026-01-01", "100"], ["2026-03-01", "110"]] as const) { await yonetim.endeksDegeri.create({ data: { seriKodu: "TUFE", donem: ay(d), deger: v } }); ekli.push(ay(d)); }
+    const calistir = (tenantId: string, userId: string, filtreler: Record<string, string>) => ile(tenantId, userId, "yonetici", () => prisma.tenantIslem(tenantId, (tx) => raporTanimiAl("fatura.donemsel-ozet")!.calistir({ filtreler: { baslangic: "2026-01-01", bitis: "2026-03-31", tip: "satis", ...filtreler }, gruplama: "ay" }, { tenantId, tx })));
+    const r = await calistir(A.tenant, A.yonetici, { reelEndeks: "TUFE" });
+    const ocak = r.find((x) => String(x.grup).includes("2026-01") || String(x.grup).includes("Ocak"))!;
+    const mart = r.find((x) => String(x.grup).includes("2026-03") || String(x.grup).includes("Mart"))!;
+    // Ocak 2.320 × 110/100 = 2.552; Mart baz ay, değişmez.
+    expect([ocak.netSatis, ocak.reelNetSatis]).toEqual(["2320.00", "2552.00"]);
+    expect(mart.reelNetSatis).toBe(mart.netSatis);
+    expect((await calistir(A.tenant, A.yonetici, {}))[0].reelNetSatis).toBeNull();
+    await expect(calistir(B.tenant, B.yonetici, { reelEndeks: "TUFE" })).rejects.toThrow(/plan özelliğini gerektirir/);
   });
 });
 

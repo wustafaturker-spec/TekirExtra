@@ -1,3 +1,7 @@
+import { BadRequestException } from "@nestjs/common";
+import { planOzelligiAcik } from "../core/abonelik-erisim.service";
+import { endeksVerisi } from "../fiyat-endeks/fiyat-endeks-veri";
+import { reelDegerleyici } from "../fiyat-endeks/reel";
 import { Prisma } from "@prisma/client";
 import { KDV_BEYAN_YONLERI, kdvBeyanFaturalari, kdvBeyanSatirlari } from "./kdv-beyan";
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
@@ -52,6 +56,8 @@ registerRapor({
         .filter(([deger]) => deger !== "proforma")
         .map(([deger, ad]) => ({ deger, ad })),
     },
+    // END-18: seçilirse net tutarlar dönem sonu fiyatlarıyla (endeksle) yan sütunda.
+    { alan: "reelEndeks", ad: "Reel göster (boşsa yalnız nominal)", tip: "secim", secenekler: [{ deger: "TUFE", ad: "TÜFE ile" }, { deger: "YIUFE", ad: "Yİ-ÜFE ile" }] },
   ],
   gruplamalar: [
     { deger: "ay", ad: "Ay" },
@@ -71,9 +77,12 @@ registerRapor({
     { alan: "alisIade", baslik: "Alış İadesi (TL)", tip: "para", toplam: true },
     { alan: "netAlis", baslik: "Net Alış (TL)", tip: "para", toplam: true },
     { alan: "belgeSayisi", baslik: "Belge Sayısı", tip: "sayi", toplam: true },
+    { alan: "reelNetSatis", baslik: "Reel Net Satış (TL)", tip: "para", toplam: true },
+    { alan: "reelNetAlis", baslik: "Reel Net Alış (TL)", tip: "para", toplam: true },
   ],
-  async calistir(girdi, { tx }) {
+  async calistir(girdi, { tx, tenantId }) {
     const f = girdi.filtreler ?? {};
+    const reel = await reelHazirla(tx, tenantId, f.reelEndeks, f.bitis);
     const faturalar = await tx.fatura.findMany({
       where: {
         durum: "kesin",
@@ -85,14 +94,20 @@ registerRapor({
       select: { tip: true, tarih: true, toplamMatrah: true, kur: true, cari: { select: { unvan: true } } },
     });
     const gruplama = girdi.gruplama ?? "ay";
-    type Grup = { satis: Prisma.Decimal; satisIade: Prisma.Decimal; alis: Prisma.Decimal; alisIade: Prisma.Decimal; belgeSayisi: number };
+    type Grup = { satis: Prisma.Decimal; satisIade: Prisma.Decimal; alis: Prisma.Decimal; alisIade: Prisma.Decimal; belgeSayisi: number; reelSatis: Prisma.Decimal; reelAlis: Prisma.Decimal };
     const gruplar = new Map<string, Grup>();
     for (const ft of faturalar) {
       const anahtar = gruplama === "cari" ? ft.cari.unvan : gruplama === "tip" ? TIP_ADLARI[ft.tip] : ay(ft.tarih);
-      const g = gruplar.get(anahtar) ?? { satis: D(0), satisIade: D(0), alis: D(0), alisIade: D(0), belgeSayisi: 0 };
+      const g = gruplar.get(anahtar) ?? { satis: D(0), satisIade: D(0), alis: D(0), alisIade: D(0), belgeSayisi: 0, reelSatis: D(0), reelAlis: D(0) };
       const tutar = ft.toplamMatrah.mul(ft.kur);
       const alan = ({ satis: "satis", satis_iade: "satisIade", alis: "alis", alis_iade: "alisIade" } as const)[ft.tip as "satis"];
       if (alan) g[alan] = g[alan].add(tutar);
+      if (reel) {
+        const c = reel.carpan(ft.tarih) ?? D(1);
+        const isaret = ft.tip.endsWith("_iade") ? -1 : 1;
+        if (ft.tip.startsWith("satis")) g.reelSatis = g.reelSatis.add(tutar.mul(c).mul(isaret));
+        else if (ft.tip.startsWith("alis")) g.reelAlis = g.reelAlis.add(tutar.mul(c).mul(isaret));
+      }
       g.belgeSayisi += 1;
       gruplar.set(anahtar, g);
     }
@@ -107,6 +122,8 @@ registerRapor({
         alisIade: g.alisIade.toFixed(2),
         netAlis: g.alis.sub(g.alisIade).toFixed(2),
         belgeSayisi: g.belgeSayisi,
+        reelNetSatis: reel ? g.reelSatis.toFixed(2) : null,
+        reelNetAlis: reel ? g.reelAlis.toFixed(2) : null,
       }));
   },
 });
@@ -475,3 +492,16 @@ registerRapor({
     return satisKirilimi(satirlar, (s) => deger.get(s.cariId) ?? null);
   },
 });
+
+/**
+ * END-18: reel göster süzgeci. Seçiliyse fiyat–endeks plan özelliği ister;
+ * baz bitiş ayına (boşsa bugüne) kadar son açıklanan aydır.
+ */
+async function reelHazirla(tx: Prisma.TransactionClient, tenantId: string, kod: unknown, bitis: unknown) {
+  if (kod !== "TUFE" && kod !== "YIUFE") return null;
+  if (!(await planOzelligiAcik(tx, tenantId, "fiyatEndeksAnalizi"))) throw new BadRequestException("Reel gösterim fiyat ve endeks analizi plan özelliğini gerektirir.");
+  const bitisAyi = (typeof bitis === "string" && /^\d{4}-\d{2}/.test(bitis) ? bitis.slice(0, 7) : new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7)) + "-01";
+  const r = reelDegerleyici((await endeksVerisi(tx, kod, "2000-01-01", bitisAyi)).degerler, bitisAyi);
+  if (!r) throw new BadRequestException("Seçilen endeksin dönem için açıklanmış değeri yok.");
+  return r;
+}
