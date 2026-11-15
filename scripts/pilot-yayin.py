@@ -355,10 +355,33 @@ def kuyruklari_bekle(ortam, sure=90):
         time.sleep(3)
 
 
+def takilanlari_kaldir():
+    """2026-11-15'te iki yayında dockerd eski container'ı silemedi ("Dead", "removal in progress",
+    containerd DeadlineExceeded) ve compose sonsuza dek bekledi; API 5-6 dk kapalı kaldı. Pilot
+    projesinin Dead/Created/geçici adlı container'ları zorla kaldırılır; silme bir süre sonra tamamlanır."""
+    for _ in range(12):
+        satirlar = subprocess.run(["docker", "ps", "-a", "--format", "{{.ID}} {{.Names}} {{.State}}"], capture_output=True, text=True).stdout.splitlines()
+        kalan = [x.split()[0] for x in satirlar if PROJE in x and (x.split()[-1] in {"dead", "created", "removing"} or x.split()[1].split("_", 1)[0] != x.split()[1])]
+        if not kalan:
+            return
+        adim(f"Takılan {len(kalan)} container kaldırılıyor")
+        for kimlik in kalan:
+            subprocess.run(["docker", "rm", "-f", kimlik], capture_output=True, timeout=90)
+        time.sleep(10)
+    dur("Takılan container'lar kaldırılamadı; docker servisini kontrol edin")
+
+
 def gecir(compose, ortam):
     tanimli = compose_servisleri(compose)
-    calistir(["docker", "compose", "-f", str(compose), "up", "-d", "--no-deps", "--no-build", "--pull", "never",
-              "--wait", "--wait-timeout", "180", *[s for s in SERVISLER if s in tanimli]], env=ortam)
+    komut = ["docker", "compose", "-f", str(compose), "up", "-d", "--no-deps", "--no-build", "--pull", "never",
+             "--wait", "--wait-timeout", "180", *[s for s in SERVISLER if s in tanimli]]
+    # Sağlıklı geçiş 1-2 dk sürer; 6 dk'yı aşarsa docker silmede takılmıştır: durdur, temizle, bir kez yeniden dene.
+    try:
+        calistir(komut, env=ortam, timeout=360)
+    except subprocess.TimeoutExpired:
+        adim("Geçiş 6 dakikayı aştı (docker container silmede takılmış olabilir); temizleyip yeniden deneniyor")
+        takilanlari_kaldir()
+        calistir(komut, env=ortam, timeout=360)
     # Telegram'dan önceki pakete dönüşte süreç yeni kodla çalışır kalmasın.
     if TELEGRAM not in tanimli:
         subprocess.run(["docker", "rm", "-f", konteyner(TELEGRAM)], capture_output=True)
