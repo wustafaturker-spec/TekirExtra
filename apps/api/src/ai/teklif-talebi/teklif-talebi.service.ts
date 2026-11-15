@@ -26,13 +26,13 @@ import {
   type Cikarim, type StokAdayi, type TeklifIslemDurumu,
 } from "./teklif-talebi.kurallari";
 import { nabizla } from "../../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../../core/sistem-kimligi";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
 const ON_DAKIKA_MS = 10 * 60 * 1000;
 const TARAMA_PARTISI = 10;
 /** Açılıştan önceki bir günün e-postaları da yeni sayılır (senkron gecikmesi). */
 const GERIYE_TOLERANS_MS = 24 * 60 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 type Eposta = { id: string; konu: string; tarih: Date; gonderenAdi: string | null; gonderenEposta: string; icerikMetin: string | null; otomatik: boolean; crmFirsatId: string | null; ekler: Array<{ dosyaAdi: string }> };
 type KalemSonucu = {

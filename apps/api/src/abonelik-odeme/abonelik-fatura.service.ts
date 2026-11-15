@@ -20,6 +20,7 @@ import { PosService } from "../pos/pos.service";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { bugunTR } from "@tekirextra/shared";
 import { fiyatFotografiniDogrula, fiyatFotografiniOku } from "./odeme-fiyat-fotografi";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 /** PLT-21: faturalayan firmadaki hizmet kartı; yoksa bir kez açılır. */
 export const ABONELIK_STOK_KODU = "TEKIREXTRA-ABONELIK";
@@ -60,7 +61,6 @@ export function abonelikAciklamasi(o: Pick<FaturasizOdeme, "plan_kodu" | "ay_say
 }
 
 /** Sistem işlemleri (bildirim üretimi) için kullanıcı kimliği. */
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 const tlYazi = (d: Prisma.Decimal) => Number(d).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**

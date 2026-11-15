@@ -8,10 +8,10 @@ import { BildirimService } from "../bildirimler/bildirim.service";
 import { donemMetni } from "./endeks-deposu";
 import { endeksVerisi } from "./fiyat-endeks-veri";
 import { ARTIS_OLCULERI, artisHesapla, artisSonAyi, gerekenAylar, yeniBedel, type ArtisHesabi } from "./endeks-artis-hesap";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 type Tx = Prisma.TransactionClient;
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 export const artisKuraliSemasi = z.object({
   kaynakTur: z.enum(["kira", "tekrarlayan_fatura"]),

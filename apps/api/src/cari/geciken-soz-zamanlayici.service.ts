@@ -7,9 +7,9 @@ import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./tahsilat-erisim";
 import { TAHSILAT_OTOMASYONU, tahsilatOtomasyonSemasi } from "./tahsilat-otomasyon-ayari";
 import { TahsilatTakibiService } from "./tahsilat-takibi.service";
 import { nabizla } from "../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const ARALIK_MS = 15 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 @Injectable()
 export class GecikenSozZamanlayiciService implements OnModuleInit, OnModuleDestroy {

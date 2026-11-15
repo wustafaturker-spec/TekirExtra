@@ -29,6 +29,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { makbuzPdfHtml } from "../kasa-banka/makbuz-pdf";
 import { cariDenklestir, elleKapamaYaz } from "../fatura/denklestirme";
 import { faturaKilitleVeKalaniGetir, mahsupAyir } from "../fatura/odeme-durumu";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 /**
  * KSB-07: POS tahsilatı faturayla aynı dövizdedir; kalan kadar mahsup edilir.
@@ -52,7 +53,6 @@ interface OdemeAyrintisi {
 /** KSB-43: sağlayıcı iadesi sürerken tahsilattaki kilit; yanıtsız kalırsa bu süreden sonra düşer. */
 const IADE_KILIDI_MS = 10 * 60 * 1000;
 
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 /** Ödemesi gelebilecek (sağlayıcıda para çekilebilecek) talep durumları. */
 const ODENEBILIR_DURUMLAR = ["baslatildi", "suresi_doldu", "iptal"] as const;
 

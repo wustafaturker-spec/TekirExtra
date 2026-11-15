@@ -4,9 +4,9 @@ import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { CariMutabakatService } from "./cari-mutabakat.service";
 import { nabizla } from "../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const SAAT_MS = 60 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /**
  * CARI-42: worker içinde saatte bir, son tarihine 3 gün kalan yanıtsız

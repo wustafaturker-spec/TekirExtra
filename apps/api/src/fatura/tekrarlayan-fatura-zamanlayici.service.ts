@@ -7,10 +7,10 @@ import { nabizla } from "../core/nabiz/nabiz";
 import { PrismaService } from "../core/prisma.service";
 import { AbonelikService } from "../tenant/abonelik.service";
 import { FaturaService } from "./fatura.service";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const BIR_GUN_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_UTC_FARKI_MS = 3 * 60 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 const NABIZ_ADI = "tekrarlayan-fatura-zamanlayici";
 
 /** Bir sonraki İstanbul saati 00:15 çalışmasına kalan süre. */

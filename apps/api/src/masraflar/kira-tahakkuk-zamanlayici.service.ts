@@ -7,10 +7,10 @@ import { PrismaService } from "../core/prisma.service";
 import { DovizService } from "../doviz/doviz.service";
 import { KUR_GERI_BAKIS_GUN, kurCoz } from "../doviz/kur-coz";
 import { nabizla } from "../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const BIR_GUN_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_UTC_FARKI_MS = 3 * 60 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /** Bir sonraki İstanbul saati 00:05 çalışmasına kalan süre. */
 function sonrakiGunlukKontrolMs(simdiMs = Date.now()): number {

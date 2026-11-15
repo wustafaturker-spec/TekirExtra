@@ -5,9 +5,9 @@ import { baglamlaCalistir } from "../core/istek-baglami";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { CEKILEN_SAGLAYICILAR } from "./banka-saglayici-kaydi";
 import { nabizla } from "../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /**
  * KSB-15: worker'da 5 dakikada bir, otomatik çekimi açık API'li banka

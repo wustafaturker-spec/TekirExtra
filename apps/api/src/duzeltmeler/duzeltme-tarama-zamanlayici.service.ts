@@ -7,9 +7,9 @@ import { nabizla } from "../core/nabiz/nabiz";
 import { degismeyenleriAyikla, firmaListesiAl, taranacakFirmalar } from "../core/aktif-firmalar";
 import { sonDegisimler, TaramaDurumu, taramaYazimiyla } from "../core/degisim-izi";
 import { TaramaKuyrugu, taramaKuyruguEtkin } from "../core/tarama-kuyrugu";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const ON_BES_DAKIKA_MS = 15 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /**
  * Worker içinde düzeltme dedektörlerini çalıştırır: aktif firmalarda en geç 15

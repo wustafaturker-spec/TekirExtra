@@ -17,10 +17,10 @@ import {
   takipMetniIstemi, takipMetniSemasi, teklifAcikMi, teklifTakipAyariSemasi, trGunu, yerTutucuVar,
 } from "./teklif-takip.kurallari";
 import { nabizla } from "../../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../../core/sistem-kimligi";
 
 type Tx = Prisma.TransactionClient;
 const OTUZ_DAKIKA_MS = 30 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 const tarihTR = (d: Date | string) => (typeof d === "string" ? d : d.toISOString().slice(0, 10)).split("-").reverse().join(".");
 
 export interface TakipGorunumu {

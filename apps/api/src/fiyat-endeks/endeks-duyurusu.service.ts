@@ -7,8 +7,8 @@ import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { endeksIcgorusu, fiyatEndeksOzeti } from "./endeks-icgoru";
 import { FIYAT_ENDEKS_MODULU, FIYAT_ENDEKS_VARSAYILAN, fiyatEndeksAyariSemasi } from "./fiyat-endeks-erisim";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /**
  * END-22: yeni endeks dönemi açıklanınca, fiyat–endeks plan özelliği açık

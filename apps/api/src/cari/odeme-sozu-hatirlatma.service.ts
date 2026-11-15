@@ -15,11 +15,11 @@ import { odemeSozuKaynaklariniOku } from "./odeme-sozu-kaynak";
 import { itirazliCariler } from "./tahsilat-iletisim";
 import { TAHSILAT_MODULU, tahsilatAyariSemasi } from "./tahsilat-erisim";
 import { nabizla } from "../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const ARALIK = 15 * 60 * 1000;
 /** Bir firmanın yavaş e-posta sunucusu diğerlerini bekletmesin. */
 const ESZAMANLI_FIRMA = 4;
-const SISTEM = "00000000-0000-4000-8000-000000000000";
 export const istanbulSaat = (zaman: Date) => ({
   gun: zaman.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }),
   saat: Number(zaman.toLocaleTimeString("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hour12: false })),
@@ -111,7 +111,7 @@ export class OdemeSozuHatirlatmaService implements OnModuleInit, OnModuleDestroy
     z.uuid().parse(tenantId);
     // PLT-05: askıdaki firma müşterisine ödeme sözü e-postası göndermez.
     if (await this.erisim?.otomasyonDurdu(tenantId, "cari")) return { gonderilen: 0, atlanan: 0, hatali: 0 };
-    return baglamlaCalistir({ tenantId, userId: SISTEM, rol: "yonetici" }, async () => {
+    return baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, async () => {
       const baslangic = await this.prisma.tenantIslem(tenantId, async tx => {
         const zaman = await this.zaman(tx);
         if (!await this.acik(tx, tenantId) || istanbulSaat(zaman).saat < 9) return null;

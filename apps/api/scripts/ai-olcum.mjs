@@ -64,7 +64,8 @@ function sistemKimligiEnvanteri() {
       if (statSync(yol).isDirectory()) { gez(yol); continue; }
       if (!ad.endsWith(".ts") || ad.endsWith(".test.ts")) continue;
       const metin = readFileSync(yol, "utf8");
-      const adet = (metin.match(/SISTEM_USER_ID/g) ?? []).length;
+      if (yol.endsWith("core/sistem-kimligi.ts")) continue;
+      const adet = (metin.match(/SISTEM_USER_ID|00000000-0000-4000-8000-000000000000/g) ?? []).length;
       if (adet) sonuc.push({ dosya: relative(KOK, yol), adet, sinif: metin.includes("baglamlaCalistir") ? "bağlam kuruyor" : "yalnız kayıt kimliği" });
     }
   };
@@ -101,7 +102,7 @@ function rapor(o, envanter) {
   s.push("## (e) Veri aktarımı", "", `${sayi(o.aktarim.parti)} aktarım partisi, ${sayi(o.aktarim.geri_alinan)} geri alındı. **Tanınmayan başlık oranı ölçülemiyor:** başlık eşleme sonucu kaydedilmiyor. P-13 kararı için önce eşleme sonucunun (tanınan/tanınmayan başlık sayısı) partiye yazılması gerekir.`, "");
   s.push("## (f) Sistem kimliğiyle çalışan kod (AI-96 girdisi)", "", "| Dosya | Kullanım | Tür |", "|---|---|---|");
   for (const e of envanter) s.push(`| \`${e.dosya}\` | ${e.adet} | ${e.sinif} |`);
-  s.push("", "\"bağlam kuruyor\": dosya `SISTEM_USER_ID` ile `baglamlaCalistir` kullanıyor; AI-96 her birini sistem bakımı ya da kullanıcı adına olarak sınıflandırır.", "");
+  s.push("", "\"bağlam kuruyor\": dosya `SISTEM_USER_ID` ile `baglamlaCalistir` kullanıyor; sınıflar `src/core/sistem-kimligi.ts` içindedir (AI-96).", "");
   return s.join("\n");
 }
 

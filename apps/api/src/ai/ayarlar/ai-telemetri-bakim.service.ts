@@ -6,13 +6,13 @@ import { PrismaService } from "../../core/prisma.service";
 import { istanbulAyBaslangici, trSimdi } from "../ai-zaman";
 import { buAyMaliyeti, kiraciButceKurali, platformAnahtariMi } from "../saglayici/ai-butce";
 import { nabizla } from "../../core/nabiz/nabiz";
+import { SISTEM_USER_ID } from "../../core/sistem-kimligi";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
 const IDEMPOTENCY_SAKLAMA_GUN = 7;
 const ONAY_KAYDI_SAKLAMA_GUN = 90;
 /** AI-24 */
 const ICGORU_SAKLAMA_GUN = 90;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 const ASGARI_ORNEK = 10;
 
 /** Eski AI izlerini temizler; son saatteki hata/gecikme eşiklerini yöneticilere bildirir. */

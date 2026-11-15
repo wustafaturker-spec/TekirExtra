@@ -7,9 +7,9 @@ import { PrismaService } from "../core/prisma.service";
 import { TaramaKuyrugu, taramaKuyruguEtkin } from "../core/tarama-kuyrugu";
 import { ARALIK_SECENEKLERI, IS_ADI, OTOMATIK_ISLER, type IsDurumu, type OtomatikIs, isUygun, sonrakiCalisma, varsayilanAralik } from "./otomatik-is";
 import { PazaryeriService } from "./pazaryeri.service";
+import { SISTEM_USER_ID } from "../core/sistem-kimligi";
 
 const BES_DAKIKA_MS = 5 * 60 * 1000;
-const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 const NABIZ_ADI = "pazaryeri-otomatik";
 
 export interface PazaryeriOtomatikIsi { tenantId: string; baglantiId: string; is: OtomatikIs }
