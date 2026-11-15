@@ -6259,6 +6259,7 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .endeks-grafik__eksen { font-size: 11px; fill: var(--text-muted); }
 .endeks-grafik__cizgi { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .endeks-grafik__cizgi.is-kesikli { stroke-dasharray: 6 4; }
+.endeks-grafik__cizgi.is-noktali { stroke-dasharray: 1 5; stroke-width: 2.5; }
 .endeks-grafik__nokta { stroke: var(--surface); stroke-width: 1.5; }
 .endeks-grafik .seri-1 { stroke: var(--seri-1); }
 .endeks-grafik .seri-2 { stroke: var(--seri-2); }

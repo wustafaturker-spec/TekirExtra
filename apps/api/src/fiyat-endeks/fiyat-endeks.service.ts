@@ -5,6 +5,8 @@ import { PrismaService } from "../core/prisma.service";
 import { fiyatEndeksErisimi } from "./fiyat-endeks-erisim";
 import { ayAraligi, ayBasiMetni, ayKaydir, endeksNormalle, fiyatSerisiHesapla, type AylikToplam } from "./fiyat-endeks-hesap";
 import { aylikToplamlar, endeksVerisi, KUR_ENDEKSLERI } from "./fiyat-endeks-veri";
+import { EK_CIZGILER, listeFiyatCizgileri, maliyetCizgisi, sonAlisCizgisi, type EkCizgi } from "./fiyat-endeks-cizgiler";
+import { Prisma } from "@prisma/client";
 
 /** Ekranda gösterilebilecek en uzun dönem (ay). */
 export const EN_UZUN_DONEM_AY = 60;
@@ -19,6 +21,8 @@ export const urunSorgusuSemasi = z.object({
   listeler: z.array(z.uuid()).max(5, "En çok 5 fiyat listesi").default([]),
   alis: z.boolean().default(false),
   varyantId: z.uuid().optional(),
+  /** END-07: liste fiyatı, ağırlıklı ortalama maliyet, son alış fiyatı. */
+  cizgiler: z.array(z.enum(EK_CIZGILER)).max(EK_CIZGILER.length).default([]),
 });
 export type UrunSorgusu = z.infer<typeof urunSorgusuSemasi>;
 
@@ -106,10 +110,28 @@ export class FiyatEndeksService {
       }
       if (kismi && endeksler.some((e) => e.tur === "kur")) uyarilar.push("İçinde bulunulan ayın kur değeri ay başından bugüne ortalamadır.");
 
+      // END-07: ek çizgiler ilk fiyat serisinin baz ay fiyatına göre aynı ölçeğe taşınır.
+      const cizgiler = new Set(s.cizgiler);
+      const olcekSerisi = seriler[0] ?? null;
+      const bazMetni = olcekSerisi?.satirlar.find((r) => r.ay === baz)?.fiyat ?? null;
+      const bazFiyat = bazMetni ? new Prisma.Decimal(bazMetni) : null;
+      const ekCizgiler: EkCizgi[] = [];
+      if (cizgiler.has("liste")) {
+        if (!erisim.satis) uyarilar.push("Liste fiyatı satış tarafındadır; erişiminiz olmadığı için gösterilmedi.");
+        else { const r = await listeFiyatCizgileri(tx, { stokId, aylar, listeIdleri: s.satisKapsami === "liste" ? s.listeler : null, bazFiyat }); ekCizgiler.push(...r.cizgiler); uyarilar.push(...r.uyarilar); }
+      }
+      const maliyetIstendi = cizgiler.has("maliyet") || cizgiler.has("sonAlis");
+      if (maliyetIstendi && !erisim.alis) uyarilar.push("Maliyet ve son alış fiyatı alış tarafındadır; erişiminiz olmadığı için gösterilmedi.");
+      if (erisim.alis && cizgiler.has("maliyet")) ekCizgiler.push(await maliyetCizgisi(tx, { stokId, varyantId: s.varyantId ?? null, aylar, bazFiyat }));
+      if (erisim.alis && cizgiler.has("sonAlis")) ekCizgiler.push(await sonAlisCizgisi(tx, { stokId, varyantId: s.varyantId ?? null, aylar, bazFiyat }));
+      if (ekCizgiler.length && !bazFiyat) uyarilar.push("Baz ayda gerçekleşen fiyat olmadığı için ek çizgiler grafikte ölçeklenemedi; TL değerleri tabloda.");
+
       return {
         stok, aylar, baz, erisim,
         esik: { enAzSatir: 2 },
         seriler,
+        ekCizgiler,
+        ekCizgiOlcegi: olcekSerisi && bazFiyat ? { seri: olcekSerisi.ad, bazFiyat: bazFiyat.toFixed(4) } : null,
         endeksler: endeksler.map((e) => ({ kod: e.kod, ad: e.ad, tur: e.tur, bazYili: e.bazYili, sonDonem: e.sonDonem, kismiAy: e.tur === "kur" && kismi ? bitis : null, degerler: endeksNormalle(e.degerler, aylar, baz) })),
         uyarilar,
       };

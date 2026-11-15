@@ -21,7 +21,7 @@ export class FiyatEndeksController {
     const sonuc = urunSorgusuSemasi.safeParse({
       baslangic: q.baslangic, bitis: q.bitis, baz: q.baz || undefined,
       endeksler: liste(q.endeksler), satisKapsami: q.satisKapsami || undefined,
-      listeler: liste(q.listeler), alis: q.alis === "1", varyantId: q.varyantId || undefined,
+      listeler: liste(q.listeler), alis: q.alis === "1", varyantId: q.varyantId || undefined, cizgiler: liste(q.cizgiler),
     });
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.servis.urun(stokId, sonuc.data);

@@ -37,10 +37,10 @@ const B = { tenant: randomUUID(), yonetici: randomUUID(), cari: randomUUID(), st
 const ile = <T>(tenantId: string, userId: string, rol: Rol, is: () => Promise<T>) => baglamlaCalistir({ tenantId, userId, rol }, is);
 const ay = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
-async function fatura(tenantId: string, cariId: string, stokId: string, tarih: string, satirlar: { miktar: string; birim?: string; matrah: string }[], durum: "kesin" | "taslak" | "iptal" = "kesin") {
+async function fatura(tenantId: string, cariId: string, stokId: string, tarih: string, satirlar: { miktar: string; birim?: string; matrah: string }[], durum: "kesin" | "taslak" | "iptal" = "kesin", tip: "satis" | "alis" = "satis") {
   const toplam = satirlar.reduce((t, s) => t.add(s.matrah), new Prisma.Decimal(0)).toString();
   return yonetim.fatura.create({ data: {
-    tenantId, cariId, tip: "satis", durum, tarih: ay(tarih),
+    tenantId, cariId, tip, durum, tarih: ay(tarih),
     toplamBrut: toplam, toplamMatrah: toplam, genelToplam: toplam, toplamSatirIskontosu: "0", genelIskontoToplam: "0", toplamKdv: "0", toplamTevkifat: "0", toplamNetKdv: "0",
     satirlar: { create: satirlar.map((s) => ({ tenantId, stokId, miktar: s.miktar, birim: s.birim ?? "adet", birimFiyat: "0", matrah: s.matrah, toplamTutar: s.matrah, kdvTutari: "0", netKdvTutari: "0" })) },
   } });
@@ -158,6 +158,44 @@ describe("ürün karşılaştırması", () => {
   it("plan özelliği kapalı firmada açılmaz", async () => {
     await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.urun(B.stok, sorgu))).rejects.toThrow(/abonelik planınızda açık değil/);
     await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.secenekler())).rejects.toThrow(/abonelik planınızda açık değil/);
+  });
+});
+
+describe("ek fiyat çizgileri (END-07)", () => {
+  const sorgu = { baslangic: "2026-01", bitis: "2026-03", endeksler: [SERI], satisKapsami: "tum" as const, listeler: [], alis: false };
+  it("kart fiyatı yatay referans; liste geçmişi dönemden sonra başladıysa boş; maliyet ve son alış aylık", async () => {
+    const depo = randomUUID();
+    await yonetim.depo.create({ data: { id: depo, tenantId: A.tenant, kod: "D1", ad: "Ana depo" } });
+    await yonetim.stokKart.update({ where: { id: A.stok }, data: { satisFiyati: "120" } });
+    // Şubat çıkışları: (10×80 + 30×90) / 40 = 87,5; giriş ve maliyetsiz çıkış girmez.
+    await yonetim.stokHareket.createMany({ data: [
+      { tenantId: A.tenant, stokId: A.stok, depoId: depo, tip: "cikis", miktar: "-10", girilenBirim: "adet", girilenMiktar: "10", maliyet: "80", tarih: ay("2026-02-05") },
+      { tenantId: A.tenant, stokId: A.stok, depoId: depo, tip: "cikis", miktar: "-30", girilenBirim: "adet", girilenMiktar: "30", maliyet: "90", tarih: ay("2026-02-20") },
+      { tenantId: A.tenant, stokId: A.stok, depoId: depo, tip: "giris", miktar: "50", girilenBirim: "adet", girilenMiktar: "50", maliyet: "60", tarih: ay("2026-02-01") },
+      { tenantId: A.tenant, stokId: A.stok, depoId: depo, tip: "cikis", miktar: "-5", girilenBirim: "adet", girilenMiktar: "5", maliyet: "0", tarih: ay("2026-03-01") },
+    ] });
+    // Alışlar: Aralık 2025 70/adet (başlangıç değeri), Şubat 1 koli 960 → 80/adet; Mart'a taşınır.
+    await fatura(A.tenant, A.cariListesiz, A.stok, "2025-12-15", [{ miktar: "10", matrah: "700" }], "kesin", "alis");
+    await fatura(A.tenant, A.cariListesiz, A.stok, "2026-02-03", [{ miktar: "1", birim: "koli", matrah: "960" }], "kesin", "alis");
+    await fatura(A.tenant, A.cariListesiz, A.stok, "2026-02-25", [{ miktar: "1", matrah: "5" }], "taslak", "alis");
+
+    const r = await ile(A.tenant, A.yonetici, "yonetici", () => servis.urun(A.stok, { ...sorgu, cizgiler: ["liste", "maliyet", "sonAlis"] }));
+    expect(r.ekCizgiOlcegi).toEqual({ seri: "Satış fiyatı (tüm satışlar)", bazFiyat: "105.4545" });
+    const c = Object.fromEntries(r.ekCizgiler.map((x) => [x.anahtar, x]));
+    expect(c["liste:kart"]).toMatchObject({ yatay: true });
+    expect(c["liste:kart"].degerler.map((d) => d.normal)).toEqual(["113.79", "113.79", "113.79"]);
+    expect(c.maliyet.degerler.map((d) => d.fiyat)).toEqual([null, "87.5000", null]);
+    expect(c.sonAlis.degerler.map((d) => d.fiyat)).toEqual(["70.0000", "80.0000", "80.0000"]);
+
+    // Liste kapsamı: geçmiş bugün başladı (END-27 testi), Ocak–Mart boş ve yatay değil.
+    const l = await ile(A.tenant, A.yonetici, "yonetici", () => servis.urun(A.stok, { ...sorgu, satisKapsami: "liste", listeler: [A.liste], cizgiler: ["liste"] }));
+    expect(l.ekCizgiler[0]).toMatchObject({ anahtar: `liste:${A.liste}`, yatay: false });
+    expect(l.ekCizgiler[0].degerler.every((d) => d.fiyat === null)).toBe(true);
+
+    // Alış erişimi olmayan rol maliyet ve son alışı göremez.
+    const sat = await ile(A.tenant, A.satis, "satis", () => servis.urun(A.stok, { ...sorgu, cizgiler: ["liste", "maliyet", "sonAlis"] }));
+    expect(sat.ekCizgiler.map((x) => x.anahtar)).toEqual(["liste:kart"]);
+    expect(sat.uyarilar.join(" ")).toMatch(/Maliyet ve son alış fiyatı alış tarafındadır/);
   });
 });
 

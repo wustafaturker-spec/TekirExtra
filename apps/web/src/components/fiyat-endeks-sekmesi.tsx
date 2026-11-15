@@ -21,8 +21,13 @@ interface Sonuc {
   esik: { enAzSatir: number };
   seriler: { anahtar: string; ad: string; taraf: "satis" | "alis"; satirlar: FiyatSatiri[]; karsilastirmalar: Karsilastirma[] }[];
   endeksler: { kod: string; ad: string; tur: "endeks" | "kur"; bazYili: string | null; sonDonem: string | null; kismiAy: string | null; degerler: { ay: string; deger: string | null; normal: string | null }[] }[];
+  /** END-07: liste fiyatı, ağırlıklı ortalama maliyet, son alış fiyatı. */
+  ekCizgiler: { anahtar: string; tur: EkCizgiTuru; ad: string; kaynak: string; yatay: boolean; degerler: { ay: string; fiyat: string | null; normal: string | null }[] }[];
+  ekCizgiOlcegi: { seri: string; bazFiyat: string } | null;
   uyarilar: string[];
 }
+type EkCizgiTuru = "liste" | "maliyet" | "sonAlis";
+const EK_CIZGI_ADLARI: Record<EkCizgiTuru, string> = { liste: "Liste fiyatı", maliyet: "Ağırlıklı ortalama maliyet", sonAlis: "Son alış fiyatı" };
 
 type Donem = "12" | "24" | "yil" | "ozel";
 const ayEkle = (ay: string, n: number) => { const [y, a] = ay.split("-").map(Number); const t = new Date(Date.UTC(y, a - 1 + n, 1)); return t.toISOString().slice(0, 7); };
@@ -42,8 +47,8 @@ function ozetCumlesi(seriAdi: string, endeksAdi: string, k: Karsilastirma, birim
 /** CSV (Excel Türkçe ayarına uygun: noktalı virgül, ondalık virgül, BOM). */
 function csvIndir(s: Sonuc) {
   const sayi = (v: string | null) => (v === null ? "" : v.replace(".", ","));
-  const baslik = ["Ay", ...s.seriler.flatMap((x) => [`${x.ad} fiyat (TL/${s.stok.anaBirim})`, `${x.ad} aylık %`, `${x.ad} yıllık %`, `${x.ad} satır`]), ...s.endeksler.flatMap((e) => [e.ad, `${e.ad} (baz=100)`])];
-  const satirlar = s.aylar.map((ay, i) => [ay.slice(0, 7), ...s.seriler.flatMap((x) => { const r = x.satirlar[i]; return [sayi(r.fiyat), sayi(r.aylikDegisim), sayi(r.yillikDegisim), String(r.satir)]; }), ...s.endeksler.flatMap((e) => [sayi(e.degerler[i].deger), sayi(e.degerler[i].normal)])]);
+  const baslik = ["Ay", ...s.seriler.flatMap((x) => [`${x.ad} fiyat (TL/${s.stok.anaBirim})`, `${x.ad} aylık %`, `${x.ad} yıllık %`, `${x.ad} satır`]), ...s.ekCizgiler.map((c) => `${c.ad} (TL/${s.stok.anaBirim})`), ...s.endeksler.flatMap((e) => [e.ad, `${e.ad} (baz=100)`])];
+  const satirlar = s.aylar.map((ay, i) => [ay.slice(0, 7), ...s.seriler.flatMap((x) => { const r = x.satirlar[i]; return [sayi(r.fiyat), sayi(r.aylikDegisim), sayi(r.yillikDegisim), String(r.satir)]; }), ...s.ekCizgiler.map((c) => sayi(c.degerler[i].fiyat)), ...s.endeksler.flatMap((e) => [sayi(e.degerler[i].deger), sayi(e.degerler[i].normal)])]);
   const metin = [baslik, ...satirlar].map((r) => r.map((h) => `"${h.replace(/"/g, '""')}"`).join(";")).join("\r\n");
   const url = URL.createObjectURL(new Blob(["﻿" + metin], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
@@ -74,6 +79,8 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
   const [listeler, setListeler] = useState<string[]>([]);
   const [alis, setAlis] = useState(secenekler.erisim.alis && !secenekler.erisim.satis);
   const [varyantId, setVaryantId] = useState("");
+  const [cizgiler, setCizgiler] = useState<EkCizgiTuru[]>([]);
+  const secilebilirCizgiler = (Object.keys(EK_CIZGI_ADLARI) as EkCizgiTuru[]).filter((c) => (c === "liste" ? secenekler.erisim.satis : secenekler.erisim.alis));
   const [sonuc, setSonuc] = useState<Sonuc | null>(null);
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
@@ -85,8 +92,9 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
     if (secenekler.erisim.satis && kapsam === "liste") { q.set("satisKapsami", "liste"); q.set("listeler", listeler.join(",")); }
     if (alis) q.set("alis", "1");
     if (varyantId) q.set("varyantId", varyantId);
+    if (cizgiler.length) q.set("cizgiler", cizgiler.join(","));
     return q.toString();
-  }, [baslangic, bitis, bazAy, endeksler, kapsam, listeler, alis, varyantId, secenekler.erisim.satis]);
+  }, [baslangic, bitis, bazAy, endeksler, kapsam, listeler, alis, varyantId, cizgiler, secenekler.erisim.satis]);
   const gecerli = endeksler.length > 0 && baslangic <= bitis && !(kapsam === "liste" && secenekler.erisim.satis && !listeler.length) && (secenekler.erisim.satis || alis);
 
   useEffect(() => {
@@ -106,6 +114,7 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
   const grafikSerileri: EndeksGrafikSerisi[] = sonuc ? [
     ...sonuc.seriler.map((s, i) => ({ ad: s.ad, renk: ((i % 3) + 1) as 1 | 2 | 3, degerler: s.satirlar.map((r) => (r.endeks100 === null ? null : Number(r.endeks100))) })),
     ...sonuc.endeksler.map((e, i) => ({ ad: e.ad, renk: (((i + 2) % 3) + 1) as 1 | 2 | 3, kesikli: true, degerler: e.degerler.map((d) => (d.normal === null ? null : Number(d.normal))) })),
+    ...sonuc.ekCizgiler.map((c, i) => ({ ad: c.ad, renk: (((i + 1) % 3) + 1) as 1 | 2 | 3, noktali: true, degerler: c.degerler.map((d) => (d.normal === null ? null : Number(d.normal))) })),
   ] : [];
 
   return (
@@ -137,6 +146,12 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
               : <p className="muted">Aktif fiyat listesi yok.</p>)}
           </fieldset>}
           {secenekler.erisim.alis && secenekler.erisim.satis && <label className="endeks-secim"><span><input type="checkbox" checked={alis} onChange={(e) => setAlis(e.target.checked)} /> Alış fiyatını da göster</span></label>}
+          {secilebilirCizgiler.length > 0 && <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="card__title" style={{ fontSize: ".85rem" }}>Diğer fiyat çizgileri</legend>
+            <div className="endeks-secim">
+              {secilebilirCizgiler.map((c) => <label key={c}><input type="checkbox" checked={cizgiler.includes(c)} onChange={(x) => setCizgiler((l) => (x.target.checked ? [...l, c] : l.filter((y) => y !== c)))} />{EK_CIZGI_ADLARI[c]}{c === "liste" ? <span className="muted">({kapsam === "liste" ? "seçili listeler" : "kart fiyatı"})</span> : null}</label>)}
+            </div>
+          </fieldset>}
         </div>
       </Card>
 
@@ -153,11 +168,15 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
         </Card>
         <Card title={`Baz ay ${ayAdi(sonuc.baz)} = 100`}>
           <EndeksGrafigi baslik="Fiyat ve endeks, baz ay 100" etiketler={sonuc.aylar.map(ayAdi)} seriler={grafikSerileri} />
+          {sonuc.ekCizgiler.length > 0 && <ul className="endeks-grafik__not" style={{ paddingLeft: "1.1rem" }}>
+            {sonuc.ekCizgiOlcegi && <li>Noktalı çizgiler {sonuc.ekCizgiOlcegi.seri} serisinin baz ay fiyatına ({tl(sonuc.ekCizgiOlcegi.bazFiyat)}/{anaBirim}) göre ölçeklidir: 100 = baz ayda gerçekleşen fiyat.</li>}
+            {sonuc.ekCizgiler.map((c) => <li key={c.anahtar}><strong>{c.ad}:</strong> {c.kaynak}</li>)}
+          </ul>}
         </Card>
         <Card title="Aylık veriler" pad={false} actions={<Button size="sm" onClick={() => csvIndir(sonuc)}>Excel (CSV) indir</Button>}>
           <TableWrap className="endeks-tablo">
             <thead>
-              <tr><th rowSpan={2}>Ay</th>{sonuc.seriler.map((s) => <th key={s.anahtar} colSpan={3}>{s.ad}</th>)}{sonuc.endeksler.map((e) => <th key={e.kod} colSpan={2}>{e.ad}</th>)}</tr>
+              <tr><th rowSpan={2}>Ay</th>{sonuc.seriler.map((s) => <th key={s.anahtar} colSpan={3}>{s.ad}</th>)}{sonuc.ekCizgiler.map((c) => <th key={c.anahtar} rowSpan={2}>{c.ad}<br />TL/{anaBirim}</th>)}{sonuc.endeksler.map((e) => <th key={e.kod} colSpan={2}>{e.ad}</th>)}</tr>
               <tr>{sonuc.seriler.map((s) => <Fragment key={s.anahtar}><th>TL/{anaBirim}</th><th>Aylık</th><th>Yıllık</th></Fragment>)}{sonuc.endeksler.map((e) => <Fragment key={e.kod}><th>Değer</th><th>Baz=100</th></Fragment>)}</tr>
             </thead>
             <tbody>
@@ -168,6 +187,7 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
                     <td className={r.fiyat ? undefined : "is-bos"} title={`${r.satir} fatura satırı`}>{r.fiyat ? tl(r.fiyat) : r.durum === "yetersiz" ? `Yetersiz veri (${r.satir})` : "—"}</td>
                     <td>{yuzde(r.aylikDegisim)}</td><td>{yuzde(r.yillikDegisim)}</td>
                   </Fragment>; })}
+                  {sonuc.ekCizgiler.map((c) => <td key={c.anahtar} className={c.degerler[i].fiyat ? undefined : "is-bos"}>{tl(c.degerler[i].fiyat)}</td>)}
                   {sonuc.endeksler.map((e) => <Fragment key={e.kod}>
                     <td className={e.degerler[i].deger ? undefined : "is-bos"}>{e.degerler[i].deger ? Number(e.degerler[i].deger).toLocaleString("tr-TR", { maximumFractionDigits: 4 }) : "—"}{e.kismiAy === ay ? " *" : ""}</td>
                     <td>{e.degerler[i].normal ? Number(e.degerler[i].normal).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) : "—"}</td>

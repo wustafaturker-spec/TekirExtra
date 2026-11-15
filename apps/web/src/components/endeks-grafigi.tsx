@@ -12,6 +12,8 @@ export interface EndeksGrafikSerisi {
   /** 1–3: --seri-1…3 */
   renk: 1 | 2 | 3;
   kesikli?: boolean;
+  /** END-07: liste fiyatı, maliyet gibi referans çizgileri noktalıdır. */
+  noktali?: boolean;
 }
 
 const G = 760, H = 280, SOL = 56, SAG = 16, UST = 12, ALT = 34;
@@ -41,7 +43,7 @@ export function EndeksGrafigi({ etiketler, seriler, baslik, birim }: { etiketler
     <figure className="endeks-grafik">
       <ul className="endeks-grafik__lejant" aria-hidden="true">
         {seriler.map((s) => (
-          <li key={s.ad}><svg width="22" height="10"><line x1="1" x2="21" y1="5" y2="5" className={`endeks-grafik__cizgi seri-${s.renk}${s.kesikli ? " is-kesikli" : ""}`} /></svg>{s.ad}</li>
+          <li key={s.ad}><svg width="22" height="10"><line x1="1" x2="21" y1="5" y2="5" className={`endeks-grafik__cizgi seri-${s.renk}${s.kesikli ? " is-kesikli" : ""}${s.noktali ? " is-noktali" : ""}`} /></svg>{s.ad}</li>
         ))}
       </ul>
       <svg viewBox={`0 0 ${G} ${H}`} width="100%" role="img" aria-label={baslik}>
@@ -63,7 +65,7 @@ export function EndeksGrafigi({ etiketler, seriler, baslik, birim }: { etiketler
           if (parca.length) parcalar.push(parca);
           return (
             <g key={s.ad}>
-              {parcalar.map((p, pi) => <polyline key={pi} points={p.map(([a, b]) => `${a},${b}`).join(" ")} className={`endeks-grafik__cizgi seri-${s.renk}${s.kesikli ? " is-kesikli" : ""}`} />)}
+              {parcalar.map((p, pi) => <polyline key={pi} points={p.map(([a, b]) => `${a},${b}`).join(" ")} className={`endeks-grafik__cizgi seri-${s.renk}${s.kesikli ? " is-kesikli" : ""}${s.noktali ? " is-noktali" : ""}`} />)}
               {s.degerler.map((d, i) => d === null ? null : (
                 <circle key={i} cx={x(i)} cy={y(d)} r={3.5} className={`endeks-grafik__nokta seri-${s.renk}`}>
                   <title>{`${etiketler[i]} · ${s.ad}: ${deger(d)}`}</title>
