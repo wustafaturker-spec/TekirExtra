@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { bugunTR } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
+import { kurCoz } from "../doviz/kur-coz";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
@@ -148,7 +149,7 @@ export class SayimService {
         const sistem = await this.sistemMiktari(tx, sayim.depoId, k.stokId, k.varyantId, sinir);
         const fark = D(k.fiiliMiktar).sub(sistem);
         // Stok varsa sayım farkı ortalama maliyetle, yoksa kartın alış fiyatıyla (STK-28 yeniden hesaplama da böyle okur).
-        const birimMaliyet = sistem.gt(0) ? D(urun.ortalamaMaliyet) : D(urun.alisFiyati);
+        const birimMaliyet = sistem.gt(0) ? D(urun.ortalamaMaliyet) : await kartAlisMaliyeti(tx, tenantId, urun, new Date(sayim.tarih));
         const hareket = (miktar: Prisma.Decimal, partiler?: { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; miktar: Prisma.Decimal }[], partiSecimi?: "belirtilen") =>
           this.stokService.hareketEkle(tx, { ...ortak, stokId: k.stokId, varyantId: k.varyantId, miktar, girilenBirim: urun.anaBirim, girilenMiktar: miktar, birimMaliyet, partiler, partiSecimi });
 
@@ -183,4 +184,29 @@ export class SayimService {
       return { ...sayim, kalemler: sayim.kalemler.map((k) => ({ ...k, stok: stoklar.get(k.stokId) ?? null })) };
     });
   }
+}
+
+/**
+ * Stok yokken sayım farkının birim maliyeti: kartın alış fiyatı, TL karşılığı.
+ * Dövizli alış fiyatı sayım günü kuruyla çevrilir (alış belgelerindeki gibi
+ * döviz satış kuru). 2026-11-15'e kadar döviz çevrilmiyordu: 0,25 USD alış
+ * fiyatlı üründe sayım girişleri 0,25 TL maliyetle yazılıp ortalamayı bozdu.
+ * Kur bulunamazsa onay durur; yanlış maliyetle yazmak yerine kur istenir.
+ */
+export async function kartAlisMaliyeti(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  urun: { ad: string; alisFiyati: Prisma.Decimal | null; alisFiyatiDoviz: string },
+  tarih: Date,
+): Promise<Prisma.Decimal> {
+  if (urun.alisFiyati === null || !D(urun.alisFiyati).gt(0)) return D(0);
+  if (urun.alisFiyatiDoviz === "TRY") return D(urun.alisFiyati);
+  const kur = await kurCoz(tx, tenantId, urun.alisFiyatiDoviz, tarih, "satis");
+  if (!kur) {
+    throw new BadRequestException(
+      `'${urun.ad}' ürününün alış fiyatı ${urun.alisFiyatiDoviz} cinsinden ve stoğu sayım tarihinde sıfır ya da eksi; ` +
+      `sayım farkını değerlemek için ${tarih.toISOString().slice(0, 10)} tarihli ${urun.alisFiyatiDoviz} kuru gerekiyor. Ayarlar › Döviz Kurları'ndan kuru çekin ya da girin.`,
+    );
+  }
+  return D(urun.alisFiyati).mul(kur).toDecimalPlaces(4);
 }
