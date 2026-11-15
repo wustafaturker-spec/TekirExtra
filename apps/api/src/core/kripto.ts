@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 /**
  * Hassas değerlerin (entegratör kimlik bilgileri, TOTP anahtarları) at-rest
@@ -35,12 +35,4 @@ export function coz(sifreliMetin: string): string {
   const decipher = createDecipheriv("aes-256-gcm", anahtarAl(), iv, { authTagLength: TAG_BOYU });
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(cipher), decipher.final()]).toString("utf8");
-}
-
-/**
- * SEC-23: saklanmayan, sunucu sırrından türetilen bağlantı anahtarı. Amaç
- * etiketi farklı kullanımları ayırır; veritabanı sızsa da anahtar üretilemez.
- */
-export function turetilmisAnahtar(amac: string, ...parcalar: string[]): string {
-  return createHmac("sha256", anahtarAl()).update([amac, ...parcalar].join(":")).digest("hex");
 }

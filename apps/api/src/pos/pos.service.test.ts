@@ -6,8 +6,6 @@ import { PaytrAdapter } from "./paytr.adapter";
 
 vi.mock("../core/kripto", () => ({
   coz: () => JSON.stringify({ kullaniciAdi: "api", parola: "gizli", servisAdresi: "https://sandbox-api.iyzipay.com" }),
-  // SEC-23: türetilmiş anahtar sabit sırla.
-  turetilmisAnahtar: (...p: string[]) => require("node:crypto").createHmac("sha256", "test-sirri").update(p.join(":")).digest("hex"),
 }));
 
 // KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
@@ -25,6 +23,9 @@ vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "muhasebe" }),
   baglamlaCalistir: (_b: unknown, is: () => Promise<unknown>) => is(),
 }));
+
+// SEC-23: makbuz bağlantı sırrı.
+process.env.MAKBUZ_ANAHTAR_SIRLARI = `v1:${"ab".repeat(32)}`;
 
 const D = (v: string | number) => new Prisma.Decimal(v);
 

@@ -10,6 +10,8 @@
  * vardır (yalnız `.env.docker` içinde açıktır; gerçek kurulumda kullanılmaz).
  */
 
+import { makbuzSirlariniOku } from "../../pos/makbuz-anahtari";
+
 /** Depoda yayımlanmış, gizli sayılamayacak değerler. */
 const BILINEN_ORNEK_SIRLAR = new Set([
   "dev-jwt-secret-degistir",
@@ -44,6 +46,12 @@ export function uretimSirSorunlari(ortam: Ortam = process.env): string[] {
   // Tek karakterin tekrarı (örnekteki 64 sıfır gibi) uzunluk denetimini geçse de anahtar değildir.
   const anahtar = deger("BAGLANTI_SIFRELEME_ANAHTARI");
   if (anahtar && /^(.)\1*$/.test(anahtar)) sorunlar.push("BAGLANTI_SIFRELEME_ANAHTARI tek karakterin tekrarı (örnek değer)");
+
+  // SEC-23: makbuz bağlantı sırrı şifreleme anahtarından ayrıdır; yoksa ya da bozuksa açılmaz.
+  if (!deger("MAKBUZ_ANAHTAR_SIRLARI")) sorunlar.push("MAKBUZ_ANAHTAR_SIRLARI tanımlı değil (\"v1:<openssl rand -hex 32>\")");
+  else {
+    try { makbuzSirlariniOku(ortam); } catch (hata) { sorunlar.push(hata instanceof Error ? hata.message : "MAKBUZ_ANAHTAR_SIRLARI geçersiz"); }
+  }
 
   for (const ad of ["DATABASE_URL", "DATABASE_URL_MIGRATE", "DATABASE_URL_PLATFORM"]) {
     if (!deger(ad)) continue;
