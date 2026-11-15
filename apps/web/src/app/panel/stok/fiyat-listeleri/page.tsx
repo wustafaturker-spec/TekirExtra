@@ -15,6 +15,7 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { EndeksFiyatOnerisi, type EndeksSecenegi } from "@/components/endeks-fiyat-onerisi";
 
 interface FiyatListesi {
   id: string;
@@ -68,6 +69,8 @@ export default function FiyatListeleriSayfasi() {
   const [kalemStokId, setKalemStokId] = useState("");
   const [kalemFiyat, setKalemFiyat] = useState("");
   const [kalemArama, setKalemArama] = useState("");
+  // END-16: plan özelliği ve satış tarafı erişimi açıksa öneri paneli görünür; 403 paneli gizler.
+  const [endeksler, setEndeksler] = useState<EndeksSecenegi[] | null>(null);
 
   const stoklariYukle = useCallback(async () => {
     setStoklar(await tumSayfalariAl<Stok>("/stok"));
@@ -85,6 +88,9 @@ export default function FiyatListeleriSayfasi() {
     if (tokenAl()) {
       void yukle();
       void stoklariYukle().catch(() => undefined);
+      api<{ erisim: { satis: boolean }; endeksler: EndeksSecenegi[] }>("/fiyat-endeks/secenekler")
+        .then((r) => setEndeksler(r.erisim.satis && r.endeksler.length ? r.endeksler : null))
+        .catch(() => setEndeksler(null));
     }
   }, [stoklariYukle, yukle]);
 
@@ -250,6 +256,9 @@ export default function FiyatListeleriSayfasi() {
               )}
             </tbody>
           </TableWrap>
+          {endeksler && detay.dovizCinsi === "TRY" && detay.kalemler.length > 0 && (
+            <EndeksFiyatOnerisi key={detay.id} listeId={detay.id} listeAdi={detay.ad} endeksler={endeksler} onUygulandi={async () => { await Promise.all([detayAc(detay.id), yukle()]); }} />
+          )}
         </Card>
       )}
 

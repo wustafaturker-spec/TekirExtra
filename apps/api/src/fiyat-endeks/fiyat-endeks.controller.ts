@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Param, ParseUUIDPipe, Query } from "@nestjs/common";
-import { FiyatEndeksService, urunSorgusuSemasi } from "./fiyat-endeks.service";
+import { FiyatEndeksService, oneriSorgusuSemasi, urunSorgusuSemasi } from "./fiyat-endeks.service";
 
 const liste = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 
@@ -21,6 +21,14 @@ export class FiyatEndeksController {
   endeks(@Param("kod") kod: string, @Query("baslangic") baslangic: string, @Query("bitis") bitis: string) {
     if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(kod)) throw new BadRequestException("Geçersiz endeks kodu");
     return this.servis.endeks(kod, { baslangic: baslangic ?? "", bitis: bitis ?? "" });
+  }
+
+  /** END-16: fiyat listesi için endekse göre güncelleme önizlemesi (yazmaz). */
+  @Get("fiyat-onerisi")
+  fiyatOnerisi(@Query() q: Record<string, string | undefined>) {
+    const sonuc = oneriSorgusuSemasi.safeParse({ listeId: q.listeId, endeks: q.endeks, yuvarlama: q.yuvarlama || undefined, varsayilanBazAy: q.varsayilanBazAy || undefined, stokIdler: liste(q.stokIdler) });
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.servis.fiyatOnerisi(sonuc.data);
   }
 
   @Get("urun/:stokId")

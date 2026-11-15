@@ -7,6 +7,7 @@ import { ayAraligi, ayBasiMetni, ayKaydir, endeksNormalle, fiyatSerisiHesapla, t
 import { aylikToplamlar, endeksVerisi, KUR_ENDEKSLERI } from "./fiyat-endeks-veri";
 import { EK_CIZGILER, listeFiyatCizgileri, maliyetCizgisi, sonAlisCizgisi, type EkCizgi } from "./fiyat-endeks-cizgiler";
 import { Prisma } from "@prisma/client";
+import { bazAyi, oneriHesapla, YUVARLAMALAR } from "./fiyat-onerisi";
 
 /** Ekranda gösterilebilecek en uzun dönem (ay). */
 export const EN_UZUN_DONEM_AY = 60;
@@ -25,6 +26,17 @@ export const urunSorgusuSemasi = z.object({
   cizgiler: z.array(z.enum(EK_CIZGILER)).max(EK_CIZGILER.length).default([]),
 });
 export type UrunSorgusu = z.infer<typeof urunSorgusuSemasi>;
+
+/** END-16: fiyat güncelleme önerisi sorgusu. */
+export const oneriSorgusuSemasi = z.object({
+  listeId: z.uuid(),
+  endeks: z.string().regex(/^[A-Z][A-Z0-9_]{1,39}$/),
+  yuvarlama: z.enum(YUVARLAMALAR).default("kurus"),
+  /** Fiyat geçmişi olmayan kalemler için baz ay (YYYY-MM). */
+  varsayilanBazAy: ay.optional(),
+  stokIdler: z.array(z.uuid()).max(500).default([]),
+});
+export type OneriSorgusu = z.infer<typeof oneriSorgusuSemasi>;
 
 const buAy = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }).slice(0, 7) + "-01";
 
@@ -90,6 +102,45 @@ export class FiyatEndeksService {
           ...(kismiAy ? [`${kismiAy} kur değeri ay başından bugüne ortalamadır.`] : []),
           ...(e.zincirlenenDonemSayisi ? [`${e.zincirlenenDonemSayisi} ay önceki baz yılı serisinden zincirlendi.`] : []),
         ],
+      };
+    });
+  }
+
+  /**
+   * END-16: TL fiyat listesindeki kalemler için "son fiyat değişikliğinden bu
+   * yana endeks kadar" yeni fiyat önizlemesi. Yazmaz; uygulama ekrandan,
+   * kullanıcı onayıyla mevcut fiyat listesi uçlarıyla yapılır.
+   */
+  async fiyatOnerisi(s: OneriSorgusu) {
+    const { tenantId, rol } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const erisim = await fiyatEndeksErisimi(tx, tenantId, rol);
+      if (!erisim.satis) throw new ForbiddenException("Satış fiyatı tarafına erişiminiz yok.");
+      const liste = await tx.fiyatListesi.findFirst({ where: { id: s.listeId }, select: { id: true, ad: true, dovizCinsi: true } });
+      if (!liste) throw new NotFoundException("Fiyat listesi bulunamadı");
+      if (liste.dovizCinsi !== "TRY") throw new BadRequestException(`${liste.ad} listesi ${liste.dovizCinsi} cinsinden; endeks önerisi yalnız TL listelerde yapılır.`);
+      const kalemler = await tx.fiyatListesiKalem.findMany({
+        where: { listeId: liste.id, ...(s.stokIdler.length ? { stokId: { in: s.stokIdler } } : {}) },
+        select: { stokId: true, fiyat: true, stok: { select: { kod: true, ad: true, anaBirim: true } } },
+      });
+      const sonDegisim = new Map((await tx.fiyatListesiFiyatGecmisi.groupBy({ by: ["stokId"], where: { listeId: liste.id, stokId: { in: kalemler.map((k) => k.stokId) } }, _max: { degistiAt: true } }))
+        .map((g) => [g.stokId, g._max.degistiAt]));
+      const varsayilan = s.varsayilanBazAy ? ayBasiMetni(s.varsayilanBazAy) : null;
+      const bazlar = kalemler.map((k) => { const t = sonDegisim.get(k.stokId); return t ? bazAyi(t) : varsayilan; });
+      const enEski = bazlar.filter((b): b is string => Boolean(b)).sort()[0] ?? ayKaydir(buAy(), -1);
+      const endeks = await endeksVerisi(tx, s.endeks, enEski, buAy());
+      // Endekste son açıklanan ay; kurda tamamlanmış son ay (içinde bulunulan ay kısmi ortalamadır).
+      const tamamlanan = ayKaydir(buAy(), -1);
+      const son = [...endeks.degerler.keys()].filter((a) => a <= tamamlanan).sort().at(-1) ?? null;
+      const satirlar = kalemler.map((k, i) => ({
+        stokId: k.stokId, kod: k.stok.kod, ad: k.stok.ad, birim: k.stok.anaBirim,
+        eskiFiyat: k.fiyat.toFixed(4), sonDegisim: sonDegisim.get(k.stokId) ?? null,
+        ...oneriHesapla(k.fiyat, bazlar[i], son, endeks.degerler, s.yuvarlama),
+      })).sort((a, b) => a.kod.localeCompare(b.kod, "tr"));
+      return {
+        liste, endeks: { kod: endeks.kod, ad: endeks.ad, tur: endeks.tur, bazYili: endeks.bazYili, sonAy: son }, yuvarlama: s.yuvarlama,
+        satirlar,
+        ozet: { oneri: satirlar.filter((r) => r.durum === "oneri").length, toplam: satirlar.length },
       };
     });
   }

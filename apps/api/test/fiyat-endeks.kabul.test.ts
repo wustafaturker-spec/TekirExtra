@@ -251,6 +251,21 @@ describe("marj makası ve tedarikçi zam denetimi (END-13/14)", () => {
   });
 });
 
+describe("fiyat güncelleme önerisi (END-16)", () => {
+  it("geçmişi bugün başlayan kalemde yeni endeks yok; geçmiş yoksa varsayılan baz aydan öneri; yazmaz", async () => {
+    const r1 = await ile(A.tenant, A.yonetici, "yonetici", () => servis.fiyatOnerisi({ listeId: A.liste, endeks: SERI, yuvarlama: "kurus", stokIdler: [] }));
+    expect(r1.satirlar[0]).toMatchObject({ stokId: A.stok, eskiFiyat: "115.5000", durum: "degisim_yok" });
+    await yonetim.fiyatListesiFiyatGecmisi.deleteMany({ where: { listeId: A.liste } });
+    const istek = { listeId: A.liste, endeks: SERI, yuvarlama: "kurus" as const, stokIdler: [] };
+    expect((await ile(A.tenant, A.yonetici, "yonetici", () => servis.fiyatOnerisi(istek))).satirlar[0].durum).toBe("baz_yok");
+    const r = await ile(A.tenant, A.yonetici, "yonetici", () => servis.fiyatOnerisi({ ...istek, varsayilanBazAy: "2026-01" }));
+    // Ocak 100 → Nisan 125 (yetki testinde eklenen ay): 115,5 × 1,25 = 144,375 → 144,38.
+    expect(r.satirlar[0]).toMatchObject({ durum: "oneri", bazAy: "2026-01-01", sonAy: "2026-04-01", endeksDegisim: "25.00", yeniFiyat: "144.3800", fark: "28.8800" });
+    expect((await yonetim.fiyatListesiKalem.findFirstOrThrow({ where: { listeId: A.liste, stokId: A.stok } })).fiyat.toString()).toBe("115.5");
+    await expect(ile(B.tenant, B.yonetici, "yonetici", () => servis.fiyatOnerisi(istek))).rejects.toThrow(/abonelik planınızda açık değil/);
+  });
+});
+
 describe("toplu rapor (END-12)", () => {
   it("firmanın ürünlerini endeksin gerisinde kalan önce listeler; yetkisi olmayan taraf reddedilir", async () => {
     const tanim = raporTanimiAl("stok.fiyat_endeks")!;
