@@ -9,10 +9,10 @@ describe("kaynaklı finans verileri", () => {
       uyarilar: ["Maliyet kaydı eksik"],
     }));
     expect(k.kalemler).toEqual([
-      { ad: "Brüt kâr", deger: "439316.32", paraBirimi: "TRY" },
-      { ad: "Diğer gelirler", deger: digerGelirler, paraBirimi: "TRY" },
-      { ad: "Faaliyet giderleri", deger: "49015.78", paraBirimi: "TRY" },
-      { ad: "Net kâr", deger: "420300.54", paraBirimi: "TRY" },
+      { ad: "Brüt kâr", metrik: "brut_kar", deger: "439316.32", paraBirimi: "TRY" },
+      { ad: "Diğer gelirler", metrik: "diger_gelirler", deger: digerGelirler, paraBirimi: "TRY" },
+      { ad: "Faaliyet giderleri", metrik: "faaliyet_giderleri", deger: "49015.78", paraBirimi: "TRY" },
+      { ad: "Net kâr", metrik: "net_kar", deger: "420300.54", paraBirimi: "TRY" },
     ]);
     expect(k.uyarilar).toContain("Maliyet kaydı eksik");
   });
@@ -24,7 +24,7 @@ describe("kaynaklı finans verileri", () => {
   });
   it("hassasiyeti kaybolabilecek büyük number'ı göstermeyip decimal-string'i korur", () => {
     const [k] = finansKaynaklariCikar("finansal_ozet", JSON.stringify({ nakitVarliklar: 9999999999999999, toplamBorclar: "9999999999999999.99", toplamAlacaklar: "-12.34" }));
-    expect(k.kalemler).toEqual([{ ad: "Alacaklar", deger: "-12.34", paraBirimi: "TRY" }, { ad: "Borçlar", deger: "9999999999999999.99", paraBirimi: "TRY" }]);
+    expect(k.kalemler).toEqual([{ ad: "Alacaklar", metrik: "toplam_alacak", deger: "-12.34", paraBirimi: "TRY" }, { ad: "Borçlar", metrik: "toplam_borc", deger: "9999999999999999.99", paraBirimi: "TRY" }]);
     expect(k.uyarilar).toEqual([expect.stringContaining("decimal-string")]);
     const [bos] = finansKaynaklariCikar("finansal_ozet", '{"nakitVarliklar":9999999999999999}');
     expect(bos.kalemler).toEqual([]);
@@ -48,7 +48,7 @@ describe("kaynaklı finans verileri", () => {
     const veri = { id: "11111111-1111-4111-8111-111111111111", unvan: "Test", adres: "https://evil.example", bakiyeler: [{ dovizCinsi: "TRY", bakiye: "-1250.50" }, { dovizCinsi: "USD", bakiye: "9999999999999999.99" }, { bakiye: "15.00" }] };
     const [k] = finansKaynaklariCikar("cari_getir", JSON.stringify(veri));
     expect(k.adres).toBe(`/panel/cari/${veri.id}`);
-    expect(k.kalemler).toEqual([{ ad: "Bakiye", deger: "-1250.50", paraBirimi: "TRY" }, { ad: "Bakiye", deger: "9999999999999999.99", paraBirimi: "USD" }]);
+    expect(k.kalemler).toEqual([{ ad: "Bakiye", metrik: "cari_bakiye", deger: "-1250.50", paraBirimi: "TRY" }, { ad: "Bakiye", metrik: "cari_bakiye", deger: "9999999999999999.99", paraBirimi: "USD" }]);
   });
   it("rapor toplamındaki karışık döviz ve kesilmiş satırları belirtir; bilinmeyen dövizi uydurmaz", () => {
     const [k] = finansKaynaklariCikar("rapor_calistir", JSON.stringify({
@@ -56,7 +56,7 @@ describe("kaynaklı finans verileri", () => {
       kolonlar: [{ alan: "a", tip: "para", baslik: "Döviz toplamı", dovizAlani: "dovizCinsi" }, { alan: "b", tip: "para", baslik: "TL" }, { alan: "c", tip: "para", dovizAlani: "dovizCinsi" }, { alan: "d", tip: "para", dovizAlani: "dovizCinsi" }],
       toplamlar: { a: "karisik", b: { deger: 0 }, c: { deger: 15, doviz: "EUR" }, d: { deger: 50 } },
     }));
-    expect(k.kalemler).toEqual([{ ad: "TL", deger: "0", paraBirimi: "TRY" }, { ad: "c", deger: "15", paraBirimi: "EUR" }]);
+    expect(k.kalemler).toEqual([{ ad: "TL", metrik: "rapor:test:b:toplam", deger: "0", paraBirimi: "TRY" }, { ad: "c", metrik: "rapor:test:c:toplam", deger: "15", paraBirimi: "EUR" }]);
     expect(k.uyarilar).toEqual(expect.arrayContaining([expect.stringContaining("farklı para"), expect.stringContaining("1 / 42")]));
     expect(k.donem).toMatchObject({ baslangic: "2026-10-01", bitis: "2026-10-14" });
   });
@@ -68,13 +68,13 @@ describe("kaynaklı finans verileri", () => {
   });
   it("tek satırlı raporda toplam satırı yoksa tutarı satırın kendi döviziyle gösterir", () => {
     const [k] = finansKaynaklariCikar("rapor_calistir", JSON.stringify({ adres: "/panel/raporlar?rapor=test", satirSayisi: 1, satirlar: [{ tutar: "12.34", doviz: "USD" }], toplamlar: null, kolonlar: [{ alan: "tutar", baslik: "Tutar", tip: "para", dovizAlani: "doviz" }] }));
-    expect(k.kalemler).toEqual([{ ad: "Tutar (tek satır)", deger: "12.34", paraBirimi: "USD" }]);
+    expect(k.kalemler).toEqual([{ ad: "Tutar (tek satır)", metrik: "rapor:test:tutar:tek_satir", deger: "12.34", paraBirimi: "USD" }]);
   });
   it("dönemi olmayan belgede tarih uydurmaz; gelir-giderde gerçek dönemi ve uyarıyı saklar", () => {
     const [belge] = finansKaynaklariCikar("fatura_getir", JSON.stringify({ id: "11111111-1111-4111-8111-111111111111", genelToplam: "12.00", dovizCinsi: "EUR" }));
     expect(belge.donem.bitis).toBeUndefined();
     const [k] = finansKaynaklariCikar("gelir_gider", JSON.stringify({ adres: "/panel/raporlar/gelir-gider?baslangic=2026-10-01&bitis=2026-10-14", donem: { baslangic: "2026-10-01", bitis: "2026-10-14" }, karZarar: { netKar: "-15.00" }, uyarilar: ["Maliyet kaydı eksik"] }));
-    expect(k.kalemler).toEqual([{ ad: "Net kâr", deger: "-15.00", paraBirimi: "TRY" }]);
+    expect(k.kalemler).toEqual([{ ad: "Net kâr", metrik: "net_kar", deger: "-15.00", paraBirimi: "TRY" }]);
     expect(k.uyarilar).toEqual(["Maliyet kaydı eksik"]);
   });
 });
@@ -89,11 +89,12 @@ describe("END-21 fiyat–endeks kaynak kartları", () => {
       uyarilar: ["TÜFE genel: en son 2026-10 dönemi açıklandı."],
     }), simdi);
     expect(k).toHaveLength(1);
+    expect(k[0].hesapSurumu).toBe("endeks_getir@1");
     expect(k[0].kalemler).toEqual([
-      { ad: "TÜFE genel — 2025-11", deger: "3000.0000", paraBirimi: "puan" },
-      { ad: "TÜFE genel — 2026-10", deger: "3900.5000", paraBirimi: "puan" },
-      { ad: "Dönem değişimi (2025-11 – 2026-10)", deger: "30.02", paraBirimi: "%" },
-      { ad: "Yıllık değişim (2026-10)", deger: "32.87", paraBirimi: "%" },
+      { ad: "TÜFE genel — 2025-11", metrik: "endeks_degeri", deger: "3000.0000", paraBirimi: "puan" },
+      { ad: "TÜFE genel — 2026-10", metrik: "endeks_degeri", deger: "3900.5000", paraBirimi: "puan" },
+      { ad: "Dönem değişimi (2025-11 – 2026-10)", metrik: "endeks_donem_degisimi", deger: "30.02", paraBirimi: "%" },
+      { ad: "Yıllık değişim (2026-10)", metrik: "endeks_yillik_degisim", deger: "32.87", paraBirimi: "%" },
     ]);
     expect(k[0].donem).toMatchObject({ baslangic: "2025-11-01", bitis: "2026-10-01" });
     expect(k[0].uyarilar.join(" ")).toMatch(/son açıklanan dönem 2026-10; alındı 2026-11-03/);
@@ -109,8 +110,8 @@ describe("END-21 fiyat–endeks kaynak kartları", () => {
     }), simdi);
     expect(k).toHaveLength(2);
     expect(k[0]).toMatchObject({ baslik: "Ürün — Satış fiyatı (tüm satışlar) × TÜFE genel", adres: `/panel/stok/${stokId}`, donem: { baslangic: "2026-01-01", bitis: "2026-03-01" } });
-    expect(k[0].kalemler.find((x) => x.ad === "Reel değişim")).toEqual({ ad: "Reel değişim", deger: "-1.22", paraBirimi: "%" });
-    expect(k[0].kalemler.find((x) => x.ad.startsWith("Endekse göre"))).toEqual({ ad: "Endekse göre fiyat (TL/adet)", deger: "126.5455", paraBirimi: "TRY" });
+    expect(k[0].kalemler.find((x) => x.ad === "Reel değişim")).toEqual({ ad: "Reel değişim", metrik: "reel_degisim", deger: "-1.22", paraBirimi: "%" });
+    expect(k[0].kalemler.find((x) => x.ad.startsWith("Endekse göre"))).toEqual({ ad: "Endekse göre fiyat (TL/adet)", metrik: "endekse_gore_fiyat", deger: "126.5455", paraBirimi: "TRY" });
     expect(k[1].kalemler).toEqual([]);
     expect(k[1].uyarilar[0]).toBe("Baz ayda bu ürünün faturası yok.");
   });

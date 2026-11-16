@@ -207,7 +207,7 @@ describe("asistan araç döngüsü (AI-05)", () => {
       { metin: "Net kâr -1.250,50 TL.", aracCagrilari: [] },
     ], { ucSonucu: (_yol, arg) => ({ baslangicTarihi: arg[0], bitisTarihi: arg[1], karZarar: { netKar: "-1250.50" }, uyarilar: [] }) });
     const y = await k.calistir("Gelir gider raporu", "yonetici");
-    expect(y.kaynaklar).toContainEqual(expect.objectContaining({ donem: { baslangic: "2000-01-01", bitis: bugun, aciklama: "Rapor dönemi" }, kalemler: [{ ad: "Net kâr", deger: "-1250.50", paraBirimi: "TRY" }] }));
+    expect(y.kaynaklar).toContainEqual(expect.objectContaining({ donem: { baslangic: "2000-01-01", bitis: bugun, aciklama: "Rapor dönemi" }, kalemler: [{ ad: "Net kâr", metrik: "net_kar", deger: "-1250.50", paraBirimi: "TRY" }] }));
     const kayit = k.tx.ajanMesajGecmisi.create.mock.calls.find(c => c[0].data.rol === "assistant")![0].data;
     k.tx.ajanOturumu.findFirst.mockResolvedValue({ id: "oturum-1", userId: KIMLIK.userId } as never);
     k.tx.ajanMesajGecmisi.findMany.mockResolvedValue([{ ...kayit, id: "mesaj-1", createdAt: new Date() }] as never);
@@ -244,7 +244,7 @@ describe("asistan araç döngüsü (AI-05)", () => {
     const y = await k.calistir("Yılmaz bakiyesi");
     expect(y.cevap).toContain("Yılmaz Ticaret — Bakiye: 10.000,00 TRY");
     expect(y.finansAciklama?.durum).toBe("guvenli_ozet");
-    expect(y.kaynaklar).toContainEqual(expect.objectContaining({ adres: `/panel/cari/${CARI_ID}`, kalemler: [{ ad: "Bakiye", deger: "10000.00", paraBirimi: "TRY" }] }));
+    expect(y.kaynaklar).toContainEqual(expect.objectContaining({ adres: `/panel/cari/${CARI_ID}`, kalemler: [{ ad: "Bakiye", metrik: "cari_bakiye", deger: "10000.00", paraBirimi: "TRY" }] }));
     expect(k.uc.cagir).toHaveBeenCalledWith(expect.objectContaining({ yol: "GET /cari" }), ["Yılmaz", undefined, "10", undefined], expect.objectContaining({ kaynak: "asistan", arac: "cari_ara" }));
     const ikinciTur = k.saglayici.girdiler[1].mesajlar;
     const sonuc = ikinciTur.find((m) => m.rol === "arac_sonucu");

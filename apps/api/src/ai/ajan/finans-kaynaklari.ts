@@ -1,14 +1,35 @@
 import { adres } from "./araclar/arac";
 
+/**
+ * AI-98: her kalem bir metrik kodu, her kaynak bir hesap sürümü taşır. Aracın
+ * hesap yöntemi değişirse sürümü artırın; eski snapshot kimlikleri yeni
+ * yanıtta geçmez ve aynı ad farklı hesapla karışmaz.
+ */
+export const HESAP_SURUMLERI: Record<string, string> = {
+  finansal_ozet: "finansal_ozet@1",
+  vadesi_gecen_alacaklar: "vadesi_gecen_alacaklar@1",
+  gelir_gider: "gelir_gider@1",
+  rapor_calistir: "rapor_calistir@1",
+  endeks_getir: "endeks_getir@1",
+  fiyat_endeks_karsilastir: "fiyat_endeks_karsilastir@1",
+  cari_ara: "cari_bakiye@1", cari_getir: "cari_bakiye@1",
+  fatura_ara: "belge_toplam@1", fatura_getir: "belge_toplam@1", belge_ara: "belge_toplam@1", belge_getir: "belge_toplam@1",
+};
+
+export interface FinansKalemi { ad: string; metrik: string; deger: string; paraBirimi: string }
+
 export interface FinansKaynagi {
   arac: string;
+  hesapSurumu: string;
   baslik: string;
   adres: string;
   alindiAt: string;
   donem: { baslangic?: string; bitis?: string; aciklama: string };
-  kalemler: Array<{ ad: string; deger: string; paraBirimi: string }>;
+  kalemler: FinansKalemi[];
   uyarilar: string[];
 }
+
+const metrikKodu = (x: string) => x.toLocaleLowerCase("tr").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").replace(/[^a-z0-9.]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "alan";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const nesne = (x: unknown): Record<string, unknown> => x && typeof x === "object" && !Array.isArray(x) ? x as Record<string, unknown> : {};
@@ -30,7 +51,9 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
   let r: Record<string, unknown>;
   try { r = nesne(JSON.parse(icerik)); } catch { return []; }
   const bugun = simdi.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
-  const temel = { arac, alindiAt: simdi.toISOString(), donem: { bitis: bugun, aciklama: "Görüntülenme anındaki durum" }, uyarilar: [] as string[] };
+  const hesapSurumu = HESAP_SURUMLERI[arac];
+  if (!hesapSurumu) return [];
+  const temel = { arac, hesapSurumu, alindiAt: simdi.toISOString(), donem: { bitis: bugun, aciklama: "Görüntülenme anındaki durum" }, uyarilar: [] as string[] };
   const oku = (x: unknown, uyarilar = temel.uyarilar) => {
     if (guvensizSayi(x)) {
       const uyari = "Güvenli sayı aralığı dışındaki tutar gösterilmedi; kaynaktan decimal-string olarak alınmalıdır.";
@@ -38,16 +61,16 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
     }
     return tutar(x);
   };
-  const kalemler = (o: Record<string, unknown>, alanlar: Array<[string, string]>, paraBirimi = "TRY", uyarilar = temel.uyarilar) => alanlar.flatMap(([alan, ad]) => {
-    const deger = oku(o[alan], uyarilar); return deger === null ? [] : [{ ad, deger, paraBirimi }];
+  const kalemler = (o: Record<string, unknown>, alanlar: Array<[string, string, string]>, paraBirimi = "TRY", uyarilar = temel.uyarilar): FinansKalemi[] => alanlar.flatMap(([alan, ad, metrik]) => {
+    const deger = oku(o[alan], uyarilar); return deger === null ? [] : [{ ad, metrik, deger, paraBirimi }];
   });
   if (arac === "finansal_ozet") {
-    const k = kalemler(r, [["nakitVarliklar", "Nakit varlıklar"], ["envanterDegeri", "Stok değeri"], ["toplamAlacaklar", "Alacaklar"], ["toplamBorclar", "Borçlar"], ["netVarlikDegeri", "Net varlık"]]);
+    const k = kalemler(r, [["nakitVarliklar", "Nakit varlıklar", "nakit_varliklar"], ["envanterDegeri", "Stok değeri", "stok_degeri"], ["toplamAlacaklar", "Alacaklar", "toplam_alacak"], ["toplamBorclar", "Borçlar", "toplam_borc"], ["netVarlikDegeri", "Net varlık", "net_varlik"]]);
     const kurEksik = Array.isArray(r.kurEksik) ? r.kurEksik.length > 0 : Boolean(r.kurEksik);
     return k.length || temel.uyarilar.length ? [{ ...temel, baslik: "Finansal özet", adres: "/panel", kalemler: k, uyarilar: [...temel.uyarilar, ...(kurEksik ? ["Kur bilgisi eksik kayıtlar var; raporu kontrol edin."] : [])] }] : [];
   }
   if (arac === "vadesi_gecen_alacaklar") {
-    const k = kalemler(r, [["toplamAlacakTry", "Vadesi geçen alacak"], ["toplamBorcTry", "Vadesi geçen borç"]]);
+    const k = kalemler(r, [["toplamAlacakTry", "Vadesi geçen alacak", "vadesi_gecen_alacak"], ["toplamBorcTry", "Vadesi geçen borç", "vadesi_gecen_borc"]]);
     return k.length || temel.uyarilar.length ? [{ ...temel, baslik: "Vadesi geçen alacak ve borç", adres: "/panel", kalemler: k }] : [];
   }
   if (arac === "gelir_gider" || arac === "rapor_calistir") {
@@ -59,9 +82,10 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
     const bitis = gun(nesne(r.donem).bitis ?? url.searchParams.get(arac === "gelir_gider" ? "bitis" : "f.bitis"));
     const kaynak: FinansKaynagi = { ...temel, baslik: arac === "gelir_gider" ? "Gelir-gider ve kâr/zarar" : metin(r.ad) || "Rapor", adres: r.adres, donem: { baslangic, bitis, aciklama: baslangic || bitis ? "Rapor dönemi" : "Raporun seçili süzgeçleri" }, kalemler: [], uyarilar: Array.isArray(r.uyarilar) ? r.uyarilar.filter((x): x is string => typeof x === "string").slice(0, 10).map(x => x.slice(0, 500)) : [] };
     if (arac === "gelir_gider") {
-      kaynak.kalemler = kalemler(nesne(r.karZarar), [["netSatis", "Net satış"], ["smm", "Satılan malın maliyeti"], ["brutKar", "Brüt kâr"], ["digerGelirler", "Diğer gelirler"], ["faaliyetGiderleri", "Faaliyet giderleri"], ["netKar", "Net kâr"]]);
+      kaynak.kalemler = kalemler(nesne(r.karZarar), [["netSatis", "Net satış", "net_satis"], ["smm", "Satılan malın maliyeti", "satilan_mal_maliyeti"], ["brutKar", "Brüt kâr", "brut_kar"], ["digerGelirler", "Diğer gelirler", "diger_gelirler"], ["faaliyetGiderleri", "Faaliyet giderleri", "faaliyet_giderleri"], ["netKar", "Net kâr", "net_kar"]]);
     } else {
       const toplamlar = nesne(r.toplamlar);
+      const raporKodu = metrikKodu(url.searchParams.get("rapor") ?? "rapor");
       for (const kolon of Array.isArray(r.kolonlar) ? r.kolonlar : []) {
         const c = nesne(kolon), alan = metin(c.alan);
         if (c.tip !== "para") continue;
@@ -70,12 +94,12 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
         if (toplam == null && r.satirSayisi === 1 && Array.isArray(r.satirlar) && r.satirlar.length === 1) {
           const satir = nesne(r.satirlar[0]), deger = oku(satir[alan]);
           const paraBirimi = c.dovizAlani ? doviz(satir[metin(c.dovizAlani)]) : "TRY";
-          if (deger !== null && paraBirimi) kaynak.kalemler.push({ ad: `${metin(c.baslik) || alan} (tek satır)`, deger, paraBirimi });
+          if (deger !== null && paraBirimi) kaynak.kalemler.push({ ad: `${metin(c.baslik) || alan} (tek satır)`, metrik: `rapor:${raporKodu}:${metrikKodu(alan)}:tek_satir`, deger, paraBirimi });
           continue;
         }
         const t = nesne(toplam), deger = oku(t.deger);
         const paraBirimi = doviz(t.doviz) ?? (c.dovizAlani ? null : "TRY");
-        if (deger !== null && paraBirimi) kaynak.kalemler.push({ ad: metin(c.baslik) || alan, deger, paraBirimi });
+        if (deger !== null && paraBirimi) kaynak.kalemler.push({ ad: metin(c.baslik) || alan, metrik: `rapor:${raporKodu}:${metrikKodu(alan)}:toplam`, deger, paraBirimi });
       }
       if (typeof r.satirSayisi === "number" && Array.isArray(r.satirlar) && r.satirSayisi > r.satirlar.length) kaynak.uyarilar.push(`Model ${r.satirlar.length} / ${r.satirSayisi} satırı gördü; tam liste rapor ekranındadır.`);
     }
@@ -85,13 +109,13 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
   // END-21: endeks ve fiyat–endeks karşılaştırması. Yüzdeler "%", endeks değerleri "puan"; seri adı, dönem, son açıklanan ay ve alınma zamanı kartta.
   if (arac === "endeks_getir") {
     if (typeof r.kod !== "string" || !Array.isArray(r.degerler)) return [];
-    const o = nesne(r.ozet), ad = metin(r.ad) || r.kod, birim = r.tur === "kur" ? "TRY" : "puan";
+    const o = nesne(r.ozet), ad = metin(r.ad) || r.kod, birim = r.tur === "kur" ? "TRY" : "puan", degerMetrigi = r.tur === "kur" ? "kur_degeri" : "endeks_degeri";
     const k: FinansKaynagi = { ...temel, uyarilar: [], baslik: ad, adres: "/panel/stok", donem: { baslangic: gun(`${metin(o.ilkAy)}-01`), bitis: gun(`${metin(o.sonAy)}-01`), aciklama: "Endeks dönemi (ay)" }, kalemler: [] };
     k.kalemler = [
-      ...kalemler(o, [["ilkDeger", `${ad} — ${metin(o.ilkAy)}`], ["sonDeger", `${ad} — ${metin(o.sonAy)}`]], birim, k.uyarilar),
-      ...kalemler(o, [["donemDegisimi", `Dönem değişimi (${metin(o.ilkAy)} – ${metin(o.sonAy)})`], ["sonYillikDegisim", `Yıllık değişim (${metin(o.sonAy)})`]], "%", k.uyarilar),
+      ...kalemler(o, [["ilkDeger", `${ad} — ${metin(o.ilkAy)}`, degerMetrigi], ["sonDeger", `${ad} — ${metin(o.sonAy)}`, degerMetrigi]], birim, k.uyarilar),
+      ...kalemler(o, [["donemDegisimi", `Dönem değişimi (${metin(o.ilkAy)} – ${metin(o.sonAy)})`, "endeks_donem_degisimi"], ["sonYillikDegisim", `Yıllık değişim (${metin(o.sonAy)})`, "endeks_yillik_degisim"]], "%", k.uyarilar),
     ];
-    if (!o.sonAy) for (const d of r.degerler.slice(-1)) { const x = nesne(d); k.kalemler.push(...kalemler(x, [["deger", `${ad} — ${metin(x.ay)}`]], birim, k.uyarilar), ...kalemler(x, [["yillikDegisim", `Yıllık değişim (${metin(x.ay)})`]], "%", k.uyarilar)); }
+    if (!o.sonAy) for (const d of r.degerler.slice(-1)) { const x = nesne(d); k.kalemler.push(...kalemler(x, [["deger", `${ad} — ${metin(x.ay)}`, degerMetrigi]], birim, k.uyarilar), ...kalemler(x, [["yillikDegisim", `Yıllık değişim (${metin(x.ay)})`, "endeks_yillik_degisim"]], "%", k.uyarilar)); }
     k.uyarilar.push(`Kaynak: ${metin(r.kaynak) || "TCMB EVDS"}; son açıklanan dönem ${metin(r.sonAciklananDonem) || "—"}; alındı ${metin(r.guncellendiAt) || "—"}.`);
     if (Array.isArray(r.uyarilar)) k.uyarilar.push(...r.uyarilar.filter((x): x is string => typeof x === "string").slice(0, 5).map((x) => x.slice(0, 300)));
     return k.kalemler.length ? [k] : [];
@@ -107,8 +131,8 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
         const k: FinansKaynagi = { ...temel, uyarilar: [], baslik: `${metin(stok.ad) || "Ürün"} — ${metin(s.ad)} × ${metin(e.ad) || metin(c.endeks)}`, adres: adres.stok(stok.id as string),
           donem: { baslangic: gun(c.bazAy), bitis: gun(c.sonAy), aciklama: "Baz ay – son karşılaştırılan ay" }, kalemler: [] };
         k.kalemler = [
-          ...kalemler(c, [["bazFiyat", `Baz ay fiyatı (TL/${birim})`], ["sonFiyat", `Son ay fiyatı (TL/${birim})`], ["olmasiGerekenFiyat", `Endekse göre fiyat (TL/${birim})`], ["fark", `Fark (TL/${birim})`]], "TRY", k.uyarilar),
-          ...kalemler(c, [["fiyatDegisim", "Fiyat değişimi"], ["endeksDegisim", "Endeks değişimi"], ["reelDegisim", "Reel değişim"]], "%", k.uyarilar),
+          ...kalemler(c, [["bazFiyat", `Baz ay fiyatı (TL/${birim})`, "baz_fiyat"], ["sonFiyat", `Son ay fiyatı (TL/${birim})`, "son_fiyat"], ["olmasiGerekenFiyat", `Endekse göre fiyat (TL/${birim})`, "endekse_gore_fiyat"], ["fark", `Fark (TL/${birim})`, "fiyat_farki"]], "TRY", k.uyarilar),
+          ...kalemler(c, [["fiyatDegisim", "Fiyat değişimi", "fiyat_degisimi"], ["endeksDegisim", "Endeks değişimi", "endeks_degisimi"], ["reelDegisim", "Reel değişim", "reel_degisim"]], "%", k.uyarilar),
         ];
         if (typeof c.neden === "string") k.uyarilar.push(c.neden.slice(0, 300));
         k.uyarilar.push(`Endeks: ${metin(e.ad) || metin(c.endeks)}${e.bazYili ? ` (baz ${metin(e.bazYili)})` : ""}; son açıklanan dönem ${metin(e.sonAciklananDonem) || "—"}.`);
@@ -125,9 +149,9 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
       const sonuc: FinansKaynagi = { ...temel, uyarilar: [], baslik: metin(k.unvan ?? k.no ?? k.kod) || "Kayıt", adres: cari ? adres.cari(k.id) : arac.startsWith("fatura_") ? adres.fatura(k.id) : adres.belge(k.id), kalemler: [], donem: { bitis: cari ? bugun : gun(k.tarih), aciklama: cari ? "Görüntülenme anındaki bakiye" : gun(k.tarih) ? "Belge tarihi" : "Belge tarihi belirtilmemiş" } };
       if (cari && Array.isArray(k.bakiyeler)) for (const bakiye of k.bakiyeler) {
         const b = nesne(bakiye), paraBirimi = doviz(b.dovizCinsi);
-        if (paraBirimi) sonuc.kalemler.push(...kalemler(b, [["bakiye", "Bakiye"]], paraBirimi, sonuc.uyarilar));
+        if (paraBirimi) sonuc.kalemler.push(...kalemler(b, [["bakiye", "Bakiye", "cari_bakiye"]], paraBirimi, sonuc.uyarilar));
       }
-      else { const paraBirimi = doviz(k.dovizCinsi); if (paraBirimi) sonuc.kalemler = kalemler(k, [["genelToplam", "Genel toplam"], ["toplamMatrah", "Matrah"], ["toplamKdv", "KDV"]], paraBirimi, sonuc.uyarilar); }
+      else { const paraBirimi = doviz(k.dovizCinsi); if (paraBirimi) sonuc.kalemler = kalemler(k, [["genelToplam", "Genel toplam", "belge_genel_toplam"], ["toplamMatrah", "Matrah", "belge_matrah"], ["toplamKdv", "KDV", "belge_kdv"]], paraBirimi, sonuc.uyarilar); }
       return sonuc.kalemler.length || sonuc.uyarilar.length ? [sonuc] : [];
     });
   }

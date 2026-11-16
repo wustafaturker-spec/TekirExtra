@@ -7,11 +7,16 @@ export interface FinansOlgusu {
   kaynakIndex: number;
   tur: 'tutar' | 'tarih';
   ad: string;
+  /** AI-98: aynı tutar farklı metrikle ayrı olgudur. */
+  metrik: string;
+  hesapSurumu: string;
+  /** Olgunun dönemi, kullanıcıya gösterilen biçimde (ör. "Rapor dönemi 2026-10-01 – 2026-10-14"). */
+  donem: string;
   deger: string;
   paraBirimi?: string;
 }
 export interface FinansAciklama {
-  surum: 'finans-olgu-v1';
+  surum: 'finans-olgu-v2';
   durum: 'dogrulandi' | 'guvenli_ozet';
   neden?: 'model_yaniti_gecersiz' | 'model_hatasi';
   dogrulamaHatasi?: 'json_gecersiz' | 'sema_gecersiz' | 'tekrarlanan_kimlik' | 'kaynakta_olmayan_kimlik';
@@ -21,15 +26,27 @@ export interface FinansAciklama {
   kisaltildi: boolean;
 }
 
-/** Kimlikler araç/snapshot/alan bazlıdır; eski mesajın kimliği yeni snapshot'a taşınamaz. */
+export function donemMetni(d: FinansKaynagi['donem']): string {
+  const aralik = d.baslangic && d.bitis ? `${d.baslangic} – ${d.bitis}` : d.baslangic ? `${d.baslangic} itibarıyla` : d.bitis ?? '';
+  return aralik ? `${d.aciklama} ${aralik}` : d.aciklama;
+}
+
+/**
+ * Kimlikler araç/snapshot/alan/metrik/hesap sürümü bazlıdır; eski mesajın
+ * kimliği yeni snapshot'a taşınamaz, aynı tutar farklı metrikle ayrı olgudur.
+ * Hesap sürümü olmayan (AI-98 öncesi) kaynak olgu üretmez.
+ */
 export function finansOlgulari(kaynaklar: FinansKaynagi[]): FinansOlgusu[] {
   return kaynaklar.flatMap((k, kaynakIndex) => {
+    if (!k.hesapSurumu) return [];
+    const donem = donemMetni(k.donem);
+    const ortak = { hesapSurumu: k.hesapSurumu, donem };
     const alanlar: Array<Omit<FinansOlgusu, 'id' | 'kaynakIndex'>> = [
-      ...k.kalemler.map(t => ({ tur: 'tutar' as const, ...t })),
-      ...(k.donem.baslangic ? [{ tur: 'tarih' as const, ad: 'Dönem başlangıcı', deger: k.donem.baslangic }] : []),
-      ...(k.donem.bitis ? [{ tur: 'tarih' as const, ad: k.donem.aciklama === 'Belge tarihi' ? 'Belge tarihi' : 'Dönem / görüntülenme sonu', deger: k.donem.bitis }] : []),
+      ...k.kalemler.filter(t => t.metrik).map(t => ({ tur: 'tutar' as const, ...t, ...ortak })),
+      ...(k.donem.baslangic ? [{ tur: 'tarih' as const, ad: 'Dönem başlangıcı', metrik: 'donem_baslangici', deger: k.donem.baslangic, ...ortak }] : []),
+      ...(k.donem.bitis ? [{ tur: 'tarih' as const, ...(k.donem.aciklama === 'Belge tarihi' ? { ad: 'Belge tarihi', metrik: 'belge_tarihi' } : { ad: 'Dönem / görüntülenme sonu', metrik: 'donem_sonu' }), deger: k.donem.bitis, ...ortak }] : []),
     ];
-    return alanlar.map((f, i) => ({ ...f, kaynakIndex, id: `f-${createHash('sha256').update(JSON.stringify([k.arac, k.adres, k.alindiAt, kaynakIndex, i, f])).digest('hex').slice(0, 24)}` }));
+    return alanlar.map((f, i) => ({ ...f, kaynakIndex, id: `f-${createHash('sha256').update(JSON.stringify([k.arac, k.hesapSurumu, k.adres, k.alindiAt, kaynakIndex, i, f.metrik, f])).digest('hex').slice(0, 24)}` }));
   });
 }
 
@@ -78,14 +95,16 @@ export function finansAciklamasiniDogrula(metin: string | null, kaynaklar: Finan
   const baslik = guvenli ? 'AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.' : 'Kaynak verileri:';
   const satirlar = idler.map(id => {
     const f = harita.get(id)!;
-    return `${temiz(kaynaklar[f.kaynakIndex].baslik)} — ${temiz(f.ad)}: ${f.tur === 'tutar' ? `${para(f.deger)} ${f.paraBirimi}` : f.deger}`;
+    // AI-98: tutar satırında metrik ve dönem görünür; tarih olgusunun kendisi dönemdir.
+    const ek = f.tur === 'tutar' ? ` (${f.metrik} · ${temiz(f.donem)})` : '';
+    return `${temiz(kaynaklar[f.kaynakIndex].baslik)} — ${temiz(f.ad)}: ${f.tur === 'tutar' ? `${para(f.deger)} ${f.paraBirimi}` : f.deger}${ek}`;
   });
   const uyarilar = [...new Set(kaynaklar.flatMap(k => k.uyarilar))];
   const cevap = [baslik, ...satirlar, ...uyarilar.map(u => `Kaynak uyarısı: ${temiz(u)}`),
     'Tutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.',
     ...(guvenli && olgular.length > 20 ? ['Özet kısaltıldı; ayrıntılar kaynak kartlarındadır.'] : []),
   ].join('\n');
-  return { cevap, finansAciklama: { surum: 'finans-olgu-v1', durum: guvenli ? 'guvenli_ozet' : 'dogrulandi',
+  return { cevap, finansAciklama: { surum: 'finans-olgu-v2', durum: guvenli ? 'guvenli_ozet' : 'dogrulandi',
     ...(guvenli ? { neden: metin === null ? 'model_hatasi' as const : 'model_yaniti_gecersiz' as const } : {}),
     ...(dogrulamaHatasi ? { dogrulamaHatasi } : {}),
     olgular, secilenOlguIdleri: idler, kisaltildi: guvenli && olgular.length > 20 } };

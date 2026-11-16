@@ -3,9 +3,9 @@ import { finansAciklamasiniDogrula, finansOlgulari, finansOlguTalimati } from '.
 import { finansKaynaklariCikar, type FinansKaynagi } from './finans-kaynaklari';
 
 const kaynak: FinansKaynagi = {
-  arac: 'gelir_gider', baslik: 'Gelir gider', adres: '/panel/raporlar/gelir-gider', alindiAt: '2026-10-14T18:00:00Z',
+  arac: 'gelir_gider', hesapSurumu: 'gelir_gider@1', baslik: 'Gelir gider', adres: '/panel/raporlar/gelir-gider', alindiAt: '2026-10-14T18:00:00Z',
   donem: { baslangic: '2026-10-01', bitis: '2026-10-14', aciklama: 'Rapor dönemi' },
-  kalemler: [{ ad: 'Net kâr', deger: '-1250.50', paraBirimi: 'TRY' }, { ad: 'Alacak', deger: '9999999999999999.99', paraBirimi: 'USD' }],
+  kalemler: [{ ad: 'Net kâr', metrik: 'net_kar', deger: '-1250.50', paraBirimi: 'TRY' }, { ad: 'Alacak', metrik: 'toplam_alacak', deger: '9999999999999999.99', paraBirimi: 'USD' }],
   uyarilar: ['Maliyet kaydı eksik'],
 };
 
@@ -96,10 +96,78 @@ describe('olgu kimlikli finans açıklaması', () => {
     expect(y.cevap).not.toContain('Hiçbir kayıt');
   });
   it('uzun güvenli özeti sınırlar ve kısaltmayı açıkça belirtir', () => {
-    const k = { ...kaynak, kalemler: Array.from({ length: 25 }, (_, i) => ({ ad: `Kalem ${i}`, deger: '0.00', paraBirimi: 'TRY' })) };
+    const k = { ...kaynak, kalemler: Array.from({ length: 25 }, (_, i) => ({ ad: `Kalem ${i}`, metrik: `kalem_${i}`, deger: '0.00', paraBirimi: 'TRY' })) };
     const y = finansAciklamasiniDogrula(null, [k]);
     expect(y.finansAciklama.secilenOlguIdleri).toHaveLength(20);
     expect(y.finansAciklama.kisaltildi).toBe(true);
     expect(y.cevap).toContain('Özet kısaltıldı');
+  });
+
+  describe('AI-98 metrik ve hesap sürümü', () => {
+    it('aynı tutar ve ad farklı metrikle ayrı olgudur; metrik ve dönem yanıtta görünür', () => {
+      const ikiz = { ...kaynak, kalemler: [{ ad: 'Tutar', metrik: 'net_kar', deger: '0.00', paraBirimi: 'TRY' }, { ad: 'Tutar', metrik: 'vadesi_gecen_alacak', deger: '0.00', paraBirimi: 'TRY' }] };
+      const [a, b] = finansOlgulari([ikiz]);
+      expect(a.id).not.toBe(b.id);
+      expect(a).toMatchObject({ metrik: 'net_kar', hesapSurumu: 'gelir_gider@1', donem: 'Rapor dönemi 2026-10-01 – 2026-10-14' });
+      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [b.id] }), [ikiz]);
+      expect(y.finansAciklama).toMatchObject({ surum: 'finans-olgu-v2', durum: 'dogrulandi' });
+      expect(y.cevap).toContain('Tutar: 0,00 TRY (vadesi_gecen_alacak · Rapor dönemi 2026-10-01 – 2026-10-14)');
+      expect(y.cevap).not.toContain('net_kar');
+    });
+    it('hesap sürümü kimliğe girer: sürüm değişince eski kimlik reddedilir', () => {
+      const eski = finansOlgulari([kaynak])[0].id;
+      const yeni = { ...kaynak, hesapSurumu: 'gelir_gider@2' };
+      expect(finansOlgulari([yeni])[0].id).not.toBe(eski);
+      expect(finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [eski] }), [yeni]).finansAciklama).toMatchObject({ durum: 'guvenli_ozet', dogrulamaHatasi: 'kaynakta_olmayan_kimlik' });
+    });
+    it('eski oturumdaki (AI-98 öncesi, metriksiz) kaynak olgu üretmez; kimliği yeni yanıtta geçmez', () => {
+      const v1 = { ...kaynak, hesapSurumu: undefined as unknown as string, kalemler: kaynak.kalemler.map(({ metrik: _m, ...k }) => k) } as unknown as FinansKaynagi;
+      expect(finansOlgulari([v1])).toEqual([]);
+      const eskiKimlik = 'f-' + '0'.repeat(24);
+      expect(finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [eskiKimlik] }), [kaynak]).finansAciklama.dogrulamaHatasi).toBe('kaynakta_olmayan_kimlik');
+    });
+    it('negatif, sıfır ve çok büyük tutarlar metrikleriyle aktarılır', () => {
+      const k = finansKaynaklariCikar('finansal_ozet', JSON.stringify({ nakitVarliklar: '-1250.50', envanterDegeri: 0, toplamAlacaklar: '123456789012345678901234.99', toplamBorclar: 1e20 }), new Date('2026-11-16T09:00:00Z'));
+      expect(k[0]).toMatchObject({ hesapSurumu: 'finansal_ozet@1' });
+      expect(k[0].kalemler).toEqual([
+        { ad: 'Nakit varlıklar', metrik: 'nakit_varliklar', deger: '-1250.50', paraBirimi: 'TRY' },
+        { ad: 'Stok değeri', metrik: 'stok_degeri', deger: '0', paraBirimi: 'TRY' },
+        { ad: 'Alacaklar', metrik: 'toplam_alacak', deger: '123456789012345678901234.99', paraBirimi: 'TRY' },
+      ]);
+      expect(k[0].uyarilar.join(' ')).toContain('Güvenli sayı aralığı');
+      const y = finansAciklamasiniDogrula(null, k);
+      expect(y.cevap).toContain('-1.250,50 TRY (nakit_varliklar');
+      expect(y.cevap).toContain('0,00 TRY (stok_degeri');
+      expect(y.cevap).toContain('123.456.789.012.345.678.901.234,99 TRY (toplam_alacak');
+    });
+    it('yetkisiz/bilinmeyen araç kaynak üretmez; ondan türetilmiş kimlik reddedilir', () => {
+      expect(finansKaynaklariCikar('maas_listesi', JSON.stringify({ toplamAlacakTry: '5' }))).toEqual([]);
+      const sahte = finansOlgulari([{ ...kaynak, arac: 'maas_listesi', hesapSurumu: 'maas@1' }])[0].id;
+      expect(finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [sahte] }), [kaynak]).finansAciklama.dogrulamaHatasi).toBe('kaynakta_olmayan_kimlik');
+    });
+    it('mevcut araçların her kalemi metrik kodu taşır (END-21 dahil)', () => {
+      const simdi = new Date('2026-11-16T09:00:00Z');
+      const stokId = '11111111-1111-4111-8111-111111111111';
+      const ornekler: Array<[string, unknown]> = [
+        ['finansal_ozet', { nakitVarliklar: '1', envanterDegeri: '2', toplamAlacaklar: '3', toplamBorclar: '4', netVarlikDegeri: '5' }],
+        ['vadesi_gecen_alacaklar', { toplamAlacakTry: '1', toplamBorcTry: '2' }],
+        ['gelir_gider', { adres: '/panel/raporlar/gelir-gider?baslangic=2026-10-01&bitis=2026-10-31', karZarar: { netSatis: '1', netKar: '2' } }],
+        ['rapor_calistir', { ad: 'Satış', adres: '/panel/raporlar?rapor=satis.ozet&f.baslangic=2026-10-01', kolonlar: [{ alan: 'tutar', baslik: 'Tutar', tip: 'para' }], toplamlar: { tutar: { deger: '10', doviz: 'TRY' } }, satirlar: [], satirSayisi: 0 }],
+        ['endeks_getir', { kod: 'TUFE', ad: 'TÜFE', degerler: [{ ay: '2026-10', deger: '3000' }], ozet: { ilkAy: '2026-01', sonAy: '2026-10', ilkDeger: '2800', sonDeger: '3000', donemDegisimi: '7.14', sonYillikDegisim: '33.1' } }],
+        ['fiyat_endeks_karsilastir', { stok: { id: stokId, ad: 'Ürün', anaBirim: 'kg' }, endeksler: [{ kod: 'TUFE', ad: 'TÜFE' }], seriler: [{ ad: 'Satış', karsilastirmalar: [{ endeks: 'TUFE', bazAy: '2026-01-01', sonAy: '2026-10-01', bazFiyat: '10', sonFiyat: '12', olmasiGerekenFiyat: '11', fark: '1', fiyatDegisim: '20', endeksDegisim: '10', reelDegisim: '9.09' }] }] }],
+        ['cari_getir', { id: stokId, unvan: 'Cari', bakiyeler: [{ dovizCinsi: 'TRY', bakiye: '-5' }] }],
+        ['fatura_getir', { id: stokId, no: 'F1', tarih: '2026-10-05', dovizCinsi: 'USD', genelToplam: '120', toplamMatrah: '100', toplamKdv: '20' }],
+      ];
+      const metrikler = new Set<string>();
+      for (const [arac, cikti] of ornekler) {
+        const k = finansKaynaklariCikar(arac, JSON.stringify(cikti), simdi);
+        expect(k.length, arac).toBeGreaterThan(0);
+        for (const kaynak of k) {
+          expect(kaynak.hesapSurumu, arac).toMatch(/^[a-z_]+@\d+$/);
+          for (const t of kaynak.kalemler) { expect(t.metrik, `${arac} ${t.ad}`).toMatch(/^[a-z0-9_:.]+$/); metrikler.add(t.metrik); }
+        }
+      }
+      for (const m of ['vadesi_gecen_alacak', 'net_kar', 'reel_degisim', 'endeks_degeri', 'cari_bakiye', 'belge_kdv', 'rapor:satis.ozet:tutar:toplam']) expect(metrikler).toContain(m);
+    });
   });
 });
