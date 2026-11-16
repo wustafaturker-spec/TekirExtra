@@ -52,6 +52,8 @@ interface Oneriler {
   cariEslesmeKaynagi: "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "ettn" | "fatura_no" | "tutar" | "yapay_zeka" | null;
   /** AI-19: yapay zekâ önerisinin gerekçesi. */
   cariGerekcesi?: string;
+  /** KSB-45: önerilen caride tutarın nasıl tuttuğu ve hazır dağıtım. */
+  tutarEslesmesi?: { tur: "tek_fatura" | "ardisik_faturalar" | "bakiye"; dagitim: Array<{ faturaId: string; tutar: string }>; aciklama: string } | null;
   faturalar: AcikFatura[];
   mevcutFisler: Array<{ id: string; tip: string; tarih: string; tutar: string; aciklama: string | null; tamEslesme: boolean; cari: { unvan: string } | null; fatura: { no: string | null } | null }>;
   cekler: Array<{ id: string; tur: string; portfoyNo: string; cekNo: string | null; vadeTarihi: string; tutar: string; durum: string; borclu: string; banka: string | null; tamEslesme: boolean; cari: { unvan: string } | null }>;
@@ -186,6 +188,7 @@ export function EslestirmePaneli({
         setOneriler(o);
         setCariId(o.onerilenCari?.id ?? "");
         setFaturalar(o.faturalar);
+        setDagitim(Object.fromEntries((o.tutarEslesmesi?.dagitim ?? []).map((d) => [d.faturaId, d.tutar])));
         // Bankadan gelen çıkışların çoğu banka masrafıdır; o kategori varsa öne alınır.
         const bankaMasrafi = o.masrafKategorileri.find((k) => k.ad.toLocaleLowerCase("tr-TR").includes("banka"));
         setKategoriId((giris ? o.gelirKategorileri[0]?.id : (bankaMasrafi ?? o.masrafKategorileri[0])?.id) ?? "");
@@ -405,6 +408,7 @@ export function EslestirmePaneli({
                   <>
                     <Badge variant={oneriler.cariEslesmeKaynagi === "yapay_zeka" ? "warning" : "info"}>{KAYNAK_ADI[oneriler.cariEslesmeKaynagi]}</Badge>
                     {oneriler.cariGerekcesi && <small className="muted">{oneriler.cariGerekcesi}</small>}
+                    {oneriler.tutarEslesmesi && <small>Tutar: {oneriler.tutarEslesmesi.aciklama}{oneriler.tutarEslesmesi.dagitim.length ? "; dağıtım hazırlandı" : ""}.</small>}
                   </>
                 )}
                 {cariId && (

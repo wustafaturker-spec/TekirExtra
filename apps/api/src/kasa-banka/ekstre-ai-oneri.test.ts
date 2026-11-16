@@ -18,6 +18,7 @@ const bosTx = (ek: Record<string, unknown> = {}) => ({
   fatura: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   // KSB-17: firmanın kendi adı son ekstre satırlarından öğrenilir.
   bankaEkstreSatir: { findMany: vi.fn().mockResolvedValue([]) },
+  cariHareket: { groupBy: vi.fn().mockResolvedValue([]) },
   ...ek,
 });
 
@@ -62,6 +63,35 @@ describe("ekstre cari önerisi sırası (KSB-17)", () => {
     const r = await kur(tx).cariOner(tx, "t", { aciklama: "MAAŞ - Gönderen: DEMO LTD , Alıcı: AYŞE KAYA", karsiIban: null, karsiUnvan: null }, { giris: false, mutlak: D(100), doviz: "TRY" });
     expect(r.cari).toEqual(cari("c1", "AYŞE KAYA"));
     expect(r.gerekce).not.toContain("personel");
+  });
+
+  it("KSB-45: güçlü ad eşleşmesi işaretlenir", async () => {
+    const tx = bosTx({ cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([cari("c1", "AYŞE KAYA"), cari("c2", "KAYA METAL")]) } });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen: AYŞE KAYA", karsiIban: null, karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });
+    expect(r).toMatchObject({ cari: { id: "c1" }, kaynak: "aciklama", adGuclu: true });
+  });
+
+  it("KSB-45: ad iki cariye benziyorsa tutarın tuttuğu cari önerilir, güçlü sayılmaz; ikisinde de tutarsa öneri yok", async () => {
+    const acik = (cariId: string, toplam: number) => ({ id: `f-${cariId}`, no: `F-${cariId}`, tarih: new Date("2026-10-01"), vadeTarihi: null, durum: "kesin", dovizCinsi: "TRY", kur: D(1), genelToplam: D(toplam), kapamalar: [], iadeKapamalari: [] });
+    const kartlar = [cari("m1", "MELEK TÜRKER"), cari("m2", "MELEK TÜRKER")];
+    const tutarlar: Record<string, number> = { m1: 250, m2: 100 };
+    const tx = bosTx({ cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue(kartlar) }, fatura: { findFirst: vi.fn(), findMany: vi.fn(async (q: any) => q.where.cariId ? [acik(q.where.cariId, tutarlar[q.where.cariId])] : []) } });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });
+    expect(r).toMatchObject({ cari: { id: "m2" }, kaynak: "aciklama", adGuclu: false, adAdayiVar: true });
+    expect(r.gerekce).toContain("2 cariye benziyor");
+    tutarlar.m1 = 100;
+    const iki = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: true, mutlak: D(100), doviz: "TRY" });
+    expect(iki).toMatchObject({ cari: null, adAdayiVar: true });
+  });
+
+  it("KSB-45: belirsiz adda bakiye de tutar sinyalidir", async () => {
+    const tx = bosTx({
+      cariHesap: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([cari("m1", "MELEK TÜRKER"), cari("m2", "MELEK TÜRKER")]) },
+      cariHareket: { groupBy: vi.fn(async (q: any) => q.where.cariId === "m1" ? [{ tip: "borc", _sum: { tutar: D(900) } }, { tip: "alacak", _sum: { tutar: D(100) } }] : []) },
+    });
+    const r = await kur(tx).cariOner(tx, "t", { aciklama: "Gönderen: MELEK TÜRKER", karsiIban: null, karsiUnvan: null }, { giris: true, mutlak: D(800), doviz: "TRY" });
+    expect(r).toMatchObject({ cari: { id: "m1" }, adGuclu: false });
+    expect(r.gerekce).toContain("toplam bakiyesini");
   });
 
   it("ad bulunamazsa eski sıraya (IBAN) düşer", async () => {

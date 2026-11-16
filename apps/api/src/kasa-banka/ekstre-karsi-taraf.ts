@@ -150,31 +150,38 @@ export interface AdEslesmesi<C extends CariAdayi> {
   puan: number;
   ad: string;
   kaynak: string;
+  /** KSB-45: ad iki yönde eksiksiz eşleşti ya da puan AD_GUCLU üstünde. */
+  guclu: boolean;
 }
 
 /** En iyi cari bu puanın altındaysa ya da ikinci bu farktan yakınsa öneri yapılmaz. */
 export const AD_ESIGI = 0.55;
 export const AD_FARKI = 0.15;
+/** KSB-45: ad + tutar eşleşmesinin toplu onayda kesin sayılması için gereken ad gücü. */
+export const AD_GUCLU = 0.85;
+
+type Puanli<C> = { cari: C; puan: number; tam: boolean };
 
 /**
  * Adayları cari unvanlarıyla puanlar. Ağırlık kelimenin unvanlar arasındaki
  * nadirliğidir (IDF): "BERUSA" belirleyici, "BOYA" değil. Adın bütün
  * ayırt edici kelimeleri (en az iki) carinin unvanında varsa — kişi adı
  * gönderen, unvan "FİRMA / KİŞİ ADI" — kapsam düşük olsa da kabul edilir.
+ * Aday başına sıralı puan listesi döner (en güçlü kaynaklı aday önce).
  */
-export function cariyiAdlaBul<C extends CariAdayi>(adaylar: KarsiTarafAdayi[], cariler: C[]): AdEslesmesi<C> | null {
-  if (!adaylar.length || !cariler.length) return null;
+function adlariPuanla<C extends CariAdayi>(adaylar: KarsiTarafAdayi[], cariler: C[]): Array<{ aday: KarsiTarafAdayi; puanlar: Puanli<C>[] }> {
+  if (!adaylar.length || !cariler.length) return [];
   const unvanKelimeleri = cariler.map((c) => [...new Set(ayirtEdici(c.unvan))]);
   const df = new Map<string, number>();
   for (const ks of unvanKelimeleri) for (const k of ks) df.set(k, (df.get(k) ?? 0) + 1);
   const agirlik = (k: string) => Math.log(1 + cariler.length / (df.get(k) ?? 0.5));
 
-  for (const aday of adaylar) {
+  return adaylar.flatMap((aday) => {
     const ad = [...new Set(ayirtEdici(aday.ad))];
-    if (!ad.length) continue;
+    if (!ad.length) return [];
     const puanlar = cariler.map((cari, i) => {
       const u = unvanKelimeleri[i];
-      if (!u.length) return { cari, puan: 0 };
+      if (!u.length) return { cari, puan: 0, tam: false };
       const adBulunan = eslesenler(ad, u), unvanBulunan = eslesenler(u, ad);
       const top = (ks: string[], set?: Set<number>) => ks.reduce((t, k, j) => t + (!set || set.has(j) ? agirlik(k) : 0), 0);
       const p = top(ad, adBulunan) / top(ad), r = top(u, unvanBulunan) / top(u);
@@ -184,12 +191,33 @@ export function cariyiAdlaBul<C extends CariAdayi>(adaylar: KarsiTarafAdayi[], c
       const tam = adBulunan.size === ad.length && unvanBulunan.size === u.length;
       return { cari, puan, tam };
     }).filter((x) => x.puan > 0).sort((a, b) => Number(b.tam) - Number(a.tam) || b.puan - a.puan);
+    return [{ aday, puanlar }];
+  });
+}
+
+const eslesme = <C extends CariAdayi>(x: Puanli<C>, aday: KarsiTarafAdayi): AdEslesmesi<C> =>
+  ({ cari: x.cari, puan: Math.round(x.puan * 100) / 100, ad: aday.ad, kaynak: aday.kaynak, guclu: x.tam || x.puan >= AD_GUCLU });
+
+export function cariyiAdlaBul<C extends CariAdayi>(adaylar: KarsiTarafAdayi[], cariler: C[]): AdEslesmesi<C> | null {
+  for (const { aday, puanlar } of adlariPuanla(adaylar, cariler)) {
     const [ilk, ikinci] = puanlar;
     const ayrisiyor = !ikinci || ilk.puan - ikinci.puan >= AD_FARKI || (ilk.tam && !ikinci.tam);
-    if (ilk && ilk.puan >= AD_ESIGI && ayrisiyor) {
-      return { cari: ilk.cari, puan: Math.round(ilk.puan * 100) / 100, ad: aday.ad, kaynak: aday.kaynak };
-    }
+    if (ilk && ilk.puan >= AD_ESIGI && ayrisiyor) return eslesme(ilk, aday);
     // Bu aday belirsiz kaldıysa sıradaki (daha zayıf kaynaklı) aday denenir.
   }
   return null;
+}
+
+/**
+ * KSB-45: ad tek cariye ayrışmadığında eşiği geçen yakın adaylar (en çok 5);
+ * tutar hangisinde tutuyorsa o seçilir. İlk eşiği geçen aday adı kullanılır.
+ */
+export function belirsizAdAdaylari<C extends CariAdayi>(adaylar: KarsiTarafAdayi[], cariler: C[]): AdEslesmesi<C>[] {
+  for (const { aday, puanlar } of adlariPuanla(adaylar, cariler)) {
+    const gecen = puanlar.filter((x) => x.puan >= AD_ESIGI);
+    if (gecen.length < 2) continue;
+    const ilk = gecen[0];
+    return gecen.filter((x) => ilk.puan - x.puan < AD_FARKI).slice(0, 5).map((x) => eslesme(x, aday));
+  }
+  return [];
 }

@@ -25,7 +25,8 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { kuralAnahtari, kuralBul, satirYonu } from "./ekstre-kural";
 import { metniNormalle } from "./ekstre-oku";
-import { cariyiAdlaBul, karsiTarafAdaylari, kendiAdlariniBul, maasOdemesiMi } from "./ekstre-karsi-taraf";
+import { belirsizAdAdaylari, cariyiAdlaBul, karsiTarafAdaylari, kendiAdlariniBul, maasOdemesiMi } from "./ekstre-karsi-taraf";
+import { tutarEslesmesiBul, type TutarEslesmesi } from "./ad-tutar-eslesme";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
 import { DovizIslemService } from "./doviz-islem.service";
 import { KasaBankaService } from "./kasa-banka.service";
@@ -90,8 +91,8 @@ export class EkstreEslestirmeService {
       const kurallar = await tx.ekstreKurali.findMany({ where: { aktif: true } });
       const kural = kuralBul(kurallar, satir);
       const referanslar = await this.faturaReferanslari(tx, tenantId, satir);
-      const { cari, kaynak, gerekce, adAdayiVar } = kural?.cariId
-        ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const, gerekce: undefined, adAdayiVar: false }
+      const { cari, kaynak, gerekce, adAdayiVar, adGuclu } = kural?.cariId
+        ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const, gerekce: undefined, adAdayiVar: false, adGuclu: false }
         : await this.cariOner(tx, tenantId, satir, { giris, mutlak, doviz }, referanslar);
 
       const [faturalar, mevcutFisler, cekler, kartlar, kasalar, bankalar, masrafKategorileri, gelirKategorileri] = await Promise.all([
@@ -112,6 +113,8 @@ export class EkstreEslestirmeService {
         giris ? tx.gelirKategori.findMany({ where: { aktif: true }, select: { id: true, ad: true }, orderBy: { ad: "asc" } }) : Promise.resolve([]),
       ]);
 
+      // KSB-45: önerilen caride tutarın nasıl tuttuğu (tek fatura → ardışık faturalar → bakiye).
+      const tutarEslesmesi: TutarEslesmesi | null = cari ? tutarEslesmesiBul(faturalar, await this.cariBakiyesi(tx, cari.id, doviz), mutlak, giris, doviz) : null;
       const yakinlik = (vade: Date) => Math.abs(vade.getTime() - satir.tarih.getTime());
       return {
         satir: { id: satir.id, tarih: satir.tarih.toISOString().slice(0, 10), tutar: satir.tutar.toFixed(2), dovizCinsi: doviz, yon: giris ? "tahsilat" : "tediye", aciklama: satir.aciklama, karsiUnvan: satir.karsiUnvan, karsiIban: satir.karsiIban },
@@ -120,6 +123,8 @@ export class EkstreEslestirmeService {
         cariEslesmeKaynagi: cari ? kaynak : null,
         ...(cari && gerekce ? { cariGerekcesi: gerekce } : {}),
         adAdayiVar: Boolean(adAdayiVar),
+        adGuclu: Boolean(cari && adGuclu),
+        tutarEslesmesi,
         faturaReferanslari: referanslar,
         faturalar,
         mevcutFisler,
@@ -213,10 +218,12 @@ export class EkstreEslestirmeService {
    * Satırın belirsizliği olmayan eşleşmesi; yoksa null. Yalnız şunlar kesindir:
    * - ödeme talimatı: aynı tutarda, numarası açıklamada geçen TEK talimat;
    * - kural: hedefi tanımlı masraf / gelir / virman kuralı;
-   * - cari: kural, IBAN, VKN ya da fatura numarasıyla bulunmuş cari ve kalan
-   *   tutarı satırla birebir aynı TEK açık fatura.
-   * Ad benzerliği, yapay zekâ ve yalnız tutar eşleşmesi kesin sayılmaz; o
-   * satırlar tek tek onaylanır.
+   * - cari: kural, IBAN, VKN, ETTN ya da fatura numarasıyla bulunmuş cari ve
+   *   kalan tutarı satırla birebir aynı TEK açık fatura;
+   * - cari (KSB-45): açıklamadaki adla GÜÇLÜ eşleşen tek cari ve tek şekilde
+   *   tutan tutar (tek fatura, en eski ardışık faturalar ya da tam bakiye).
+   * Zayıf ad benzerliği, adı birkaç cariye benzeyip tutarla seçilen cari,
+   * yapay zekâ ve yalnız tutar eşleşmesi kesin sayılmaz; tek tek onaylanır.
    */
   async kesinOneri(id: string): Promise<{ girdi: EslestirGirdisi; ozet: string } | null> {
     const { tenantId } = aktifBaglam();
@@ -257,6 +264,11 @@ export class EkstreEslestirmeService {
         girdi: { tur: "cari", cariId: o.onerilenCari.id, dagitim: [{ faturaId: f.id, tutar: mutlak.toFixed(2) }], ...(o.cariEslesmeKaynagi === "kural" && k ? { kuralId: k.id } : {}) },
         ozet: `${o.onerilenCari.unvan}, ${f.no ?? "fatura"} kapanır`,
       };
+    }
+    // KSB-45: güçlü ad eşleşmesi + tek şekilde tutan tutar (tek fatura, ardışık faturalar ya da tam bakiye).
+    if (o.onerilenCari && o.cariEslesmeKaynagi === "aciklama" && o.adGuclu && o.tutarEslesmesi) {
+      const t = o.tutarEslesmesi;
+      return { girdi: { tur: "cari", cariId: o.onerilenCari.id, dagitim: t.dagitim }, ozet: `${o.onerilenCari.unvan} (açıklamadaki ad), ${t.aciklama}` };
     }
     return null;
   }
@@ -661,7 +673,7 @@ export class EkstreEslestirmeService {
     satir: { aciklama: string; karsiIban: string | null; karsiUnvan: string | null },
     tutar?: { giris: boolean; mutlak: Prisma.Decimal; doviz: DovizCinsi },
     referanslar: FaturaReferansi[] = [],
-  ): Promise<{ cari: { id: string; kod: string; unvan: string } | null; kaynak: CariEslesmeKaynagi; gerekce?: string; adAdayiVar?: boolean }> {
+  ): Promise<{ cari: { id: string; kod: string; unvan: string } | null; kaynak: CariEslesmeKaynagi; gerekce?: string; adAdayiVar?: boolean; adGuclu?: boolean }> {
     const sec = { id: true, kod: true, unvan: true } as const;
     // KSB-17: bankalar karşı tarafı çoğu kez yalnız açıklamaya yazar (IBAN/unvan sütunu boş).
     // Firmanın kendi adı son ekstre satırlarından öğrenilir ki gönderen/alıcıdaki kendi adı aday olmasın.
@@ -679,7 +691,21 @@ export class EkstreEslestirmeService {
         const bulunan = maas ?? cariyiAdlaBul(adaylar, cariler);
         if (bulunan) {
           const { tip: _tip, ...cari } = bulunan.cari;
-          return { cari, kaynak: "aciklama", gerekce: `Açıklamadaki ${bulunan.kaynak}: “${bulunan.ad}” (benzerlik %${Math.round(bulunan.puan * 100)})${maas ? "; maaş ödemesi, personel kartı" : ""}.` };
+          return { cari, kaynak: "aciklama", adGuclu: bulunan.guclu, gerekce: `Açıklamadaki ${bulunan.kaynak}: “${bulunan.ad}” (benzerlik %${Math.round(bulunan.puan * 100)})${maas ? "; maaş ödemesi, personel kartı" : ""}.` };
+        }
+        // KSB-45: ad birkaç cariye benziyorsa, tutar yalnız birinde tutuyorsa o cari önerilir (kesin sayılmaz).
+        const yakinlar = belirsizAdAdaylari(adaylar, personeller.length ? personeller : cariler);
+        if (yakinlar.length >= 2) {
+          const tutanlar: Array<{ y: (typeof yakinlar)[number]; t: TutarEslesmesi }> = [];
+          for (const y of yakinlar) {
+            const t = tutarEslesmesiBul(await this.acikFaturalar(tx, y.cari.id, tutar.giris, tutar.mutlak, tutar.doviz), await this.cariBakiyesi(tx, y.cari.id, tutar.doviz), tutar.mutlak, tutar.giris, tutar.doviz);
+            if (t) tutanlar.push({ y, t });
+          }
+          if (tutanlar.length === 1) {
+            const { y, t } = tutanlar[0];
+            const { tip: _tip, ...cari } = y.cari;
+            return { cari, kaynak: "aciklama", adGuclu: false, adAdayiVar: true, gerekce: `Açıklamadaki ${y.kaynak} “${y.ad}” ${yakinlar.length} cariye benziyor; tutar yalnız bu caride tutuyor (${t.aciklama}). Kontrol edin.` };
+          }
         }
       }
     }
@@ -756,6 +782,13 @@ export class EkstreEslestirmeService {
   }
 
   /** Carinin bu yönde kalanı olan kesin faturaları; en eski vade önce (dağıtım sırası). */
+  /** KSB-45: carinin verilen dövizdeki bakiyesi (borç − alacak); hareket yoksa null. */
+  private async cariBakiyesi(tx: Prisma.TransactionClient, cariId: string, doviz: string): Promise<Prisma.Decimal | null> {
+    const gruplar = await tx.cariHareket.groupBy({ by: ["tip"], where: { cariId, dovizCinsi: doviz as DovizCinsi }, _sum: { tutar: true } });
+    if (!gruplar.length) return null;
+    return gruplar.reduce((t, g) => (g.tip === "borc" ? t.add(g._sum.tutar ?? 0) : t.sub(g._sum.tutar ?? 0)), D(0));
+  }
+
   /** KSB-44: açıklamadaki ETTN ve fatura numaralarının işaret ettiği kesin faturalar. */
   private async faturaReferanslari(tx: Prisma.TransactionClient, tenantId: string, satir: { aciklama: string; karsiUnvan: string | null }): Promise<FaturaReferansi[]> {
     const metin = `${satir.aciklama} ${satir.karsiUnvan ?? ""}`;
