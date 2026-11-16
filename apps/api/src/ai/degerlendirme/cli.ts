@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { Logger } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { AiProviderFactory } from "../saglayici/ai-provider.factory";
 import { platformFiyati, type TokenFiyati } from "../saglayici/ai-butce";
@@ -91,8 +92,11 @@ function raporOku(yol: string): KosuRaporu {
   return r;
 }
 
-function yaz(cikti: string, rapor: KosuRaporu, metin: string): string | null {
-  if (cikti === "-") { process.stdout.write(JSON.stringify(rapor, null, 1) + "\n"); return null; }
+/** Boruya yazılan büyük çıktı process.exit'ten önce boşaltılmalı (ilk koşuda ~64 KB'de kesildi). */
+const stdoutYaz = (veri: string) => new Promise<void>((tamam, hata) => process.stdout.write(veri, (e) => (e ? hata(e) : tamam())));
+
+async function yaz(cikti: string, rapor: KosuRaporu, metin: string): Promise<string | null> {
+  if (cikti === "-") { await stdoutYaz(JSON.stringify(rapor, null, 1) + "\n"); return null; }
   const dizinMi = cikti.endsWith("/") || (existsSync(cikti) && statSync(cikti).isDirectory());
   const ad = `${rapor.tarih.slice(0, 16).replace(/[:T]/g, "-")}-${rapor.saglayici}-${(rapor.model ?? "model").replace(/[^a-z0-9.-]+/gi, "_")}`;
   const json = dizinMi ? join(cikti, `${ad}.json`) : cikti;
@@ -126,18 +130,25 @@ async function kos(secim: Record<string, string>): Promise<number> {
   const rapor = await degerlendirmeKos(olculen, senaryolar, fiyat, { paralel: Number(secim.paralel ?? 1), kodSurumu: kodSurumu(), ilerleme: (s) => process.stderr.write(`${s}\n`) });
   const kapi = temel ? kapiDenetle(rapor, temel) : undefined;
   const metin = ozetMetni(rapor, kapi);
-  const dosya = yaz(secim.cikti ?? "-", rapor, metin);
+  const dosya = await yaz(secim.cikti ?? "-", rapor, metin);
   process.stderr.write(`\n${metin}${dosya ? `\nRapor: ${dosya}\n` : ""}`);
   return rapor.tamamlandi && (!kapi || kapi.gecti) ? 0 : 1;
 }
 
+/** Nest günlükleri stdout'a yazar; `--cikti -` JSON'u bozulmasın diye stderr'e alınır. */
+function gunlukleriStderreAl(): void {
+  const yaz = (duzey: string) => (mesaj: unknown, ...ek: unknown[]) => process.stderr.write(`[${duzey}] ${String(mesaj)}${ek.length ? ` ${ek.map(String).join(" ")}` : ""}\n`);
+  Logger.overrideLogger({ log: yaz("log"), warn: yaz("uyarı"), error: yaz("hata"), debug: () => undefined, verbose: () => undefined, fatal: yaz("hata") });
+}
+
 async function main(): Promise<number> {
+  gunlukleriStderreAl();
   const { komut, konum, secim } = argumanlar(process.argv.slice(2));
   if (komut === "kos") return kos(secim);
   if (komut === "kapi") {
     if (konum.length !== 2) throw new KullanimHatasi("Kullanım: kapi <yeni.json> <temel.json>");
     const yeni = raporOku(konum[0]), kapi = kapiDenetle(yeni, raporOku(konum[1]));
-    process.stdout.write(ozetMetni(yeni, kapi));
+    await stdoutYaz(ozetMetni(yeni, kapi));
     return kapi.gecti ? 0 : 1;
   }
   throw new KullanimHatasi("Komut: kos | kapi (ayrıntı dosya başında).");

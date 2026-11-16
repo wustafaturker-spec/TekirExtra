@@ -4,7 +4,7 @@ import type { DegerlendirmeSenaryosu } from "./senaryo";
 import { KRITIK_TEKRAR, SENARYO_SETI_SURUMU } from "./senaryolar";
 
 /** Sağlayıcı hatasında (503, zaman aşımı) aynı deneme en çok bu kadar yeniden koşar; puanlama hatası yeniden koşmaz. */
-const SAGLAYICI_DENEMESI = 2;
+const SAGLAYICI_DENEMESI = 3;
 
 export interface KosuSecenekleri {
   /** Aynı anda koşan deneme sayısı (sağlayıcı hız sınırı için düşük tutun). */
@@ -24,7 +24,8 @@ async function denemeKos(saglayici: OlculenSaglayici, s: DegerlendirmeSenaryosu,
     } catch (hata) {
       if (hata instanceof TavanAsildi) throw hata;
       const mesaj = (hata instanceof Error ? hata.message : String(hata)).slice(0, 300);
-      if (deneme < SAGLAYICI_DENEMESI) { await bekle(2_000 * (deneme + 1)); continue; }
+      // 429 hız sınırında kısa bekleme yetmiyor (ilk koşu 2026-11-16): 5, 20, 45 sn.
+      if (deneme < SAGLAYICI_DENEMESI) { await bekle(5_000 * (deneme + 1) ** 2); continue; }
       return { gecti: false, hatalar: [], uyarilar: [], araclar: [], talepler: [], cevap: "", sureMs: Date.now() - baslangic, saglayiciHatasi: mesaj };
     }
   }

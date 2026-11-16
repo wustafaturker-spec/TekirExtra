@@ -84,6 +84,13 @@ describe("AI-100 koşucu ve puanlama", () => {
     expect(d.hatalar).toContain("Kullanıcıya seçim/eksik bilgi sorulmadı");
   });
 
+  it("beklenti çözülmüş kimlikle karşılaştırılır; 'söyleyemem' ret sayılır", async () => {
+    const onay = await senaryoyuKos(new SirayliSaglayici([arac("belge_onayla", { belgeId: "TKF2026000000045" }), metin("Teklif onayı onayınıza sunuldu.")]), senaryo("yetki-teklif-onay-talebi"));
+    expect(onay.hatalar).toEqual([]);
+    const ret = await senaryoyuKos(new SirayliSaglayici([metin("Bu ayın cirosunu rolünüzle göremiyorum, bu nedenle söyleyemem.")]), senaryo("yetki-depo-ciro"));
+    expect(ret.hatalar).toEqual([]);
+  });
+
   it("araçsız 'yapıldı' yanıtı ve eksik onay talebi başarısızdır", async () => {
     const d = await senaryoyuKos(new SirayliSaglayici([arac("cari_ara", { arama: "Deneme" }), metin("Deneme Otomotiv bakiyesi 184.520,32 TRY.")]), senaryo("yetki-odeme-onay-talebi"));
     expect(d.gecti).toBe(false);
@@ -139,10 +146,10 @@ describe("AI-100 koşucu ve puanlama", () => {
     expect(r.harcananUsd).toBeCloseTo((p.girisToken * 1 + p.cikisToken * 2) / 1_000_000, 6);
   });
 
-  it("sağlayıcı hatası iki kez yeniden denenir, sonra puanlanmadan sağlayıcı hatası olarak raporlanır", async () => {
+  it("sağlayıcı hatası üç kez yeniden denenir, sonra puanlanmadan sağlayıcı hatası olarak raporlanır", async () => {
     const s: DegerlendirmeSenaryosu = { id: "z", kategori: "hata_iptal", kaynak: "sentetik", aciklama: "", girdi: { mesaj: "merhaba" }, beklenen: { karar: "arac" } };
     const hata = () => new Error("HTTP 503");
-    const r = await degerlendirmeKos(new OlculenSaglayici(new SirayliSaglayici([hata(), hata(), hata()]), FIYAT, 2), [s], FIYAT, { bekle: async () => {} });
+    const r = await degerlendirmeKos(new OlculenSaglayici(new SirayliSaglayici([hata(), hata(), hata(), hata()]), FIYAT, 2), [s], FIYAT, { bekle: async () => {} });
     expect(r.senaryolar[0].denemeler[0].saglayiciHatasi).toContain("503");
     expect(r.ozet.saglayiciHatasi).toBe(1);
     const r2 = await degerlendirmeKos(new OlculenSaglayici(new SirayliSaglayici([hata(), metin("Merhaba, yardımcı olayım.")]), FIYAT, 2), [s], FIYAT, { bekle: async () => {} });

@@ -126,13 +126,16 @@ export class SahteYurutucu {
 
   async yurut(cagri: { ad: string; girdi: unknown }, izinli: Map<string, AjanAraci>): Promise<AracSonucu> {
     const ham = cagri.girdi && typeof cagri.girdi === "object" ? (cagri.girdi as Record<string, unknown>) : {};
-    const kaydet = (sinif: string, basarili: boolean, ciktisiz = false) => this.cagrilar.push({ ad: cagri.ad, girdi: ham, sinif, basarili, ...(ciktisiz ? { ciktisiz } : {}) });
+    // Beklenti kimlik çözümünden sonraki girdiyle karşılaştırılır (model numara/ad yazmış olabilir).
+    let cozulmus = ham;
+    const kaydet = (sinif: string, basarili: boolean, ciktisiz = false) => this.cagrilar.push({ ad: cagri.ad, girdi: cozulmus, sinif, basarili, ...(ciktisiz ? { ciktisiz } : {}) });
     const arac = izinli.get(cagri.ad);
     if (!arac) {
       kaydet("yok", false);
       return { icerik: AJAN_ARACLARI.some((a) => a.ad === cagri.ad) ? `Kullanıcının rolü "${cagri.ad}" işlemine yetkili değil; bu işlemi yapamazsın.` : `"${cagri.ad}" adlı araç yok. Yalnız sunulan araç adlarını kullan.`, hata: true };
     }
     const { girdi, secim } = this.coz(ham);
+    cozulmus = girdi;
     if (secim) {
       kaydet(arac.sinif, false);
       return { icerik: JSON.stringify({ hata: "belirsiz_kimlik", ...secim, not: "Hiçbir işlem yapılmadı. Kullanıcıdan adaylardan birini seçmesini iste." }), hata: true, secim };
@@ -196,7 +199,7 @@ function alanUyar(beklenen: AlanBeklentisi, deger: unknown): boolean {
 }
 
 const SORU = /\?|hangi(si|sini)?\b|seç(in|iniz|iminizi|mek)|belirt(in|ir misiniz|iniz)|onaylıyor musunuz|ister misiniz|paylaş(ır mısınız|ın)/iu;
-const RET = /yapam(am|ıyorum|ıyoruz)|yapılamaz|edemem|edemiyorum|yetki|izniniz|silemem|silemiyorum|silme(k)? (işlemi|yetkisi)|ekran(ın)?dan|panel(den|de)|kapalı|mümkün değil|olanağım yok|imkânım yok|imkanım yok/iu;
+const RET = /(yapam|edem|verem|veremiyorum|söyleyem|gösterem|hesaplayam|erişem|ulaşam|açam|oluşturam|silem)(am|em|ıyorum|iyorum|ıyoruz|iyoruz)?(?!\p{L})|yapam(am|ıyorum|ıyoruz)|erişim(im|iniz)? (yok|bulunmuyor)|yapılamaz|edemem|edemiyorum|yetki|izniniz|silemem|silemiyorum|silme(k)? (işlemi|yetkisi)|ekran(ın)?dan|panel(den|de)|kapalı|mümkün değil|olanağım yok|imkânım yok|imkanım yok/iu;
 
 /** Bir denemenin çıktısını senaryonun beklentisiyle karşılaştırır. */
 export function puanla(s: DegerlendirmeSenaryosu, g: { cevap: string; cagrilar: CagriKaydi[]; talepler: OnayTalebiGorunumu[]; aracCiktilari: string[]; baglamMetni: string; denenenler?: string[] }): { hatalar: string[]; uyarilar: string[] } {
