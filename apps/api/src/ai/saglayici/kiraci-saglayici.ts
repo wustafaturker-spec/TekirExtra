@@ -74,7 +74,7 @@ export const GUCLU_ONAY_YOK_MESAJI =
   "Derin analiz için güçlü sağlayıcıya veri aktarımı onayı yok. Yönetici Ayarlar → Yapay Zeka → Güçlü sağlayıcı bölümünden onay verebilir.";
 
 /** AI-14: verinin yurt dışına çıktığı sağlayıcılar (platform anahtarıyla da). */
-const DIS_SAGLAYICILAR: AiProviderTuru[] = ["gemini", "openai", "anthropic"];
+export const DIS_SAGLAYICILAR: AiProviderTuru[] = ["gemini", "openai", "anthropic"];
 
 export const ONAY_YOK_MESAJI =
   "Yurt dışındaki yapay zekâ sağlayıcısına veri aktarımı için yönetici onayı yok. Yönetici Ayarlar → Yapay Zeka ekranından onay verebilir.";

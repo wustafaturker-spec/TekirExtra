@@ -154,6 +154,21 @@ function sistemTalimati(adSoyad: string, rol: Rol, ozelTalimatlar: string | null
   ].join("\n");
 }
 
+/**
+ * AI-100: asistanın sabit sistem istemi (kullanıcı, rol, firma talimatı, araç
+ * süzgeci ve kanal kuralları). Değerlendirme düzeneği aynı istemle koşar;
+ * sürümü bu metnin özetinden türetilir.
+ */
+export function asistanIstemi(g: { adSoyad: string; rol: Rol; ozelTalimatlar: string | null; telegram: boolean }): string {
+  return sistemTalimati(g.adSoyad, g.rol, g.ozelTalimatlar) + GRUP_TALIMATI + (g.telegram ? TELEGRAM_TALIMATI : "");
+}
+
+/** Onay talebi açıldıysa ve yanıt bundan söz etmiyorsa kullanıcıya not eklenir. */
+export function talepNotuEkle(cevap: string, talepSayisi: number, telegram: boolean): string {
+  if (!talepSayisi || /onay/i.test(cevap)) return cevap;
+  return cevap + (telegram ? "\n\nİşlem onayınıza sunuldu; panelden onaylayabilirsiniz." : "\n\nİşlem onayınıza sunuldu; aşağıdaki düğmeyle onaylayabilirsiniz.");
+}
+
 function durumlariCikar(arac: string, icerik: string): DogrulanmisDurum[] {
   let kok: unknown;
   try { kok = JSON.parse(icerik); } catch { return []; }
@@ -401,7 +416,7 @@ export class AiAjanService {
       const izinli = telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : this.yurutucu.izinliAraclar(rol);
       const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama } = await this.dongu({
         saglayici,
-        sistemRol: sistemTalimati(kullanici.adSoyad, rol, ozelTalimatlar) + GRUP_TALIMATI + (telegram ? TELEGRAM_TALIMATI : "") + durumBaglami(gecmis.durumlar) + ekranMetni + ekler.metin,
+        sistemRol: asistanIstemi({ adSoyad: kullanici.adSoyad, rol, ozelTalimatlar, telegram }) + durumBaglami(gecmis.durumlar) + ekranMetni + ekler.metin,
         mesajlar: [...gecmis.mesajlar, { rol: "kullanici", metin }],
         izinli,
         gruplar: gruplariSec({ mesaj: metin, ekranTuru: ekranKaydiIstegi?.tur, sayfa: ekran?.sayfa, gecmisAraclar: gecmis.araclar }),
@@ -414,8 +429,7 @@ export class AiAjanService {
         olay: secenek.olay,
         sinyal: secenek.sinyal,
       });
-      let cevap = hamCevap;
-      if (talepler.length && !/onay/i.test(cevap)) cevap += telegram ? "\n\nİşlem onayınıza sunuldu; panelden onaylayabilirsiniz." : "\n\nİşlem onayınıza sunuldu; aşağıdaki düğmeyle onaylayabilirsiniz.";
+      const cevap = talepNotuEkle(hamCevap, talepler.length, telegram);
       const yanit: AjanYaniti = { model: modelBilgisi, oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}) };
 
       await this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -486,6 +500,15 @@ export class AiAjanService {
   /** Testlerde değiştirilebilir; görev çağrıları "gorev" olarak sayılır. */
   gorevSaglayicisi: (tenantId: string) => Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null }> = (tenantId) =>
     kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "gorev" });
+
+  /**
+   * AI-100: değerlendirme düzeneği üretim döngüsünü (araç süzgeci, uydurma
+   * denetimi, finans açıklaması) bu servisin yürütücüsüyle koşar. Oturum,
+   * geçmiş ve onay kaydı yazılmaz; servis sahte yürütücüyle kurulmalıdır.
+   */
+  degerlendirmeDongusu(g: Omit<Parameters<AiAjanService["donguIc"]>[0], "oturumId" | "olay" | "sinyal">) {
+    return this.dongu({ ...g, oturumId: null });
+  }
 
   /** Model–araç döngüsü: araç çağrılarını yürütür, uydurma yanıtı denetler (AI-05). */
   /** AI-99: kullanıcının durdurması döngüdeki her model isteğine (ve yeniden denemelerine) taşınır. */
