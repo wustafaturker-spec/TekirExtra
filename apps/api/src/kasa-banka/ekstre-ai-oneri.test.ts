@@ -72,11 +72,45 @@ describe("ekstre cari önerisi sırası (KSB-17)", () => {
 });
 
 describe("ekstre cari önerisi (AI-19)", () => {
+  const oner = async (tx: any, aciklama: string) => {
+    const s = kur(tx), satir = { aciklama, karsiIban: null, karsiUnvan: null };
+    return s.cariOner(tx, "t", satir, undefined, await s.faturaReferanslari(tx, "t", satir));
+  };
   it("açıklamadaki GİB fatura numarasından cariyi bulur", async () => {
-    const tx = bosTx({ fatura: { findFirst: vi.fn().mockResolvedValue({ cari: cari("c1", "KAYA LTD") }), findMany: vi.fn() } });
-    const r = await kur(tx).cariOner(tx, "t", { aciklama: "EFT SNC2026000000034 ODEMESI", karsiIban: null, karsiUnvan: null });
+    const tx = bosTx({ fatura: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([{ id: "f1", cari: cari("c1", "KAYA LTD") }]) } });
+    const r = await oner(tx, "EFT SNC2026000000034 ODEMESI");
     expect(r).toEqual({ cari: cari("c1", "KAYA LTD"), kaynak: "fatura_no" });
-    expect(tx.fatura.findFirst.mock.calls[0][0].where.no).toBe("SNC2026000000034");
+    expect(tx.fatura.findMany.mock.calls[0][0].where).toMatchObject({ no: { in: ["SNC2026000000034"] }, durum: "kesin" });
+  });
+
+  it("KSB-44: ETTN ayrı sinyaldir; giden faturada kimlik, gelen faturada gelen e-Belge UUID'si", async () => {
+    const ettn = "3f2b6c1e-8d4a-4c2b-9a1e-5b7c8d9e0f12";
+    const giden = bosTx({ gelenEbelge: { findMany: vi.fn().mockResolvedValue([]) }, fatura: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValueOnce([{ id: ettn, cari: cari("c1", "KAYA LTD") }]) } });
+    expect(await oner(giden, `ODEME ${ettn.toUpperCase()}`)).toEqual({ cari: cari("c1", "KAYA LTD"), kaynak: "ettn" });
+    expect(giden.fatura.findMany.mock.calls[0][0].where).toMatchObject({ id: { in: [ettn] }, durum: "kesin" });
+
+    const gelen = bosTx({
+      gelenEbelge: { findMany: vi.fn().mockResolvedValue([{ faturaId: "fa" }]) },
+      fatura: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "fa", cari: cari("c2", "TEDARIKCI") }]) },
+    });
+    expect(await oner(gelen, `ETTN ${ettn}`)).toEqual({ cari: cari("c2", "TEDARIKCI"), kaynak: "ettn" });
+    expect(gelen.gelenEbelge.findMany.mock.calls[0][0].where.uuid.in).toEqual([ettn, ettn.toUpperCase()]);
+  });
+
+  it("KSB-44: ETTN fatura numarasından önce gelir; numaralar farklı carilere çıkarsa cari seçilmez", async () => {
+    const ettn = "3f2b6c1e-8d4a-4c2b-9a1e-5b7c8d9e0f12";
+    const ikisi = bosTx({ gelenEbelge: { findMany: vi.fn().mockResolvedValue([]) }, fatura: { findFirst: vi.fn(), findMany: vi.fn()
+      .mockResolvedValueOnce([{ id: ettn, cari: cari("c1", "A") }])
+      .mockResolvedValueOnce([{ id: "f9", cari: cari("c2", "B") }]) } });
+    expect(await oner(ikisi, `${ettn} SNC2026000000034`)).toMatchObject({ kaynak: "ettn", cari: { id: "c1" } });
+    const celiski = bosTx({ fatura: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValueOnce([{ id: "f1", cari: cari("c1", "A") }, { id: "f2", cari: cari("c2", "B") }]).mockResolvedValue([]) } });
+    expect(await oner(celiski, "SNC2026000000034 ABC2026000000035")).toMatchObject({ cari: null });
+  });
+
+  it("KSB-44: referans yoksa veritabanına fatura sorgusu atılmaz", async () => {
+    const tx = bosTx();
+    expect(await kur(tx).faturaReferanslari(tx, "t", { aciklama: "KART 4543600012345678", karsiUnvan: null })).toEqual([]);
+    expect(tx.fatura.findMany).not.toHaveBeenCalled();
   });
 
   it("kalanı birebir tutan açık fatura tek caride ise o cari; iki caride ise öneri yok", async () => {

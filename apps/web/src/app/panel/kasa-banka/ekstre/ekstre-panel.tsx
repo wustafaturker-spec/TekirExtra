@@ -44,12 +44,12 @@ interface Kural {
   hedefBankaHesapId: string | null;
 }
 
-interface AcikFatura { id: string; no: string | null; tarih: string; vadeTarihi: string | null; dovizCinsi: string; kalan: string; genelToplam: string; tamEslesme?: boolean }
+interface AcikFatura { id: string; no: string | null; tarih: string; vadeTarihi: string | null; dovizCinsi: string; kalan: string; genelToplam: string; tamEslesme?: boolean; referans?: "ettn" | "fatura_no" | null }
 
 interface Oneriler {
   kural: Kural | null;
   onerilenCari: { id: string; kod: string; unvan: string } | null;
-  cariEslesmeKaynagi: "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
+  cariEslesmeKaynagi: "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "ettn" | "fatura_no" | "tutar" | "yapay_zeka" | null;
   /** AI-19: yapay zekâ önerisinin gerekçesi. */
   cariGerekcesi?: string;
   faturalar: AcikFatura[];
@@ -82,7 +82,7 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
   doviz_islem: "Döviz alım/satımı",
 };
 
-const KAYNAK_ADI: Record<string, string> = { aciklama: "Açıklamadaki firma adı", iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural", fatura_no: "Fatura no eşleşti", tutar: "Tutar tek faturayı tutuyor", yapay_zeka: "Yapay zekâ önerisi — kontrol edin" };
+const KAYNAK_ADI: Record<string, string> = { aciklama: "Açıklamadaki firma adı", iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural", ettn: "ETTN eşleşti", fatura_no: "Fatura no eşleşti", tutar: "Tutar tek faturayı tutuyor", yapay_zeka: "Yapay zekâ önerisi — kontrol edin" };
 const yuvarla = (n: number) => Math.round(n * 100) / 100;
 
 /**
@@ -430,7 +430,7 @@ export function EslestirmePaneli({
                                 })} />
                                 <span>
                                   <strong>{f.no ?? "Numarasız"}</strong>
-                                  <small>{f.vadeTarihi ? <>vade <Tarih deger={f.vadeTarihi} /></> : <Tarih deger={f.tarih} />} · kalan <Para deger={f.kalan} dovizCinsi={f.dovizCinsi} />{f.tamEslesme ? " · tutar birebir" : ""}</small>
+                                  <small>{f.vadeTarihi ? <>vade <Tarih deger={f.vadeTarihi} /></> : <Tarih deger={f.tarih} />} · kalan <Para deger={f.kalan} dovizCinsi={f.dovizCinsi} />{f.tamEslesme ? " · tutar birebir" : ""}{f.referans === "ettn" ? " · açıklamada ETTN'i geçiyor" : f.referans === "fatura_no" ? " · açıklamada numarası geçiyor" : ""}</small>
                                 </span>
                               </label>
                               {secili && (

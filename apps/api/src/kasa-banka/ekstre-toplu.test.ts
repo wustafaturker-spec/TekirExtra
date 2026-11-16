@@ -48,6 +48,18 @@ describe("kesin öneri (KSB-33)", () => {
     }
   });
 
+  it("KSB-44: ETTN'le bulunan cari kesindir; tutan iki faturadan açıklamada anılan seçilir", async () => {
+    const { service } = kur({ onerilenCari: { id: K, unvan: "ABC" }, cariEslesmeKaynagi: "ettn", faturalar: [{ id: F, no: "SNC2026000000123", tamEslesme: true, referans: "ettn" }, { id: "f2", tamEslesme: true, referans: null }] }, 1500);
+    expect((await service.kesinOneri("s1"))?.girdi).toEqual({ tur: "cari", cariId: K, dagitim: [{ faturaId: F, tutar: "1500.00" }] });
+  });
+
+  it("KSB-44: anılan fatura tutmuyorsa diğer tek tutan fatura önerilir; ikisi de anılmışsa kesin değildir", async () => {
+    const tek = kur({ onerilenCari: { id: K, unvan: "ABC" }, cariEslesmeKaynagi: "fatura_no", faturalar: [{ id: "f2", tamEslesme: false, referans: "fatura_no" }, { id: F, tamEslesme: true, referans: null }] }, 1500);
+    expect((await tek.service.kesinOneri("s1"))?.girdi).toMatchObject({ dagitim: [{ faturaId: F }] });
+    const iki = kur({ onerilenCari: { id: K, unvan: "ABC" }, cariEslesmeKaynagi: "fatura_no", faturalar: [{ id: F, tamEslesme: true, referans: "fatura_no" }, { id: "f2", tamEslesme: true, referans: "ettn" }] }, 1500);
+    expect(await iki.service.kesinOneri("s1")).toBeNull();
+  });
+
   it("tutarı tutan iki fatura varsa kesin değildir", async () => {
     const { service } = kur({ onerilenCari: { id: K, unvan: "ABC" }, cariEslesmeKaynagi: "vkn", faturalar: [{ id: F, tamEslesme: true }, { id: "f2", tamEslesme: true }] }, 1500);
     expect(await service.kesinOneri("s1")).toBeNull();
