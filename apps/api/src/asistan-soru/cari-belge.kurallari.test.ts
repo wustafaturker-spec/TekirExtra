@@ -49,7 +49,9 @@ describe("CNL-23 cari bilgisi", () => {
       eposta: "info@aknboya.com", webSitesi: "https://aknboya.com",
       faturaAdresi: { adres: "Üçevler Mahallesi Özkan Sokak Polatoğlu Apartmanı No:5/5", il: "BURSA", ilce: "NİLÜFER" },
     });
-    expect(cariOzeti(t)).toBe("AKN BOYA LİMİTED ŞİRKETİ · VKN 7421126013 · ÇEKİRGE VD · NİLÜFER/BURSA · info@aknboya.com · https://aknboya.com");
+    expect(cariOzeti(t)).toBe("AKN BOYA LİMİTED ŞİRKETİ · VKN 7421126013 · ÇEKİRGE VD · Adres: Üçevler Mahallesi Özkan Sokak Polatoğlu Apartmanı No:5/5 NİLÜFER/BURSA · info@aknboya.com · https://aknboya.com");
+    // İl/ilçe adreste zaten yazılıysa yinelenmez.
+    expect(cariOzeti({ ...t, faturaAdresi: { adres: "Özkan Sk. No:5/5 Nilüfer / Bursa", il: "BURSA", ilce: "NİLÜFER" } })).toContain("Adres: Özkan Sk. No:5/5 Nilüfer / Bursa ·");
     expect(cariTipSorusu(t).secenekler.map((s) => s.kod)).toEqual(["musteri", "tedarikci", "her_ikisi", "panel"]);
   });
 });

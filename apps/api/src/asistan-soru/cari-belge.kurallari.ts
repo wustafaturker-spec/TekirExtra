@@ -70,8 +70,11 @@ export function cariTaslagi(v: CariIletisimCikarim, kod: string, tip: CariBelgeT
 
 /** Okunanların kullanıcıya özeti (tek satır). */
 export function cariOzeti(t: Omit<CariTaslagi, "kod" | "tip">): string {
-  const yer = t.faturaAdresi ? [t.faturaAdresi.ilce, t.faturaAdresi.il].filter(Boolean).join("/") : "";
-  return [t.unvan, t.vknTckn ? `VKN ${t.vknTckn}` : null, t.vergiDairesi ? `${t.vergiDairesi} VD` : null, yer || null, t.eposta ?? null, t.webSitesi ?? null].filter(Boolean).join(" · ");
+  // Açık adres, il/ilçe ile birlikte (adres zaten il/ilçeyi içeriyorsa yinelenmez).
+  const a = t.faturaAdresi;
+  const yer = a ? [a.ilce, a.il].filter(Boolean).join("/") : "";
+  const adres = a ? (yer && a.adres.toLocaleLowerCase("tr").includes(yer.split("/")[0].toLocaleLowerCase("tr")) ? a.adres : [a.adres, yer].filter(Boolean).join(" ")) : null;
+  return [t.unvan, t.vknTckn ? `VKN ${t.vknTckn}` : null, t.vergiDairesi ? `${t.vergiDairesi} VD` : null, adres ? `Adres: ${adres}` : null, t.eposta ?? null, t.webSitesi ?? null].filter(Boolean).join(" · ");
 }
 
 export function cariTipSorusu(t: Omit<CariTaslagi, "kod" | "tip">): { soru: string; secenekler: Secenek[] } {
