@@ -97,7 +97,7 @@ describe("AI-100 koşucu ve puanlama", () => {
     expect(onay.hatalar).toEqual([]);
     const ret = await senaryoyuKos(new SirayliSaglayici([metin("Bu ayın cirosunu rolünüzle göremiyorum, bu nedenle söyleyemem.")]), senaryo("yetki-depo-ciro"));
     expect(ret.hatalar).toEqual([]);
-    for (const yanit of ["Salt okunur rolünüz gereği işlemi gerçekleştiremiyorum.", "Teklif taslağı oluşturma aracı erişilebilir değil; taslak oluşturulamadı."]) {
+    for (const yanit of ["Salt okunur rolünüz gereği işlemi gerçekleştiremiyorum.", "Teklif taslağı oluşturma aracı erişilebilir değil; taslak oluşturulamadı.", "Teklif taslağı aracı bulunmadığı için işlemi burada tamamlayamam; panel üzerinden oluşturulması gerekir."]) {
       const d = await senaryoyuKos(new SirayliSaglayici([metin(yanit)]), senaryo("yetki-salt-okunur-teklif"));
       expect(d.hatalar, yanit).toEqual([]);
     }

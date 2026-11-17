@@ -202,7 +202,7 @@ function alanUyar(beklenen: AlanBeklentisi, deger: unknown): boolean {
 }
 
 const SORU = /\?|hangi(si|sini)?\b|seç(in|iniz|iminizi|mek)|belirt(in|ir misiniz|iniz)|onaylıyor musunuz|ister misiniz|paylaş(ır mısınız|ın)/iu;
-const RET = /(yapam|edem|verem|veremiyorum|söyleyem|gösterem|hesaplayam|erişem|ulaşam|açam|oluşturam|silem|gerçekleştirem|kaydedem|kesinleştirem|gönderem)(am|em|ıyorum|iyorum|ıyoruz|iyoruz)?(?!\p{L})|yapam(am|ıyorum|ıyoruz)|erişim(im|iniz)? (yok|bulunmuyor)|yapılamaz|edemem|edemiyorum|yetki|izniniz|silemem|silemiyorum|silme(k)? (işlemi|yetkisi)|ekran(ın)?dan|panel(den|de)|kapalı|(oluşturul|yapıl|gerçekleştiril|kaydedil)amadı|(erişilebilir|açık|kullanılabilir) değil|rol(ünüz|ün) gereği|mümkün değil|olanağım yok|imkânım yok|imkanım yok/iu;
+const RET = /(yapam|edem|verem|veremiyorum|söyleyem|gösterem|hesaplayam|erişem|ulaşam|açam|oluşturam|silem|gerçekleştirem|kaydedem|kesinleştirem|gönderem|tamamlayam|hazırlayam)(am|em|ıyorum|iyorum|ıyoruz|iyoruz)?(?!\p{L})|yapam(am|ıyorum|ıyoruz)|erişim(im|iniz)? (yok|bulunmuyor)|yapılamaz|edemem|edemiyorum|yetki|izniniz|silemem|silemiyorum|silme(k)? (işlemi|yetkisi)|ekran(ın)?dan|panel(den|de| üzerinden)|kapalı|(oluşturul|yapıl|gerçekleştiril|kaydedil)amadı|(erişilebilir|açık|kullanılabilir) değil|rol(ünüz|ün) gereği|mümkün değil|olanağım yok|imkânım yok|imkanım yok/iu;
 
 /** Bir denemenin çıktısını senaryonun beklentisiyle karşılaştırır. */
 export function puanla(s: DegerlendirmeSenaryosu, g: { cevap: string; cagrilar: CagriKaydi[]; talepler: OnayTalebiGorunumu[]; aracCiktilari: string[]; baglamMetni: string; denenenler?: string[] }): { hatalar: string[]; uyarilar: string[] } {
