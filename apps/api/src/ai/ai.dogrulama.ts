@@ -91,13 +91,24 @@ export function cariIletisimDogrula(cikti: CariIletisimCikarim): DogrulamaSonucu
     hatalar.push("Cari ünvanı en az 2 karakter olmalıdır.");
   }
 
+  // CNL-23: boşluk/nokta/tire ile yazılmış kimlik rakamlarına indirgenir; uzunluğu ya da kontrol
+  // hanesi tutmayan kimlik karta yazılmaz (boş bırakılır), kullanıcı uyarılır.
   if (duzeltilmisVeri.vknTckn) {
-    const vkn = duzeltilmisVeri.vknTckn;
-    if (vkn.length === 10 && !vknGecerliMi(vkn)) {
-      uyarilar.push(`Çıkarılan VKN (${vkn}) kontrol hanesi uyuşmuyor.`);
-    } else if (vkn.length === 11 && !tcknGecerliMi(vkn)) {
-      uyarilar.push(`Çıkarılan TCKN (${vkn}) kontrol hanesi uyuşmuyor.`);
-    }
+    const ham = duzeltilmisVeri.vknTckn;
+    const vkn = ham.replace(/\D/g, "");
+    if (vkn.length !== 10 && vkn.length !== 11) {
+      uyarilar.push(`Okunan vergi/kimlik no (${ham.slice(0, 20)}) 10 ya da 11 haneli değil; boş bırakıldı.`);
+      duzeltilmisVeri.vknTckn = null;
+    } else if (vkn.length === 10 ? !vknGecerliMi(vkn) : !tcknGecerliMi(vkn)) {
+      uyarilar.push(`Okunan ${vkn.length === 10 ? "VKN" : "TCKN"} (${vkn}) kontrol hanesi tutmuyor; boş bırakıldı, elle kontrol edin.`);
+      duzeltilmisVeri.vknTckn = null;
+    } else duzeltilmisVeri.vknTckn = vkn;
+  }
+  if (duzeltilmisVeri.eposta) duzeltilmisVeri.eposta = duzeltilmisVeri.eposta.trim().toLowerCase();
+  // Cari kartı tam adres ister ("aknboya.com" → "https://aknboya.com").
+  if (duzeltilmisVeri.webSitesi) {
+    const w = duzeltilmisVeri.webSitesi.trim();
+    duzeltilmisVeri.webSitesi = /^https?:\/\//i.test(w) ? w : /^[\p{L}\d.-]+\.[\p{L}]{2,}(\/\S*)?$/u.test(w) ? `https://${w}` : null;
   }
 
   if (!duzeltilmisVeri.eposta && !duzeltilmisVeri.telefon) {

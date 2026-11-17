@@ -62,6 +62,7 @@ const cariAlanlari = z.object({
   vergiDairesi: z.string().max(120).optional(),
   eposta: z.string().max(255).optional(),
   telefon: z.string().max(32).optional(),
+  webSitesi: z.string().max(255).optional().describe("Tam adres, ör. https://ornek.com"),
   iban: z.string().max(34).optional(),
   varsayilanVadeGun: z.number().int().min(0).max(365).optional(),
   dovizCinsi: z.string().length(3).optional(),
@@ -328,12 +329,19 @@ export const ONAYLI_ARACLAR = [
     ad: "cari_olustur",
     aciklama: "Yeni cari kartı açar. Cari kodunu kullanıcıdan al ya da mevcut kod düzenine göre öner. Kullanıcı onayı gerekir.",
     sinif: "onay",
-    girdi: cariAlanlari.extend({ kod: z.string().min(1).max(32), unvan: z.string().min(2).max(255), tip: z.enum(["musteri", "tedarikci", "her_ikisi", "personel", "ortak", "diger"]) }),
+    girdi: cariAlanlari.extend({
+      kod: z.string().min(1).max(32), unvan: z.string().min(2).max(255), tip: z.enum(["musteri", "tedarikci", "her_ikisi", "personel", "ortak", "diger"]),
+      // CNL-23: fatura adresi kartla birlikte açılır (adres ayrı tabloda).
+      faturaAdresi: z.object({ adres: z.string().min(2).max(500), il: z.string().max(60).optional(), ilce: z.string().max(60).optional(), postaKodu: z.string().max(10).optional() }).optional(),
+    }),
     uc: UC.cariOlustur,
-    ozetle: async (_b, g) => `Yeni cari: ${alanListesi(g)}`,
-    async calistir(b, g) {
+    ozetle: async (_b, { faturaAdresi, ...g }) => `Yeni cari: ${alanListesi(g)}${faturaAdresi ? `; adres: ${[faturaAdresi.adres, faturaAdresi.ilce, faturaAdresi.il].filter(Boolean).join(", ")}` : ""}`,
+    async calistir(b, { faturaAdresi, ...g }) {
       const k = await cagir(b, UC.cariOlustur, [g]);
-      return { ...sec(k, ["id", "kod", "unvan"]), adres: adres.cari(k.id) };
+      // Adres eklenemezse kart yine açılmış sayılır; sonuç adresin eklenmediğini söyler.
+      let adresEklenmedi = false;
+      if (faturaAdresi) await cagir(b, UC.cariAdresEkle, [k.id, { tip: "fatura", baslik: "Fatura adresi", ...faturaAdresi }]).catch(() => { adresEklenmedi = true; });
+      return { ...sec(k, ["id", "kod", "unvan"]), adres: adres.cari(k.id), ...(adresEklenmedi ? { uyari: "Fatura adresi eklenemedi; cari kartından ekleyin." } : {}) };
     },
   }),
   arac({

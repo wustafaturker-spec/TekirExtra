@@ -304,7 +304,7 @@ ${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
    * Kartvizit görseli, e-posta imza metni veya serbest iletişim bilgilerinden
    * otomatik Cari Hesap ve Yetkili Kişi taslağı çıkarır.
    */
-  async cariBilgisiCikar(tenantId: string, girdi: AiBelgeGirdi): Promise<CariTaramaCiktisi> {
+  async cariBilgisiCikar(tenantId: string, girdi: AiBelgeGirdi, kanal: OcrKanal = "WEB"): Promise<CariTaramaCiktisi> {
     if (!girdi.gorselBase64 && !girdi.hamMetin) {
       throw new BadRequestException("İşlem için görsel verisi veya iletişim metni zorunludur.");
     }
@@ -364,7 +364,7 @@ ${girdi.hamMetin ? `\nİletişim / E-posta Metni:\n${girdi.hamMetin}` : ""}
       }
     }
 
-    const ocrKayitId = await this.izYaz(tenantId, "KARTVIZIT", "WEB", kullanilan, { ...dogrulama, mevcutCariId: mevcutCari?.id ?? null }, girdi.hamMetin);
+    const ocrKayitId = await this.izYaz(tenantId, "KARTVIZIT", kanal, kullanilan, { ...dogrulama, mevcutCariId: mevcutCari?.id ?? null }, girdi.hamMetin);
     return {
       dogrulama,
       mevcutCari,

@@ -51,3 +51,50 @@ describe("Telegram kanalı giriş süzgeci", () => {
     expect(gonder).toHaveBeenCalledTimes(DAKIKA_SINIRI + 1);
   });
 });
+
+describe("CNL-23 görsel yönlendirmesi", () => {
+  const baglam = { tenantId: "t", userId: "u", rol: "muhasebe" as never };
+  const kur = (o: { masrafHatasi?: Error; cariYetki?: boolean } = {}) => {
+    const masrafBelge = {
+      yetkiDenetle: vi.fn(),
+      belgedenMasraf: vi.fn(async () => { if (o.masrafHatasi) throw o.masrafHatasi; return { sonuc: "masraf taslağı" }; }),
+    };
+    const cariBelge = { yetkiDenetle: vi.fn(), yetkiVar: vi.fn(() => o.cariYetki ?? true), belgedenCari: vi.fn(async () => ({ sonuc: "cari talebi" })) };
+    const kanal = new TelegramKanalService({} as never, {} as never, {} as never, undefined, undefined, masrafBelge as never, undefined, cariBelge as never);
+    const gonderilen: string[] = [];
+    Object.assign(kanal as object, { firmayaGonder: vi.fn(async (_t: string, _u: string, _o: unknown, _tur: string, metin: string) => { gonderilen.push(metin); }) });
+    const bot = { istemci: { yaziyor: vi.fn(), dosyaIndir: vi.fn(async () => Buffer.from("x")) } };
+    const isle = (caption?: string) => (kanal as unknown as { belgeIsle: (b: unknown, m: unknown, bot: unknown) => Promise<void> })
+      .belgeIsle(baglam, { message_id: 7, date: 0, chat: { id: 1, type: "private" }, from: { id: 1 }, photo: [{ file_id: "f", width: 1, height: 1, file_size: 10 }], ...(caption ? { caption } : {}) }, bot);
+    return { masrafBelge, cariBelge, gonderilen, isle };
+  };
+
+  it("açıklamada cari/müşteri geçerse cari akışına gider, türü açıklamadan alır; masraf denenmez", async () => {
+    const k = kur();
+    await k.isle("müşteri cari aç");
+    expect(k.cariBelge.belgedenCari).toHaveBeenCalledWith(expect.objectContaining({ ad: "telegram-7" }), "musteri", true);
+    expect(k.masrafBelge.belgedenMasraf).not.toHaveBeenCalled();
+    expect(k.gonderilen).toEqual(["cari talebi"]);
+  });
+
+  it("açıklamasız görselde tutar okunamazsa bir kez cari okuması denenir", async () => {
+    const { TutarOkunamadiHatasi } = await import("../asistan-soru/masraf-belge.service");
+    const k = kur({ masrafHatasi: new TutarOkunamadiHatasi("Belgeden tutar güvenle okunamadı") });
+    await k.isle();
+    expect(k.cariBelge.belgedenCari).toHaveBeenCalledWith(expect.anything(), undefined, false);
+    expect(k.gonderilen).toEqual(["cari talebi"]);
+  });
+
+  it("açıklama varken, cari yetkisi yokken ya da başka hatada geri dönüş yapılmaz", async () => {
+    const { TutarOkunamadiHatasi } = await import("../asistan-soru/masraf-belge.service");
+    for (const [o, caption] of [[{ masrafHatasi: new TutarOkunamadiHatasi("Belgeden tutar güvenle okunamadı") }, "benzin"], [{ masrafHatasi: new TutarOkunamadiHatasi("Belgeden tutar güvenle okunamadı"), cariYetki: false }, undefined]] as const) {
+      const k = kur(o);
+      await k.isle(caption);
+      expect(k.cariBelge.belgedenCari).not.toHaveBeenCalled();
+      expect(k.gonderilen[0]).toContain("Belgeden tutar güvenle okunamadı");
+    }
+    const k = kur();
+    await k.isle("fiş");
+    expect(k.gonderilen).toEqual(["masraf taslağı"]);
+  });
+});

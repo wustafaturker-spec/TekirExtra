@@ -86,7 +86,8 @@ export const cariIletisimCikarimSemasi = z.object({
   kisiTipi: z.enum(["gercek", "tuzel"]).default("tuzel"),
   ad: z.string().optional().nullable(),
   soyad: z.string().optional().nullable(),
-  vknTckn: z.string().regex(/^\d{10,11}$/).optional().nullable(),
+  /** CNL-23: modelin yazdığı biçim ("742 112 60 13") kabul edilir; doğrulamada rakamlara indirgenir. */
+  vknTckn: z.string().max(40).optional().nullable(),
   vergiDairesi: z.string().optional().nullable(),
   ticaretSicilNo: z.string().optional().nullable(),
   eposta: z.string().email().optional().nullable(),

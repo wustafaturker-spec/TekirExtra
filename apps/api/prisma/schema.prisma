@@ -8669,7 +8669,7 @@ model TelegramBotGecisi {
 model AsistanSorusu {
   id               String    @id @default(uuid()) @db.Uuid
   tenantId         String    @map("tenant_id") @db.Uuid
-  /// banka_satiri | eposta_gonderen | taslak_kosul | masraf_kategori | masraf_odeme
+  /// banka_satiri | eposta_gonderen | taslak_kosul | masraf_kategori | masraf_odeme | cari_tip (CNL-23; kaynakId rastgele)
   tur              String    @db.VarChar(20)
   kaynakId         String    @map("kaynak_id") @db.Uuid
   userId           String?   @map("user_id") @db.Uuid

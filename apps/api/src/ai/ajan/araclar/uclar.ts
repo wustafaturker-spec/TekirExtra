@@ -45,6 +45,7 @@ export const UC = {
   cariOlustur: uc(CariController, "olustur", "POST /cari"),
   cariGuncelle: uc(CariController, "guncelle", "PATCH /cari/:id"),
   cariKisiEkle: uc(CariController, "kisiEkle", "POST /cari/:id/kisiler"),
+  cariAdresEkle: uc(CariController, "adresEkle", "POST /cari/:id/adresler"),
   cariCrmGorev: uc(CariController, "crmGorevEkle", "POST /cari/:id/crm/gorevler"),
   cariEkstreEposta: uc(CariController, "ekstreEposta", "POST /cari/:id/ekstre/eposta"),
 

@@ -8,6 +8,7 @@ import { PrismaService } from "../core/prisma.service";
 import { EkstreEslestirmeService } from "../kasa-banka/ekstre-eslestirme.service";
 import { ImapService } from "../tenant/imap.service";
 import { MasrafBelgeService, type SoruOzeti } from "./masraf-belge.service";
+import { CariBelgeService } from "./cari-belge.service";
 import {
   bankaSorusu, epostaSorusu, gunFarki, maasSatiriMi, PANEL_SECENEGI, TARAMA_SORU_SINIRI, taslakSapmasi, taslakSorusu, type Secenek, type SoruTuru, type TaslakSapmasi,
 } from "./asistan-soru.kurallari";
@@ -49,6 +50,7 @@ export class AsistanSoruService {
     private readonly hafiza: HafizaService,
     private readonly yurutucu: AracYurutucu,
     private readonly masrafBelge: MasrafBelgeService,
+    private readonly cariBelge: CariBelgeService,
     @Optional() uretici?: BildirimUreticiService,
   ) {
     uretici?.ekTaramaKaydet("asistan soruları", () => this.tara());
@@ -234,6 +236,7 @@ export class AsistanSoruService {
     try {
       const sonuc: YanitSonucu = soru.tur === "masraf_kategori" ? await this.masrafBelge.kategoriSecildi(soru, yanit.kod, metin).then((r) => ({ sonuc: r.sonuc, ...(r.talepId ? { talepId: r.talepId } : {}), ...(r.soru ? { sonrakiSoru: r.soru } : {}) }))
         : soru.tur === "masraf_odeme" ? await this.masrafBelge.odemeSecildi(soru, yanit.kod)
+        : soru.tur === "cari_tip" ? await this.cariBelge.tipSecildi(soru, yanit.kod)
         : soru.tur === "banka_satiri" ? await this.bankaYaniti(soru, yanit.kod, metin)
         : soru.tur === "eposta_gonderen" ? await this.epostaYaniti(soru, yanit.kod, metin)
           : await this.taslakYaniti(soru, yanit.kod!);

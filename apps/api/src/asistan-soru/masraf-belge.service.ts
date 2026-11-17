@@ -20,6 +20,8 @@ const UZANTI: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png"
 interface KategoriSorusuVerisi { taslak: MasrafTaslagi; uyarilar: string[]; ekId: string; kategoriler: Array<{ id: string; ad: string }>; okunan?: FistenOkunan; ocrKayitId?: string | null }
 interface OdemeSorusuVerisi { masrafId: string; hesaplar: Array<{ id: string; ad: string }>; tur: "kasa" | "kart"; arac?: TamamlamaPlani["arac"] }
 export interface SoruOzeti { id: string; soru: string; secenekler: Secenek[]; serbestYanit: boolean }
+/** CNL-23: belge geçerli bir fiş/fatura değil; açıklamasız Telegram görselinde cari okumasına geçilir. */
+export class TutarOkunamadiHatasi extends BadRequestException {}
 export interface BelgeSonucu { sonuc: string; masrafId?: string; talepId?: string; soru?: SoruOzeti }
 
 /**
@@ -65,7 +67,7 @@ export class MasrafBelgeService {
 
     const ocr = await this.ai.fisFaturaOcrTara(tenantId, { ...girdi, belgeTipi: "fis_fatura" }, kanal);
     if (!ocr.dogrulama.gecerli || ocr.dogrulama.hatalar.length || !(ocr.dogrulama.veri.genelToplam > 0)) {
-      throw new BadRequestException(`Belgeden tutar güvenle okunamadı${ocr.dogrulama.hatalar.length ? ` (${ocr.dogrulama.hatalar.join("; ").slice(0, 200)})` : ""}. Daha net bir fotoğraf gönderin ya da panelden girin.`);
+      throw new TutarOkunamadiHatasi(`Belgeden tutar güvenle okunamadı${ocr.dogrulama.hatalar.length ? ` (${ocr.dogrulama.hatalar.join("; ").slice(0, 200)})` : ""}. Daha net bir fotoğraf gönderin ya da panelden girin.`);
     }
     const { taslak, uyarilar } = masrafTaslagi(ocr.dogrulama.veri, ocr.eslesenCari?.id ?? null, not);
     const v = ocr.dogrulama.veri;

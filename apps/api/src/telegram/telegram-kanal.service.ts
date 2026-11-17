@@ -11,7 +11,9 @@ import { AsistanSoruService, type SoruYaniti, type YanitSonucu } from "../asista
 import { fikirDugmesi, fikirDugmesiCoz } from "../asistan-soru/fikir.kurallari";
 import { FikirService } from "../asistan-soru/fikir.service";
 import { BELGE_AZAMI_BAYT } from "../asistan-soru/masraf-belge.kurallari";
-import { MasrafBelgeService } from "../asistan-soru/masraf-belge.service";
+import { MasrafBelgeService, TutarOkunamadiHatasi, type BelgeSonucu } from "../asistan-soru/masraf-belge.service";
+import { CariBelgeService } from "../asistan-soru/cari-belge.service";
+import { belgeYolu } from "../asistan-soru/cari-belge.kurallari";
 import { SES_AZAMI_BAYT, SES_AZAMI_SANIYE, SesHatasi, sesiYaziyaCevir, sesKullanilabilir } from "./ses-yazi";
 import { baglamlaCalistir, type IstekBaglami } from "../core/istek-baglami";
 import { nabizla } from "../core/nabiz/nabiz";
@@ -107,6 +109,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly fikirler?: FikirService,
     @Optional() private readonly masrafBelge?: MasrafBelgeService,
     @Optional() private readonly bildirimler?: BildirimService,
+    @Optional() private readonly cariBelge?: CariBelgeService,
   ) {}
 
   /** Mesajın geldiği bot verilmezse platform botu (birim testleri ve eski çağrılar). */
@@ -476,7 +479,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * CNL-16: fiş/fatura fotoğrafı ya da PDF'i masraf taslağına çevrilir. En büyük fotoğraf boyutu 6 MB
+   * CNL-16: fiş/fatura fotoğrafı ya da PDF'i masraf taslağına çevrilir. CNL-23: açıklamada "cari",
+   * "müşteri", "tedarikçi" ya da "kartvizit" geçiyorsa görsel cari kartı akışına gider; açıklamasız
+   * görselde fiş okuması tutar bulamazsa bir kez cari bilgisi okuması denenir. En büyük fotoğraf boyutu 6 MB
    * sınırını aşıyorsa sığan en büyüğü alınır. Kategori belirsizse asistan düğmeli soru sorar.
    */
   private async belgeIsle(baglam: IstekBaglami, m: TelegramMesaj, bot: Bot): Promise<void> {
@@ -489,12 +494,20 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     try {
       if (!dosyaId) throw new BadRequestException("Fotoğraf 6 MB'tan büyük; daha küçük gönderin.");
       if (m.document?.mime_type && !/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(m.document.mime_type)) throw new BadRequestException("Yalnız JPEG, PNG, WebP fotoğraf ya da PDF gönderebilirsiniz.");
-      await baglamlaCalistir(baglam, async () => this.masrafBelge!.yetkiDenetle());
+      const yolu = belgeYolu(m.caption);
+      const cariYolu = yolu.yol === "cari" && !!this.cariBelge;
+      await baglamlaCalistir(baglam, async () => (cariYolu ? this.cariBelge!.yetkiDenetle() : this.masrafBelge!.yetkiDenetle()));
       await bot.istemci.yaziyor(m.chat.id);
       const buffer = await bot.istemci.dosyaIndir(dosyaId, BELGE_AZAMI_BAYT).catch((h: unknown) => {
         throw h instanceof TelegramHatasi && h.message === "Dosya çok büyük" ? new BadRequestException("Dosya 6 MB'tan büyük; daha küçük gönderin.") : h;
       });
-      const r = await baglamlaCalistir(baglam, () => this.masrafBelge!.belgedenMasraf({ ad, buffer }, m.caption ?? null));
+      const r: BelgeSonucu = cariYolu
+        ? await baglamlaCalistir(baglam, () => this.cariBelge!.belgedenCari({ ad, buffer }, yolu.tip, true))
+        : await baglamlaCalistir(baglam, () => this.masrafBelge!.belgedenMasraf({ ad, buffer }, m.caption ?? null)).catch(async (hata: unknown) => {
+          const geriDon = hata instanceof TutarOkunamadiHatasi && !m.caption?.trim() && !!this.cariBelge && (await baglamlaCalistir(baglam, async () => this.cariBelge!.yetkiVar()));
+          if (!geriDon) throw hata;
+          return baglamlaCalistir(baglam, () => this.cariBelge!.belgedenCari({ ad, buffer }, undefined, false));
+        });
       if (r.soru && r.masrafId) {
         // CNL-22: taslak açıldı, ödeme hesabı belirsiz; önce sonuç, ardından ödeme sorusu.
         await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", r.sonuc));
@@ -504,7 +517,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       } else if (r.soru) {
         const sonuc = await baglamlaCalistir(baglam, () => this.soruGonder(tenantId, userId, r.soru!));
         if (sonuc === "gonderildi") return;
-        metin = "Belgeyi okudum ama kategori sorusunu gönderemedim; panelde Asistan › Sorular kutusundan yanıtlayabilirsiniz.";
+        metin = "Belgeyi okudum ama soruyu gönderemedim; panelde Asistan › Sorular kutusundan yanıtlayabilirsiniz.";
       } else metin = r.sonuc;
     } catch (hata) {
       metin = this.kullaniciHatasi(hata, "Belgeyi işleyemedim; biraz sonra yeniden deneyin ya da panelden yükleyin.");
