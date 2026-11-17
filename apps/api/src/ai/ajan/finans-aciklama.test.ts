@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { finansAciklamasiniDogrula, finansOlgulari, finansOlguTalimati } from './finans-aciklama';
+import { finansAciklamasiniDogrula, finansOlgulari, finansOlguTalimati, finansSecimSemasi } from './finans-aciklama';
 import { finansKaynaklariCikar, type FinansKaynagi } from './finans-kaynaklari';
 
 const kaynak: FinansKaynagi = {
@@ -101,6 +101,50 @@ describe('olgu kimlikli finans açıklaması', () => {
     expect(y.finansAciklama.secilenOlguIdleri).toHaveLength(20);
     expect(y.finansAciklama.kisaltildi).toBe(true);
     expect(y.cevap).toContain('Özet kısaltıldı');
+  });
+
+  describe('AI-103 rakamsız not', () => {
+    it('belirsiz caride olgu seçmeden soru sorabilir; kaynak listesi ve dipnot basılmaz', () => {
+      const soru = 'Birden fazla ABC kaydı var: ABC Ltd. mi, ABC A.Ş. mi?';
+      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [], not: soru }), [kaynak]);
+      expect(y.finansAciklama).toMatchObject({ durum: 'dogrulandi', secilenOlguIdleri: [], not: soru });
+      expect(y.cevap).toBe(soru);
+    });
+    it('ret notu ve seçilen olgular birlikte gösterilir; not önce gelir', () => {
+      const id = finansOlgulari([kaynak])[0].id;
+      const not = 'Silme işlemi yapılamaz; yalnız bakiyeyi gösterebilirim.';
+      const y = finansAciklamasiniDogrula('```json\n' + JSON.stringify({ olguIdleri: [id], not }) + '\n```', [kaynak]);
+      expect(y.finansAciklama.durum).toBe('dogrulandi');
+      expect(y.cevap.split('\n')[0]).toBe(not);
+      expect(y.cevap).toContain('-1.250,50 TRY');
+      expect(y.cevap).toContain('model yeni bir oran');
+    });
+    it.each(['Net kâr eksi bin iki yüz elli, yani 1250 TRY.', 'Artış %ten fazla.', 'Vade ٢٠٢٧ yılında.', 'Binde ‰ fark.'])('rakam ya da yüzde içeren not reddedilir: %s', (not) => {
+      const id = finansOlgulari([kaynak])[0].id;
+      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [id], not }), [kaynak]);
+      expect(y.finansAciklama).toMatchObject({ durum: 'guvenli_ozet', dogrulamaHatasi: 'notta_rakam' });
+      expect(y.finansAciklama.not).toBeUndefined();
+      expect(y.cevap).not.toContain(not);
+      expect(y.cevap).toContain('-1.250,50 TRY');
+    });
+    it('boş seçim yalnız notla geçerli; boş/aşırı uzun not şemadan döner', () => {
+      for (const v of [{ olguIdleri: [] }, { olguIdleri: [], not: '   ' }, { olguIdleri: [], not: 'a'.repeat(601) }]) {
+        expect(finansAciklamasiniDogrula(JSON.stringify(v), [kaynak]).finansAciklama.dogrulamaHatasi).toBe('sema_gecersiz');
+      }
+    });
+    it('ek denetimin reddettiği not güvenli özete döner', () => {
+      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [], not: 'Faturayı iptal ettim.' }), [kaynak], () => true);
+      expect(y.finansAciklama).toMatchObject({ durum: 'guvenli_ozet', dogrulamaHatasi: 'not_reddedildi' });
+      expect(y.cevap).not.toContain('iptal ettim');
+    });
+    it('üretim şeması da rakamlı notu ve bilinmeyen kimliği reddeder', () => {
+      const id = finansOlgulari([kaynak])[0].id;
+      const sema = finansSecimSemasi([kaynak]);
+      expect(sema.safeParse({ olguIdleri: [], not: 'Hangi cari?' }).success).toBe(true);
+      expect(sema.safeParse({ olguIdleri: [id], not: 'Toplam 5 TRY' }).success).toBe(false);
+      expect(sema.safeParse({ olguIdleri: ['f-yok'], not: 'Hangi cari?' }).success).toBe(false);
+      expect(finansOlguTalimati([kaynak])).toContain('HİÇ RAKAM');
+    });
   });
 
   describe('AI-98 metrik ve hesap sürümü', () => {
