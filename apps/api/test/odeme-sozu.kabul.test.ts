@@ -504,7 +504,7 @@ describe("Gerçek DB kaynak okuması", () => {
     const f = await fixture(); await eskiSoz(f); const p = await odeme(f, "1000");
     await tx(f, async (t) => {
       const pos = await t.posHesap.create({ data: { tenantId: f.tenantId, ad: "POS", saglayici: "test" } });
-      const tahsilat = await t.posTahsilat.create({ data: { tenantId: f.tenantId, cariId: f.cariId, posHesapId: pos.id, tutar: "1000", hareketId: p.h.id, durum: "odendi", makbuzAnahtari: randomUUID() } });
+      const tahsilat = await t.posTahsilat.create({ data: { tenantId: f.tenantId, cariId: f.cariId, posHesapId: pos.id, tutar: "1000", hareketId: p.h.id, durum: "odendi" } });
       await t.kasaBankaHareket.update({ where: { id: p.h.id }, data: { kaynakTur: "pos_tahsilat" } });
       await t.kasaBankaHareket.create({ data: { tenantId: f.tenantId, cariId: f.cariId, tip: "tediye", tutar: "400", tutarTry: "400", dovizCinsi: "TRY", kur: "1", tarih: tarih(0), kaynakTur: "pos_iade", kaynakRef: tahsilat.id } });
       await t.faturaKapama.update({ where: { id: p.k.id }, data: { tutar: "600" } });

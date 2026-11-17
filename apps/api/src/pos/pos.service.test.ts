@@ -59,7 +59,7 @@ describe("PosService (P1-6)", () => {
       cariHareket: { create: vi.fn() },
     };
     const { service, bildirimler } = kur(tx);
-    const kayit = { id: "t1", durum: "suresi_doldu", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(250), dovizCinsi: "TRY", cariId: "c1", faturaId: null };
+    const kayit = { id: "t1", durum: "suresi_doldu", posHesapId: "p1", tutar: D(250), dovizCinsi: "TRY", cariId: "c1", faturaId: null };
     const sonuc = await (service as any).odemeyiKaydet("t1", kayit, "odeme-1", "PayTR kart tahsilatı");
     expect(sonuc).toMatchObject({ tekrar: false, gecOdeme: true });
     expect(tx.posTahsilat.updateMany.mock.calls[0][0]).toMatchObject({ where: { durum: { in: ["baslatildi", "suresi_doldu", "iptal"] } }, data: { durum: "odendi", gecOdeme: true } });
@@ -97,7 +97,7 @@ describe("PosService (P1-6)", () => {
       return {
         posHesap: { findUnique: vi.fn().mockResolvedValue(hesap) },
         posTahsilat: {
-          findUnique: vi.fn().mockResolvedValue({ id: "t1", durum: "baslatildi", saglayiciToken: "tok", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { baglanti: { sifreliConfig: "x" } } }),
+          findUnique: vi.fn().mockResolvedValue({ id: "t1", durum: "baslatildi", saglayiciToken: "tok", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { baglanti: { sifreliConfig: "x" } } }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           update: vi.fn(),
         },
@@ -120,7 +120,7 @@ describe("PosService (P1-6)", () => {
     it("PayTR bildiriminde taksit ve müşterinin ödediği (total_amount) yazılır; tutar payment_amount'tan doğrulanır", async () => {
       const casus = vi.spyOn(PaytrAdapter.prototype, "callbackDogrula").mockReturnValue(true);
       const tx = odemeTx();
-      tx.posTahsilat.findUnique.mockResolvedValue({ id: "t1", durum: "baslatildi", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "paytr", baglanti: { sifreliConfig: "x" } } });
+      tx.posTahsilat.findUnique.mockResolvedValue({ id: "t1", durum: "baslatildi", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "paytr", baglanti: { sifreliConfig: "x" } } });
       const sonuc = await kur(tx).service.paytrCallback("t1", "t1", { hash: "h", merchant_oid: "oid", status: "success", total_amount: "106000", payment_amount: "100000", payment_type: "card", currency: "TL", callback_id: "t1", merchant_id: undefined as never, installment_count: "3" });
       expect(sonuc).toBe("OK");
       const d = tx.posTahsilat.updateMany.mock.calls[0][0].data;
@@ -156,7 +156,7 @@ describe("PosService (P1-6)", () => {
   });
 
   describe("SEC-22 dönüş çağrısında firma ve kayıt doğrulaması", () => {
-    const kayit = (o: Record<string, unknown> = {}) => ({ id: "t1", durum: "baslatildi", saglayiciToken: "tok", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "iyzico", baglanti: { sifreliConfig: "x" } }, ...o });
+    const kayit = (o: Record<string, unknown> = {}) => ({ id: "t1", durum: "baslatildi", saglayiciToken: "tok", posHesapId: "p1", tutar: D(1000), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "iyzico", baglanti: { sifreliConfig: "x" } }, ...o });
     const txKur = (k: unknown) => ({ posTahsilat: { findUnique: vi.fn().mockResolvedValue(k), updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, auditLog: { create: vi.fn() } });
 
     it("iyzico ödemesi başka tahsilat için başlatılmışsa (conversationId) kaydedilmez, ret firmanın denetim kaydına yazılır", async () => {
@@ -288,7 +288,7 @@ describe("PosService (P1-6)", () => {
       return {
         posHesap: { findUnique: vi.fn().mockResolvedValue({ komisyonOrani: D("2"), islemUcreti: D(0), taksitOranlari: [] }) },
         posTahsilat: {
-          findUnique: vi.fn().mockResolvedValue({ id: "t1", durum: "suresi_doldu", saglayiciToken: "tok", makbuzAnahtari: "m", posHesapId: "p1", tutar: D(500), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "iyzico", baglanti: { sifreliConfig: "x" } }, ...ek }),
+          findUnique: vi.fn().mockResolvedValue({ id: "t1", durum: "suresi_doldu", saglayiciToken: "tok", posHesapId: "p1", tutar: D(500), dovizCinsi: "TRY", cariId: "c1", faturaId: null, posHesap: { saglayici: "iyzico", baglanti: { sifreliConfig: "x" } }, ...ek }),
           findMany: vi.fn().mockResolvedValue([{ id: "t1" }, { id: "t2" }]),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           update: vi.fn(),
