@@ -145,6 +145,13 @@ describe('olgu kimlikli finans açıklaması', () => {
       expect(sema.safeParse({ olguIdleri: ['f-yok'], not: 'Hangi cari?' }).success).toBe(false);
       expect(finansOlguTalimati([kaynak])).toContain('HİÇ RAKAM');
     });
+    it('talimattaki olgular kaynak başlığını taşır (aynı adlı iki carinin bakiyesi ayırt edilir)', () => {
+      const a = { ...kaynak, baslik: 'Test Yılmaz A' }, b = { ...kaynak, baslik: 'Test Yılmaz B', alindiAt: '2026-10-14T18:00:01Z' };
+      const t = finansOlguTalimati([a, b]);
+      expect(t).toContain('"kaynak":"Test Yılmaz A"');
+      expect(t).toContain('"kaynak":"Test Yılmaz B"');
+      expect(finansOlgulari([a])[0].id).toBe(finansOlgulari([{ ...a, baslik: 'Başka' }])[0].id);
+    });
   });
 
   describe('AI-98 metrik ve hesap sürümü', () => {
