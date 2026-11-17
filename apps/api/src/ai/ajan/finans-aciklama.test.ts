@@ -133,7 +133,7 @@ describe('olgu kimlikli finans açıklaması', () => {
       }
     });
     it('ek denetimin reddettiği not güvenli özete döner', () => {
-      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [], not: 'Faturayı iptal ettim.' }), [kaynak], () => true);
+      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [], not: 'Faturayı iptal ettim.' }), [kaynak], { notuReddet: () => true });
       expect(y.finansAciklama).toMatchObject({ durum: 'guvenli_ozet', dogrulamaHatasi: 'not_reddedildi' });
       expect(y.cevap).not.toContain('iptal ettim');
     });
@@ -144,6 +144,18 @@ describe('olgu kimlikli finans açıklaması', () => {
       expect(sema.safeParse({ olguIdleri: [id], not: 'Toplam 5 TRY' }).success).toBe(false);
       expect(sema.safeParse({ olguIdleri: ['f-yok'], not: 'Hangi cari?' }).success).toBe(false);
       expect(finansOlguTalimati([kaynak])).toContain('HİÇ RAKAM');
+    });
+    it('harf+rakam kelime kullanıcı mesajında geçiyorsa notta kabul edilir; yalın sayı yine reddedilir', () => {
+      const id = finansOlgulari([kaynak])[0].id;
+      const dogrula = (not: string, kullaniciMetni?: string) => finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: [id], not }), [kaynak], { kullaniciMetni }).finansAciklama;
+      expect(dogrula('A4 kağıdı için hangi cariyi kastediyorsunuz?', "Yılmaz'a A4 kağıdı teklifi aç")).toMatchObject({ durum: 'dogrulandi' });
+      expect(dogrula('A4 kağıdı için hangi cari?')).toMatchObject({ dogrulamaHatasi: 'notta_rakam' });
+      expect(dogrula('On adet A4 değil, 10 adet mi?', 'A4 kağıdından 10 adet')).toMatchObject({ dogrulamaHatasi: 'notta_rakam' });
+      expect(dogrula('B4 mü?', 'A4 kağıdı')).toMatchObject({ dogrulamaHatasi: 'notta_rakam' });
+      expect(dogrula('Gelir gider raporu', undefined)).toMatchObject({ durum: 'dogrulandi' });
+      const sema = finansSecimSemasi([kaynak], 'A4 kağıdı');
+      expect(sema.safeParse({ olguIdleri: [id], not: 'A4 için hangisi?' }).success).toBe(true);
+      expect(sema.safeParse({ olguIdleri: [id], not: 'A4 için 10 adet' }).success).toBe(false);
     });
     it('talimattaki olgular kaynak başlığını taşır (aynı adlı iki carinin bakiyesi ayırt edilir)', () => {
       const a = { ...kaynak, baslik: 'Test Yılmaz A' }, b = { ...kaynak, baslik: 'Test Yılmaz B', alindiAt: '2026-10-14T18:00:01Z' };

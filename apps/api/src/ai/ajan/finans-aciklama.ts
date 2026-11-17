@@ -56,6 +56,23 @@ export function finansOlgulari(kaynaklar: FinansKaynagi[]): FinansOlgusu[] {
 
 /** AI-103: not rakam (her yazı sistemindeki ondalık rakam dahil) ve yüzde işareti taşıyamaz. */
 const NOT_YASAK = /[\p{Nd}%‰]/u;
+const RAKAMLI_KELIME = /[\p{L}\p{Nd}]*\p{Nd}[\p{L}\p{Nd}]*/gu;
+const HARF = /\p{L}/u;
+/**
+ * AI-103: harf ve rakam karışık kelime (A4, 3M) kullanıcı mesajında ya da kaynak
+ * başlığında aynen geçiyorsa nota yazılabilir; yalnız rakamdan oluşan sayı her zaman yasaktır.
+ */
+export function nottaRakamVar(not: string, izinliMetin = ''): boolean {
+  const izinli = new Set((izinliMetin.match(RAKAMLI_KELIME) ?? []).filter(k => HARF.test(k)).map(k => k.toLocaleLowerCase('tr')));
+  return NOT_YASAK.test(not.replace(RAKAMLI_KELIME, k => HARF.test(k) && izinli.has(k.toLocaleLowerCase('tr')) ? '' : k));
+}
+const izinliMetin = (kaynaklar: FinansKaynagi[], kullaniciMetni = '') => [kullaniciMetni, ...kaynaklar.map(k => k.baslik)].join(' ');
+export interface NotSecenekleri {
+  /** Notu ek denetimden geçirir (ör. uydurma işlem iddiası); true dönerse reddedilir. */
+  notuReddet?: (not: string) => boolean;
+  /** Kullanıcının mesajı: içindeki harf+rakam kelimeler nota yazılabilir. */
+  kullaniciMetni?: string;
+}
 const NOT_UZUNLUK = 600;
 /**
  * Model olgu seçer; tutar/oran/tarih/serbest alan kabul edilmez. AI-103: rakamsız
@@ -66,9 +83,9 @@ const SECIM = z.object({
   not: z.string().trim().min(1).max(NOT_UZUNLUK).optional(),
 }).strict().refine(p => p.olguIdleri.length > 0 || !!p.not);
 /** JSON üretimi de aynı snapshot, tekrarsız kimlik ve rakamsız not sözleşmesine tabidir. */
-export function finansSecimSemasi(kaynaklar: FinansKaynagi[]) {
+export function finansSecimSemasi(kaynaklar: FinansKaynagi[], kullaniciMetni?: string) {
   const idler = new Set(finansOlgulari(kaynaklar).map(f => f.id));
-  return SECIM.refine(p => new Set(p.olguIdleri).size === p.olguIdleri.length && p.olguIdleri.every(id => idler.has(id)) && !(p.not && NOT_YASAK.test(p.not)));
+  return SECIM.refine(p => new Set(p.olguIdleri).size === p.olguIdleri.length && p.olguIdleri.every(id => idler.has(id)) && !(p.not && nottaRakamVar(p.not, izinliMetin(kaynaklar, kullaniciMetni))));
 }
 export function finansOlguTalimati(kaynaklar: FinansKaynagi[]): string {
   if (!kaynaklar.length) return '';
@@ -84,8 +101,7 @@ const para = (s: string) => {
 export function finansAciklamasiniDogrula(
   metin: string | null,
   kaynaklar: FinansKaynagi[],
-  /** AI-103: notu ek denetimden geçirir (ör. uydurma işlem iddiası); true dönerse reddedilir. */
-  notuReddet?: (not: string) => boolean,
+  secenek: NotSecenekleri = {},
 ): { cevap: string; finansAciklama: FinansAciklama } {
   const olgular = finansOlgulari(kaynaklar);
   const harita = new Map(olgular.map(f => [f.id, f]));
@@ -102,8 +118,8 @@ export function finansAciklamasiniDogrula(
       if (!p.success) dogrulamaHatasi = 'sema_gecersiz';
       else if (new Set(p.data.olguIdleri).size !== p.data.olguIdleri.length) dogrulamaHatasi = 'tekrarlanan_kimlik';
       else if (!p.data.olguIdleri.every(id => harita.has(id))) dogrulamaHatasi = 'kaynakta_olmayan_kimlik';
-      else if (p.data.not && NOT_YASAK.test(p.data.not)) dogrulamaHatasi = 'notta_rakam';
-      else if (p.data.not && notuReddet?.(p.data.not)) dogrulamaHatasi = 'not_reddedildi';
+      else if (p.data.not && nottaRakamVar(p.data.not, izinliMetin(kaynaklar, secenek.kullaniciMetni))) dogrulamaHatasi = 'notta_rakam';
+      else if (p.data.not && secenek.notuReddet?.(p.data.not)) dogrulamaHatasi = 'not_reddedildi';
       else { secim = p.data.olguIdleri; not = p.data.not; }
     } catch {
       // İçerik yerine yalnız sabit hata sınıfı saklanır.
