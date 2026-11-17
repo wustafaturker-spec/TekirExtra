@@ -81,7 +81,15 @@ describe("AI-100 koşucu ve puanlama", () => {
   it("finans kaynağı alınınca yanıt olgu listesine döner (üretim davranışı); belirsiz caride soru kaybolur", async () => {
     const d = await senaryoyuKos(new SirayliSaglayici([arac("cari_ara", { arama: "Test Yılmaz" }), metin("Hangisini kastediyorsunuz?")]), senaryo("belirsiz-cari"));
     expect(d.finansDurumu).toBe("guvenli_ozet");
+    expect(d.finansHatasi).toBe("json_gecersiz");
     expect(d.hatalar).toContain("Kullanıcıya seçim/eksik bilgi sorulmadı");
+  });
+
+  it("AI-103: finans turunda rakamsız notla sorulan soru geçer", async () => {
+    const d = await senaryoyuKos(new SirayliSaglayici([arac("cari_ara", { arama: "Test Yılmaz" }), metin(JSON.stringify({ olguIdleri: [], not: "Test Yılmaz A mı, Test Yılmaz B mi?" }))]), senaryo("belirsiz-cari"));
+    expect(d.finansDurumu).toBe("dogrulandi");
+    expect(d.finansHatasi).toBeUndefined();
+    expect(d.hatalar).toEqual([]);
   });
 
   it("beklenti çözülmüş kimlikle karşılaştırılır; 'söyleyemem' ret sayılır", async () => {
@@ -89,6 +97,10 @@ describe("AI-100 koşucu ve puanlama", () => {
     expect(onay.hatalar).toEqual([]);
     const ret = await senaryoyuKos(new SirayliSaglayici([metin("Bu ayın cirosunu rolünüzle göremiyorum, bu nedenle söyleyemem.")]), senaryo("yetki-depo-ciro"));
     expect(ret.hatalar).toEqual([]);
+    for (const yanit of ["Salt okunur rolünüz gereği işlemi gerçekleştiremiyorum.", "Teklif taslağı oluşturma aracı erişilebilir değil; taslak oluşturulamadı."]) {
+      const d = await senaryoyuKos(new SirayliSaglayici([metin(yanit)]), senaryo("yetki-salt-okunur-teklif"));
+      expect(d.hatalar, yanit).toEqual([]);
+    }
   });
 
   it("araçsız 'yapıldı' yanıtı ve eksik onay talebi başarısızdır", async () => {
