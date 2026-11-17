@@ -166,6 +166,51 @@ describe('olgu kimlikli finans açıklaması', () => {
     });
   });
 
+  describe('AI-104 rapor satır olguları', () => {
+    const simdi = new Date('2026-11-17T09:00:00Z');
+    const rapor = (satirSayisi: number) => finansKaynaklariCikar('rapor_calistir', JSON.stringify({
+      ad: 'En Çok Satanlar', adres: '/panel/raporlar?rapor=en_cok_satanlar',
+      kolonlar: [{ alan: 'urun', baslik: 'Ürün', tip: 'metin' }, { alan: 'miktar', baslik: 'Miktar', tip: 'sayi' }, { alan: 'ciro', baslik: 'Ciro', tip: 'para' }],
+      satirlar: Array.from({ length: satirSayisi }, (_, i) => ({ urun: i === 0 ? 'Fren Balatası' : `Ürün ${i}`, miktar: 1300 + i, ciro: `${84000 + i}.50` })),
+      satirSayisi, toplamlar: { ciro: { deger: '123000.00', doviz: 'TRY' } },
+    }), simdi);
+    it('ilk satırların para ve sayı sütunları etiketli olgudur; toplam da kalır', () => {
+      const olgular = finansOlgulari(rapor(2));
+      const balata = olgular.filter(f => f.ad.startsWith('Fren Balatası'));
+      expect(balata.map(f => [f.tur, f.ad, f.deger, f.metrik])).toEqual([
+        ['sayi', 'Fren Balatası — Miktar', '1300', 'rapor:en_cok_satanlar:miktar:satir:1'],
+        ['tutar', 'Fren Balatası — Ciro', '84000.50', 'rapor:en_cok_satanlar:ciro:satir:1'],
+      ]);
+      expect(olgular.some(f => f.metrik === 'rapor:en_cok_satanlar:ciro:toplam')).toBe(true);
+    });
+    it('seçilen satırlar satır sırasıyla, toplam sonda; sayı birimsiz gösterilir', () => {
+      const k = rapor(2), olgular = finansOlgulari(k);
+      const id = (m: string) => olgular.find(f => f.metrik === m)!.id;
+      const secim = [id('rapor:en_cok_satanlar:ciro:toplam'), id('rapor:en_cok_satanlar:ciro:satir:2'), id('rapor:en_cok_satanlar:miktar:satir:1'), id('rapor:en_cok_satanlar:ciro:satir:1')];
+      const y = finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: secim, not: 'Bu yıl satılan ürünler' }), k);
+      expect(y.finansAciklama.durum).toBe('dogrulandi');
+      const satirlar = y.cevap.split('\n').filter(l => l.startsWith('En Çok Satanlar'));
+      expect(satirlar[0]).toContain('Fren Balatası — Miktar: 1.300 (');
+      expect(satirlar[1]).toContain('Fren Balatası — Ciro: 84.000,50 TRY');
+      expect(satirlar[2]).toContain('Ürün 1 — Ciro: 84.001,50 TRY');
+      expect(satirlar[3]).toContain('Ciro: 123.000,00 TRY');
+    });
+    it('model en çok 40 olgu seçer; güvenli özet toplamı öne alır ve 20 satırda kalır; fazla satır uyarılır', () => {
+      const k = rapor(25), olgular = finansOlgulari(k);
+      expect(olgular.filter(f => f.metrik.includes(':satir:'))).toHaveLength(40);
+      expect(k[0].uyarilar).toContain('İlk 20 satır gösterildi; tamamı rapor ekranında.');
+      const kirk = olgular.filter(f => f.tur !== 'tarih').slice(0, 40).map(f => f.id);
+      expect(finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: kirk }), k).finansAciklama.durum).toBe('dogrulandi');
+      expect(finansAciklamasiniDogrula(JSON.stringify({ olguIdleri: olgular.slice(0, 41).map(f => f.id) }), k).finansAciklama.dogrulamaHatasi).toBe('sema_gecersiz');
+      const g = finansAciklamasiniDogrula(null, k);
+      expect(g.finansAciklama.secilenOlguIdleri).toHaveLength(20);
+      expect(g.cevap.split('\n')[1]).toContain('Ciro: 123.000,00 TRY');
+    });
+    it('tek satırlı raporda satır olgusu kurulmaz (tek satır kuralı aynen)', () => {
+      expect(finansOlgulari(rapor(1)).some(f => f.metrik.includes(':satir:'))).toBe(false);
+    });
+  });
+
   describe('AI-98 metrik ve hesap sürümü', () => {
     it('aynı tutar ve ad farklı metrikle ayrı olgudur; metrik ve dönem yanıtta görünür', () => {
       const ikiz = { ...kaynak, kalemler: [{ ad: 'Tutar', metrik: 'net_kar', deger: '0.00', paraBirimi: 'TRY' }, { ad: 'Tutar', metrik: 'vadesi_gecen_alacak', deger: '0.00', paraBirimi: 'TRY' }] };

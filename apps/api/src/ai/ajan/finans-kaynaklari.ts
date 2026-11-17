@@ -16,7 +16,14 @@ export const HESAP_SURUMLERI: Record<string, string> = {
   fatura_ara: "belge_toplam@1", fatura_getir: "belge_toplam@1", belge_ara: "belge_toplam@1", belge_getir: "belge_toplam@1",
 };
 
-export interface FinansKalemi { ad: string; metrik: string; deger: string; paraBirimi: string }
+export interface FinansKalemi {
+  ad: string; metrik: string; deger: string; paraBirimi: string;
+  /** AI-104: birimsiz sayı (ör. rapor satırındaki miktar); para birimi boş. */
+  tur?: "sayi";
+}
+
+/** AI-104: rapor satır olgusu sınırı; fazlası rapor ekranındadır. */
+export const SATIR_OLGU_SINIRI = 20;
 
 export interface FinansKaynagi {
   arac: string;
@@ -100,6 +107,31 @@ export function finansKaynaklariCikar(arac: string, icerik: string, simdi = new 
         const t = nesne(toplam), deger = oku(t.deger);
         const paraBirimi = doviz(t.doviz) ?? (c.dovizAlani ? null : "TRY");
         if (deger !== null && paraBirimi) kaynak.kalemler.push({ ad: metin(c.baslik) || alan, metrik: `rapor:${raporKodu}:${metrikKodu(alan)}:toplam`, deger, paraBirimi });
+      }
+      // AI-104: birden çok satırda ilk SATIR_OLGU_SINIRI satırın para ve sayı sütunları ayrı olgudur;
+      // satır etiketi metin/tarih sütunlarından kurulur. Satır olguları toplamlardan önce gelir.
+      const kolonlar = (Array.isArray(r.kolonlar) ? r.kolonlar : []).map(nesne);
+      const satirlar = Array.isArray(r.satirlar) ? r.satirlar : [];
+      if (satirlar.length > 1) {
+        const etiketAlanlari = kolonlar.filter(c => c.tip === "metin" || c.tip === "tarih").map(c => metin(c.alan)).filter(Boolean);
+        const satirKalemleri: FinansKalemi[] = [];
+        satirlar.slice(0, SATIR_OLGU_SINIRI).forEach((ham, i) => {
+          const satir = nesne(ham);
+          const etiket = etiketAlanlari.map(a => typeof satir[a] === "string" || typeof satir[a] === "number" ? String(satir[a]).slice(0, 80) : "").filter(Boolean).join(" · ").slice(0, 120) || `Satır ${i + 1}`;
+          for (const c of kolonlar) {
+            const alan = metin(c.alan), baslik = metin(c.baslik) || alan, metrik = `rapor:${raporKodu}:${metrikKodu(alan)}:satir:${i + 1}`;
+            if (c.tip === "para") {
+              const deger = oku(satir[alan]);
+              const paraBirimi = c.dovizAlani ? doviz(satir[metin(c.dovizAlani)]) : "TRY";
+              if (deger !== null && paraBirimi) satirKalemleri.push({ ad: `${etiket} — ${baslik}`, metrik, deger, paraBirimi });
+            } else if (c.tip === "sayi") {
+              const deger = oku(satir[alan]);
+              if (deger !== null) satirKalemleri.push({ ad: `${etiket} — ${baslik}`, metrik, deger, paraBirimi: "", tur: "sayi" });
+            }
+          }
+        });
+        kaynak.kalemler = [...satirKalemleri, ...kaynak.kalemler];
+        if (satirlar.length > SATIR_OLGU_SINIRI) kaynak.uyarilar.push(`İlk ${SATIR_OLGU_SINIRI} satır gösterildi; tamamı rapor ekranında.`);
       }
       if (typeof r.satirSayisi === "number" && Array.isArray(r.satirlar) && r.satirSayisi > r.satirlar.length) kaynak.uyarilar.push(`Model ${r.satirlar.length} / ${r.satirSayisi} satırı gördü; tam liste rapor ekranındadır.`);
     }
