@@ -118,6 +118,14 @@ function sar(a: AjanAraci): AjanAraci {
         if (r?.tip === PERSONEL) throw new BadRequestException("Personel carileri Telegram'da gösterilmez; panelde görüntüleyin.");
         return r;
       } };
+    case "cari_ekstre_dosyasi":
+      return { ...a, async calistir(b, g) {
+        const r = (await a.calistir(b, g)) as Kayit;
+        if (r?.cariTip === PERSONEL) {
+          throw new BadRequestException("Personel carilerinin ekstresi Telegram'da gösterilmez; panelde görüntüleyin.");
+        }
+        return r;
+      } };
     default:
       return a;
   }

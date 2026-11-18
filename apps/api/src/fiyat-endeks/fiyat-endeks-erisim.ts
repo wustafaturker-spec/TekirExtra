@@ -1,18 +1,19 @@
 import { ForbiddenException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import type { Rol } from "@tekirextra/shared";
+import { ENDEKS_YETKI_ROLLERI, type Rol } from "@tekirextra/shared";
 import { planOzelligiAcik } from "../core/abonelik-erisim.service";
+import { baglamAl } from "../core/istek-baglami";
 
 /**
  * END-23 (kullanıcı kararı 2026-11-14): erişimi firma yöneticisi belirler.
- * Satış fiyatı ve alış fiyatı/maliyet tarafları ayrı rol listeleridir; yönetici
- * ikisine de her zaman erişir. Özel rol (KLN-20) bunun üstüne "Raporlar"
- * kutusuyla daraltır (`fiyat-endeks` yolu raporlar modülündedir).
+ * Özel rolde satış ve alış/maliyet iki bağımsız izin kutusudur. Özel rolü
+ * olmayan kullanıcıda hazır rol listeleri uygulanır. Plan ve Raporlar
+ * kutusu üst sınırdır (`fiyat-endeks` yolu raporlar modülündedir).
  */
 export const FIYAT_ENDEKS_MODULU = "fiyat_endeks";
 /** Yöneticinin açabileceği roller; bayi, çalışan gibi dış/self-servis roller seçilemez. */
-export const FIYAT_ENDEKS_ROLLERI = ["muhasebe", "satis", "salt_okunur", "mali_musavir", "maliyet_muhasebesi", "uretim_planlama", "depo"] as const satisfies readonly Rol[];
+export const FIYAT_ENDEKS_ROLLERI = ENDEKS_YETKI_ROLLERI satisfies readonly Rol[];
 const rolListesi = z.array(z.enum(FIYAT_ENDEKS_ROLLERI)).max(FIYAT_ENDEKS_ROLLERI.length)
   .refine((r) => new Set(r).size === r.length, "Rol tekrar edemez");
 export const fiyatEndeksAyariSemasi = z.object({
@@ -46,11 +47,12 @@ export async function makasEsigi(tx: Prisma.TransactionClient, tenantId: string)
 export type FiyatTarafi = "satis" | "alis";
 export interface FiyatEndeksErisimi { satis: boolean; alis: boolean }
 
-export function rolErisimi(ayar: FiyatEndeksAyari, rol: Rol): FiyatEndeksErisimi {
-  if (rol === "yonetici") return { satis: true, alis: true };
+export function rolErisimi(ayar: FiyatEndeksAyari, rol: Rol, kapali: readonly string[] = [], ozelRol = false): FiyatEndeksErisimi {
+  if (rol === "yonetici" && !kapali.length) return { satis: true, alis: true };
+  const ozelRolAcik = ozelRol && (FIYAT_ENDEKS_ROLLERI as readonly string[]).includes(rol);
   return {
-    satis: (ayar.satisRolleri as readonly string[]).includes(rol),
-    alis: (ayar.alisRolleri as readonly string[]).includes(rol),
+    satis: (rol === "yonetici" || ozelRolAcik || (!ozelRol && (ayar.satisRolleri as readonly string[]).includes(rol))) && !kapali.includes("raporlar.goruntule") && !kapali.includes("fiyat_endeks_satis.goruntule"),
+    alis: (rol === "yonetici" || ozelRolAcik || (!ozelRol && (ayar.alisRolleri as readonly string[]).includes(rol))) && !kapali.includes("raporlar.goruntule") && !kapali.includes("fiyat_endeks_alis.goruntule"),
   };
 }
 
@@ -61,7 +63,7 @@ export async function fiyatEndeksErisimi(tx: Prisma.TransactionClient, tenantId:
   }
   const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: FIYAT_ENDEKS_MODULU } }, select: { ayarlar: true } });
   const ayar = fiyatEndeksAyariSemasi.safeParse(kayit?.ayarlar ?? FIYAT_ENDEKS_VARSAYILAN);
-  const erisim = rolErisimi(ayar.success ? ayar.data : FIYAT_ENDEKS_VARSAYILAN, rol);
+  const erisim = rolErisimi(ayar.success ? ayar.data : FIYAT_ENDEKS_VARSAYILAN, rol, baglamAl()?.ozelRol?.kapali, Boolean(baglamAl()?.ozelRol));
   if (!erisim.satis && !erisim.alis) throw new ForbiddenException("Fiyat ve endeks analizine erişiminiz yok; yönetici Ayarlar › Modül Ayarları'ndan açabilir.");
   return erisim;
 }

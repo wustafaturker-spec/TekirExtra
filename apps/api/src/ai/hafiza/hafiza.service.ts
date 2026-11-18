@@ -4,7 +4,7 @@ import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import {
   AZAMI_TERCIH_ONERISI, ORNEK_SAYISI, TERCIH_METNI, adresAnahtari, ifadeAnahtari, onaydanOgrenilecekler, ornekMetni, tercihAnahtari,
-  type HafizaDurumu, type HafizaKaynagi, type HafizaTuru, type OgrenmeKalemi,
+  type HafizaDurumu, type HafizaKaynagi, type HafizaTuru, type HafizaKapsami, type OgrenmeKalemi,
 } from "./hafiza.kurallari";
 
 /** Yönetici ve muhasebe firmanın tüm hafızasını yönetir; diğer roller yalnız kendi oluşturduklarını (AI-59). */
@@ -15,24 +15,29 @@ const TARAMA_PARTISI = 20;
 
 interface YazGirdisi {
   tur: HafizaTuru; anahtar: string; kaynak: HafizaKaynagi; durum?: HafizaDurumu;
+  kapsam?: HafizaKapsami;
   cariId?: string | null; stokId?: string | null; varyantId?: string | null; metin?: string | null; etiket?: "teklif" | "teklif_degil" | "yarar" | "yaramaz" | "getirme" | null;
   kaynakEpostaId?: string | null;
+  gecerlilikBitisAt?: Date | null;
+  nedenOnerildi?: string | null;
 }
 
 export interface UrunHatirlama { id: string; stokId: string; varyantId: string | null }
 
 export interface HafizaGorunumu {
-  id: string; tur: string; anahtar: string; metin: string | null; etiket: string | null; kaynak: string; durum: string;
+  id: string; tur: string; anahtar: string; kapsam: string; metin: string | null; etiket: string | null; kaynak: string; durum: string;
   cari: { id: string; kod: string; unvan: string } | null;
   stok: { id: string; kod: string; ad: string; aktif: boolean } | null;
   varyant: { id: string; kod: string; ad: string; aktif: boolean } | null;
-  olusturan: string | null; kaynakEpostaId: string | null; kullanimSayisi: number; sonKullanimAt: string | null; olusturuldu: string; guncellendi: string;
+  olusturan: string | null; onaylayan: string | null; kaynakEpostaId: string | null;
+  surum: number; sonDogrulamaAt: string | null; gecerlilikBitisAt: string | null; nedenOnerildi: string | null;
+  kullanimSayisi: number; sonKullanimAt: string | null; olusturuldu: string; guncellendi: string;
 }
 
 /**
- * AI-58…65: kiracıya ait ajan hafızası. Yalnız eşleşme, tercih ve örnek
- * tutar; tutar/fiyat/bakiye yazılmaz. Okumalar pasif kartı ve onaylanmamış
- * öneriyi döndürmez; hafıza hiçbir aracı çağırmaz.
+ * AI-58…65 / P-16: kiracıya ait ajan hafızası. Yalnız eşleşme, tercih ve örnek
+ * tutar; tutar/fiyat/bakiye yazılmaz. Okumalar pasif kartı, kapanmış cariyi ve onaylanmamış
+ * öneriyi döndürmez; hafıza hiçbir aracı kendiliğinden çağırmaz.
  */
 @Injectable()
 export class HafizaService {
@@ -46,20 +51,47 @@ export class HafizaService {
   async yaz(g: YazGirdisi): Promise<AiHafiza> {
     const { tenantId, userId } = aktifBaglam();
     const cariId = g.cariId ?? null;
+    const kapsam: HafizaKapsami = g.kapsam ?? (g.cariId ? "cari" : g.tur === "musteri_tercihi" && g.kaynak === "kullanici" ? "kullanici" : "firma");
     const veri = {
+      kapsam,
       stokId: g.stokId ?? null, varyantId: g.varyantId ?? null, metin: g.metin?.slice(0, 1000) ?? null, etiket: g.etiket ?? null,
       kaynak: g.kaynak, durum: g.durum ?? "aktif", kaynakEpostaId: g.kaynakEpostaId ?? null,
+      gecerlilikBitisAt: g.gecerlilikBitisAt ?? null,
+      nedenOnerildi: g.nedenOnerildi?.slice(0, 1000) ?? null,
     };
     const olusturanUserId = g.kaynak === "otomatik" ? null : userId;
     for (let deneme = 0; deneme < 2; deneme++) {
       try {
         return await this.prisma.tenantIslem(tenantId, async (tx) => {
           const mevcut = await tx.aiHafiza.findFirst({ where: { tenantId, tur: g.tur, cariId, anahtar: g.anahtar } });
-          if (!mevcut) return tx.aiHafiza.create({ data: { tenantId, tur: g.tur, anahtar: g.anahtar, cariId, olusturanUserId, ...veri } });
-          // AI önerisi var olan kaydı değiştirmez (onaylanmış öneri öneriye geri dönmez); otomatik öğrenme kullanıcı kararını ezmez.
+          if (!mevcut) {
+            return tx.aiHafiza.create({
+              data: {
+                tenantId, tur: g.tur, anahtar: g.anahtar, cariId, olusturanUserId,
+                onaylayanUserId: g.kaynak === "kullanici" ? userId : null,
+                sonDogrulamaAt: g.kaynak === "kullanici" ? new Date() : null,
+                surum: 1,
+                ...veri,
+              },
+            });
+          }
+          // P-16: Pasife alınmış kayıt yeniden otomatik öğrenilemez ya da AI önerisiyle ezilemez. Yalnız kullanıcı açabilir.
+          if (mevcut.durum === "pasif" && g.kaynak !== "kullanici") return mevcut;
+          // AI önerisi var olan kaydı değiştirmez (onaylanmış öneri öneriye geri dönmez)
           if (g.kaynak === "ai_onerisi") return mevcut;
+          // Kullanıcı kaydının üstüne otomatik öğrenme yazılmaz
           if (g.kaynak === "otomatik" && (mevcut.kaynak === "kullanici" || mevcut.durum === "pasif")) return mevcut;
-          return tx.aiHafiza.update({ where: { id: mevcut.id }, data: { ...veri, ...(g.kaynak === "kullanici" ? { olusturanUserId } : {}), updatedAt: new Date() } });
+
+          const yeniSurum = (mevcut.surum ?? 1) + 1;
+          return tx.aiHafiza.update({
+            where: { id: mevcut.id },
+            data: {
+              ...veri,
+              surum: yeniSurum,
+              ...(g.kaynak === "kullanici" ? { olusturanUserId, onaylayanUserId: userId, sonDogrulamaAt: new Date() } : {}),
+              updatedAt: new Date(),
+            },
+          });
         });
       } catch (hata) {
         // Eşzamanlı ilk yazım: tekil indeks ikinciyi reddeder, güncellemeyle yeniden denenir.
@@ -71,8 +103,8 @@ export class HafizaService {
   }
 
   /**
-   * AI-61: aynı cari için öğrenilmiş ürünler (kesin) ve başka carilerde öğrenilmiş
-   * ürünler (yalnız aday). Kartı ya da varyantı pasif olan kayıt döndürülmez.
+   * AI-61 / P-16: aynı cari için öğrenilmiş ürünler (kesin) ve başka carilerde öğrenilmiş
+   * ürünler (yalnız aday). Kartı, varyantı ya da cari pasif olan kayıt veya süresi dolan kayıt döndürülmez.
    */
   async urunleriHatirla(cariId: string, ifadeler: string[]): Promise<{ kesin: Map<string, UrunHatirlama>; aday: Map<string, UrunHatirlama[]> }> {
     const { tenantId } = aktifBaglam();
@@ -80,8 +112,19 @@ export class HafizaService {
     const kesin = new Map<string, UrunHatirlama>();
     const aday = new Map<string, UrunHatirlama[]>();
     if (!anahtarlar.length) return { kesin, aday };
+    const simdi = new Date();
     const kayitlar = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const k = await tx.aiHafiza.findMany({ where: { tenantId, tur: "urun_eslesme", durum: "aktif", anahtar: { in: anahtarlar } }, orderBy: { updatedAt: "desc" } });
+      // Cari aktif değilse hafıza işletilmez
+      const cari = await tx.cariHesap.findFirst({ where: { id: cariId, tenantId, aktif: true }, select: { id: true } });
+      if (!cari) return [];
+
+      const k = await tx.aiHafiza.findMany({
+        where: {
+          tenantId, tur: "urun_eslesme", durum: "aktif", anahtar: { in: anahtarlar },
+          OR: [{ gecerlilikBitisAt: null }, { gecerlilikBitisAt: { gte: simdi } }],
+        },
+        orderBy: { updatedAt: "desc" },
+      });
       const stokIds = [...new Set(k.map((x) => x.stokId!).filter(Boolean))];
       const varyantIds = [...new Set(k.map((x) => x.varyantId).filter((x): x is string => Boolean(x)))];
       const [stoklar, varyantlar] = await Promise.all([
@@ -154,35 +197,59 @@ export class HafizaService {
     return k.map((x) => x.cariId!);
   }
 
-  /** AI-63: isteme ve taslağa yalnız aktif (kullanıcı onaylı) tercihler girer. */
+  /** AI-63 / P-16: isteme ve taslağa yalnız aktif ve geçerli tercihler girer. Kullanıcı kapsamındaki tercihler diğer kullanıcıya uygulanmaz. */
   async aktifTercihler(cariId: string): Promise<string[]> {
-    const { tenantId } = aktifBaglam();
-    const k = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHafiza.findMany({ where: { tenantId, tur: "musteri_tercihi", durum: "aktif", cariId }, orderBy: { createdAt: "asc" }, select: { id: true, metin: true } }));
-    await this.kullanildi(k.map((x) => x.id));
-    return k.map((x) => x.metin ?? "").filter(Boolean);
+    const { tenantId, userId } = aktifBaglam();
+    const simdi = new Date();
+    const k = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHafiza.findMany({
+      where: {
+        tenantId, tur: "musteri_tercihi", durum: "aktif", cariId,
+        OR: [{ gecerlilikBitisAt: null }, { gecerlilikBitisAt: { gte: simdi } }],
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, metin: true, kapsam: true, olusturanUserId: true },
+    }));
+    // P-16: Kullanıcıya özel tercih diğer kullanıcıya uygulanmaz
+    const gecerli = k.filter((x) => x.kapsam !== "kullanici" || !x.olusturanUserId || x.olusturanUserId === userId);
+    await this.kullanildi(gecerli.map((x) => x.id));
+    return gecerli.map((x) => x.metin ?? "").filter(Boolean);
   }
 
   /** Panel: carinin aktif tercihleri ve bekleyen önerileri. */
   async tercihler(cariId: string) {
     const { tenantId } = aktifBaglam();
     const k = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHafiza.findMany({ where: { tenantId, tur: "musteri_tercihi", cariId, durum: { in: ["aktif", "oneri"] } }, orderBy: { createdAt: "asc" } }));
-    return k.map((x) => ({ id: x.id, metin: x.metin ?? "", durum: x.durum, kaynak: x.kaynak }));
+    return k.map((x) => ({ id: x.id, metin: x.metin ?? "", durum: x.durum, kaynak: x.kaynak, kapsam: x.kapsam, nedenOnerildi: x.nedenOnerildi }));
   }
 
-  async tercihEkle(cariId: string, metin: string, kaynak: "kullanici" | "ai_onerisi", kaynakEpostaId: string | null = null) {
+  async tercihEkle(
+    cariId: string,
+    metin: string,
+    kaynak: "kullanici" | "ai_onerisi",
+    kaynakEpostaId: string | null = null,
+    secenekler: { kapsam?: HafizaKapsami; gecerlilikBitisAt?: Date | null; nedenOnerildi?: string | null } = {},
+  ) {
     const { tenantId } = aktifBaglam();
     // Yabancı anahtar denetimi RLS'i görmez; cari bu kiracıda olmalı.
     if (!(await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findFirst({ where: { id: cariId, tenantId }, select: { id: true } })))) throw new NotFoundException("Cari bulunamadı");
     const temiz = metin.replace(/\s+/g, " ").trim().slice(0, TERCIH_METNI);
-    return this.yaz({ tur: "musteri_tercihi", anahtar: tercihAnahtari(temiz), cariId, metin: temiz, kaynak, durum: kaynak === "kullanici" ? "aktif" : "oneri", kaynakEpostaId });
+    return this.yaz({
+      tur: "musteri_tercihi", anahtar: tercihAnahtari(temiz), cariId, metin: temiz,
+      kaynak, durum: kaynak === "kullanici" ? "aktif" : "oneri", kaynakEpostaId,
+      kapsam: secenekler.kapsam ?? "cari",
+      gecerlilikBitisAt: secenekler.gecerlilikBitisAt ?? null,
+      nedenOnerildi: secenekler.nedenOnerildi ?? null,
+    });
   }
 
-  /** AI-63: modelin önerdiği kalıcı tercihler öneri olarak yazılır; kullanıcı onaylamadan kullanılmaz. */
-  async tercihOnerileri(cariId: string, metinler: string[], kaynakEpostaId: string): Promise<number> {
+  /** AI-63 / P-16: modelin önerdiği kalıcı tercihler gerekçesiyle öneri olarak yazılır; kullanıcı onaylamadan kullanılmaz. */
+  async tercihOnerileri(cariId: string, metinler: string[], kaynakEpostaId: string, gerekceler?: string[]): Promise<number> {
     let n = 0;
-    for (const m of metinler.slice(0, AZAMI_TERCIH_ONERISI)) {
+    for (let i = 0; i < Math.min(metinler.length, AZAMI_TERCIH_ONERISI); i++) {
+      const m = metinler[i];
       if (m.trim().length < 3) continue;
-      const k = await this.tercihEkle(cariId, m, "ai_onerisi", kaynakEpostaId);
+      const gerekce = gerekceler?.[i] ?? "E-posta teklif talebi içeriğinden önerilen müşteri tercihi";
+      const k = await this.tercihEkle(cariId, m, "ai_onerisi", kaynakEpostaId, { nedenOnerildi: gerekce });
       if (k.durum === "oneri") n++;
     }
     return n;
@@ -239,7 +306,7 @@ export class HafizaService {
     return ogrenilen;
   }
 
-  // ─── Hafıza ekranı (AI-59) ───────────────────────────────────────────────
+  // ─── Hafıza ekranı (AI-59 / P-16) ────────────────────────────────────────
 
   private kapsam(): Prisma.AiHafizaWhereInput {
     const { tenantId, userId, rol } = aktifBaglam();
@@ -255,21 +322,27 @@ export class HafizaService {
         tx.aiHafiza.findMany({ where, orderBy: [{ durum: "asc" }, { updatedAt: "desc" }], skip: (f.sayfa - 1) * f.adet, take: f.adet }),
       ]);
       const benzersiz = (d: Array<string | null>) => [...new Set(d.filter((x): x is string => Boolean(x)))];
-      const [cariler, stoklar, varyantlar, kullanicilar] = await Promise.all([
+      const [cariler, stoklar, varyantlar, kullanicilar, onaylayanlar] = await Promise.all([
         tx.cariHesap.findMany({ where: { tenantId, id: { in: benzersiz(kayitlar.map((k) => k.cariId)) } }, select: { id: true, kod: true, unvan: true } }),
         tx.stokKart.findMany({ where: { tenantId, id: { in: benzersiz(kayitlar.map((k) => k.stokId)) } }, select: { id: true, kod: true, ad: true, aktif: true } }),
         tx.stokVaryant.findMany({ where: { tenantId, id: { in: benzersiz(kayitlar.map((k) => k.varyantId)) } }, select: { id: true, kod: true, ad: true, aktif: true } }),
         tx.user.findMany({ where: { tenantId, id: { in: benzersiz(kayitlar.map((k) => k.olusturanUserId)) } }, select: { id: true, adSoyad: true, eposta: true } }),
+        tx.user.findMany({ where: { tenantId, id: { in: benzersiz(kayitlar.map((k) => k.onaylayanUserId)) } }, select: { id: true, adSoyad: true, eposta: true } }),
       ]);
       const harita = <T extends { id: string }>(l: T[]) => new Map(l.map((x) => [x.id, x]));
-      const c = harita(cariler), s = harita(stoklar), v = harita(varyantlar), u = harita(kullanicilar);
+      const c = harita(cariler), s = harita(stoklar), v = harita(varyantlar), u = harita(kullanicilar), o = harita(onaylayanlar);
       return {
         toplam,
         kayitlar: kayitlar.map((k): HafizaGorunumu => ({
-          id: k.id, tur: k.tur, anahtar: k.anahtar, metin: k.metin, etiket: k.etiket, kaynak: k.kaynak, durum: k.durum,
+          id: k.id, tur: k.tur, anahtar: k.anahtar, kapsam: k.kapsam, metin: k.metin, etiket: k.etiket, kaynak: k.kaynak, durum: k.durum,
           cari: k.cariId ? c.get(k.cariId) ?? null : null, stok: k.stokId ? s.get(k.stokId) ?? null : null, varyant: k.varyantId ? v.get(k.varyantId) ?? null : null,
           olusturan: k.olusturanUserId ? (u.get(k.olusturanUserId)?.adSoyad || u.get(k.olusturanUserId)?.eposta || null) : null,
-          kaynakEpostaId: k.kaynakEpostaId, kullanimSayisi: k.kullanimSayisi, sonKullanimAt: k.sonKullanimAt?.toISOString() ?? null,
+          onaylayan: k.onaylayanUserId ? (o.get(k.onaylayanUserId)?.adSoyad || o.get(k.onaylayanUserId)?.eposta || null) : null,
+          kaynakEpostaId: k.kaynakEpostaId, surum: k.surum,
+          sonDogrulamaAt: k.sonDogrulamaAt?.toISOString() ?? null,
+          gecerlilikBitisAt: k.gecerlilikBitisAt?.toISOString() ?? null,
+          nedenOnerildi: k.nedenOnerildi,
+          kullanimSayisi: k.kullanimSayisi, sonKullanimAt: k.sonKullanimAt?.toISOString() ?? null,
           olusturuldu: k.createdAt.toISOString(), guncellendi: k.updatedAt.toISOString(),
         })),
       };
@@ -285,12 +358,16 @@ export class HafizaService {
     return k;
   }
 
-  /** Öneriyi onaylama (aktif) ya da reddetme/devre dışı bırakma (pasif); kaynak (AI önerisi) korunur. */
+  /** P-16: Öneriyi onaylama (aktif) ya da reddetme/devre dışı bırakma (pasif); sürüm ve onaylayan kaydedilir. */
   async durumDegistir(id: string, durum: "aktif" | "pasif") {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     const k = await this.yetkiliKayit(id);
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHafiza.update({ where: { id: k.id }, data: { durum, updatedAt: new Date() } }));
-    return { id, durum };
+    const yeniSurum = (k.surum ?? 1) + 1;
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHafiza.update({
+      where: { id: k.id },
+      data: { durum, onaylayanUserId: userId, sonDogrulamaAt: new Date(), surum: yeniSurum, updatedAt: new Date() },
+    }));
+    return { id, durum, surum: yeniSurum };
   }
 
   async sil(id: string) {

@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma, type AsistanSorusu, type Rol } from "@prisma/client";
 import { AracYurutucu } from "../ai/ajan/arac-yurutucu";
-import { ocrGirdisiOlustur } from "../ai/ai.semalar";
+import { ocrGirdisiOlustur, type AiBelgeGirdi } from "../ai/ai.semalar";
 import { AiService } from "../ai/ai.service";
 import { dosyaIceriginiDogrula } from "../core/guvenlik/dosya-dogrulama";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import type { BelgeSonucu } from "./masraf-belge.service";
 import { BELGE_AZAMI_BAYT } from "./masraf-belge.kurallari";
+import { pdfMetniniAyikla } from "./pdf-metin-ayristirici";
+import { cariEbelgeDurumlariniOku } from "../ebelge/cari-ebelge";
 import {
   CARI_TIP_ADLARI, cariBilgisiYeterli, cariOzeti, cariTaslagi, cariTipSorusu, sonrakiCariKodu, type CariBelgeTipi, type CariTaslagi,
 } from "./cari-belge.kurallari";
@@ -60,7 +62,19 @@ export class CariBelgeService {
     const ad = /\.[a-z0-9]{2,4}$/i.test(dosya.ad) ? dosya.ad : `${dosya.ad}.${UZANTI[girdi.mimeType]}`;
     await dosyaIceriginiDogrula({ originalname: ad, mimetype: girdi.mimeType, buffer: dosya.buffer }, "belge");
 
-    const ocr = await this.ai.cariBilgisiCikar(tenantId, { ...girdi, belgeTipi: "cari_bilgisi" }, kanal);
+    // CNL-25: Dijital PDF metin katmanı varsa doğrudan çıkarılır (maliyetsiz ve hızlı)
+    let ocrGirdi: AiBelgeGirdi;
+    if (girdi.mimeType === "application/pdf") {
+      const hamMetin = await pdfMetniniAyikla(dosya.buffer).catch(() => null);
+      if (!hamMetin) {
+        throw new BadRequestException("Gönderilen PDF belgesi taranmış/resim formatında ve metin içermiyor. Lütfen belgenin net bir fotoğrafını (JPEG veya PNG) gönderin ya da doğrudan dijital PDF'i iletin.");
+      }
+      ocrGirdi = { hamMetin, belgeTipi: "cari_bilgisi", mimeType: "application/pdf" };
+    } else {
+      ocrGirdi = { ...girdi, belgeTipi: "cari_bilgisi" };
+    }
+
+    const ocr = await this.ai.cariBilgisiCikar(tenantId, ocrGirdi, kanal);
     const v = ocr.dogrulama.veri;
     if (!ocr.dogrulama.gecerli || !cariBilgisiYeterli(v)) {
       if (!kesin) throw new CariBilgisiYetersizHatasi("Belgede tutar bulunamadı. Fiş değilse açıklamaya “cari aç” yazarak yeniden gönderin.");
@@ -71,6 +85,21 @@ export class CariBelgeService {
       return { sonuc: `Bu cari zaten kayıtlı: ${ocr.mevcutCari.unvan} (${ocr.mevcutCari.kod}). Yeni kart açmadım.\n${panel}/panel/cari/${ocr.mevcutCari.id}` };
     }
     const { kod: _k, tip: _t, ...taslak } = cariTaslagi(v, "", "musteri");
+
+    // CNL-26: GİB yerel mükellef listesinden e-Fatura durumu kontrolü
+    if (v.vknTckn) {
+      try {
+        const ebelge = await this.prisma.tenantIslem(tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [v.vknTckn]));
+        const durum = ebelge.durumlar.get(v.vknTckn);
+        if (durum?.tur === "efatura") {
+          taslak.efaturaMukellefi = true;
+          taslak.efaturaSenaryosu = durum.kamu ? "KAMU" : "TICARI";
+        }
+      } catch {
+        // GİB tablosu okuma hatası süreci durdurmaz
+      }
+    }
+
     const uyarilar = ocr.dogrulama.uyarilar.slice(0, 3);
     if (tip) return this.talepAc(taslak, tip, uyarilar);
 

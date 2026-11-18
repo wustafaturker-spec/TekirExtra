@@ -29,6 +29,8 @@ export interface EkstreSatiri {
   bakiye: string | null;
   durum: "beklemede" | "eslesti" | "yoksayildi";
   eslesmeTuru: EslesmeTuru | null;
+  eslesmeSkoru?: number | null;
+  eslesmeKaniti?: unknown;
   hareketler: Array<{ id: string; tip: string; tutar: string; dovizCinsi: string; kaynakTur: string; aciklama: string | null; cari: { unvan: string } | null; fatura: { no: string | null } | null; hesap: string | null; kategori: string | null }>;
   kuralOnerisi: Kural | null;
 }
@@ -66,6 +68,16 @@ interface Oneriler {
   odemeTalimatlari: Array<{ id: string; no: string | null; aliciUnvan: string; tutar: string; odemeTarihi: string; durum: string; aciklama: string; aciklamadaGeciyor: boolean }>;
   /** KRD-04: bu hesaba bağlı aktif krediler; girişte yalnız rotatif. */
   krediler: Array<{ id: string; ad: string; tur: "taksitli" | "spot" | "rotatif"; siradakiTaksit: { id: string; sira: number; vadeTarihi: string; anapara: string; faiz: string; bsmv: string; kkdf: string; toplam: string; tutarTutuyor: boolean } | null }>;
+  /** P-05: Açıklanabilir eşleştirme güven skoru ve kanıt dökümü */
+  eslesmeSkoru?: number;
+  eslesmeKaniti?: {
+    skor: number;
+    oneriTuru: "otomatik" | "oneri" | "belirsiz";
+    aciklama: string;
+    sinyaller: Array<{ tur: string; puan: number; baslik: string; detay: string; deger?: string }>;
+    alternatifAdaylar?: Array<{ cariId: string; kod: string; unvan: string; skor: number; gerekce: string }>;
+  };
+  alternatifAdaylar?: Array<{ cariId: string; kod: string; unvan: string; skor: number; gerekce: string }>;
 }
 
 export interface PosHesabi { id: string; ad: string; dovizCinsi: string; bakiye: string; aktif: boolean }
@@ -109,11 +121,13 @@ export function EslestirmePaneli({
   cariler,
   posHesaplari,
   onDegisti,
+  panelRef,
 }: {
   satir: EkstreSatiri;
   cariler: Array<{ id: string; unvan: string; kod?: string }>;
   posHesaplari: PosHesabi[];
   onDegisti: (mesaj: string) => void;
+  panelRef: React.Ref<HTMLElement>;
 }) {
   const giris = satir.yon === "tahsilat";
   const mutlak = Math.abs(Number(satir.tutar));
@@ -339,7 +353,7 @@ export function EslestirmePaneli({
 
   if (satir.durum !== "beklemede") {
     return (
-      <aside className="match-panel">
+      <aside className="match-panel" ref={panelRef} tabIndex={-1} aria-label="Ekstre eşleştirme">
         {ust}
         <div className="match-panel__body">
           {satir.durum === "yoksayildi" ? (
@@ -382,7 +396,7 @@ export function EslestirmePaneli({
   }
 
   return (
-    <aside className="match-panel">
+    <aside className="match-panel" ref={panelRef} tabIndex={-1} aria-label="Ekstre eşleştirme">
       {ust}
       <div className="match-panel__body">
         {!oneriler && !hata && <p className="match-panel__note">Öneriler hazırlanıyor…</p>}
@@ -395,6 +409,82 @@ export function EslestirmePaneli({
 
         {oneriler && (
           <>
+            {oneriler.eslesmeKaniti && (
+              <div
+                style={{
+                  padding: "0.875rem",
+                  marginBottom: "1rem",
+                  borderRadius: "8px",
+                  background: "var(--surface-muted, #f8fafc)",
+                  border: "1px solid var(--border-color, #e2e8f0)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <Badge variant={oneriler.eslesmeKaniti.skor >= 90 ? "success" : oneriler.eslesmeKaniti.skor >= 70 ? "warning" : "neutral"}>
+                      %{oneriler.eslesmeKaniti.skor} Güven Skoru
+                    </Badge>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                      {oneriler.eslesmeKaniti.oneriTuru === "otomatik" ? "Güçlü Eşleşme Adayı" : oneriler.eslesmeKaniti.oneriTuru === "oneri" ? "Öneri Bekliyor" : "İnceleme Gerekli"}
+                    </span>
+                  </div>
+                  {oneriler.eslesmeKaniti.skor >= 85 && (
+                    <Button size="sm" variant="primary" disabled={isleniyor || !gecerli} onClick={eslestir}>
+                      Öneriyi Onayla (%{oneriler.eslesmeKaniti.skor})
+                    </Button>
+                  )}
+                </div>
+
+                {oneriler.eslesmeKaniti.sinyaller && oneriler.eslesmeKaniti.sinyaller.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem", marginTop: "0.5rem" }}>
+                    {oneriler.eslesmeKaniti.sinyaller.map((s, idx) => (
+                      <span
+                        key={idx}
+                        title={s.detay}
+                        style={{
+                          fontSize: "0.75rem",
+                          padding: "0.2rem 0.5rem",
+                          borderRadius: "4px",
+                          background: "var(--surface-raised, #ffffff)",
+                          border: "1px solid var(--border-color, #e2e8f0)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                        }}
+                      >
+                        <span>{s.tur === "fatura_no" || s.tur === "ettn" ? "🧾" : s.tur === "vkn_tckn" ? "🏢" : s.tur === "iban" ? "🏦" : s.tur === "tutar" ? "🎯" : s.tur === "kural" ? "⚡" : s.tur === "talimat" ? "📋" : "✍️"}</span>
+                        <strong>{s.baslik}</strong>
+                        <span style={{ opacity: 0.65 }}>+{s.puan}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {oneriler.alternatifAdaylar && oneriler.alternatifAdaylar.length >= 2 && (
+                  <div style={{ marginTop: "0.75rem", padding: "0.5rem", borderRadius: "6px", background: "var(--surface-raised, #ffffff)", border: "1px dashed var(--warning-border, #f59e0b)" }}>
+                    <small style={{ display: "block", color: "var(--warning-text, #b45309)", fontWeight: 600, marginBottom: "0.375rem" }}>
+                      ⚠️ Birden Fazla Yakın Aday Tespit Edildi — Tercih Ettiğiniz Cariyi Seçin:
+                    </small>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      {oneriler.alternatifAdaylar.map((a) => (
+                        <Button
+                          key={a.cariId}
+                          size="sm"
+                          variant={cariId === a.cariId ? "primary" : "ghost"}
+                          onClick={() => {
+                            setCariId(a.cariId);
+                            setTur("cari");
+                          }}
+                        >
+                          {a.unvan} (%{a.skor})
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="match-panel__types">
               <Segmented ariaLabel="Eşleme türü" items={turler.map((t) => ({ deger: t, baslik: ESLESME_ADI[t] }))} value={tur} onChange={(t) => { setTur(t); setHata(""); }} />
             </div>

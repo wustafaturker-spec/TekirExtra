@@ -12,7 +12,8 @@
     "typecheck": "turbo typecheck",
     "dev": "turbo dev",
     "lint": "eslint",
-    "lint:soz": "eslint -c eslint.soz.config.mjs apps/api/src packages/shared/src packages/baglanti/src && eslint -c eslint.soz.config.mjs apps/web/src"
+    "lint:soz": "eslint -c eslint.soz.config.mjs apps/api/src packages/shared/src packages/baglanti/src && eslint -c eslint.soz.config.mjs apps/web/src",
+    "tunnel": "node scripts/uzaktan-erisim-tuneli.mjs"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

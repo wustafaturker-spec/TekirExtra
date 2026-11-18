@@ -26,10 +26,10 @@ export const ARAC_GRUPLARI = {
 export type AracGrubu = keyof typeof ARAC_GRUPLARI;
 
 export const GRUP_ARACLARI: Record<AracGrubu, string[]> = {
-  cekirdek: ["cari_ara", "cari_getir", "stok_ara", "stok_getir", "belge_ara", "belge_getir", "fatura_ara", "fatura_getir", "rapor_katalogu", "rapor_calistir", "bildirimler", "gunluk_brifing"],
-  satis: ["fiyat_onerisi", "belge_taslagi_olustur", "fatura_taslagi_olustur", "belge_onayla", "belge_iptal", "belge_donustur", "fatura_kesinlestir", "fatura_iptal", "belge_eposta_gonder", "fatura_eposta_gonder", "ebelge_gonder"],
+  cekirdek: ["cari_ara", "cari_getir", "cari_ekstre_dosyasi", "stok_ara", "stok_getir", "belge_ara", "belge_getir", "fatura_ara", "fatura_getir", "rapor_katalogu", "rapor_calistir", "bildirimler", "gunluk_brifing", "sozlesme_ara_ve_sor"],
+  satis: ["fiyat_onerisi", "belge_taslagi_olustur", "fatura_taslagi_olustur", "belge_onayla", "belge_iptal", "belge_donustur", "teklif_revize_et", "fatura_kesinlestir", "fatura_iptal", "fatura_fiyat_sapmasi", "belge_eposta_gonder", "fatura_eposta_gonder", "ebelge_gonder"],
   kart: ["cari_olustur", "cari_guncelle", "stok_karti_olustur", "stok_karti_guncelle"],
-  tahsilat: ["vadesi_gecen_alacaklar", "tahsilat_oncelikleri", "tahsilat_riski", "odeme_hatirlatmasi_gonder", "cari_ekstre_eposta", "crm_gorevi_olustur"],
+  tahsilat: ["vadesi_gecen_alacaklar", "tahsilat_oncelikleri", "tahsilat_riski", "cari_durumu", "odeme_hatirlatmasi_gonder", "cari_ekstre_eposta", "crm_gorevi_olustur"],
   finans: ["kasa_banka_hesaplari", "kasa_banka_hareketi_kaydet", "ekstre_satiri_eslestir", "masraf_kategorileri", "masraf_taslagi_olustur", "masraf_tamamla", "finansal_ozet", "gelir_gider", "cek_senet_ara", "cek_senet_ozet", "krediler", "kredi_kartlari", "odeme_talimatlari", "butce_karsilastirma", "nakit_pozisyonu", "demirbaslar", "araclar"],
   eposta: ["gelen_eposta_ara", "gelen_eposta_getir", "gelen_eposta_ek_ocr", "gelen_eposta_senkronize_et", "gelen_eposta_durum_guncelle", "gelen_epostadan_crm_gorevi_ac"],
   gelen_ebelge: ["gelen_efatura_ara", "gelen_efatura_getir", "gelen_efatura_isle", "gelen_efatura_yanit", "gelen_efatura_xml_yukle", "gelen_eirsaliye_ara", "gelen_eirsaliye_getir", "gelen_eirsaliye_yanit"],
@@ -57,9 +57,9 @@ function sadelestir(metin: string): string {
 }
 
 const SOZCUK_GRUPLARI: Array<[RegExp, AracGrubu[]]> = [
-  [/teklif|siparis|irsaliye|fatura|fiyat|satis|e-?arsiv|e-?belge|kesinlestir|donustur|iptal/, ["satis"]],
+  [/teklif|siparis|irsaliye|fatura|fiyat|satis|e-?arsiv|e-?belge|kesinlestir|donustur|iptal|reviz|sapma/, ["satis"]],
   [/cari|musteri|tedarikci|stok|urun|kart/, ["kart"]],
-  [/tahsil|alacak|vade|borc|hatirlat|risk|ekstre|mutabakat|crm|gorev/, ["tahsilat"]],
+  [/tahsil|alacak|vade|borc|hatirlat|risk|ekstre|ektre|dokum|mutabakat|crm|gorev|analiz/, ["tahsilat"]],
   [/kasa|banka|masraf|gider|gelir|kar\b|kâr|zarar|ciro|nakit|cek\b|cekler|senet|kredi|odeme|butce|bakiye|finans|virman|pos\b/, ["finans"]],
   [/e-?posta|mail|ileti|imap|ocr/, ["eposta"]],
   [/gelen|alis faturasi|tedarikci faturasi|xml|ubl|kabul|\bret\b|\bred\b|reddet/, ["gelen_ebelge"]],

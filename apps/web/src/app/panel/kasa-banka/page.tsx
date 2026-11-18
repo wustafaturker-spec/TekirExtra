@@ -5,7 +5,7 @@ import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { OdemeFisi, type FisBaslangici, type FisTipi } from "./odeme-fisi";
 import { FisAyrintisi, type DefterHareketi } from "./fis-ayrintisi";
 import { DovizIslemFormu } from "./doviz-islem-formu";
-import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, Select, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 interface Hesap {
   id: string;
@@ -379,13 +379,7 @@ export default function KasaBankaSayfasi() {
   }
   return (
     <div className="treasury-page">
-      <header className="treasury-hero">
-        <div>
-          <span>FİNANS VE LİKİDİTE MERKEZİ</span>
-          <h1>Kasa ve banka yönetimi</h1>
-          <p>Nakit pozisyonunuzu izleyin, tahsilat, ödeme ve hesaplar arası transferleri güvenle yönetin.</p>
-        </div>
-        <div>
+      <PageHeader title="Kasa ve banka yönetimi" actions={<div className="row-tight treasury-page-actions">
           <Button
             onClick={() => {
               temizle();
@@ -411,10 +405,178 @@ export default function KasaBankaSayfasi() {
           >
             Fiş Girişi
           </Button>
-        </div>
-      </header>
+      </div>} />
       {hata && <Alert tone="error">{hata}</Alert>}
       {basari && <Alert tone="success">{basari}</Alert>}
+      <Card
+        className="treasury-register"
+        pad={false}
+        title={
+          <div>
+            <h2>Kasa ve banka hareketleri</h2>
+            <small>
+              {toplamlar
+                ? `${toplamlar.adet.toLocaleString("tr-TR")} kayıt${toplamlar.adet > hareketler.length ? ` · ${hareketler.length.toLocaleString("tr-TR")} gösteriliyor` : ""}`
+                : "…"}
+            </small>
+          </div>
+        }
+      >
+        <div className="treasury-filter-grid">
+          <Field label="Hareket ara">
+            <Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Cari, fatura, makbuz no veya açıklama…" />
+          </Field>
+          <Field label="İşlem türü">
+            <Select value={turFiltre} onChange={(e) => setTurFiltre(e.target.value)}>
+              <option value="">Tümü</option>
+              <option value="tahsilat">Tahsilat</option>
+              <option value="tediye">Tediye</option>
+              <option value="virman_gelis">Virman girişi</option>
+              <option value="virman_gidis">Virman çıkışı</option>
+              <option value="acilis">Açılış (devir)</option>
+            </Select>
+          </Field>
+          <Field label="Hesap">
+            <Select value={hesapFiltre} onChange={(e) => setHesapFiltre(e.target.value)}>
+              <option value="">Tüm hesaplar</option>
+              {tumHesaplar.map((x) => (
+                <option key={`${x.tur}-${x.id}`} value={`${x.tur}:${x.id}`}>
+                  {x.ad} · {x.dovizCinsi}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Başlangıç">
+            <Input type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} />
+          </Field>
+          <Field label="Bitiş">
+            <Input type="date" min={baslangic} value={bitis} onChange={(e) => setBitis(e.target.value)} />
+          </Field>
+          <Button onClick={() => void csv()} disabled={!hareketler.length || Boolean(islem)}>
+            {islem === "csv" ? "Hazırlanıyor…" : "CSV"}
+          </Button>
+        </div>
+        {toplamlar && toplamlar.dovizler.length > 0 && (
+          <div className="treasury-totals" aria-label="Süzgece uyan kayıtların toplamı">
+            {toplamlar.dovizler.map((t) => (
+              <div key={t.dovizCinsi}>
+                <b>{t.dovizCinsi}</b>
+                <span>
+                  Giriş <strong className="treasury-in">{para(t.giris, t.dovizCinsi)}</strong>
+                </span>
+                <span>
+                  Çıkış <strong className="treasury-out">{para(t.cikis, t.dovizCinsi)}</strong>
+                </span>
+                <span>
+                  Net <strong>{para(t.net, t.dovizCinsi)}</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <TableWrap className="treasury-movement-table platform-responsive-table">
+          <thead>
+            <tr>
+              <th>Tarih</th>
+              <th>Hesap</th>
+              <th>İşlem</th>
+              <th>Cari / Belge</th>
+              <th>Açıklama</th>
+              <th>Kur / TRY</th>
+              <th>Tutar</th>
+              <th>Durum</th>
+            </tr>
+          </thead>
+          <tbody>
+            {listeYukleniyor && !hareketler.length ? (
+              <tr>
+                <td colSpan={8}>
+                  <div className="treasury-empty">Hareketler yükleniyor…</div>
+                </td>
+              </tr>
+            ) : (
+              hareketler.map((h) => (
+                <tr
+                  key={h.id}
+                  className={`row-link${h.geriAlindi ? " is-reversed" : ""}`}
+                  tabIndex={0}
+                  aria-label="Fiş ayrıntısını aç"
+                  onClick={() => {
+                    setSecili(h);
+                    setModal("detay");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSecili(h);
+                      setModal("detay");
+                    }
+                  }}
+                >
+                  <td data-label="Tarih">
+                    <strong>{new Date(h.tarih).toLocaleDateString("tr-TR")}</strong>
+                    {h.makbuzNo && <small className="mono">{h.makbuzNo}</small>}
+                  </td>
+                  <td data-label="Hesap">
+                    <strong>{h.kasa?.ad || h.bankaHesap?.ad || "POS / Sistem"}</strong>
+                    <small>{h.dovizCinsi}</small>
+                  </td>
+                  <td data-label="İşlem">
+                    {h.kaynakTur === "acilis" ? (
+                      <Badge variant="info">Açılış</Badge>
+                    ) : (
+                      <Badge variant={giris(h.tip) ? "success" : "danger"}>{tipAd(h.tip)}</Badge>
+                    )}
+                    <small>
+                      {h.kaynakTur === "acilis"
+                        ? "devir bakiyesi"
+                        : h.kaynakTur === "doviz_islem"
+                          ? "döviz alım/satımı"
+                          : h.kaynakTur.replaceAll("_", " ")}
+                    </small>
+                  </td>
+                  <td data-label="Cari / belge">
+                    <strong>{h.cari?.unvan || "—"}</strong>
+                    <small>{h.fatura?.no ? `Fatura ${h.fatura.no}` : "Belge bağlantısı yok"}</small>
+                  </td>
+                  <td data-label="Açıklama">{h.aciklama || "—"}</td>
+                  <td data-label="Kur / TRY">
+                    <strong>{Number(h.kur).toLocaleString("tr-TR")}</strong>
+                    <small>{para(h.tutarTry)}</small>
+                  </td>
+                  <td data-label="Tutar">
+                    <strong className={giris(h.tip) ? "treasury-in" : "treasury-out"}>
+                      {giris(h.tip) ? "+" : "-"}
+                      {para(h.tutar, h.dovizCinsi)}
+                    </strong>
+                  </td>
+                  <td data-label="Durum">
+                    {h.kaynakTur === "ters_kayit" ? (
+                      <Badge variant="warning">Ters kayıt</Badge>
+                    ) : h.geriAlindi ? (
+                      <Badge variant="neutral">Geri alındı</Badge>
+                    ) : null}
+                  </td>
+                </tr>
+              ))
+            )}
+            {!hareketler.length && !listeYukleniyor && (
+              <tr>
+                <td colSpan={8}>
+                  <div className="treasury-empty">Hareket bulunamadı.</div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </TableWrap>
+        {sonrakiImlec && (
+          <div className="treasury-more">
+            <Button onClick={() => void dahaFazlaYukle()} disabled={listeYukleniyor}>
+              {listeYukleniyor ? "Yükleniyor…" : `Daha fazla yükle (${SAYFA_ADEDI})`}
+            </Button>
+          </div>
+        )}
+      </Card>
       <section className="treasury-kpis">
         <a className="is-lead" href="/panel/kasa-banka/nakit-pozisyonu" title="Nakit pozisyonunu aç">
           <span>TRY likidite</span>
@@ -564,178 +726,6 @@ export default function KasaBankaSayfasi() {
           Raporlar
         </ButtonLabel>
       </div>
-      <Card className="treasury-filter">
-        <div className="treasury-filter-grid">
-          <Field label="Hareket ara">
-            <Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Cari, fatura, makbuz no veya açıklama…" />
-          </Field>
-          <Field label="İşlem türü">
-            <Select value={turFiltre} onChange={(e) => setTurFiltre(e.target.value)}>
-              <option value="">Tümü</option>
-              <option value="tahsilat">Tahsilat</option>
-              <option value="tediye">Tediye</option>
-              <option value="virman_gelis">Virman girişi</option>
-              <option value="virman_gidis">Virman çıkışı</option>
-              <option value="acilis">Açılış (devir)</option>
-            </Select>
-          </Field>
-          <Field label="Hesap">
-            <Select value={hesapFiltre} onChange={(e) => setHesapFiltre(e.target.value)}>
-              <option value="">Tüm hesaplar</option>
-              {tumHesaplar.map((x) => (
-                <option key={`${x.tur}-${x.id}`} value={`${x.tur}:${x.id}`}>
-                  {x.ad} · {x.dovizCinsi}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Başlangıç">
-            <Input type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} />
-          </Field>
-          <Field label="Bitiş">
-            <Input type="date" min={baslangic} value={bitis} onChange={(e) => setBitis(e.target.value)} />
-          </Field>
-          <Button onClick={() => void csv()} disabled={!hareketler.length || Boolean(islem)}>
-            {islem === "csv" ? "Hazırlanıyor…" : "CSV"}
-          </Button>
-        </div>
-      </Card>
-      <Card
-        className="treasury-register"
-        pad={false}
-        title={
-          <div>
-            <span>FİNANS DEFTERİ</span>
-            <h2>Kasa ve banka hareketleri</h2>
-            <small>
-              {toplamlar
-                ? `${toplamlar.adet.toLocaleString("tr-TR")} kayıt${toplamlar.adet > hareketler.length ? ` · ${hareketler.length.toLocaleString("tr-TR")} gösteriliyor` : ""}`
-                : "…"}
-            </small>
-          </div>
-        }
-      >
-        {toplamlar && toplamlar.dovizler.length > 0 && (
-          <div className="treasury-totals" aria-label="Süzgece uyan kayıtların toplamı">
-            {toplamlar.dovizler.map((t) => (
-              <div key={t.dovizCinsi}>
-                <b>{t.dovizCinsi}</b>
-                <span>
-                  Giriş <strong className="treasury-in">{para(t.giris, t.dovizCinsi)}</strong>
-                </span>
-                <span>
-                  Çıkış <strong className="treasury-out">{para(t.cikis, t.dovizCinsi)}</strong>
-                </span>
-                <span>
-                  Net <strong>{para(t.net, t.dovizCinsi)}</strong>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        <TableWrap>
-          <thead>
-            <tr>
-              <th>Tarih</th>
-              <th>Hesap</th>
-              <th>İşlem</th>
-              <th>Cari / Belge</th>
-              <th>Açıklama</th>
-              <th>Kur / TRY</th>
-              <th>Tutar</th>
-              <th>Durum</th>
-            </tr>
-          </thead>
-          <tbody>
-            {listeYukleniyor && !hareketler.length ? (
-              <tr>
-                <td colSpan={8}>
-                  <div className="treasury-empty">Hareketler yükleniyor…</div>
-                </td>
-              </tr>
-            ) : (
-              hareketler.map((h) => (
-                <tr
-                  key={h.id}
-                  className={`row-link${h.geriAlindi ? " is-reversed" : ""}`}
-                  tabIndex={0}
-                  aria-label="Fiş ayrıntısını aç"
-                  onClick={() => {
-                    setSecili(h);
-                    setModal("detay");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setSecili(h);
-                      setModal("detay");
-                    }
-                  }}
-                >
-                  <td>
-                    <strong>{new Date(h.tarih).toLocaleDateString("tr-TR")}</strong>
-                    {h.makbuzNo && <small className="mono">{h.makbuzNo}</small>}
-                  </td>
-                  <td>
-                    <strong>{h.kasa?.ad || h.bankaHesap?.ad || "POS / Sistem"}</strong>
-                    <small>{h.dovizCinsi}</small>
-                  </td>
-                  <td>
-                    {h.kaynakTur === "acilis" ? (
-                      <Badge variant="info">Açılış</Badge>
-                    ) : (
-                      <Badge variant={giris(h.tip) ? "success" : "danger"}>{tipAd(h.tip)}</Badge>
-                    )}
-                    <small>
-                      {h.kaynakTur === "acilis"
-                        ? "devir bakiyesi"
-                        : h.kaynakTur === "doviz_islem"
-                          ? "döviz alım/satımı"
-                          : h.kaynakTur.replaceAll("_", " ")}
-                    </small>
-                  </td>
-                  <td>
-                    <strong>{h.cari?.unvan || "—"}</strong>
-                    <small>{h.fatura?.no ? `Fatura ${h.fatura.no}` : "Belge bağlantısı yok"}</small>
-                  </td>
-                  <td>{h.aciklama || "—"}</td>
-                  <td>
-                    <strong>{Number(h.kur).toLocaleString("tr-TR")}</strong>
-                    <small>{para(h.tutarTry)}</small>
-                  </td>
-                  <td>
-                    <strong className={giris(h.tip) ? "treasury-in" : "treasury-out"}>
-                      {giris(h.tip) ? "+" : "-"}
-                      {para(h.tutar, h.dovizCinsi)}
-                    </strong>
-                  </td>
-                  <td>
-                    {h.kaynakTur === "ters_kayit" ? (
-                      <Badge variant="warning">Ters kayıt</Badge>
-                    ) : h.geriAlindi ? (
-                      <Badge variant="neutral">Geri alındı</Badge>
-                    ) : null}
-                  </td>
-                </tr>
-              ))
-            )}
-            {!hareketler.length && !listeYukleniyor && (
-              <tr>
-                <td colSpan={8}>
-                  <div className="treasury-empty">Hareket bulunamadı.</div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </TableWrap>
-        {sonrakiImlec && (
-          <div className="treasury-more">
-            <Button onClick={() => void dahaFazlaYukle()} disabled={listeYukleniyor}>
-              {listeYukleniyor ? "Yükleniyor…" : `Daha fazla yükle (${SAYFA_ADEDI})`}
-            </Button>
-          </div>
-        )}
-      </Card>
       {modal && (
         <div
           className="treasury-backdrop"

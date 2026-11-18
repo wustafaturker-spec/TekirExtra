@@ -22,7 +22,7 @@ import { TEKLIF_TALEBI_MODULU, TEKLIF_TALEBI_ROLLERI, teklifTalebiAyariSemasi, t
 import {
   ADAY_SAYISI, ASGARI_GUVEN, AZAMI_DENEME, CIKARIM_TALIMATI, ESLESME_TALIMATI, YENIDEN_CALISTIRILABILIR,
   cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeIstemi, eslesmeSemasi, miktarMetni, otomatikIletiMi, veriEtiketiTemizle,
-  secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yedekAramalar,
+  secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yanitOnerisiMetni, yedekAramalar,
   type Cikarim, type StokAdayi, type TeklifIslemDurumu,
 } from "./teklif-talebi.kurallari";
 import { nabizla } from "../../core/nabiz/nabiz";
@@ -56,11 +56,21 @@ export interface TeklifIslemGorunumu {
 export function gorunum(k: EpostaTeklifIslemi): TeklifIslemGorunumu {
   const kalemler = (k.kalemler as KalemSonucu[]) ?? [];
   const yetkili = cikarimSemasi.safeParse(k.cikarim);
+  const cikarimData = yetkili.success ? yetkili.data : null;
   const belirsizler = k.belgeId ? [] : kalemler.filter((x) => !x.stokId && x.belirsizKart).map((x) => ({ ...x.belirsizKart!, miktar: x.miktar, birim: x.birim }));
+  const eslesmeyenler = k.belgeId ? [] : kalemler.filter((x) => !x.stokId && !x.belirsizKart).map((x) => x.ifade);
+  const fiyatsizlar = k.belgeId ? [] : kalemler.filter((x) => x.stokId && ((k.uyarilar as string[]) ?? []).some((u) => u.includes(x.ad ?? x.ifade) && u.includes("0 yazıldı"))).map((x) => x.ad ?? x.ifade);
+  const revizyonMu = cikarimData?.iletiTuru === "revizyon";
   return {
     id: k.id, gelenEpostaId: k.gelenEpostaId, durum: k.durum, guven: k.guven === null ? null : Number(k.guven),
     uyarilar: (k.uyarilar as string[]) ?? [], kalemler,
-    yanitOnerisi: varyantSorusuMetni(yetkili.success ? yetkili.data.firma?.yetkili ?? null : null, belirsizler),
+    yanitOnerisi: yanitOnerisiMetni({
+      yetkili: cikarimData?.firma?.yetkili ?? null,
+      belirsizler,
+      eslesmeyenler,
+      fiyatsizlar,
+      revizyonMu,
+    }),
     cariId: k.cariId, belgeId: k.belgeId, firsatId: k.firsatId, onayTalebiId: k.onayTalebiId, hata: k.hata,
     belgeAdresi: k.belgeId ? adres.belge(k.belgeId) : null,
     onayAdresi: k.onayTalebiId ? `/panel/ai?talep=${k.onayTalebiId}` : null,
@@ -262,11 +272,24 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
   /** Sınıflandırmadan sonrası: güven, cari, kalem eşleşmesi, taslak ve fırsat. */
   private async devamEt(eposta: Eposta, cikarim: Cikarim, bilinenCariId: string | null, saglayici: IAiProvider, secenek: { yeniCari?: boolean } = {}): Promise<Sonuc> {
     if (!cikarim.teklifTalebi) return { durum: "teklif_degil", uyarilar: [] };
+    // P-12: İleti türü ayrımı (tekrar, imza_onay, alinti, revizyon)
+    if (cikarim.iletiTuru === "tekrar") {
+      return { durum: "atlandi", uyarilar: ["Aynı talebin tekrar iletisi; mükerrer teklif taslağı açılmadı."] };
+    }
+    if (cikarim.iletiTuru === "imza_onay") {
+      return { durum: "incelenmeli", uyarilar: ["Müşteri teklif/sipariş onayı iletmiş; yeni teklif açmak yerine açık sipariş/onay kaydı incelenmeli."] };
+    }
+    if (cikarim.iletiTuru === "alinti") {
+      return { durum: "incelenmeli", uyarilar: ["Eski teklif alıntısı tespit edildi; bağımsız yeni kalem talebi bulunamadı."] };
+    }
     if (cikarim.guven < ASGARI_GUVEN) return { durum: "incelenmeli", uyarilar: [`Teklif talebi olabilir ama model emin değil (%${Math.round(cikarim.guven * 100)}): ${cikarim.gerekce}`] };
     if (!cikarim.kalemler.length) return { durum: "incelenmeli", uyarilar: ["Teklif talebi ama istenen ürün ya da hizmet çıkarılamadı."] };
 
     const adres = bilinenCariId ? { tek: bilinenCariId, adaylar: [bilinenCariId] } : await this.cariBul(eposta.gonderenEposta);
     const onUyarilar: string[] = [];
+    if (cikarim.iletiTuru === "revizyon") {
+      onUyarilar.push("Müşteri mevcut teklife revizyon talep ediyor; koşullar gözden geçirilmeli.");
+    }
     let cariId = adres.tek;
     if (!cariId) {
       const cozum = secenek.yeniCari ? null : await this.cariCoz(eposta, cikarim, adres.adaylar);
@@ -306,8 +329,16 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
     for (const k of eslesen) if (await this.fiyatYok(k, cari.tek)) fiyatsiz.push(k.stokId!);
     if (fiyatsiz.length) uyarilar.push(`Kayıtlı fiyatı olmayan ürün, taslakta 0 yazıldı: ${eslesen.filter((k) => fiyatsiz.includes(k.stokId!)).map((k) => k.ad ?? k.ifade).join("; ")}`);
 
+    const { tenantId } = aktifBaglam();
+    const cariKaydi = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findFirst({
+      where: { id: cari.tek, tenantId },
+      select: { varsayilanVadeGun: true, dovizCinsi: true },
+    }));
+
     const belge = await this.taslakAc({
       tur: "teklif", cariId: cari.tek,
+      odemeVadeGun: cariKaydi?.varsayilanVadeGun ?? undefined,
+      dovizCinsi: cariKaydi?.dovizCinsi ?? "TRY",
       aciklama: taslakAciklamasi(eposta, eslesmeyenler, cikarim.notlar, this.hafiza ? await this.hafiza.aktifTercihler(cari.tek) : []),
       satirlar: eslesen.map((k) => ({ stokId: k.stokId!, ...(k.varyantId ? { varyantId: k.varyantId } : {}), miktar: miktarMetni(k.miktar ?? 1), ...(fiyatsiz.includes(k.stokId!) ? { birimFiyat: "0" } : {}) })),
     });

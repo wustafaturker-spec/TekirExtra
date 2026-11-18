@@ -1,6 +1,6 @@
 "use client";
 
-import { useEkranKaydi } from "@/lib/asistan-baglami";
+import { asistaniAc, useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
@@ -313,8 +313,6 @@ export default function BelgelerSayfasi() {
   const ozgunSevkZamaniRef = useRef<{ yerel: string; iso: string } | null>(null);
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
-  // AI-78: açık belge asistan bağlamı olur.
-  useEkranKaydi(detay ? { tur: "belge", id: detay.id, etiket: detay.no ?? "Taslak belge" } : null);
   /** FTR-34: açık teklifin sürümleri; tek sürümde gösterilmez. */
   const [surumler, setSurumler] = useState<{ id: string; noMetni: string | null; revizyonNo: number; durum: string; tarih: string; genelToplam: string; dovizCinsi: string }[]>([]);
   useEffect(() => {
@@ -473,6 +471,14 @@ export default function BelgelerSayfasi() {
   const varyantlariAl = (stokId: string): StokVaryant[] => stoklar.find((x) => x.id === stokId)?.varyantlar ?? stokVaryantlari[stokId] ?? [];
   /** FTR-28: belge dövizi değişti, kalem fiyatları hâlâ eski dövizde; kullanıcı onayı bekleniyor. */
   const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
+
+  // AI-78/P-14a: açık belge asistan bağlamı olur; form düzenleniyorsa taslak verisi güvenilmeyen taslak olarak taşınır.
+  useEkranKaydi(detay ? {
+    tur: "belge",
+    id: detay.id,
+    etiket: detay.no ?? "Taslak belge",
+    taslak: formAcik ? { tur: detay.tur, yon: detay.yon, cariId: detay.cari?.id, satirSayisi: satirlar.length } : undefined,
+  } : null);
 
   const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => ({
     stokId: s.stokId || "gecici-id",
@@ -1733,6 +1739,26 @@ export default function BelgelerSayfasi() {
             {detay.durum === "onaylandi" && detay.tur === "irsaliye" && !detay.fatura && <Button size="sm" type="button" onClick={() => setBaglaPaneli(detay.id)}>🔗 Faturaya bağla</Button>}
             {/* FTR-34: onaylı, siparişe dönüşmemiş teklif yeni sürümle değiştirilir. */}
             {revizyonEngeli(detay) === null && <Button size="sm" type="button" onClick={() => void revizeEt(detay.id)}>📝 Revize et</Button>}
+            {/* P-14a: Teklifi / Belgeyi asistanla revize etme ve analiz ekran eylemi */}
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              onClick={() =>
+                asistaniAc(
+                  { tur: "belge", id: detay.id, etiket: detay.no ?? "Belge" },
+                  {
+                    eylem: detay.tur === "teklif" ? "teklif_revize" : "belge_analiz",
+                    ilkMesaj:
+                      detay.tur === "teklif"
+                        ? "Bu teklifi revize et: yeni bir revizyon taslağı oluşturmak için parasal ve satır değişikliklerini hazırla."
+                        : "Bu belgenin kalemlerini ve tutarlarını analiz et.",
+                  },
+                )
+              }
+            >
+              💡 {detay.tur === "teklif" ? "Asistanla Revize Et" : "Asistana Sor"}
+            </Button>
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             {detay.yon === "satis" && ["onaylandi", "kismen_kapandi", "kapandi"].includes(detay.durum) && (
               <Button size="sm" type="button" onClick={() => { setEpostaAdresi(""); setEpostaBelgesi(detay); }}>✉ E-postayla gönder</Button>

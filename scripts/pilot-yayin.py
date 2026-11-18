@@ -220,6 +220,14 @@ def web_hazirla(paket, ad):
     korunan = {p: (web / p).read_bytes() for p in ["tsconfig.json", "next-env.d.ts"]}
     adim("Web derleniyor (birkaç dakika)")
     try:
+        # Eski dev/e2e paketlerinin Next rota türleri yeni derlemeyle karışmasın.
+        # Kaynak tip denetimi açıktır; yalnız başka paketlerin üretilmiş türleri dışlanır.
+        tsconfig = json.loads(korunan["tsconfig.json"])
+        eski_distler = [p.name for p in web.glob(".next*") if p.is_dir() and p.name != dist]
+        tsconfig["include"] = [p for p in tsconfig.get("include", []) if not p.startswith(".next")]
+        tsconfig["include"].append(f"{dist}/types/**/*.ts")
+        tsconfig["exclude"] = list(dict.fromkeys([*tsconfig.get("exclude", []), *eski_distler]))
+        (web / "tsconfig.json").write_text(json.dumps(tsconfig, indent=2) + "\n", encoding="utf-8")
         with open(paket / "web-build.log", "wb") as log:
             calistir(["pnpm", "exec", "next", "build"], cwd=web, stdout=log, stderr=subprocess.STDOUT,
                      env={**os.environ, "NEXT_DIST_DIR": dist, "NODE_OPTIONS": "--max-old-space-size=4096"})
@@ -265,7 +273,15 @@ def hazirla(ad, api=True, web=True):
         ozet.update(api_hazirla(paket, calisan["runtime"]))
     if web:
         ozet.update(web_hazirla(paket, ad))
-    if kaynak_izi() != iz:
+    son_iz = kaynak_izi()
+    if son_iz != iz:
+        import difflib
+        fark = list(difflib.unified_diff(
+            iz.decode("utf-8", errors="replace").splitlines(),
+            son_iz.decode("utf-8", errors="replace").splitlines(),
+            fromfile="oncesi", tofile="sonrasi"
+        ))
+        print("KAYNAK IZI FARKI:\n" + "\n".join(fark), file=sys.stderr)
         dur(f"Derleme sırasında kaynak dosyalar değişti; paket karışık kod içerebilir. {paket} klasörünü silip yeniden deneyin")
     # Compose: çalışan dosyadan türetilir; yalnız yeniden kurulan parçanın yolu değişir.
     metin = calisan["compose"].read_text(encoding="utf-8")
@@ -295,10 +311,10 @@ def telegram_servisi(metin):
     servisler = d["services"]
     if TELEGRAM not in servisler:
         t = json.loads(json.dumps(servisler["worker"]))
-        ortam = {k: v for k, v in t.get("environment", {}).items() if k not in {"TEKIR_WORKER", "PLAYWRIGHT_BROWSERS_PATH", "WORKER_METRICS_PORT", "WORKER_METRICS_HOST"}}
+        ortam = {k: v for k, v in t.get("environment", {}).items() if k not in {"TEKIR_WORKER", "WORKER_METRICS_PORT", "WORKER_METRICS_HOST"}}
         ortam.update({"TEKIR_TELEGRAM": "1", "TELEGRAM_SAGLIK_PORTU": "9468", "TELEGRAM_SAGLIK_HOST": "127.0.0.1"})
         t.update({"command": ["apps/api/dist/main.telegram.js"], "environment": ortam, "mem_limit": "768m"})
-        t["volumes"] = [v for v in t.get("volumes", []) if isinstance(v, dict) and v.get("target") == "/runtime"]
+        t["volumes"] = [v for v in t.get("volumes", []) if isinstance(v, dict) and v.get("target") in {"/runtime", "/browsers"}]
         t["healthcheck"] = {**t.get("healthcheck", {}), "test": ["CMD", "node", "-e", "fetch('http://127.0.0.1:9468/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]}
         servisler[TELEGRAM] = t
     for ad, servis in servisler.items():

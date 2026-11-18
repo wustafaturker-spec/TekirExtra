@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { ayniBirimDonemi } from "./birim-kirilmasi";
 
 /**
  * END-06…10: fiyat–endeks karşılaştırmasının saf hesabı. Bütün tutar ve
@@ -13,7 +14,7 @@ const YUZ = D(100);
 export const EN_AZ_SATIR = 2;
 
 export interface AylikToplam { tutar: D; miktar: D; satir: number }
-export type AyDurumu = "tamam" | "yetersiz" | "yok";
+export type AyDurumu = "tamam" | "yetersiz" | "yok" | "birim_kirilmasi";
 
 export interface FiyatSatiri {
   ay: string;
@@ -86,19 +87,22 @@ export function fiyatSerisiHesapla(
   ekranAylari: string[],
   baz: string,
   endeksler: Map<string, Map<string, D>>,
+  kirilmalar: readonly string[] = [],
 ): { satirlar: FiyatSatiri[]; karsilastirmalar: Karsilastirma[] } {
-  const fiyat = (ay: string) => ayFiyati(toplamlar.get(ay));
+  const fiyat = (ay: string) => kirilmalar.includes(ay)
+    ? { durum: "birim_kirilmasi" as const, fiyat: null, satir: toplamlar.get(ay)?.satir ?? 0 }
+    : ayFiyati(toplamlar.get(ay));
   const bazF = fiyat(baz);
   const satirlar: FiyatSatiri[] = ekranAylari.map((ay) => {
     const f = fiyat(ay);
-    const onceki = fiyat(ayKaydir(ay, -1)).fiyat;
-    const gecenYil = fiyat(ayKaydir(ay, -12)).fiyat;
+    const onceki = ayniBirimDonemi(ay, ayKaydir(ay, -1), kirilmalar) ? fiyat(ayKaydir(ay, -1)).fiyat : null;
+    const gecenYil = ayniBirimDonemi(ay, ayKaydir(ay, -12), kirilmalar) ? fiyat(ayKaydir(ay, -12)).fiyat : null;
     return {
       ay,
       durum: f.durum,
       satir: f.satir,
       fiyat: f.fiyat ? fiyatMetni(f.fiyat) : null,
-      endeks100: f.fiyat && bazF.fiyat ? f.fiyat.div(bazF.fiyat).mul(YUZ).toDecimalPlaces(2).toFixed(2) : null,
+      endeks100: f.fiyat && bazF.fiyat && ayniBirimDonemi(ay, baz, kirilmalar) ? f.fiyat.div(bazF.fiyat).mul(YUZ).toDecimalPlaces(2).toFixed(2) : null,
       aylikDegisim: f.fiyat && onceki ? yuzde(f.fiyat.div(onceki).sub(1)) : null,
       yillikDegisim: f.fiyat && gecenYil ? yuzde(f.fiyat.div(gecenYil).sub(1)) : null,
     };
@@ -106,11 +110,13 @@ export function fiyatSerisiHesapla(
 
   const karsilastirmalar: Karsilastirma[] = [...endeksler.entries()].map(([kod, degerler]) => {
     const bos: Karsilastirma = { endeks: kod, bazAy: baz, sonAy: null, bazFiyat: bazF.fiyat ? fiyatMetni(bazF.fiyat) : null, sonFiyat: null, fiyatDegisim: null, endeksDegisim: null, reelDegisim: null, olmasiGerekenFiyat: null, fark: null, neden: null };
+    if (bazF.durum === "birim_kirilmasi") return { ...bos, neden: "Baz ayda birim değişikliği var; kırılma ayı karşılaştırılamaz." };
     if (!bazF.fiyat) return { ...bos, neden: bazF.durum === "yetersiz" ? `Baz ayda yeterli veri yok (en az ${EN_AZ_SATIR} fatura satırı gerekir).` : "Baz ayda bu ürünün faturası yok." };
     const bazE = degerler.get(baz);
     if (!bazE) return { ...bos, neden: "Baz ay için endeks değeri yok (henüz açıklanmamış olabilir)." };
     const son = [...ekranAylari].reverse().find((ay) => ay > baz && fiyat(ay).fiyat && degerler.has(ay));
     if (!son) return { ...bos, neden: "Baz aydan sonra hem fiyatı hem endeksi olan ay yok." };
+    if (!ayniBirimDonemi(baz, son, kirilmalar)) return { ...bos, sonAy: son, neden: "Birim değişikliği nedeniyle kırılma öncesi ve sonrası birlikte karşılaştırılamaz; baz ayı değiştirin." };
     const sonF = fiyat(son).fiyat!, sonE = degerler.get(son)!;
     const fd = sonF.div(bazF.fiyat).sub(1);
     const ed = sonE.div(bazE).sub(1);

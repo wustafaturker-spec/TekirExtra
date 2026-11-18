@@ -28,10 +28,10 @@ const kur = () => {
 describe("şablon matrisi (KLN-20)", () => {
   it("sınıf düzeyindeki @Roller uygulanır; oturumsuz uçlar matrise sayılmaz", () => {
     const m = kur().matris();
-    expect(m.muhasebe).toEqual(["kasa_banka.goruntule", "kasa_banka.onayla"]);
-    expect(m.salt_okunur).toEqual(["kasa_banka.goruntule", "kasa_banka.onayla"]);
+    expect(m.muhasebe).toEqual(["fiyat_endeks_alis.goruntule", "fiyat_endeks_satis.goruntule", "kasa_banka.goruntule", "kasa_banka.onayla"]);
+    expect(m.salt_okunur).toEqual(["fiyat_endeks_alis.goruntule", "fiyat_endeks_satis.goruntule", "kasa_banka.goruntule", "kasa_banka.onayla"]);
     // Satış hiçbir kasa-banka ucuna giremez; POS makbuz/geri çağırma (@Public) kutu açmaz.
-    expect(m.satis).toEqual([]);
-    expect(m.yonetici).toEqual(["kasa_banka.goruntule", "kasa_banka.onayla"]);
+    expect(m.satis).toEqual(["fiyat_endeks_alis.goruntule", "fiyat_endeks_satis.goruntule"]);
+    expect(m.yonetici).toEqual(["fiyat_endeks_alis.goruntule", "fiyat_endeks_satis.goruntule", "kasa_banka.goruntule", "kasa_banka.onayla"]);
   });
 });

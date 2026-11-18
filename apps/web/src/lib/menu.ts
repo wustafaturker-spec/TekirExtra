@@ -101,6 +101,8 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/nakit-akisi", ikon: TrendingUp, baslik: "Nakit Akışı", eslesme: "tam", esanlamlilar: ["nakit akış tahmini", "nakit tahmini", "likidite", "senaryo"] },
       { href: "/panel/butce", ikon: CalendarRange, baslik: "Bütçe", eslesme: "tam", esanlamlilar: ["plan", "gerçekleşen", "sapma", "revizyon"] },
       { href: "/panel/ai", ikon: Sparkles, baslik: "Asistan ve Onaylar", eslesme: "tam", esanlamlilar: ["yapay zeka", "asistan", "onay talepleri", "ai"] },
+      { href: "/panel/ai/sabah-onay", ikon: CheckCheck, baslik: "Sabah Onay Kutusu", eslesme: "tam", esanlamlilar: ["sabah onay", "hazırlık", "gece görevi", "ajan hazırlık"] },
+      { href: "/panel/ai/sozlesmeler", ikon: FileText, baslik: "Sözleşme & Şartname (RAG)", eslesme: "tam", esanlamlilar: ["sözleşme", "şartname", "rag", "belge arama", "hukuk", "protokol"] },
       { href: "/panel/ai/hafiza", ikon: Brain, baslik: "Yapay Zekâ Hafızası", eslesme: "tam", esanlamlilar: ["hafıza", "öğrenme", "müşteri tercihi", "susturma", "ürün eşleşmesi"] },
     ],
   },
@@ -140,6 +142,7 @@ export const MENU: MenuAlani[] = [
     ikon: FileStack,
     ogeler: [
       { href: "/panel/belgeler", ikon: FileStack, baslik: "Tüm Belgeler", eslesme: "tam", esanlamlilar: ["teklif", "sipariş", "irsaliye", "zincir"] },
+      { href: "/panel/belgeler/tarama", ikon: FileUp, baslik: "Belge Kuyruğu & OCR", eslesme: "tam", esanlamlilar: ["ocr", "tarama", "fiş", "fatura oku", "toplu yükleme", "kuyruk"] },
       { href: "/panel/eposta", ikon: Mail, baslik: "Gelen E-postalar", eslesme: "tam", esanlamlilar: ["eposta", "inbox", "gelen e-posta", "imap", "mail"] },
       { href: "/panel/fatura/tekrarlayan", ikon: Repeat, baslik: "Tekrarlayan Faturalar", esanlamlilar: ["abonelik", "periyodik"] },
       { href: "/panel/ebelge/fatura-gelen", ikon: Inbox, baslik: "Gelen e-Faturalar", eslesme: "tam", esanlamlilar: ["gib", "gelen kutusu"] },

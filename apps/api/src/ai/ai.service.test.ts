@@ -4,7 +4,7 @@ import { istekBaglami } from "../core/istek-baglami";
 import { MockAiProvider } from "./saglayici/mock-ai.provider";
 import { fisFaturaDogrula } from "./ai.dogrulama";
 import { vknGecerliMi, tcknGecerliMi } from "@tekirextra/shared";
-import { OCR_AZAMI_GORSEL_PIKSEL, ocrDosyasiniDogrula } from "./ai.semalar";
+import { OCR_AZAMI_GORSEL_PIKSEL, ocrDosyasiniDogrula, cariIletisimCikarimSemasi } from "./ai.semalar";
 
 describe("Ai Doğrulama ve Algoritma Motoru (Hata Toleransı Testleri)", () => {
   it("OCR dosyasında boyut, MIME beyanı ve gerçek dosya imzasını denetler", () => {
@@ -117,5 +117,28 @@ describe("AiService Entegrasyonu", () => {
     expect(sonuc.dogrulama.veri.unvan).toContain("KAYA");
     expect(sonuc.dogrulama.veri.yetkiliKisi?.adSoyad).toBe("Ahmet Kaya");
     expect(sonuc.dogrulama.veri.iban).toBeTruthy();
+  });
+
+  it("cariIletisimCikarimSemasi gerçek model çıktılarını (sarmalanmış, snake_case, boş e-posta, tüzel) hatasız normalize eder", () => {
+    const ham = {
+      cari: {
+        firma_unvani: "Örnek Tekstil San. Tic. Ltd. Şti.",
+        kisiTipi: "tüzel",
+        vergi_no: "1234567890",
+        vergi_dairesi: "Nilüfer VD",
+        e_posta: "", // boş e-posta hata vermemeli
+        iban: "TR120006200000012345678901",
+        iban_listesi: "TR120006200000012345678901", // dizi yerine string
+        yetkili_kisi: "Mehmet Demir", // nesne yerine düz metin
+      },
+    };
+    const parsed = cariIletisimCikarimSemasi.parse(ham);
+    expect(parsed.unvan).toBe("Örnek Tekstil San. Tic. Ltd. Şti.");
+    expect(parsed.kisiTipi).toBe("tuzel");
+    expect(parsed.vknTckn).toBe("1234567890");
+    expect(parsed.vergiDairesi).toBe("Nilüfer VD");
+    expect(parsed.eposta).toBeNull();
+    expect(parsed.ibanListesi).toEqual(["TR120006200000012345678901"]);
+    expect(parsed.yetkiliKisi?.adSoyad).toBe("Mehmet Demir");
   });
 });

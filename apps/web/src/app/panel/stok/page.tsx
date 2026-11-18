@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, kimlikliFetch, tokenAl } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
@@ -60,7 +61,13 @@ export default function StokSayfasi() {
   const [formAcik, setFormAcik] = useState(false);
   const [sonrakiStokImleci, setSonrakiStokImleci] = useState<string | null>(null);
   const [stokListesiYukleniyor, setStokListesiYukleniyor] = useState(false);
+  const [yuklenenArama, setYuklenenArama] = useState<string | null>(null);
+  const [listeHatasi, setListeHatasi] = useState<{ arama: string; imlec?: string; mesaj: string } | null>(null);
+  const aramaBekliyor = arama.trim() !== aramaSorgusu;
+  const guncelListe = !aramaBekliyor && yuklenenArama === aramaSorgusu;
+  const guncelHata = !aramaBekliyor && listeHatasi?.arama === aramaSorgusu ? listeHatasi : null;
   const stokYuklemeSirasi = useRef(0);
+  const excelDosyaAlani = useRef<HTMLInputElement>(null);
   const [excelDosyasi, setExcelDosyasi] = useState<File | null>(null);
   const [excelOnizleme, setExcelOnizleme] = useState<ExcelOnizleme | null>(null);
   const [excelYukleniyor, setExcelYukleniyor] = useState(false);
@@ -82,6 +89,7 @@ export default function StokSayfasi() {
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++stokYuklemeSirasi.current;
     setStokListesiYukleniyor(true);
+    setListeHatasi(null);
     try {
       const parametreler = new URLSearchParams();
       if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
@@ -91,8 +99,11 @@ export default function StokSayfasi() {
       if (istekSirasi !== stokYuklemeSirasi.current) return;
       setStoklar((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
       setSonrakiStokImleci(veri.sonrakiImlec);
+      setYuklenenArama(aramaSorgusu);
     } catch (h) {
-      if (istekSirasi === stokYuklemeSirasi.current) setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      if (istekSirasi === stokYuklemeSirasi.current) {
+        setListeHatasi({ arama: aramaSorgusu, imlec, mesaj: h instanceof Error ? h.message : "Stok listesi alınamadı." });
+      }
     } finally {
       if (istekSirasi === stokYuklemeSirasi.current) setStokListesiYukleniyor(false);
     }
@@ -184,17 +195,22 @@ export default function StokSayfasi() {
         subtitle="Ürünlerinizi, hizmetlerinizi, envanter miktarlarını ve maliyetlerini takip edin."
         actions={
           <>
-            {rol && ["yonetici", "muhasebe", "depo"].includes(rol) && <ButtonLabel as="a" href="/panel/stok/ihtiyac">İhtiyaç önizlemesi</ButtonLabel>}
-            {rolMenuYoluGorebilir(rol, "/panel/stok/smm") && <ButtonLabel as="a" href="/panel/stok/smm">₺ SMM & Karlılık</ButtonLabel>}
-            <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
-            {yonetici && <ButtonLabel as="a" href="/panel/stok/tutarlilik">Tutarlılık denetimi</ButtonLabel>}
-            {yonetici && <ButtonLabel as="a" href="/panel/stok/maliyet">Maliyeti yeniden hesapla</ButtonLabel>}
-            <ButtonLabel as="a" href="/panel/stok/maliyet-dagitimi">Maliyet dağıtımı</ButtonLabel>
-            <Button onClick={() => void excelSablonIndir()}>📄 Örnek Şablon</Button>
-            <ButtonLabel>
-              {excelYukleniyor ? "İşleniyor..." : "📥 Excel’den İçe Aktar"}
-              <input aria-label="Stok Excel dosyası" type="file" accept=".xlsx" onChange={excelYukle} disabled={excelYukleniyor} style={{ display: "none" }} />
-            </ButtonLabel>
+            <details className="record-list-tools">
+              <summary className="btn btn--ghost">Diğer işlemler</summary>
+              <div className="record-list-tools__menu">
+                {rol && ["yonetici", "muhasebe", "depo"].includes(rol) && <ButtonLabel as="a" href="/panel/stok/ihtiyac">İhtiyaç önizlemesi</ButtonLabel>}
+                {rolMenuYoluGorebilir(rol, "/panel/stok/smm") && <ButtonLabel as="a" href="/panel/stok/smm">SMM & Karlılık</ButtonLabel>}
+                <ButtonLabel as="a" href="/panel/stok/raporlar">Raporlar</ButtonLabel>
+                {yonetici && <ButtonLabel as="a" href="/panel/stok/tutarlilik">Tutarlılık denetimi</ButtonLabel>}
+                {yonetici && <ButtonLabel as="a" href="/panel/stok/maliyet">Maliyeti yeniden hesapla</ButtonLabel>}
+                <ButtonLabel as="a" href="/panel/stok/maliyet-dagitimi">Maliyet dağıtımı</ButtonLabel>
+                <Button onClick={() => void excelSablonIndir()}>Örnek Şablon</Button>
+                <Button disabled={excelYukleniyor} onClick={() => excelDosyaAlani.current?.click()}>
+                  {excelYukleniyor ? "İşleniyor..." : "Excel’den İçe Aktar"}
+                </Button>
+                <input ref={excelDosyaAlani} aria-label="Stok Excel dosyası" type="file" accept=".xlsx" onChange={excelYukle} disabled={excelYukleniyor} hidden />
+              </div>
+            </details>
             <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
               {formAcik ? "Vazgeç" : "➕ Yeni Ürün/Hizmet"}
             </Button>
@@ -262,8 +278,12 @@ export default function StokSayfasi() {
         />
       </div>
 
-      <Card pad={false}>
-        <TableWrap>
+      <Card pad={false} className="stok-liste-karti">
+        {guncelHata && <Alert tone="error">
+          <div>{guncelHata.mesaj}</div>
+          <Button size="sm" onClick={() => void yukle(guncelHata.imlec)}>Tekrar dene</Button>
+        </Alert>}
+        <TableWrap className="platform-responsive-table stok-liste-tablo">
           <thead>
             <tr>
               <th>Kod</th>
@@ -277,7 +297,9 @@ export default function StokSayfasi() {
             </tr>
           </thead>
           <tbody>
-            {stoklar.length === 0 ? (
+            {!guncelListe ? (
+              <tr><td colSpan={8} className="empty" role="status">{guncelHata ? "Stok listesi şu anda gösterilemiyor." : "Stoklar yükleniyor…"}</td></tr>
+            ) : stoklar.length === 0 ? (
               <tr>
                 <td colSpan={8} className="empty">Arama kriterlerinize uygun stok kartı bulunamadı.</td>
               </tr>
@@ -292,32 +314,32 @@ export default function StokSayfasi() {
                     tabIndex={0}
                     aria-label={`${s.ad} stok kartını aç`}
                     onClick={() => router.push(`/panel/stok/${s.id}`)}
-                    onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); router.push(`/panel/stok/${s.id}`); } }}
+                    onKeyDown={(olay) => { if (olay.target === olay.currentTarget && (olay.key === "Enter" || olay.key === " ")) { olay.preventDefault(); router.push(`/panel/stok/${s.id}`); } }}
                   >
-                    <td className="mono">{s.kod}</td>
-                    <td>
-                      <div className="cell-entity__name">{s.ad}</div>
+                    <td className="mono" data-label="Kod">{s.kod}</td>
+                    <td className="platform-cell-title stok-liste-adi">
+                      <div className="cell-entity__name"><Link href={`/panel/stok/${s.id}`} onClick={(olay) => olay.stopPropagation()}>{s.ad}</Link></div>
                       {s.barkod && <div className="cell-entity__meta">Barkod: {s.barkod}</div>}
                     </td>
-                    <td>
+                    <td data-label="Tip">
                       <Badge variant={s.tip === "urun" ? "info" : "neutral"}>
                         {s.tip === "urun" ? "📦 Ürün" : "🛠️ Hizmet"}
                       </Badge>
                     </td>
-                    <td>%{Number(s.kdvOrani).toFixed(0)}</td>
-                    <td className="num" style={{ fontWeight: 700, color: miktar > 0 ? "var(--text)" : "var(--text-subtle)" }}>
+                    <td data-label="KDV">%{Number(s.kdvOrani).toFixed(0)}</td>
+                    <td className="num" data-label="Mevcut stok" style={{ fontWeight: 700, color: miktar > 0 ? "var(--text)" : "var(--text-subtle)" }}>
                       {miktar.toLocaleString("tr-TR", { minimumFractionDigits: 0 })} {s.anaBirim}
                     </td>
-                    <td className="num" style={{ color: "var(--info)" }}>{maliyet > 0 ? tl(maliyet) : "—"}</td>
-                    <td className="num">{s.alisFiyati ? `${Number(s.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.alisFiyatiDoviz}` : "—"}</td>
-                    <td className="num" style={{ fontWeight: 600 }}>{s.satisFiyati ? `${Number(s.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.satisFiyatiDoviz}` : "—"}</td>
+                    <td className="num" data-label="Ort. maliyet" style={{ color: "var(--info)" }}>{maliyet > 0 ? tl(maliyet) : "—"}</td>
+                    <td className="num" data-label="Alış fiyatı">{s.alisFiyati ? `${Number(s.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.alisFiyatiDoviz}` : "—"}</td>
+                    <td className="num" data-label="Satış fiyatı" style={{ fontWeight: 600 }}>{s.satisFiyati ? `${Number(s.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.satisFiyatiDoviz}` : "—"}</td>
                   </tr>
                 );
               })
             )}
           </tbody>
         </TableWrap>
-        {sonrakiStokImleci && (
+        {guncelListe && sonrakiStokImleci && !guncelHata && (
           <div style={{ padding: "1rem", textAlign: "center" }}>
             <Button type="button" onClick={() => void yukle(sonrakiStokImleci)} disabled={stokListesiYukleniyor}>
               {stokListesiYukleniyor ? "Stoklar yükleniyor…" : "Daha fazla stok yükle"}

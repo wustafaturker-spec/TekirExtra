@@ -6,7 +6,7 @@ import { Alert, Badge, Button, Input } from "@/components/ui";
 import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
-import { EKRAN_ONERILERI, EKRAN_TURU_ADI, type AsistanBaglami } from "@/lib/asistan-baglami";
+import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, type AsistanBaglami } from "@/lib/asistan-baglami";
 
 /** AI-04: kullanıcının onayını bekleyen (ya da karara bağlanmış) yapay zekâ işlemi. */
 export interface OnayTalebi {
@@ -216,6 +216,15 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
   const [adimlar, setAdimlar] = useState<{ ad: string; etiket: string; durum: "basladi" | "bitti" | "hata" }[]>([]);
   const durdurucu = useRef<AbortController | null>(null);
 
+  // P-14a: ekrandan ilk talimatla açıldıysa otomatik gönderilir.
+  const ilkMesajGonderildi = useRef<string | null>(null);
+  useEffect(() => {
+    if (baglam?.ilkMesaj && ilkMesajGonderildi.current !== `${baglam.tur}:${baglam.id}:${baglam.ilkMesaj}`) {
+      ilkMesajGonderildi.current = `${baglam.tur}:${baglam.id}:${baglam.ilkMesaj}`;
+      void gonder(baglam.ilkMesaj);
+    }
+  }, [baglam?.ilkMesaj, baglam?.tur, baglam?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sonRef = useRef<HTMLDivElement>(null);
   // CARI-48: bağlamlı ilk mesaj, başka konuşmanın geçmişiyle karışmasın diye yeni sohbette başlar.
   const baglamSohbeti = useRef<{ anahtar: string; sohbetId: string | null } | null>(null);
@@ -304,7 +313,24 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       setAdimlar([]);
       const durdur = new AbortController();
       durdurucu.current = durdur;
-      const y = await apiAkis<AjanYaniti>("/ai/ajan/mesaj-akis", { mesaj: metin, requestId: crypto.randomUUID(), baglam: { ...(baglam ? { kayit: { tur: baglam.tur, id: baglam.id } } : {}), sayfa: window.location.pathname }, ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}), ...(derin ? { derin: true } : {}) },
+      const y = await apiAkis<AjanYaniti>(
+        "/ai/ajan/mesaj-akis",
+        {
+          mesaj: metin,
+          requestId: crypto.randomUUID(),
+          baglam: {
+            ...(baglam
+              ? {
+                  kayit: { tur: baglam.tur, id: baglam.id },
+                  ...(baglam.taslak ? { taslak: baglam.taslak } : {}),
+                  ...(baglam.eylem ? { eylem: baglam.eylem } : {}),
+                }
+              : {}),
+            sayfa: window.location.pathname,
+          },
+          ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}),
+          ...(derin ? { derin: true } : {}),
+        },
         (olay, veri) => {
           const e = veri as { tur?: string; ad?: string; etiket?: string; durum?: "basladi" | "bitti" | "hata" };
           if (olay !== "adim" || e?.tur !== "arac" || !e.ad || !e.etiket || !e.durum) return;
@@ -682,6 +708,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
         <div className="asistan__baglam">
           <span>
             Bu sohbette {EKRAN_TURU_ADI[baglam.tur]}: <strong>{baglam.etiket}</strong>
+            {baglam.taslak && <span className="badge badge--warning" style={{ marginLeft: "0.5rem", fontSize: "0.75rem" }}>📝 Taslak veri bağlı</span>}
             {!baglamBagli && mesajlar.length > 0 && " · ilk mesajınız yeni sohbette başlar"}
           </span>
           {onBaglamKaldir && <button type="button" className="btn-link" onClick={onBaglamKaldir}>Bağlamı kaldır</button>}
@@ -694,6 +721,24 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
               📎 {e.dosyaAdi}{e.ubl ? ` · e-Fatura ${e.ubl.belgeNo} · ${e.ubl.gonderen} · ${e.ubl.genelToplam} ${e.ubl.doviz}` : ""}
               <button type="button" className="btn-link" aria-label={`${e.dosyaAdi} ekini kaldır`} onClick={() => setBekleyenEkler((o) => o.filter((x) => x.ekId !== e.ekId))}>×</button>
             </span>
+          ))}
+        </div>
+      )}
+      {/* P-14a: ekrana özel doğrudan çalıştırılabilir eylemler */}
+      {baglam && EKRAN_EYLEMLERI[baglam.tur]?.length > 0 && !girdi && !gonderiliyor && !ocrTaslagi && (
+        <div className="asistan__oneriler asistan__oneriler--eylemler" aria-label="Ekran eylemleri">
+          <small style={{ fontWeight: 600, color: "var(--text-muted)", marginRight: "0.25rem", display: "inline-flex", alignItems: "center" }}>⚡ Eylemler:</small>
+          {EKRAN_EYLEMLERI[baglam.tur].map((e) => (
+            <button
+              type="button"
+              className="asistan__oneri asistan__oneri--eylem"
+              key={e.kod}
+              onClick={() => void gonder(e.mesaj)}
+              title={e.mesaj}
+              style={{ fontWeight: 500, borderColor: "var(--accent)" }}
+            >
+              {e.simge ? `${e.simge} ` : ""}{e.etiket}
+            </button>
           ))}
         </div>
       )}

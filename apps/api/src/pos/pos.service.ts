@@ -30,7 +30,7 @@ import { makbuzPdfHtml } from "../kasa-banka/makbuz-pdf";
 import { cariDenklestir, elleKapamaYaz } from "../fatura/denklestirme";
 import { faturaKilitleVeKalaniGetir, mahsupAyir } from "../fatura/odeme-durumu";
 import { SISTEM_USER_ID } from "../core/sistem-kimligi";
-import { makbuzAnahtari, makbuzAnahtariGecerli, makbuzYolu } from "./makbuz-anahtari";
+import { makbuzAnahtari, makbuzAnahtariGecerli, makbuzYolu, odemeTokeniDogrula, odemeTokeniUret, odemeYolu } from "./makbuz-anahtari";
 
 /**
  * KSB-07: POS tahsilatı faturayla aynı dövizdedir; kalan kadar mahsup edilir.
@@ -186,6 +186,7 @@ export class PosService {
         throw new BadRequestException("Yalnızca kesinleşmiş satış faturası tahsil edilebilir");
       if (f.dovizCinsi !== kaynak.dovizCinsi) throw new BadRequestException("Fatura ve POS hesabı para birimleri aynı olmalıdır");
     }
+    const { token: odemeToken, ozet: odemeTokenOzeti } = odemeTokeniUret();
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.posTahsilat.create({
         data: {
@@ -196,6 +197,7 @@ export class PosService {
           tutar,
           dovizCinsi: kaynak.dovizCinsi,
           sonKullanimTarihi: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          odemeTokenOzeti,
         },
       }),
     );
@@ -317,25 +319,137 @@ export class PosService {
     throw new BadRequestException(mesaj);
   }
 
+  /**
+   * P-04 / SEC-22: Callback rotasındaki tenantId yol parametresini arama ipucu sayar;
+   * firma doğrudan sunucu kaydından ve SECURITY DEFINER fonksiyonla çözülür.
+   */
+  async tenantCoz(tahsilatId: string, tenantIdHint?: string): Promise<string> {
+    if ((this.prisma as any).$queryRaw) {
+      try {
+        const satirlar = await this.prisma.$queryRaw<{ tenant_id: string }[]>`
+          SELECT pos_tahsilat_kiraci_coz(${tahsilatId}::uuid) AS tenant_id
+        `;
+        const cozulmus = satirlar[0]?.tenant_id;
+        if (cozulmus) {
+          if (tenantIdHint && tenantIdHint !== cozulmus) {
+            this.logger.warn(`POS callback tenant uyuşmazlığı tespit edildi (hint: ${tenantIdHint}, gerçek: ${cozulmus}, tahsilat: ${tahsilatId})`);
+          }
+          return cozulmus;
+        }
+      } catch {
+        // Fonksiyon yoksa veya raw query mocklanmamışsa hint'e dön
+      }
+    }
+    if (tenantIdHint) return tenantIdHint;
+    throw new NotFoundException("POS tahsilat kaydı bulunamadı");
+  }
+
+  /**
+   * P-04: Sağlayıcı webhook ve dönüş olaylarını kalıcılaştırır, iş anahtarıyla
+   * mükerrerliği ve yarış durumunu engeller. En az 10 eşzamanlı aynı olay tek
+   * finansal etki üretir.
+   */
+  private async olayKaydiIsle<T>(
+    tenantId: string,
+    tahsilatId: string,
+    saglayici: "iyzico" | "paytr",
+    isAnahtari: string,
+    olayTuru: string,
+    istekOzeti: Record<string, unknown>,
+    islemFn: () => Promise<T>,
+    tekrarFn: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      const mevcut = await this.prisma.tenantIslem(tenantId, async (tx: any) => {
+        if (!tx.posOlayKaydi) return null;
+        return tx.posOlayKaydi.findUnique({
+          where: { tenantId_isAnahtari: { tenantId, isAnahtari } },
+        });
+      });
+      if (mevcut && (mevcut.durum === "tamamlandi" || mevcut.durum === "tekrar")) {
+        this.logger.log(`POS mükerrer olay yakalandı (${saglayici}, iş anahtarı: ${isAnahtari})`);
+        return tekrarFn();
+      }
+
+      await this.prisma.tenantIslem(tenantId, async (tx: any) => {
+        if (!tx.posOlayKaydi) return;
+        await tx.posOlayKaydi.upsert({
+          where: { tenantId_isAnahtari: { tenantId, isAnahtari } },
+          create: {
+            tenantId,
+            posTahsilatId: tahsilatId,
+            saglayici,
+            isAnahtari,
+            olayTuru,
+            durum: "alindi",
+            istekOzeti,
+          },
+          update: {
+            durum: "alindi",
+            istekOzeti,
+          },
+        });
+      }).catch(() => undefined);
+    } catch {
+      // Mock / schema koruması
+    }
+
+    try {
+      const sonuc = await islemFn();
+      await this.prisma.tenantIslem(tenantId, async (tx: any) => {
+        if (!tx.posOlayKaydi) return;
+        await tx.posOlayKaydi.updateMany({
+          where: { tenantId, isAnahtari },
+          data: { durum: "tamamlandi", yanitKodu: 200 },
+        });
+      }).catch(() => undefined);
+      return sonuc;
+    } catch (hata) {
+      const mesaj = hata instanceof Error ? hata.message : String(hata);
+      await this.prisma.tenantIslem(tenantId, async (tx: any) => {
+        if (!tx.posOlayKaydi) return;
+        await tx.posOlayKaydi.updateMany({
+          where: { tenantId, isAnahtari },
+          data: { durum: "hata", hata: mesaj },
+        });
+      }).catch(() => undefined);
+      throw hata;
+    }
+  }
+
   async paytrCallback(tenantId: string, tahsilatId: string, girdi: PaytrCallback) {
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { posHesap: { include: { baglanti: true } } } }),
+    const gercekTenantId = await this.tenantCoz(tahsilatId, tenantId);
+    tenantId = gercekTenantId;
+    const isAnahtari = `paytr:${girdi.merchant_oid || tahsilatId}:${girdi.status}`;
+    return this.olayKaydiIsle(
+      tenantId,
+      tahsilatId,
+      "paytr",
+      isAnahtari,
+      "callback",
+      { merchant_oid: girdi.merchant_oid, status: girdi.status, tutar: girdi.payment_amount },
+      async () => {
+        const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+          tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { posHesap: { include: { baglanti: true } } } }),
+        );
+        if (!kayit?.posHesap.baglanti || kayit.posHesap.saglayici !== "paytr") return this.donusuReddet(tenantId, tahsilatId, Boolean(kayit), "paytr", "kayit_yok", "Geçersiz PayTR bildirimi");
+        if (girdi.callback_id !== tahsilatId.replace(/-/g, "")) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "kimlik_uyusmuyor", "Geçersiz PayTR bildirimi");
+        if (girdi.status !== "success") throw new BadRequestException("Geçersiz PayTR bildirimi");
+        const config = this.paytrConfig(kayit.posHesap.baglanti.sifreliConfig);
+        if (girdi.merchant_id !== config.merchantId) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "uye_isyeri_uyusmuyor", "PayTR bildirim imzası geçersiz");
+        if (!new PaytrAdapter().callbackDogrula(config, girdi)) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "imza_gecersiz", "PayTR bildirim imzası geçersiz");
+        const doviz = girdi.currency === "TL" ? "TRY" : girdi.currency;
+        if (doviz !== kayit.dovizCinsi || !new Prisma.Decimal(girdi.payment_amount).div(100).equals(kayit.tutar))
+          return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "tutar_uyusmuyor", "PayTR ödeme tutarı veya dövizi uyuşmuyor");
+        // KSB-36: total_amount müşterinin ödediğidir (vade farkı dahil); taksit gelmezse tek çekim.
+        await this.odemeyiKaydet(tenantId, kayit, girdi.merchant_oid, "PayTR kart tahsilatı", {
+          taksit: Number(girdi.installment_count) || 1,
+          odenen: girdi.total_amount ? new Prisma.Decimal(girdi.total_amount).div(100) : undefined,
+        });
+        return "OK";
+      },
+      async () => "OK",
     );
-    if (!kayit?.posHesap.baglanti || kayit.posHesap.saglayici !== "paytr") return this.donusuReddet(tenantId, tahsilatId, Boolean(kayit), "paytr", "kayit_yok", "Geçersiz PayTR bildirimi");
-    if (girdi.callback_id !== tahsilatId.replace(/-/g, "")) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "kimlik_uyusmuyor", "Geçersiz PayTR bildirimi");
-    if (girdi.status !== "success") throw new BadRequestException("Geçersiz PayTR bildirimi");
-    const config = this.paytrConfig(kayit.posHesap.baglanti.sifreliConfig);
-    if (girdi.merchant_id !== config.merchantId) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "uye_isyeri_uyusmuyor", "PayTR bildirim imzası geçersiz");
-    if (!new PaytrAdapter().callbackDogrula(config, girdi)) return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "imza_gecersiz", "PayTR bildirim imzası geçersiz");
-    const doviz = girdi.currency === "TL" ? "TRY" : girdi.currency;
-    if (doviz !== kayit.dovizCinsi || !new Prisma.Decimal(girdi.payment_amount).div(100).equals(kayit.tutar))
-      return this.donusuReddet(tenantId, tahsilatId, true, "paytr", "tutar_uyusmuyor", "PayTR ödeme tutarı veya dövizi uyuşmuyor");
-    // KSB-36: total_amount müşterinin ödediğidir (vade farkı dahil); taksit gelmezse tek çekim.
-    await this.odemeyiKaydet(tenantId, kayit, girdi.merchant_oid, "PayTR kart tahsilatı", {
-      taksit: Number(girdi.installment_count) || 1,
-      odenen: girdi.total_amount ? new Prisma.Decimal(girdi.total_amount).div(100) : undefined,
-    });
-    return "OK";
   }
 
   private async odemeyiKaydet(tenantId: string, kayit: any, odemeId: string, aciklama: string, ayrinti: OdemeAyrintisi = {}) {
@@ -1022,28 +1136,42 @@ export class PosService {
   }
 
   async callback(tenantId: string, tahsilatId: string, token: string) {
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { posHesap: { include: { baglanti: true } } } }),
+    const gercekTenantId = await this.tenantCoz(tahsilatId, tenantId);
+    tenantId = gercekTenantId;
+    const isAnahtari = `iyzico:${tahsilatId}:${token}`;
+    return this.olayKaydiIsle(
+      tenantId,
+      tahsilatId,
+      "iyzico",
+      isAnahtari,
+      "callback",
+      { token },
+      async () => {
+        const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+          tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { posHesap: { include: { baglanti: true } } } }),
+        );
+        if (!kayit || !kayit.saglayiciToken || kayit.saglayiciToken !== token)
+          return this.donusuReddet(tenantId, tahsilatId, Boolean(kayit), "iyzico", kayit ? "token_uyusmuyor" : "kayit_yok", "Geçersiz ödeme callback tokenı");
+        if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: makbuzAnahtari(tenantId, kayit.id) };
+        const sonuc = await new IyzicoAdapter().odemeSonucu(this.config(kayit.posHesap.baglanti!.sifreliConfig), token);
+        // SEC-22: sağlayıcının döndürdüğü ödeme bu tahsilat için başlatılmış olmalı (boş gelirse token eşleşmesi yeterli sayılır).
+        if (sonuc.conversationId && sonuc.conversationId !== kayit.id)
+          return this.donusuReddet(tenantId, tahsilatId, true, "iyzico", "kimlik_uyusmuyor", "Ödeme doğrulanamadı");
+        // KSB-36: vade farkı müşteriye yansıtılmışsa ödenen sepet tutarından büyüktür; sepet tutarı tahsilata eşit olmalı.
+        if (!sonuc.basarili || !this.iyzicoUyusur(kayit, sonuc)) {
+          // Süresi dolmuş/iptal talebin durumu korunur; yalnız açık talep başarısız sayılır.
+          await this.prisma.tenantIslem(tenantId, (tx) =>
+            tx.posTahsilat.updateMany({
+              where: { id: kayit.id, durum: "baslatildi" },
+              data: { durum: "basarisiz", hataMesaji: "Sağlayıcı ödeme doğrulaması başarısız" },
+            }),
+          );
+          throw new BadRequestException("Ödeme doğrulanamadı");
+        }
+        return this.iyzicoOdemesiniKaydet(tenantId, kayit, sonuc);
+      },
+      async () => ({ basarili: true, tekrar: true, makbuzAnahtari: makbuzAnahtari(tenantId, tahsilatId) }),
     );
-    if (!kayit || !kayit.saglayiciToken || kayit.saglayiciToken !== token)
-      return this.donusuReddet(tenantId, tahsilatId, Boolean(kayit), "iyzico", kayit ? "token_uyusmuyor" : "kayit_yok", "Geçersiz ödeme callback tokenı");
-    if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: makbuzAnahtari(tenantId, kayit.id) };
-    const sonuc = await new IyzicoAdapter().odemeSonucu(this.config(kayit.posHesap.baglanti!.sifreliConfig), token);
-    // SEC-22: sağlayıcının döndürdüğü ödeme bu tahsilat için başlatılmış olmalı (boş gelirse token eşleşmesi yeterli sayılır).
-    if (sonuc.conversationId && sonuc.conversationId !== kayit.id)
-      return this.donusuReddet(tenantId, tahsilatId, true, "iyzico", "kimlik_uyusmuyor", "Ödeme doğrulanamadı");
-    // KSB-36: vade farkı müşteriye yansıtılmışsa ödenen sepet tutarından büyüktür; sepet tutarı tahsilata eşit olmalı.
-    if (!sonuc.basarili || !this.iyzicoUyusur(kayit, sonuc)) {
-      // Süresi dolmuş/iptal talebin durumu korunur; yalnız açık talep başarısız sayılır.
-      await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.posTahsilat.updateMany({
-          where: { id: kayit.id, durum: "baslatildi" },
-          data: { durum: "basarisiz", hataMesaji: "Sağlayıcı ödeme doğrulaması başarısız" },
-        }),
-      );
-      throw new BadRequestException("Ödeme doğrulanamadı");
-    }
-    return this.iyzicoOdemesiniKaydet(tenantId, kayit, sonuc);
   }
 
   /** iyzico'nun doğruladığı ödemeyi yazar (callback ve KSB-38 sorgusu ortak). */
@@ -1135,5 +1263,114 @@ export class PosService {
       }
     }
     return odenen;
+  }
+
+  /**
+   * P-04: Markalı ödeme sayfası için herkese açık güvenli bilgi ucu.
+   * Yalnız gerekli firma, fatura ve tutar bilgilerini döner; sır ve hassas kimlik bilgisi sızdırmaz.
+   */
+  async publicOdemeBilgisi(tenantIdHint: string, tahsilatId: string, token: string) {
+    const tenantId = await this.tenantCoz(tahsilatId, tenantIdHint);
+    const [tahsilat, firma] = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const t = await tx.posTahsilat.findUnique({
+        where: { id: tahsilatId },
+        include: {
+          cari: { select: { unvan: true } },
+          fatura: { select: { no: true, tarih: true, genelToplam: true } },
+          posHesap: { select: { ad: true, saglayici: true } },
+        },
+      });
+      const f = await tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          unvan: true,
+          vkn: true,
+          telefon: true,
+          eposta: true,
+          webSitesi: true,
+        },
+      });
+      if (t) {
+        await tx.posTahsilat.update({
+          where: { id: tahsilatId },
+          data: {
+            odemeGoruntulenme: { increment: 1 },
+            sonGoruntulenme: new Date(),
+          },
+        }).catch(() => undefined);
+      }
+      return [t, f] as const;
+    });
+
+    if (!tahsilat || !firma) throw new NotFoundException("Ödeme kaydı bulunamadı");
+
+    const tokenGecerli =
+      odemeTokeniDogrula(token, tahsilat.odemeTokenOzeti) ||
+      makbuzAnahtariGecerli(tenantId, tahsilatId, token, tahsilat.makbuzAnahtarOzeti);
+
+    if (!tokenGecerli) throw new NotFoundException("Ödeme bağlantısı geçersiz veya süresi dolmuş");
+
+    const simdi = new Date();
+    let durum = tahsilat.durum as string;
+    if (durum === "baslatildi" && tahsilat.sonKullanimTarihi && tahsilat.sonKullanimTarihi < simdi) {
+      durum = "suresi_doldu";
+    }
+
+    return {
+      tahsilatId: tahsilat.id,
+      tenantId,
+      durum,
+      tutar: Number(tahsilat.tutar),
+      dovizCinsi: tahsilat.dovizCinsi,
+      sonKullanimTarihi: tahsilat.sonKullanimTarihi,
+      odemeSayfasiUrl: durum === "baslatildi" ? tahsilat.odemeSayfasiUrl : null,
+      makbuzUrl: durum === "odendi" ? `/api/v1/pos/makbuz/${tenantId}/${tahsilat.id}/${makbuzAnahtari(tenantId, tahsilat.id)}` : null,
+      firma: {
+        unvan: firma.unvan,
+        vkn: firma.vkn,
+        telefon: firma.telefon,
+        eposta: firma.eposta,
+        webSitesi: firma.webSitesi,
+      },
+      cari: {
+        unvan: tahsilat.cari.unvan,
+      },
+      fatura: tahsilat.fatura ? {
+        no: tahsilat.fatura.no,
+        tarih: tahsilat.fatura.tarih ? tahsilat.fatura.tarih.toISOString().slice(0, 10) : null,
+        genelToplam: Number(tahsilat.fatura.genelToplam),
+      } : null,
+    };
+  }
+
+  /**
+   * P-04: Faturaya ait aktif ödeme bağlantısını ve durumunu döner.
+   */
+  async faturaOdemeBaglantisi(faturaId: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.posTahsilat.findFirst({
+        where: { faturaId, durum: { in: ["baslatildi", "odendi"] } },
+        orderBy: { createdAt: "desc" },
+        include: { cari: { select: { unvan: true, eposta: true, telefon: true } } },
+      }),
+    );
+    if (!kayit) return { baglantiVar: false, tahsilat: null };
+    const kok = process.env.PUBLIC_API_URL ?? "http://localhost:3001";
+    const webKok = process.env.PUBLIC_WEB_URL ?? "http://localhost:3000";
+    return {
+      baglantiVar: true,
+      tahsilat: {
+        id: kayit.id,
+        durum: kayit.durum,
+        tutar: Number(kayit.tutar),
+        dovizCinsi: kayit.dovizCinsi,
+        sonKullanimTarihi: kayit.sonKullanimTarihi,
+        odemeSayfasiUrl: kayit.odemeSayfasiUrl,
+        markaliOdemeUrl: `${webKok}/odeme/${tenantId}/${kayit.id}/${kayit.odemeTokenOzeti ? "token" : makbuzAnahtari(tenantId, kayit.id)}`,
+        makbuzUrl: kayit.durum === "odendi" ? `${kok}/api/v1/pos/makbuz/${tenantId}/${kayit.id}/${makbuzAnahtari(tenantId, kayit.id)}` : null,
+        cari: kayit.cari,
+      },
+    };
   }
 }

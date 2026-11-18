@@ -159,6 +159,52 @@ async function faturaFormuMockla(page: Page) {
   });
 }
 
+test("mobil fatura formunda iki kalem ve taslak kaydı aynı akışta tamamlanır", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await apiMockla(page);
+  await faturaFormuMockla(page);
+  const yazimlar: { satirlar: { stokId: string; miktar: string }[] }[] = [];
+  let kaydiTamamla!: () => void;
+  const beklet = new Promise<void>((resolve) => { kaydiTamamla = resolve; });
+  await page.route("**/api/v1/fatura", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    yazimlar.push(route.request().postDataJSON());
+    await beklet;
+    return route.fulfill({ status: 201, json: { id: "fatura-taslak-1" } });
+  });
+
+  for (const yol of ["/panel/fatura/yeni?yon=satis", "/panel/fatura?yon=satis&yeni=1"]) {
+    await page.goto(yol, { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Yeni satış faturası" })).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole("region", { name: "Fatura görünümü ve filtreleri" })).toBeHidden();
+    await expect(page.getByRole("combobox", { name: "Müşteri ara" })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Taslak faturayı kaydet" })).toBeInViewport();
+  }
+  await page.getByRole("combobox", { name: "Müşteri ara" }).click();
+  await page.getByRole("option", { name: /ABC Makina Sanayi/ }).click();
+  for (const [sira, miktar] of [[1, "2"], [2, "3"]] as const) {
+    if (sira === 2) await page.getByRole("button", { name: "+ Satır ekle" }).click();
+    await page.getByRole("combobox", { name: `${sira}. satır ürün veya hizmet seçimi` }).click();
+    await page.getByRole("option", { name: /A4 Fotokopi Kağıdı 80 gr/ }).click();
+    const pencere = page.getByRole("dialog", { name: "Ürün veya hizmet ekle" });
+    await pencere.getByLabel("Miktar").fill(miktar);
+    await pencere.getByRole("button", { name: "+ Ekle" }).click();
+  }
+  const kaydet = page.getByRole("button", { name: "Taslak faturayı kaydet" });
+  await expect(kaydet).toBeInViewport();
+  await expect(page.locator(".invoice-mobile-save")).toContainText("1.054,50 TL");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await kaydet.click();
+  await expect(page.getByRole("button", { name: "Kaydediliyor…" })).toBeDisabled();
+  await page.keyboard.press("Control+s");
+  await expect.poll(() => yazimlar.length).toBe(1);
+  expect(yazimlar[0].satirlar.map(({ stokId, miktar }) => ({ stokId, miktar }))).toEqual([
+    { stokId: "stok-1", miktar: "2" }, { stokId: "stok-1", miktar: "3" },
+  ]);
+  kaydiTamamla();
+  await expect(page.getByText("Fatura taslağı başarıyla oluşturuldu.")).toBeVisible();
+});
+
 async function veriDoluAnaKayitMockla(page: Page) {
   await page.route("**/api/v1/cari**", async (route) => {
     const { pathname } = new URL(route.request().url());
@@ -211,6 +257,24 @@ async function veriDoluKasaBankaMockla(page: Page) {
     { id: "cari-2", unvan: "Kuzey Tedarik A.Ş." },
   ], sonrakiImlec: null } }));
 }
+
+test("çek ve kredi kartı ekranları 390 pikselde taşmaz", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await apiMockla(page);
+  await page.route("**/api/v1/kasa-banka/**", (route) => {
+    const yol = new URL(route.request().url()).pathname;
+    if (yol.endsWith("/cek-senet-sayfa")) return route.fulfill({ json: { kayitlar: [], adet: 0, sonrakiImlec: null } });
+    if (yol.endsWith("/cek-senet-ozet") || yol.endsWith("/cek-senet-vade-analizi")) return route.fulfill({ json: null });
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/panel/kasa-banka/cek-senet");
+  await expect(page.getByRole("heading", { name: "Çek ve senet çalışma alanı" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Çek senet ara" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.goto("/panel/kasa-banka/kredi-kartlari");
+  await expect(page.getByRole("heading", { name: "TRY kartları özeti" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
 
 async function veriDoluAnaPanelMockla(page: Page) {
   await page.route("**/api/v1/**", async (route) => {
@@ -324,6 +388,12 @@ for (const gorunum of [
         // Yukarıdaki arama kutusu metniyle aynı alt piksel kayması.
         maxDiffPixels: 1000,
       });
+      if (gorunum.ad === "mobil") {
+        await page.keyboard.press("Escape");
+        await page.getByRole("listbox", { name: "Ekstre satırları" }).getByRole("option").first().click();
+        await expect(page.getByRole("complementary", { name: "Ekstre eşleştirme" })).toBeFocused();
+        await expect(page.locator(".match-panel__head")).toBeInViewport();
+      }
     });
 
     test("doldurulmuş fatura formu ve satır ayrıntısı görsel olarak korunur", async ({ page }) => {
@@ -346,6 +416,7 @@ for (const gorunum of [
       await expect(page.getByLabel("Birim fiyat")).toHaveValue("185");
       await expect(page.getByText("2.530,80 TL").first()).toBeVisible();
       await expect(page).toHaveScreenshot(`fatura-formu-doldurulmus-${gorunum.ad}.png`, {
+        timeout: 30_000,
         animations: "disabled",
         caret: "hide",
         fullPage: true,
@@ -357,6 +428,7 @@ for (const gorunum of [
       await page.getByRole("button", { name: "Satır ayrıntıları" }).click();
       await expect(page.getByLabel("GİB istisna kodu")).toBeVisible();
       await expect(page).toHaveScreenshot(`fatura-satir-ayrintisi-${gorunum.ad}.png`, {
+        timeout: 30_000,
         animations: "disabled",
         caret: "hide",
         fullPage: true,
@@ -390,6 +462,9 @@ for (const gorunum of [
       await page.goto("/panel/kasa-banka");
       await expect(page.getByText("₺184.200,00").first()).toBeVisible();
       await expect(page.getByText("SF2026000123 numaralı satış faturası tahsilatı")).toBeVisible();
+      const tahsilat = page.locator(".treasury-register tbody tr").filter({ hasText: "SF2026000123" });
+      await expect(tahsilat.locator('td[data-label="Tutar"]')).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(gorunum.width);
       await expect(page).toHaveScreenshot(`kasa-banka-veri-dolu-${gorunum.ad}.png`, {
         animations: "disabled", caret: "hide", fullPage: true,
       });

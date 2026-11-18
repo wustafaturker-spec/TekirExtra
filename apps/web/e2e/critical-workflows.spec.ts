@@ -1062,6 +1062,40 @@ test("geç dönen eski stok araması güncel sonucu ezmez", async ({ page }) => 
   await expect(page.getByRole("row").filter({ hasText: "Yavaş Ürün" })).not.toBeVisible();
 });
 
+test("stok listesi bekleme ile hatayı ayırır ve mobilde stokla fiyatı birlikte gösterir", async ({ page }) => {
+  let yanitla!: () => void;
+  const beklet = new Promise<void>((resolve) => { yanitla = resolve; });
+  let hata = true;
+  const ad = "Uzun isimli örnek ürün ve depo ambalaj paketi";
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/v1/stok**", async (route) => {
+    if (new URL(route.request().url()).pathname !== "/api/v1/stok") return route.fallback();
+    await beklet;
+    if (hata) return route.fulfill({ status: 503, json: { message: "Stok listesi alınamadı." } });
+    return route.fulfill({ json: { kayitlar: [{
+      id: "s1", kod: "STK-01", ad, tip: "urun", anaBirim: "adet", kdvOrani: "20",
+      mevcutMiktar: "10", ortalamaMaliyet: "90", satisFiyati: "120", satisFiyatiDoviz: "TRY",
+    }], sonrakiImlec: null } });
+  });
+  await page.goto("/panel/stok", { waitUntil: "domcontentloaded" });
+  const bos = page.getByText(/uygun stok kartı bulunamadı/);
+  await expect(page.getByText("Stoklar yükleniyor…", { exact: true })).toBeVisible();
+  await expect(bos).toHaveCount(0);
+  yanitla();
+  await expect(page.getByText("Stok listesi alınamadı.", { exact: true })).toBeVisible();
+  await expect(bos).toHaveCount(0);
+  hata = false;
+  await page.getByRole("button", { name: "Tekrar dene" }).click();
+  const kart = page.getByRole("row").filter({ hasText: ad });
+  await expect(kart.getByRole("link", { name: ad })).toHaveAttribute("href", "/panel/stok/s1");
+  await expect(kart.locator('td[data-label="Mevcut stok"]')).toContainText("10 adet");
+  await expect(kart.locator('td[data-label="Satış fiyatı"]')).toContainText("120,00 TRY");
+  await expect(kart.locator('td[data-label="Ort. maliyet"]')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.getByText("Diğer işlemler", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Excel’den İçe Aktar" })).toBeVisible();
+});
+
 test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
   const faturaIstekleri: URL[] = [];
   await page.route("**/api/v1/fatura**", async (route) => {

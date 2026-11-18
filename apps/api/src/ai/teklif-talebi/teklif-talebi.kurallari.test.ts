@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { veriEtiketiTemizle, cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeSemasi, otomatikBasliklarMi, otomatikIletiMi, secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yedekAramalar } from "./teklif-talebi.kurallari";
+import { veriEtiketiTemizle, cariKoduOner, cikarimIstemi, cikarimSemasi, eslesmeSemasi, otomatikBasliklarMi, otomatikIletiMi, secimleriUygula, taslakAciklamasi, varsayilanUnvan, varyantBelirsizligi, varyantSorusuMetni, yanitOnerisiMetni, yedekAramalar } from "./teklif-talebi.kurallari";
 
 const basliklar = (b: Record<string, unknown>) => new Map(Object.entries(b));
 
@@ -98,5 +98,27 @@ describe("varyant belirsizliği (pilot 2026-10-18)", () => {
     expect(m).not.toMatch(/\[|\{/);
     expect(varyantSorusuMetni(null, [{ kartAdi: "X", secenekler: ["a", "b"], miktar: null, birim: null }])!.startsWith("Merhaba,")).toBe(true);
     expect(varyantSorusuMetni("A", [])).toBeNull();
+  });
+
+  it("P-12: çıkarım şeması ileti türünü ayrıştırır (yeni_talep, alinti, revizyon, imza_onay, tekrar)", () => {
+    const c1 = cikarimSemasi.parse({ teklifTalebi: true, guven: 0.9, gerekce: "talep" });
+    expect(c1.iletiTuru).toBe("yeni_talep");
+
+    const c2 = cikarimSemasi.parse({ teklifTalebi: true, iletiTuru: "revizyon", guven: 0.95, gerekce: "fiyat revizyonu" });
+    expect(c2.iletiTuru).toBe("revizyon");
+
+    const c3 = cikarimSemasi.parse({ teklifTalebi: false, iletiTuru: "imza_onay", guven: 0.99, gerekce: "sipariş onayı" });
+    expect(c3.iletiTuru).toBe("imza_onay");
+  });
+
+  it("P-12: yanıt önerisi eksik kalem ve fiyatsız durumlar için şablon üretir", () => {
+    const y = yanitOnerisiMetni({
+      yetkili: "Ahmet Bey",
+      eslesmeyenler: ["Özel Alaşımlı Mil 20mm"],
+      fiyatsizlar: ["Standart Civata"],
+    })!;
+    expect(y).toContain("Merhaba Ahmet Bey,");
+    expect(y).toContain("Özel Alaşımlı Mil 20mm");
+    expect(y).toContain("Standart Civata");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { api } from "@/lib/api";
+import { api, ApiHata } from "@/lib/api";
 import { Alert, Badge, Button, Field, Input, Select, TableWrap } from "@/components/ui";
 
 /* ─── API sözleşmesi (apps/api/src/fiyat-endeks: GET /fiyat-endeks/fiyat-onerisi) ─── */
@@ -12,6 +12,7 @@ interface OneriSatiri {
   endeksDegisim: string | null; yeniFiyat: string | null; fark: string | null; neden: string | null;
 }
 interface Oneri {
+  surum: string;
   liste: { id: string; ad: string };
   endeks: { kod: string; ad: string; tur: string; bazYili: string | null; sonAy: string | null };
   satirlar: OneriSatiri[];
@@ -27,8 +28,8 @@ const yuzde = (s: string | null) => (s === null ? "—" : `%${Number(s).toLocale
 /**
  * END-16: fiyat listesinde "son fiyat değişikliğinden bu yana endeks kadar"
  * yeni fiyat önizlemesi. Kendiliğinden fiyat değişmez: kullanıcı satırları
- * seçip onaylayınca mevcut fiyat listesi uçlarıyla (kalem kaydet / yeni liste)
- * uygulanır. Fiyat listesi değişikliği için genel onay akışında (ONY) kapı yoktur.
+ * seçip onaylayınca toplu fiyat ucuyla atomik uygulanır. Genel onay kuralı
+ * varsa tek talep açılır; liste sürümü son onayda yeniden doğrulanır.
  */
 export function EndeksFiyatOnerisi({ listeId, listeAdi, endeksler, onUygulandi }: { listeId: string; listeAdi: string; endeksler: EndeksSecenegi[]; onUygulandi: () => Promise<void> | void }) {
   const kimlik = useId();
@@ -42,9 +43,18 @@ export function EndeksFiyatOnerisi({ listeId, listeAdi, endeksler, onUygulandi }
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState(false);
+  const [onizlemeGerekli, setOnizlemeGerekli] = useState(false);
+
+  function onizlemeyiTemizle() {
+    if (oneri) setOnizlemeGerekli(true);
+    setOneri(null);
+    setSecili(new Set());
+    setOnay(null);
+    setHata("");
+  }
 
   async function onizle() {
-    setIslem(true); setHata(""); setBasari(""); setOnay(null);
+    setIslem(true); setHata(""); setBasari(""); setOnay(null); setOneri(null); setOnizlemeGerekli(false);
     try {
       const q = new URLSearchParams({ listeId, endeks, yuvarlama });
       if (varsayilanBaz) q.set("varsayilanBazAy", varsayilanBaz);
@@ -64,43 +74,38 @@ export function EndeksFiyatOnerisi({ listeId, listeAdi, endeksler, onUygulandi }
     setIslem(true); setHata(""); setBasari("");
     let yapilan = 0;
     try {
-      if (hedef === "liste") {
-        for (const s of uygulanacak) {
-          await api(`/fiyat-listeleri/${listeId}/kalemler`, { method: "POST", body: JSON.stringify({ stokId: s.stokId, fiyat: s.yeniFiyat }) });
-          yapilan++;
-        }
-        setBasari(`${yapilan} kalemin fiyatı güncellendi. Eski fiyatlar fiyat geçmişinde saklanır.`);
-      } else {
-        const yeni = await api<{ id: string; ad: string }>("/fiyat-listeleri", { method: "POST", body: JSON.stringify({ ad: yeniAd.trim(), dovizCinsi: "TRY", aktif: false }) });
-        // Taslak liste tam kopyadır: seçilen kalemler yeni fiyatla, diğerleri bugünkü fiyatla.
-        for (const s of oneri.satirlar) {
-          const fiyat = secili.has(s.stokId) && s.yeniFiyat ? s.yeniFiyat : s.eskiFiyat;
-          await api(`/fiyat-listeleri/${yeni.id}/kalemler`, { method: "POST", body: JSON.stringify({ stokId: s.stokId, fiyat }) });
-          yapilan++;
-        }
-        setBasari(`'${yeni.ad}' pasif liste olarak oluşturuldu (${yapilan} kalem, ${uygulanacak.length} tanesi yeni fiyatla). İnceleyip etkinleştirebilir ya da carilere atayabilirsiniz.`);
-      }
+      const kalemler = hedef === "liste"
+        ? uygulanacak.map((s) => ({ stokId: s.stokId, fiyat: s.yeniFiyat! }))
+        : oneri.satirlar.map((s) => ({ stokId: s.stokId, fiyat: secili.has(s.stokId) && s.yeniFiyat ? s.yeniFiyat : s.eskiFiyat }));
+      await api(`/fiyat-listeleri/${listeId}/toplu-fiyat`, { method: "POST", body: JSON.stringify({
+        surum: oneri.surum, kaynak: "endeks", kalemler, ...(hedef === "yeni" ? { yeniAd: yeniAd.trim() } : {}),
+      }) });
+      yapilan = kalemler.length;
+      setBasari(hedef === "liste" ? `${yapilan} kalemin fiyatı güncellendi.` : `'${yeniAd.trim()}' pasif liste olarak oluşturuldu (${yapilan} kalem).`);
       setOnay(null); setOneri(null);
       await onUygulandi();
     } catch (e) {
-      setHata(`${yapilan} kalem işlendikten sonra durdu: ${e instanceof Error ? e.message : "işlem yapılamadı"}`);
+      if (e instanceof ApiHata && e.kod === "ONAY_GEREKLI") {
+        setBasari(e.message); setOnay(null); setOneri(null);
+      } else setHata(e instanceof Error ? e.message : "İşlem yapılamadı.");
     } finally { setIslem(false); }
   }
 
   const degistir = (id: string, acik: boolean) => setSecili((s) => { const y = new Set(s); if (acik) y.add(id); else y.delete(id); return y; });
 
   return (
-    <details className="stack">
+    <details className="stack endeks-fiyat-onerisi">
       <summary className="card__title" style={{ cursor: "pointer" }}>Endekse göre fiyat güncelleme önerisi</summary>
-      <p className="muted">Her kalem için son fiyat değişikliğinin bir önceki ayı baz alınır ve seçilen endeksin en son açıklanan aya kadarki değişimi kadar yeni fiyat önerilir. Fiyatlar siz onaylamadan değişmez.</p>
+      <p className="muted">Her kalem için son fiyat değişikliğinin bir önceki ayı baz alınır ve seçilen endeksin en son açıklanan aya kadarki değişimi kadar yeni fiyat önerilir. Fiyatlar siz onaylamadan değişmez. Tanımlı onay kuralı varsa talep Onaylar ekranına gider ve son onaydan sonra uygulanır.</p>
       <div className="form-grid">
-        <Field label="Endeks" htmlFor={`${kimlik}-endeks`}><Select id={`${kimlik}-endeks`} value={endeks} onChange={(e) => setEndeks(e.target.value)}>{endeksler.map((e) => <option key={e.kod} value={e.kod}>{e.ad}</option>)}</Select></Field>
-        <Field label="Yuvarlama" htmlFor={`${kimlik}-yuv`}><Select id={`${kimlik}-yuv`} value={yuvarlama} onChange={(e) => setYuvarlama(e.target.value as Yuvarlama)}>{(Object.keys(YUVARLAMA_ADLARI) as Yuvarlama[]).map((y) => <option key={y} value={y}>{YUVARLAMA_ADLARI[y]}</option>)}</Select></Field>
-        <Field label="Fiyat geçmişi olmayan kalemlerde baz ay" htmlFor={`${kimlik}-baz`}><Input id={`${kimlik}-baz`} type="month" value={varsayilanBaz} onChange={(e) => setVarsayilanBaz(e.target.value)} /></Field>
+        <Field label="Endeks" htmlFor={`${kimlik}-endeks`}><Select id={`${kimlik}-endeks`} value={endeks} disabled={islem} onChange={(e) => { setEndeks(e.target.value); onizlemeyiTemizle(); }}>{endeksler.map((e) => <option key={e.kod} value={e.kod}>{e.ad}</option>)}</Select></Field>
+        <Field label="Yuvarlama" htmlFor={`${kimlik}-yuv`}><Select id={`${kimlik}-yuv`} value={yuvarlama} disabled={islem} onChange={(e) => { setYuvarlama(e.target.value as Yuvarlama); onizlemeyiTemizle(); }}>{(Object.keys(YUVARLAMA_ADLARI) as Yuvarlama[]).map((y) => <option key={y} value={y}>{YUVARLAMA_ADLARI[y]}</option>)}</Select></Field>
+        <Field label="Fiyat geçmişi olmayan kalemlerde baz ay" htmlFor={`${kimlik}-baz`}><Input id={`${kimlik}-baz`} type="month" value={varsayilanBaz} disabled={islem} onChange={(e) => { setVarsayilanBaz(e.target.value); onizlemeyiTemizle(); }} /></Field>
       </div>
       <div><Button disabled={islem || !endeks} onClick={() => void onizle()}>Önizle</Button></div>
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+      {onizlemeGerekli && <p className="muted" role="status">Ayarlar değişti. Uygulamadan önce yeniden önizleyin.</p>}
       {oneri && <>
         <p className="muted" role="status">{oneri.endeks.ad}{oneri.endeks.bazYili ? ` (baz ${oneri.endeks.bazYili})` : ""}, son açıklanan ay {ay(oneri.endeks.sonAy)} · {oneri.ozet.oneri} / {oneri.ozet.toplam} kalem için öneri var.</p>
         <TableWrap className="endeks-tablo">
@@ -119,7 +124,7 @@ export function EndeksFiyatOnerisi({ listeId, listeAdi, endeksler, onUygulandi }
           ))}</tbody>
         </TableWrap>
         {onay === null ? (
-          <div className="row" style={{ gap: ".5rem", flexWrap: "wrap" }}>
+          <div className="row endeks-oneri-eylemleri">
             <Button variant="primary" disabled={islem || !uygulanacak.length} onClick={() => setOnay("liste")}>Seçilen {uygulanacak.length} kalemi bu listeye uygula</Button>
             <Button disabled={islem || !oneri.satirlar.length} onClick={() => setOnay("yeni")}>Yeni pasif liste olarak kaydet</Button>
           </div>
@@ -130,7 +135,7 @@ export function EndeksFiyatOnerisi({ listeId, listeAdi, endeksler, onUygulandi }
                 ? <span>{listeAdi} listesindeki {uygulanacak.length} kalemin fiyatı önerilen fiyatla değişecek; bu listeye bağlı carilerin yeni belgelerinde yeni fiyat kullanılır. Onaylıyor musunuz?</span>
                 : <><span>Pasif yeni bir liste açılacak; mevcut liste ve cariler değişmez.</span>
                   <Field label="Yeni liste adı" htmlFor={`${kimlik}-ad`}><Input id={`${kimlik}-ad`} value={yeniAd} onChange={(e) => setYeniAd(e.target.value)} maxLength={100} required /></Field></>}
-              <div className="row" style={{ gap: ".5rem" }}>
+              <div className="row endeks-oneri-eylemleri">
                 <Button variant="primary" disabled={islem || (onay === "yeni" && !yeniAd.trim())} onClick={() => void uygula(onay)}>{islem ? "Uygulanıyor…" : "Evet, uygula"}</Button>
                 <Button disabled={islem} onClick={() => setOnay(null)}>Vazgeç</Button>
               </div>

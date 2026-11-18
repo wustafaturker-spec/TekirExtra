@@ -223,7 +223,7 @@ export default function CekSenetSayfasi() {
 
   return (
     <div className="cheque-page">
-      <section className="cheque-hero"><div><span>PORTFÖY & RİSK YÖNETİMİ</span><h1>Çek ve senet çalışma alanı</h1><p>{yon === "alinan" ? "Müşteri çeklerini yönetin, bankaya teslim süreçlerini takip edin ve tahsilat riskini görünür tutun." : "Verilen çek ve senetleri vade, lehtar ve ödeme riskiyle birlikte yönetin."}</p></div><div><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><ButtonLabel as="a" href="/panel/kasa-banka/cek-senet/bordrolar">Bordrolar</ButtonLabel><Button variant="primary" onClick={() => setFormAcik(!formAcik)}>{formAcik ? "Vazgeç" : yon === "alinan" ? "+ Çek/Senet Al" : "+ Çek/Senet Ver"}</Button></div></section>
+      <PageHeader title="Çek ve senet çalışma alanı" actions={<div className="row-tight treasury-page-actions"><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><ButtonLabel as="a" href="/panel/kasa-banka/cek-senet/bordrolar">Bordrolar</ButtonLabel><Button variant="primary" onClick={() => setFormAcik(!formAcik)}>{formAcik ? "Vazgeç" : yon === "alinan" ? "+ Çek/Senet Al" : "+ Çek/Senet Ver"}</Button></div>} />
 
       <div className="cheque-switcher">
         <Segmented<Yon>
@@ -292,8 +292,8 @@ export default function CekSenetSayfasi() {
         />
       )}
 
-      <Card className="cheque-filter"><div className="cheque-filter__head"><div><span>OPERASYON FİLTRELERİ</span><strong>Portföy görünümünü daraltın</strong></div><small>{kayitlar.length < toplamAdet ? `${kayitlar.length} / ${toplamAdet} kayıt gösteriliyor` : `${toplamAdet} kayıt`}</small></div><div className="cheque-filter__grid">
-        <Input aria-label="Çek senet ara" value={arama} onChange={(e)=>setArama(e.target.value)} placeholder="Portföy, çek no, cari, keşideci veya banka ara…" style={{minWidth:280}}/>
+      <Card className="cheque-register" pad={false} title="Portföy"><div className="cheque-filter"><div className="cheque-filter__head"><small>{kayitlar.length < toplamAdet ? `${kayitlar.length} / ${toplamAdet} kayıt gösteriliyor` : `${toplamAdet} kayıt`}</small></div><div className="cheque-filter__grid">
+        <Input aria-label="Çek senet ara" value={arama} onChange={(e)=>setArama(e.target.value)} placeholder="Portföy, çek no, cari, keşideci veya banka ara…"/>
         <Segmented<TurFiltre>
           value={tur}
           onChange={setTur}
@@ -314,9 +314,7 @@ export default function CekSenetSayfasi() {
         <Input aria-label="Vade başlangıcı" type="date" value={vadeBaslangic} onChange={(e)=>setVadeBaslangic(e.target.value)} title="Vade başlangıcı"/>
         <Input aria-label="Vade bitişi" type="date" value={vadeBitis} onChange={(e)=>setVadeBitis(e.target.value)} title="Vade bitişi"/>
         {(arama||durumFiltre||vadeBaslangic||vadeBitis||sadeceAcik)&&<Button size="sm" onClick={()=>{setArama("");setDurumFiltre("");setVadeBaslangic("");setVadeBitis("");setSadeceAcik(false);}}>Filtreleri temizle</Button>}
-      </div></Card>
-
-      <Card className="cheque-register" pad={false}>
+      </div></div>
         <TableWrap>
           <thead>
             <tr>

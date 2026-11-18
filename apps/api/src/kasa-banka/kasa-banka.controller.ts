@@ -585,6 +585,13 @@ export class KasaBankaController {
     return this.ekstreEslestirme.kesinOneriler(bankaHesapId && z.uuid().safeParse(bankaHesapId).success ? bankaHesapId : undefined);
   }
 
+  /** P-05: Bekleyen ekstre satırları için öneri puanlama ve sinyal analizi taraması. */
+  @Post("ekstre/onerileri-tara")
+  @Roller("muhasebe")
+  ekstreOnerileriTara(@Query("bankaHesapId") bankaHesapId?: string) {
+    return this.ekstreEslestirme.topluPuanla(bankaHesapId && z.uuid().safeParse(bankaHesapId).success ? bankaHesapId : undefined);
+  }
+
   /** KSB-33: seçilen satırları kesin önerileriyle eşleştirir (öneri sunucuda yeniden hesaplanır). */
   @Post("ekstre/toplu-eslestir")
   @Roller("muhasebe")

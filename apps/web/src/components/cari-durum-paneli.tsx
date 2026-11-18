@@ -116,6 +116,23 @@ export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId
           {ozetlenebilir && (
             <>
               <Button size="sm" variant="ghost" type="button" onClick={ozetle} disabled={ozetleniyor}>{ozetleniyor ? "Özetleniyor…" : ozet ? "Yeniden özetle" : "Özetle"}</Button>
+              {/* P-14a: asistan ekran eylemiyle doğrudan analiz başlatır */}
+              <Button
+                size="sm"
+                variant="ghost"
+                type="button"
+                onClick={() =>
+                  asistaniAc(
+                    { tur: "cari", id: cariId, etiket: cariUnvan },
+                    {
+                      eylem: "cari_analiz",
+                      ilkMesaj: "Bu cariyi analiz et: ödeme performansı, tahsilat riski ve yaşlandırma durumunu çıkar.",
+                    },
+                  )
+                }
+              >
+                📊 Analiz Et
+              </Button>
               {/* CARI-48: asistan bu carinin kimliğiyle açılır; yetki ve onay kuralları aynen. */}
               <Button size="sm" variant="ghost" type="button" onClick={() => asistaniAc({ tur: "cari", id: cariId, etiket: cariUnvan })}>Asistana sor</Button>
             </>

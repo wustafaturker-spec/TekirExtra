@@ -1,25 +1,150 @@
 "use client";
+
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
-import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
-interface Baglanti { id: string; aile: string; saglayici: string; durum: string; kullaniciAdiMaskeli: string; ayarlar?: Partial<Record<string, string>>; }
+import { Alert, Badge, Button, Card, Field, Input, Modal, ModalEylem, PageHeader, Select } from "@/components/ui";
+
+const SAGLAYICILAR = [
+  { kod: "iyzico", ad: "iyzico", simge: "İZ" },
+  { kod: "paytr", ad: "PayTR", simge: "PT" },
+] as const;
+type Saglayici = (typeof SAGLAYICILAR)[number];
+interface Baglanti {
+  id: string;
+  aile: string;
+  saglayici: string;
+  durum: string;
+  kullaniciAdiMaskeli: string;
+  ayarlar?: Partial<Record<string, string>>;
+}
+
 export default function PosAyarlari() {
-  const [kayitlar, setKayitlar] = useState<Baglanti[]>([]); const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [duzenlenen, setDuzenlenen] = useState<string | null>(null);
-  const yukle = useCallback(async () => setKayitlar((await api<Baglanti[]>("/baglantilar")).filter((b) => b.aile === "pos")), []); useEffect(() => { void yukle(); }, [yukle]);
-  const iyzico = kayitlar.find((x) => x.saglayici === "iyzico"); const paytr = kayitlar.find((x) => x.saglayici === "paytr");
-  async function kaydet(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const f = new FormData(e.currentTarget); const config = { kullaniciAdi: f.get("apiKey"), parola: f.get("secretKey"), servisAdresi: f.get("ortam") }; try { setHata(""); await api(iyzico ? `/baglantilar/${iyzico.id}` : "/baglantilar", { method: iyzico ? "PATCH" : "POST", body: JSON.stringify(iyzico ? { config } : { aile: "pos", saglayici: "iyzico", config }) }); setBasari("iyzico bağlantı bilgileri kaydedildi. Kullanımdan önce bağlantıyı etkinleştirin."); setDuzenlenen(null); await yukle(); } catch (x) { setHata(x instanceof Error ? x.message : "Bağlantı kaydedilemedi"); } }
-  async function paytrKaydet(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const f = new FormData(e.currentTarget); const config = { magazaId: f.get("merchantId"), kullaniciAdi: f.get("merchantKey"), parola: f.get("merchantSalt") }; try { setHata(""); await api(paytr ? `/baglantilar/${paytr.id}` : "/baglantilar", { method: paytr ? "PATCH" : "POST", body: JSON.stringify(paytr ? { config } : { aile: "pos", saglayici: "paytr", config }) }); setBasari("PayTR bağlantı bilgileri kaydedildi. Kullanımdan önce bağlantıyı etkinleştirin."); setDuzenlenen(null); await yukle(); } catch (x) { setHata(x instanceof Error ? x.message : "PayTR bağlantısı kaydedilemedi"); } }
-  async function testEt(id: string) { try { setHata(""); const s = await api<{ basarili: boolean; mesaj?: string }>(`/baglantilar/${id}/test`, { method: "POST" }); if (s.basarili) { await api(`/baglantilar/${id}/aktif-et`, { method: "POST" }); setBasari(s.mesaj ?? "Bağlantı etkinleştirildi."); } else setHata(s.mesaj ?? "Doğrulama başarısız"); await yukle(); } catch (x) { setHata(x instanceof Error ? x.message : "Doğrulama başarısız"); } }
-  const kart = (b: Baglanti) => <article className={b.durum === "aktif" ? "" : "is-error"}><div className="pos-provider">{b.saglayici === "iyzico" ? "İZ" : "PT"}</div><div><strong>{b.saglayici === "iyzico" ? "iyzico" : "PayTR"}</strong><span><i className={b.durum === "aktif" ? "is-online" : ""} />{b.kullaniciAdiMaskeli}</span></div><div><Badge variant={b.durum === "aktif" ? "success" : "neutral"}>{b.durum === "aktif" ? "AKTİF" : b.durum.toUpperCase()}</Badge>{b.durum !== "aktif" && <Button size="sm" variant="primary" onClick={() => void testEt(b.id)}>Doğrula ve etkinleştir</Button>}<Button size="sm" onClick={() => setDuzenlenen(b.saglayici)}>Düzenle</Button></div></article>;
-  const iyzicoFormu = <form className="stack" onSubmit={kaydet}><h3>iyzico bağlantısı</h3>{iyzico && <p className="muted">Güvenlik nedeniyle kayıtlı anahtarlar gösterilmez. API Key ve Secret Key’i yeniden girin.</p>}<div className="row"><Field label="API Key"><Input name="apiKey" required /></Field><Field label="Secret Key"><Input name="secretKey" type="password" required /></Field><Field label="Ortam"><Select name="ortam" defaultValue={iyzico?.ayarlar?.servisAdresi ?? "https://sandbox-api.iyzipay.com"}><option value="https://sandbox-api.iyzipay.com">Sandbox</option><option value="https://api.iyzipay.com">Canlı</option></Select></Field></div><div className="row"><Button type="submit" variant="primary">{iyzico ? "Bilgileri güncelle" : "Kaydet"}</Button>{iyzico && <Button type="button" onClick={() => setDuzenlenen(null)}>Vazgeç</Button>}</div></form>;
-  const paytrFormu = <form className="stack" onSubmit={paytrKaydet}><h3>PayTR Link API</h3><p className="muted">PayTR panelinde Link API mağazanız için etkinleştirilmiş olmalıdır. Kayıtlı gizli bilgiler görüntülenmez.</p><div className="row"><Field label="Mağaza No"><Input name="merchantId" required /></Field><Field label="Merchant Key"><Input name="merchantKey" type="password" required /></Field><Field label="Merchant Salt"><Input name="merchantSalt" type="password" required /></Field></div><div className="row"><Button type="submit" variant="primary">{paytr ? "Bilgileri güncelle" : "PayTR bağlantısını kaydet"}</Button>{paytr && <Button type="button" onClick={() => setDuzenlenen(null)}>Vazgeç</Button>}</div></form>;
-  const bagli = kayitlar.length; const aktif = kayitlar.filter((b) => b.durum === "aktif").length;
+  const [kayitlar, setKayitlar] = useState<Baglanti[] | null>(null);
+  const [listeHatasi, setListeHatasi] = useState("");
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
+  const [islem, setIslem] = useState(false);
+  const [duzenlenen, setDuzenlenen] = useState<Saglayici | null>(null);
+  const kayit = kayitlar?.find((b) => b.saglayici === duzenlenen?.kod);
+
+  const yukle = useCallback(async (signal?: AbortSignal) => {
+    setYukleniyor(true);
+    setListeHatasi("");
+    try {
+      const yanit = await api<Baglanti[]>("/baglantilar", { signal });
+      if (!signal?.aborted) setKayitlar(yanit.filter((b) => b.aile === "pos"));
+    } catch (e) {
+      if (!signal?.aborted) setListeHatasi(e instanceof Error ? e.message : "Bağlantılar yüklenemedi.");
+    } finally {
+      if (!signal?.aborted) setYukleniyor(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const kontrol = new AbortController();
+    void yukle(kontrol.signal);
+    return () => kontrol.abort();
+  }, [yukle]);
+
+  async function calistir(is: () => Promise<string>) {
+    setIslem(true);
+    setHata("");
+    setBasari("");
+    try {
+      setBasari(await is());
+      await yukle();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Bağlantı işlemi tamamlanamadı.");
+    } finally {
+      setIslem(false);
+    }
+  }
+
+  function kaydet(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!duzenlenen) return;
+    const { kod, ad } = duzenlenen;
+    const f = new FormData(e.currentTarget);
+    const config = kod === "iyzico"
+      ? { kullaniciAdi: f.get("apiKey"), parola: f.get("secretKey"), servisAdresi: f.get("ortam") }
+      : { magazaId: f.get("merchantId"), kullaniciAdi: f.get("merchantKey"), parola: f.get("merchantSalt") };
+    void calistir(async () => {
+      await api(kayit ? `/baglantilar/${kayit.id}` : "/baglantilar", {
+        method: kayit ? "PATCH" : "POST",
+        body: JSON.stringify(kayit ? { config } : { aile: "pos", saglayici: kod, config }),
+      });
+      setDuzenlenen(null);
+      return `${ad} bağlantı bilgileri kaydedildi. Tahsilat için bağlantıyı doğrulayın ve etkinleştirin.`;
+    });
+  }
+
+  function testEt(id: string) {
+    void calistir(async () => {
+      const sonuc = await api<{ basarili: boolean; mesaj?: string }>(`/baglantilar/${id}/test`, { method: "POST" });
+      if (!sonuc.basarili) throw new Error(sonuc.mesaj ?? "Doğrulama başarısız.");
+      await api(`/baglantilar/${id}/aktif-et`, { method: "POST" });
+      return "Bağlantı doğrulandı ve etkinleştirildi.";
+    });
+  }
+
+  function formuKapat() {
+    if (islem) return;
+    setDuzenlenen(null);
+    setHata("");
+  }
+
   return <div className="pos-page">
-    <header className="pos-hero"><div><span>ÖDEME ENTEGRASYON MERKEZİ</span><h1>Sanal POS ayarları</h1><p>Kart bilgileri sisteminizde tutulmaz. Güvenli ödeme sağlayıcılarını bağlayın, doğrulayın ve tahsilat akışınızı merkezi olarak yönetin.</p></div><div><Button className="btn--ghost" onClick={() => void yukle()}>↻ Bağlantıları yenile</Button></div></header>
-    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
-    <section className="pos-kpis"><div className="is-lead"><span>POS bağlantı özeti</span><strong>{bagli} / 2</strong><small>Tanımlı ödeme sağlayıcısı</small></div><div><span>Aktif bağlantı</span><strong>{aktif}</strong><small>Tahsilata hazır</small></div><div className={!bagli ? "is-danger" : ""}><span>Kurulum bekleyen</span><strong>{2 - bagli}</strong><small>Kimlik bilgisi gerekli</small></div><div><span>Güvenlik</span><strong>PCI uyumlu</strong><small>Kart verisi saklanmaz</small></div></section>
-    {duzenlenen && <Card className="pos-form"><div className="pos-form__head"><div><span>BAĞLANTI AYARLARI</span><h2>{duzenlenen === "iyzico" ? "iyzico" : "PayTR"} bilgileri</h2><p>Gizli anahtarlar güvenli şekilde saklanır ve tekrar görüntülenmez.</p></div><Button onClick={() => setDuzenlenen(null)}>Kapat</Button></div>{duzenlenen === "iyzico" ? iyzicoFormu : paytrFormu}</Card>}
-    <section className="pos-accounts"><div className="pos-section-head"><div><span>ÖDEME SAĞLAYICILARI</span><h2>Bağlantılarınızı yönetin</h2></div>{!duzenlenen && <small className="muted">Bir sağlayıcı seçerek kuruluma başlayın.</small>}</div><div className="pos-account-grid">{iyzico ? kart(iyzico) : <article><div className="pos-provider">İZ</div><div><strong>iyzico</strong><small>Henüz bağlantı kurulmadı</small></div><div><Badge variant="neutral">KURULUM BEKLİYOR</Badge><Button size="sm" variant="primary" onClick={() => setDuzenlenen("iyzico")}>Bağla</Button></div></article>}{paytr ? kart(paytr) : <article><div className="pos-provider">PT</div><div><strong>PayTR</strong><small>Henüz bağlantı kurulmadı</small></div><div><Badge variant="neutral">KURULUM BEKLİYOR</Badge><Button size="sm" variant="primary" onClick={() => setDuzenlenen("paytr")}>Bağla</Button></div></article>}</div></section>
-    <Card><div className="card__title">Güvenli ödeme akışı</div><p className="muted" style={{ margin: 0 }}>Müşterileriniz ödeme sağlayıcının güvenli sayfasına yönlendirilir. TekirExtra yalnızca işlem sonucu ve referans bilgisini saklar.</p></Card>
+    <PageHeader title="Sanal POS ayarları" subtitle="Ödeme sağlayıcısı bağlantılarını kurun ve doğrulayın."
+      actions={<Button disabled={yukleniyor || islem} onClick={() => void yukle()}>Bağlantıları yenile</Button>} />
+    {!duzenlenen && <Alert tone="error">{hata}</Alert>}
+    <Alert tone="success">{basari}</Alert>
+    <Card title="Ödeme sağlayıcıları">
+      {listeHatasi && <Alert tone="error">{listeHatasi} <Button size="sm" onClick={() => void yukle()}>Tekrar dene</Button></Alert>}
+      {yukleniyor && <p className="muted" role="status">Bağlantılar yükleniyor…</p>}
+      {!listeHatasi && kayitlar && <div className="pos-provider-list">
+        {SAGLAYICILAR.map((saglayici) => {
+          const baglanti = kayitlar.find((b) => b.saglayici === saglayici.kod);
+          const aktif = baglanti?.durum === "aktif";
+          return <article className="pos-provider-row" aria-label={saglayici.ad} key={saglayici.kod}>
+            <span className="pos-provider" aria-hidden="true">{saglayici.simge}</span>
+            <div className="pos-provider-description">
+              <strong>{saglayici.ad}</strong>
+              {baglanti && <small className="muted">{baglanti.kullaniciAdiMaskeli}</small>}
+            </div>
+            <div className="pos-actions">
+              <Badge variant={aktif ? "success" : baglanti?.durum === "hata" ? "danger" : "neutral"}>
+                {aktif ? "Aktif" : baglanti?.durum === "hata" ? "Bağlantı hatası" : baglanti ? "Etkin değil" : "Kurulum bekliyor"}
+              </Badge>
+              {baglanti && !aktif && <Button disabled={islem || yukleniyor} size="sm" onClick={() => testEt(baglanti.id)}>Doğrula ve etkinleştir</Button>}
+              <Button size="sm" variant={baglanti ? "ghost" : "primary"} disabled={islem || yukleniyor}
+                onClick={() => { setHata(""); setBasari(""); setDuzenlenen(saglayici); }}>{baglanti ? "Düzenle" : "Bağla"}</Button>
+            </div>
+          </article>;
+        })}
+      </div>}
+    </Card>
+    {duzenlenen && <Modal genis baslik={`${duzenlenen.ad} bağlantısı`} onKapat={formuKapat}>
+      <form className="stack" onSubmit={kaydet}>
+        <Alert tone="error">{hata}</Alert>
+        {kayit && <p className="muted">Kayıtlı gizli bilgiler gösterilmez. Kaydetmek için anahtarları yeniden girin.</p>}
+        {duzenlenen.kod === "paytr" && <p className="muted">PayTR panelinde Link API mağazanız için etkin olmalıdır.</p>}
+        <div className="form-grid pos-provider-fields">
+          {duzenlenen.kod === "iyzico" ? <>
+            <Field label="API Key"><Input name="apiKey" required /></Field>
+            <Field label="Secret Key"><Input name="secretKey" type="password" required /></Field>
+            <Field label="Ortam"><Select name="ortam" defaultValue={kayit?.ayarlar?.servisAdresi ?? "https://sandbox-api.iyzipay.com"}>
+              <option value="https://sandbox-api.iyzipay.com">Sandbox</option>
+              <option value="https://api.iyzipay.com">Canlı</option>
+            </Select></Field>
+          </> : <>
+            <Field label="Mağaza No"><Input name="merchantId" required /></Field>
+            <Field label="Merchant Key"><Input name="merchantKey" type="password" required /></Field>
+            <Field label="Merchant Salt"><Input name="merchantSalt" type="password" required /></Field>
+          </>}
+        </div>
+        <ModalEylem onVazgec={formuKapat} isleniyor={islem} metin="Kaydet" />
+      </form>
+    </Modal>}
   </div>;
 }

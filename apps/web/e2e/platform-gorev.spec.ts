@@ -7,6 +7,16 @@ const GID = "30000000-0000-4000-8000-000000000001";
 const kisi = (id: string) => ({ id, adSoyad: id === ADMIN ? "Platform Yöneticisi" : "Mevzuat Editörü", rol: id === ADMIN ? "yonetici" : "mevzuat_editoru", aktif: true });
 const gorev = (ek: Record<string, unknown> = {}) => ({ id: GID, baslik: "Dönem kaydını hazırla", aciklama: "Dayanak ve yürürlük tarihini kontrol edin.", kapsam: "mevzuat", durum: "acik", oncelik: "yuksek", sonTarih: "2026-10-01", sorumluId: EDITOR, sorumlu: kisi(EDITOR), olusturan: kisi(ADMIN), degisiklikId: DEG, degisiklik: { id: DEG, no: 12, baslik: "Dönem düzenlemesi" }, surum: 1, createdAt: "2026-10-01T08:00:00Z", updatedAt: "2026-10-01T08:00:00Z", kapanisAt: null, ...ek });
 
+test("endeks revizyonu görevi yöneticiye Sistem oluşturanıyla açılır", async ({ page }) => {
+  const baslik = "Endeks revizyonu · USD · 2026-10";
+  await hazirla(page, [gorev({ baslik, kapsam: "platform", olusturan: null, sorumlu: null, sorumluId: null, degisiklik: null, degisiklikId: null })]);
+  await page.goto("/platform/gorevler");
+  const satir = page.getByRole("row", { name: new RegExp(baslik) });
+  await expect(satir).toBeVisible();
+  await satir.getByRole("button", { name: "Düzenle", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Görevi düzenle" }).getByText("Oluşturan: Sistem", { exact: true })).toBeVisible();
+});
+
 async function hazirla(page: Page, ilk = [gorev()], rol = "yonetici") {
   const durum = { kayitlar: ilk, hata: false, cakisma: false, istekler: [] as { method: string; body: Record<string, unknown> }[] };
   await page.addInitScript(() => sessionStorage.setItem("tekir_platform_access", "platform-gorev-test"));

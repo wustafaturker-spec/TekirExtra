@@ -62,12 +62,20 @@ export const YETKI_MODULLERI: readonly YetkiModulu[] = [
 
 const MODUL_KODLARI = new Set(YETKI_MODULLERI.map((m) => m.kod));
 
+/** END-23: paket modülü değil, özel rolün bağımsız okuma izinleridir. */
+export const ENDEKS_YETKI_KUTULARI = [
+  { anahtar: "fiyat_endeks_satis.goruntule", ad: "Fiyat–endeks analizi (satış fiyatı)" },
+  { anahtar: "fiyat_endeks_alis.goruntule", ad: "Fiyat–endeks analizi (alış fiyatı ve maliyet)" },
+] as const;
+export const ENDEKS_YETKI_ROLLERI = ["muhasebe", "satis", "salt_okunur", "mali_musavir", "maliyet_muhasebesi", "uretim_planlama", "depo"] as const;
+
 /** "modul.islem" biçimi; özel rolün kapalı kutuları bu anahtarlarla saklanır. */
 export function yetkiAnahtari(modul: string, islem: YetkiIslemi): string {
   return `${modul}.${islem}`;
 }
 
 export function gecerliYetkiAnahtariMi(anahtar: string): boolean {
+  if (ENDEKS_YETKI_KUTULARI.some((k) => k.anahtar === anahtar)) return true;
   const [modul, islem] = anahtar.split(".");
   return MODUL_KODLARI.has(modul) && (YETKI_ISLEMLERI as readonly string[]).includes(islem);
 }
@@ -113,6 +121,13 @@ export function okumaKutusunaBagli(modul: YetkiModulu, yol: string): boolean {
 /** İstek özel rolün kapattığı bir kutuya mı düşüyor? */
 export function ozelRolIstegiKapali(kapaliKutular: readonly string[], yontem: string, yol: string, saltOkuma = false): boolean {
   if (!kapaliKutular.length) return false;
+  const temiz = yol.replace(/^\/+/, "").replace(/^api\/v\d+\//, "").split("?")[0];
+  if (temiz === "fiyat-endeks" || temiz.startsWith("fiyat-endeks/")) {
+    const satisKapali = kapaliKutular.includes("fiyat_endeks_satis.goruntule");
+    const alisKapali = kapaliKutular.includes("fiyat_endeks_alis.goruntule");
+    if (satisKapali && alisKapali) return true;
+    if (satisKapali && ["fiyat-endeks/fiyat-onerisi", "fiyat-endeks/teklif-uyarilari"].includes(temiz)) return true;
+  }
   const modul = yolModulu(yol);
   if (!modul) return false;
   const islem = yolIslemi(yontem, yol, saltOkuma);

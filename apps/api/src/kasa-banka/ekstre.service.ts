@@ -301,6 +301,8 @@ export class EkstreService {
         bakiye: s.bakiye?.toFixed(2) ?? null,
         durum: s.durum,
         eslesmeTuru: s.eslesmeTuru,
+        eslesmeSkoru: s.eslesmeSkoru,
+        eslesmeKaniti: s.eslesmeKaniti,
         cari: s.cari,
         fatura: s.fatura ? { ...s.fatura, genelToplam: s.fatura.genelToplam.toFixed(2) } : null,
         hareketler: s.hareketler.map((h) => ({

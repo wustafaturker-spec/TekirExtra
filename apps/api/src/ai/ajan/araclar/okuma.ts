@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
 import { adres, arac, BUGUN, cagir, sec, tarih, uuid } from "./arac";
 import { UC } from "./uclar";
@@ -57,6 +58,23 @@ export const OKUMA_ARACLARI = [
         fiyatListesi: k.fiyatListesi ?? null,
         kisiler: (k.kisiler ?? []).map((x: any) => sec(x, ["adSoyad", "gorev", "eposta", "telefon"])),
         adres: adres.cari(k.id),
+      };
+    },
+  }),
+  arac({
+    ad: "cari_durumu",
+    aciklama: "Bir carinin yaşlandırma, bakiye, risk limiti kullanımı, ödeme davranışı (tahmini gecikme gün ve güven seviyesi) ve dikkat gerektiren bulgularını tek raporda döner. 'bu cariyi analiz et', 'ödeme performansı', 'risk durumu' sorularında ve ekran eylemlerinde kullan.",
+    sinif: "okuma",
+    girdi: z.object({ cariId: uuid("Cari kimliği (cari_ara veya ekran bağlamındaki id)") }),
+    uc: UC.cariDurum,
+    async calistir(b, g) {
+      const durum = await cagir<any>(b, UC.cariDurum, [g.cariId]);
+      return {
+        cariId: g.cariId,
+        gostergeler: durum.gostergeler,
+        bulgular: (durum.bulgular ?? []).slice(0, 10),
+        toplamBulgu: durum.toplamBulgu,
+        adres: adres.cari(g.cariId),
       };
     },
   }),
@@ -167,6 +185,124 @@ export const OKUMA_ARACLARI = [
     async calistir(b, g) {
       const k = await cagir(b, UC.faturaGetir, [g.faturaId]);
       return { ...sec(k, [...FATURA_ALANLARI, "toplamMatrah", "toplamKdv", "aciklama"]), cari: cariKisa(k.cari), satirlar: satirlar(k.satirlar), adres: adres.fatura(k.id) };
+    },
+  }),
+  arac({
+    ad: "fatura_fiyat_sapmasi",
+    aciklama: "Bir faturadaki kalemlerin birim fiyatlarını ürünün liste ve tavsiye fiyatıyla karşılaştırır; satır bazında ve toplamda pozitif/negatif parasal sapmayı ve sapma yüzdesini açıklar.",
+    sinif: "okuma",
+    girdi: z.object({ faturaId: uuid("Fatura kimliği") }),
+    uc: UC.faturaGetir,
+    async calistir(b, g) {
+      const fatura = await cagir<any>(b, UC.faturaGetir, [g.faturaId]);
+      const yon = fatura.tip === "alis" || fatura.tip === "alis_iade" ? "alis" : "satis";
+      const satirlar = fatura.satirlar ?? [];
+      const analizler = [];
+      let toplamSapma = 0;
+
+      for (const s of satirlar) {
+        if (!s.stokId) continue;
+        let tavsiyeFiyat: number | null = null;
+        try {
+          const tf = await cagir<any>(b, UC.stokTavsiyeFiyat, [
+            s.stokId,
+            fatura.cariId,
+            yon,
+            fatura.dovizCinsi ?? "TRY",
+            undefined,
+            fatura.kur ? String(fatura.kur) : "1",
+            undefined,
+            s.varyantId ?? undefined,
+          ]);
+          if (tf?.birimFiyat !== null && tf?.birimFiyat !== undefined) {
+            tavsiyeFiyat = Number(tf.birimFiyat);
+          }
+        } catch {
+          // Tavsiye fiyat bulunamazsa devam
+        }
+
+        const gercekBirimFiyat = Number(s.birimFiyat ?? 0);
+        const miktar = Number(s.miktar ?? 0);
+        let sapmaTutari = 0;
+        let sapmaYuzdesi = 0;
+        let durum: "uyumlu" | "yuksek" | "dusuk" | "belirsiz" = "belirsiz";
+
+        if (tavsiyeFiyat !== null && tavsiyeFiyat > 0) {
+          const birimFark = gercekBirimFiyat - tavsiyeFiyat;
+          sapmaTutari = birimFark * miktar;
+          sapmaYuzdesi = Math.round((birimFark / tavsiyeFiyat) * 10000) / 100;
+          if (Math.abs(sapmaYuzdesi) <= 2) durum = "uyumlu";
+          else if (sapmaYuzdesi > 2) durum = "yuksek";
+          else durum = "dusuk";
+          toplamSapma += sapmaTutari;
+        }
+
+        analizler.push({
+          satirId: s.id,
+          urunAdi: s.stok?.ad ?? s.aciklama ?? "Kalem",
+          miktar,
+          birim: s.birim ?? "adet",
+          faturaBirimFiyat: gercekBirimFiyat,
+          tavsiyeBirimFiyat: tavsiyeFiyat,
+          dovizCinsi: fatura.dovizCinsi ?? "TRY",
+          sapmaYuzdesi,
+          parasalSapma: Math.round(sapmaTutari * 100) / 100,
+          durum,
+        });
+      }
+
+      return {
+        faturaId: fatura.id,
+        faturaNo: fatura.no ?? "(Taslak)",
+        cariUnvan: fatura.cari?.unvan ?? "Belirtilmemiş",
+        dovizCinsi: fatura.dovizCinsi ?? "TRY",
+        genelToplam: Number(fatura.genelToplam ?? 0),
+        toplamParasalSapma: Math.round(toplamSapma * 100) / 100,
+        kalemAnalizleri: analizler,
+        adres: adres.fatura(fatura.id),
+      };
+    },
+  }),
+  arac({
+    ad: "cari_ekstre_dosyasi",
+    aciklama: "Cari hesap (müşteri veya tedarikçi) ekstresini PDF veya Excel dosyası olarak hazırlar ve sohbete/Telegram'a ekler. Kullanıcı hesap ekstresi, ekstre dosyası, döküm veya PDF/Excel istediğinde kullanılır.",
+    sinif: "okuma",
+    girdi: z.object({
+      cariId: z.string().describe("Cari kimliği (UUID), unvanı veya cari kodu"),
+      format: z.enum(["pdf", "excel"]).default("pdf").describe("Dosya formatı ('pdf' veya 'excel')"),
+      baslangic: tarih("Başlangıç tarihi (YYYY-AA-GG)").optional(),
+      bitis: tarih("Bitiş tarihi (YYYY-AA-GG)").optional(),
+    }),
+    uc: UC.cariEkstreDosyasi,
+    async calistir(b, g) {
+      let resolvedId = g.cariId;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(g.cariId);
+      if (!isUuid) {
+        const arama = await cagir<{ kayitlar?: any[] }>(b, UC.cariListe, [g.cariId, undefined, "5"]);
+        const aday = arama?.kayitlar?.[0];
+        if (!aday?.id) {
+          throw new BadRequestException(`"${g.cariId}" adında veya kodunda bir cari hesap bulunamadı.`);
+        }
+        resolvedId = aday.id;
+      }
+      const r = await cagir<{ tampon: Buffer; dosyaAdi: string; mimeType: string; cariTip?: string }>(b, UC.cariEkstreDosyasi, [
+        resolvedId, g.format, g.baslangic, g.bitis,
+      ]);
+      const tampon = Buffer.isBuffer(r.tampon) ? r.tampon : Buffer.from(r.tampon);
+      return {
+        _dosya: {
+          tampon,
+          dosyaAdi: r.dosyaAdi,
+          mimeType: r.mimeType,
+          aciklama: `${r.dosyaAdi} hazırlandı.`,
+        },
+        basarili: true,
+        dosyaAdi: r.dosyaAdi,
+        mimeType: r.mimeType,
+        baytBoyutu: tampon.length,
+        cariTip: r.cariTip,
+        mesaj: `${r.dosyaAdi} hazırlandı ve sohbete dosya olarak eklendi.`,
+      };
     },
   }),
   arac({
@@ -429,6 +565,32 @@ export const OKUMA_ARACLARI = [
         toplam: r.toplam ?? 0,
         mesaj: r.mesaj ?? (r.senkronizeEdildi > 0 ? `${r.senkronizeEdildi} yeni e-posta aktarıldı.` : "Yeni e-posta bulunamadı, posta kutusu güncel."),
         ekran: adres.eposta(),
+      };
+    },
+  }),
+  arac({
+    ad: "sozlesme_ara_ve_sor",
+    aciklama:
+      "P-10: Yüklenmiş sözleşme, şartname, protokol ve zeyilnameler üzerinde PostgreSQL tam metin araması ve sayfa kaynaklı RAG soru-cevap çalıştırmak için kullanılır. Kullanıcı bir sözleşmedeki cezai şart, fesih süresi, teslimat koşulu, garanti veya özel maddeyi sorduğunda çağrılır.",
+    sinif: "okuma",
+    girdi: z.object({
+      soru: z.string().describe("Sözleşme hakkında sorulan soru veya araştırılan konu"),
+      belgeId: z.string().uuid().optional().describe("Belirli bir sözleşmeyle sınırlanmak isteniyorsa belge ID'si"),
+      cariId: z.string().uuid().optional().describe("Belirli bir cari firmaya ait sözleşmeyle sınırlanmak isteniyorsa cari ID'si"),
+    }),
+    uc: UC.sozlesmeSor,
+    async calistir(b, g) {
+      const r = await cagir<any>(b, UC.sozlesmeSor, [{ soru: g.soru, belgeId: g.belgeId, cariId: g.cariId }]);
+      return {
+        cevap: r.cevap,
+        guvenSkoru: r.guvenSkoru,
+        kaynaklar: r.kaynaklar?.map((k: any) => ({
+          belgeBaslik: k.belgeBaslik,
+          sayfaNo: k.sayfaNo,
+          bolumBasligi: k.bolumBasligi,
+          alinti: k.alinti?.slice(0, 200),
+        })),
+        ekran: "/panel/ai/sozlesmeler",
       };
     },
   }),

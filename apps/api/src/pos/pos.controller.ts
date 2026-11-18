@@ -141,4 +141,23 @@ export class PosController {
   ) {
     return this.service.paytrCallback(tenantId, tahsilatId, govde);
   }
+
+  /** P-04: Markalı ödeme sayfası herkese açık bilgi ucu */
+  @Get("odeme/:tenantId/:tahsilatId/:token")
+  @Public()
+  @Header("Cache-Control", "private, no-store")
+  odemeBilgisi(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("tahsilatId", ParseUUIDPipe) tahsilatId: string,
+    @Param("token") token: string,
+  ) {
+    return this.service.publicOdemeBilgisi(tenantId, tahsilatId, token);
+  }
+
+  /** P-04: Faturaya ait aktif ödeme bağlantısı */
+  @Get("fatura/:faturaId/baglanti")
+  @Roller("yonetici", "muhasebe")
+  faturaBaglanti(@Param("faturaId", ParseUUIDPipe) faturaId: string) {
+    return this.service.faturaOdemeBaglantisi(faturaId);
+  }
 }

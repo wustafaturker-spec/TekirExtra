@@ -117,8 +117,8 @@ export async function sonAlisCizgisi(tx: Tx, g: { stokId: string; varyantId: str
       JOIN faturalar f ON f.id = fs.fatura_id
       JOIN stok_kartlari s ON s.id = fs.stok_id
       LEFT JOIN LATERAL (
-        SELECT CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
-          ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END AS katsayi
+        SELECT COALESCE(fs.birim_katsayi, CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
+          ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END) AS katsayi
       ) k ON true
       WHERE f.durum = 'kesin' AND f.tip = 'alis'::"FaturaTip" AND fs.stok_id = ${g.stokId}::uuid
         AND fs.miktar > 0 AND fs.matrah > 0 AND k.katsayi IS NOT NULL AND f.tarih < ${sonHaric}::date

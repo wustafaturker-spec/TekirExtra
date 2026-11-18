@@ -5,9 +5,10 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { ROL_ADI } from "@/lib/rol-adlari";
-import { Alert, Badge, Button, Card, PageHeader } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Modal, PageHeader } from "@/components/ui";
 
 type Kutu = "bekleyen" | "taleplerim" | "gecmis";
+type KararIslemi = "onayla" | "reddet" | "geri-cek";
 type Durum = "bekliyor" | "isleniyor" | "onaylandi" | "reddedildi" | "geri_cekildi" | "gecersiz" | "hata";
 interface Talep {
   id: string; islemAdi: string; ozet: string; tutarTry: string | null; nedenler: string[]; durum: Durum; adim: number; kuralAdi: string | null;
@@ -34,6 +35,12 @@ const HEDEF_YOLU: Record<string, (id: string) => string> = {
 const adimAdi = (a: Talep["adimlar"][number]) => ("rol" in a ? ROL_ADI[a.rol as keyof typeof ROL_ADI] ?? a.rol : a.kullanici);
 const zaman = (s: string) => new Date(s).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
 const tl = (s: string) => `${Number(s).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
+const KARAR_BASLIGI: Record<KararIslemi, string> = {
+  onayla: "Talebi onayla",
+  reddet: "Talebi reddet",
+  "geri-cek": "Talebi geri çek",
+};
+const hedefeGit = (t: Talep) => t.hedefTur && t.hedefId ? HEDEF_YOLU[t.hedefTur]?.(t.hedefId) : undefined;
 
 /**
  * ONY-06: tek onay kutusu. Onayımı bekleyenler (karar burada), taleplerim (geri çekme), geçmiş.
@@ -46,36 +53,57 @@ export default function OnaylarSayfasi() {
 function OnayKutusu() {
   const vurgulu = useSearchParams().get("talep");
   const [kutu, setKutu] = useState<Kutu>("bekleyen");
-  const [talepler, setTalepler] = useState<Talep[] | null>(null);
-  const [diger, setDiger] = useState<DigerOnay[]>([]);
+  const [liste, setListe] = useState<{ kutu: Kutu; talepler: Talep[]; digerOnaylar: DigerOnay[] } | null>(null);
+  const [listeHatasi, setListeHatasi] = useState<{ kutu: Kutu; mesaj: string } | null>(null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState("");
+  const [karar, setKarar] = useState<{ talep: Talep; tur: KararIslemi } | null>(null);
+  const [gerekce, setGerekce] = useState("");
 
   // Sekme hızla değiştirilince geç gelen eski yanıt yeni sekmenin listesini ezmesin.
   const sonIstek = useRef(0);
   const yukle = useCallback(async (k: Kutu) => {
     const no = ++sonIstek.current;
+    setListe(null);
+    setListeHatasi(null);
     try {
       const r = await api<{ talepler: Talep[]; digerOnaylar: DigerOnay[] }>(`/onaylar?kutu=${k}`);
       if (no !== sonIstek.current) return;
-      setTalepler(r.talepler); setDiger(r.digerOnaylar);
-    } catch (e) { if (no === sonIstek.current) setHata(e instanceof Error ? e.message : "Onaylar alınamadı"); }
+      setListe({ kutu: k, ...r });
+    } catch (e) {
+      if (no === sonIstek.current) setListeHatasi({ kutu: k, mesaj: e instanceof Error ? e.message : "Onaylar alınamadı." });
+    }
   }, []);
-  useEffect(() => { setTalepler(null); void yukle(kutu); }, [kutu, yukle]);
+  useEffect(() => { void yukle(kutu); return () => { sonIstek.current++; }; }, [kutu, yukle]);
+  const guncelListe = liste?.kutu === kutu ? liste : null;
+  const guncelListeHatasi = listeHatasi?.kutu === kutu ? listeHatasi.mesaj : "";
+  const talepler = guncelListe?.talepler;
+  const diger = guncelListe?.digerOnaylar ?? [];
 
-  async function eylem(t: Talep, tur: "onayla" | "reddet" | "geri-cek") {
-    let gerekce: string | null = null;
-    if (tur === "reddet") {
-      gerekce = window.prompt("Ret gerekçesi (en az 3 karakter):");
-      if (gerekce === null) return;
-    } else if (tur === "onayla") {
-      if (!window.confirm(`${t.islemAdi} onaylanacak${t.adim + 1 >= t.adimlar.length ? " ve işlem talep edenin adına hemen yapılacak" : ""}. Devam edilsin mi?`)) return;
-    } else if (!window.confirm("Talep geri çekilecek. Devam edilsin mi?")) return;
+  function kararAc(talep: Talep, tur: KararIslemi) {
+    setHata("");
+    setBasari("");
+    setGerekce("");
+    setKarar({ talep, tur });
+  }
+
+  function kararKapat() {
+    if (islem) return;
+    setHata("");
+    setKarar(null);
+  }
+
+  const retEksik = karar?.tur === "reddet" && gerekce.trim().length < 3;
+  const kararHedefi = karar && hedefeGit(karar.talep);
+  async function eylem() {
+    if (!karar || islem || retEksik) return;
+    const { talep: t, tur } = karar;
     setIslem(t.id); setHata(""); setBasari("");
     try {
-      const r = await api<Talep>(`/onaylar/${t.id}/${tur}`, { method: "POST", body: JSON.stringify({ gerekce }) });
+      const r = await api<Talep>(`/onaylar/${t.id}/${tur}`, { method: "POST", body: JSON.stringify({ gerekce: tur === "reddet" ? gerekce.trim() : null }) });
       setBasari(tur === "reddet" ? "Talep reddedildi." : tur === "geri-cek" ? "Talep geri çekildi." : r.durum === "bekliyor" ? "Onayınız kaydedildi; sonraki adımın onayı bekleniyor." : r.durum === "onaylandi" ? "Onaylandı ve işlem yapıldı." : `Onaylandı ama işlem yapılamadı: ${r.hata ?? DURUM[r.durum].ad}`);
+      setKarar(null);
       await yukle(kutu);
     } catch (e) { setHata(e instanceof Error ? e.message : "İşlem yapılamadı"); }
     finally { setIslem(""); }
@@ -83,20 +111,33 @@ function OnayKutusu() {
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-      <PageHeader title="Onaylar" subtitle="Onay kurallarına takılan işlemler burada onaylanır. Son adım onaylanınca işlem, talep edenin adına kendiliğinden yapılır." />
-      <Alert tone="error">{hata}</Alert>
+      <PageHeader
+        title="Onaylar"
+        subtitle="Onay kurallarına takılan işlemler burada onaylanır. Son adım onaylanınca işlem, talep edenin adına kendiliğinden yapılır."
+        actions={
+          <Link href="/panel/ai/sabah-onay">
+            <Button size="sm" variant="primary">
+              Sabah Onay Kutusu 🌅
+            </Button>
+          </Link>
+        }
+      />
+      {!karar && <Alert tone="error">{hata}</Alert>}
       <Alert tone="success">{basari}</Alert>
       <div className="row" role="tablist" style={{ gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         {([["bekleyen", "Onayımı bekleyenler"], ["taleplerim", "Taleplerim"], ["gecmis", "Geçmiş"]] as const).map(([k, ad]) => (
-          <Button key={k} role="tab" aria-selected={kutu === k} variant={kutu === k ? "primary" : undefined} onClick={() => setKutu(k)}>{ad}</Button>
+          <Button key={k} role="tab" aria-selected={kutu === k} disabled={Boolean(islem)} variant={kutu === k ? "primary" : undefined} onClick={() => setKutu(k)}>{ad}</Button>
         ))}
       </div>
 
       <div className="stack">
-        {talepler === null && <Card><p className="subtle" role="status" style={{ margin: 0 }}>Yükleniyor…</p></Card>}
+        {guncelListeHatasi ? <Card><Alert tone="error">
+          <div>{guncelListeHatasi}</div>
+          <Button size="sm" onClick={() => void yukle(kutu)}>Tekrar dene</Button>
+        </Alert></Card> : !guncelListe && <Card><p className="subtle" role="status" style={{ margin: 0 }}>Onaylar yükleniyor…</p></Card>}
         {talepler?.length === 0 && <Card><p className="subtle" style={{ margin: 0 }}>{kutu === "bekleyen" ? "Onayınızı bekleyen talep yok." : kutu === "taleplerim" ? "Açtığınız onay talebi yok." : "Karara bağlanmış talep yok."}</p></Card>}
         {talepler?.map((t) => {
-          const hedefYolu = t.hedefTur && t.hedefId ? HEDEF_YOLU[t.hedefTur]?.(t.hedefId) : null;
+          const hedefYolu = hedefeGit(t);
           return (
             <Card key={t.id} title={t.islemAdi} actions={<Badge variant={DURUM[t.durum].ton}>{DURUM[t.durum].ad}</Badge>} style={vurgulu === t.id ? { outline: "2px solid var(--accent)", outlineOffset: 2 } : undefined}>
               <div className="stack" style={{ gap: "0.5rem" }}>
@@ -115,10 +156,10 @@ function OnayKutusu() {
                 <div className="row" style={{ gap: "0.5rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
                   {hedefYolu && <Link className="btn btn--sm" href={hedefYolu}>Kaydı aç</Link>}
                   {kutu === "bekleyen" && t.durum === "bekliyor" && <>
-                    <Button size="sm" variant="danger" disabled={Boolean(islem)} onClick={() => void eylem(t, "reddet")}>Reddet</Button>
-                    <Button size="sm" variant="primary" disabled={Boolean(islem)} onClick={() => void eylem(t, "onayla")}>{islem === t.id ? "İşleniyor…" : "Onayla"}</Button>
+                    <Button size="sm" variant="danger" disabled={Boolean(islem)} onClick={() => kararAc(t, "reddet")}>Reddet</Button>
+                    <Button size="sm" variant="primary" disabled={Boolean(islem)} onClick={() => kararAc(t, "onayla")}>Onayla</Button>
                   </>}
-                  {kutu === "taleplerim" && t.durum === "bekliyor" && <Button size="sm" disabled={Boolean(islem)} onClick={() => void eylem(t, "geri-cek")}>Geri çek</Button>}
+                  {kutu === "taleplerim" && t.durum === "bekliyor" && <Button size="sm" disabled={Boolean(islem)} onClick={() => kararAc(t, "geri-cek")}>Geri çek</Button>}
                 </div>
               </div>
             </Card>
@@ -139,6 +180,32 @@ function OnayKutusu() {
           </Card>
         )}
       </div>
+      {karar && <Modal baslik={KARAR_BASLIGI[karar.tur]} onKapat={kararKapat}>
+        <form className="stack" onSubmit={(e) => { e.preventDefault(); void eylem(); }}>
+          <Alert tone="error">{hata}</Alert>
+          <div className="stack" style={{ gap: ".35rem", overflowWrap: "anywhere" }}>
+            <strong>{karar.talep.islemAdi}</strong>
+            <span>{karar.talep.ozet}</span>
+            {karar.talep.tutarTry !== null && <span>TL karşılığı {tl(karar.talep.tutarTry)}</span>}
+            <span className="subtle">Talep eden {karar.talep.talepEden}</span>
+            {kararHedefi && <Link href={kararHedefi} target="_blank" rel="noopener noreferrer">Hedef kaydı aç (yeni sekme)</Link>}
+          </div>
+          {karar.tur === "onayla" && <p className="subtle">{karar.talep.adim + 1 >= karar.talep.adimlar.length
+            ? "Bu son onay. Onayladığınızda işlem talep edenin adına hemen yapılacak."
+            : "Onayınız kaydedilecek. İşlem sonraki onay adımı tamamlanana kadar bekleyecek."}</p>}
+          {karar.tur === "geri-cek" && <p className="subtle">Talep geri çekilecek ve onay akışı sona erecek.</p>}
+          {karar.tur === "reddet" && <Field label="Ret gerekçesi (en az 3 karakter)" htmlFor="onay-ret-gerekcesi">
+            <textarea id="onay-ret-gerekcesi" className="input" rows={3} maxLength={500} required disabled={Boolean(islem)}
+              value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
+          </Field>}
+          <div className="row-tight" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <Button type="button" disabled={Boolean(islem)} onClick={kararKapat}>Vazgeç</Button>
+            <Button type="submit" variant={karar.tur === "onayla" ? "primary" : "danger"} disabled={Boolean(islem) || retEksik}>
+              {islem ? "İşleniyor…" : KARAR_BASLIGI[karar.tur]}
+            </Button>
+          </div>
+        </form>
+      </Modal>}
     </div>
   );
 }

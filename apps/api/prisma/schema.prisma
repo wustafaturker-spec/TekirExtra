@@ -123,6 +123,8 @@ enum DuzeltmeTuru {
 }
 
 model Tenant {
+  endeksKullanimlari EndeksKullanimi[]
+  stokBirimGecmisi StokBirimGecmisi[]
   fiyatListesiFiyatGecmisi FiyatListesiFiyatGecmisi[]
   endeksArtisKurallari     EndeksArtisKurali[]
   endeksArtisOnerileri     EndeksArtisOnerisi[]
@@ -218,6 +220,8 @@ model Tenant {
   destekOturumlari          DestekOturumu[]
   pazaryeriSiparisleri      PazaryeriSiparis[]
   posTahsilatlari           PosTahsilat[]
+  posOlayKayitlari          PosOlayKaydi[]
+  posOdemeDenemeleri        PosOdemeDenemesi[]
   pazaryeriKesintileri      PazaryeriKesinti[]
   pazaryeriHakedisleri PazaryeriHakedis[]
   pazaryeriOdemeDonemleri PazaryeriOdemeDonemi[]
@@ -312,6 +316,7 @@ model Tenant {
   aiOcrDenetimleri        AiOcrDenetim[]
   aiVeriAktarimOnaylari   AiVeriAktarimOnayi[]
   belgeOcrKayitlari       BelgeOcrKaydi[]
+  belgeKuyrukIsleri       BelgeKuyrukIsi[]
   aiAyari                 TenantAiAyari?
   aiTavani                PlatformAiTavani?
   platformTakip          PlatformFirmaTakip?
@@ -328,6 +333,9 @@ model Tenant {
   aiGorevleri             TenantAiGorev[]
   aiGorevCalismalari      TenantAiGorevCalisma[]
   aiIcgoruleri            AiIcgoru[]
+  aiHazirliklari          AiHazirlik[]
+  sozlesmeBelgeleri       SozlesmeBelge[]
+  sozlesmeParcalari       SozlesmeBelgeParca[]
 
   @@map("tenants")
 }
@@ -694,6 +702,9 @@ model User {
   ajanOturumlari               AjanOturumu[]
   aiOnayTalepleri              AiOnayTalebi[]
   aiMcpAnahtarlari             AiMcpAnahtari[]
+  olusturulanAiHazirliklar     AiHazirlik[]            @relation("AiHazirlikOlusturan")
+  onaylananAiHazirliklar       AiHazirlik[]            @relation("AiHazirlikOnaylayan")
+  yuklenenSozlesmeler          SozlesmeBelge[]         @relation("SozlesmeYukleyen")
 
   onayTalepleri                OnayTalebi[]          @relation("OnayTalebiTalepEden")
   @@unique([tenantId, eposta])
@@ -1298,29 +1309,36 @@ model EpostaTeklifIslemi {
 /// AI-58…65: kiracıya ait ajan hafızası. Tutar/fiyat/bakiye saklanmaz; muhasebe verisi
 /// her zaman güncel kayıttan okunur. Tekillik (tenant, tür, cari, anahtar) göçteki ifade indeksindedir.
 model AiHafiza {
-  id              String    @id @default(uuid()) @db.Uuid
-  tenantId        String    @map("tenant_id") @db.Uuid
-  /// urun_eslesme | cari_eslesme | musteri_tercihi | siniflandirma | susturma
-  tur             String
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  /// urun_eslesme | cari_eslesme | musteri_tercihi | siniflandirma | susturma | fikir_isareti
+  tur               String
   /// Normalize ifade / gönderen adresi / tercih metni / e-posta kimliği.
-  anahtar         String
-  cariId          String?   @map("cari_id") @db.Uuid
-  stokId          String?   @map("stok_id") @db.Uuid
-  varyantId       String?   @map("varyant_id") @db.Uuid
+  anahtar           String
+  /// firma | cari | kullanici
+  kapsam            String    @default("firma")
+  cariId            String?   @map("cari_id") @db.Uuid
+  stokId            String?   @map("stok_id") @db.Uuid
+  varyantId         String?   @map("varyant_id") @db.Uuid
   /// Kullanıcıya gösterilen metin (asıl ifade, tercih, örnek e-posta özeti).
-  metin           String?   @db.Text
+  metin             String?   @db.Text
   /// siniflandirma: teklif | teklif_degil
-  etiket          String?
+  etiket            String?
   /// kullanici | otomatik | ai_onerisi
-  kaynak          String
+  kaynak            String
   /// aktif | oneri | pasif
-  durum           String    @default("aktif")
-  olusturanUserId String?   @map("olusturan_user_id") @db.Uuid
-  kaynakEpostaId  String?   @map("kaynak_eposta_id") @db.Uuid
-  kullanimSayisi  Int       @default(0) @map("kullanim_sayisi")
-  sonKullanimAt   DateTime? @map("son_kullanim_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+  durum             String    @default("aktif")
+  olusturanUserId   String?   @map("olusturan_user_id") @db.Uuid
+  onaylayanUserId   String?   @map("onaylayan_user_id") @db.Uuid
+  kaynakEpostaId    String?   @map("kaynak_eposta_id") @db.Uuid
+  surum             Int       @default(1)
+  kullanimSayisi    Int       @default(0) @map("kullanim_sayisi")
+  sonDogrulamaAt    DateTime? @map("son_dogrulama_at")
+  gecerlilikBitisAt DateTime? @map("gecerlilik_bitis_at")
+  nedenOnerildi     String?   @map("neden_onerildi") @db.Text
+  sonKullanimAt     DateTime? @map("son_kullanim_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2086,6 +2104,7 @@ model CariHesap {
   krediKartiHareketleri KrediKartiHareket[]
   masraflar             Masraf[]
   kiraSozlesmeleri      KiraSozlesme[]
+  sozlesmeler           SozlesmeBelge[]
   teminatlar            CariTeminat[]
   mutabakatlar          CariMutabakat[]
   personel              Personel?
@@ -2447,6 +2466,7 @@ model StokKategori {
 /// mevcutMiktar/ortalamaMaliyet hareket servisinde transaction içinde
 /// güncellenir (STK-08 ağırlıklı ortalama); hareketler değişmez kayıttır.
 model StokKart {
+  birimGecmisi StokBirimGecmisi[]
   id               String        @id @default(uuid()) @db.Uuid
   tenantId         String        @map("tenant_id") @db.Uuid
   kod              String
@@ -3895,6 +3915,8 @@ model FaturaSatir {
   partiBilgileri     Json?   @map("parti_bilgileri")
   miktar             Decimal @db.Decimal(15, 3)
   birim              String  @default("adet")
+  /// END-10: yeni satırın dönüşüm katsayısı; eski satırda bilinmez.
+  birimKatsayi       Decimal? @map("birim_katsayi") @db.Decimal(15, 6)
   birimFiyat         Decimal @map("birim_fiyat") @db.Decimal(15, 4)
   iskontoOrani       Decimal @default(0) @map("iskonto_orani") @db.Decimal(5, 2)
   iskontoTutari      Decimal @default(0) @map("iskonto_tutari") @db.Decimal(15, 2)
@@ -4587,18 +4609,68 @@ model PosTahsilat {
   iadeKilidi           DateTime?         @map("iade_kilidi")
   /// KSB-43: sağlayıcı iadeyi onayladı ama TekirExtra kaydı yazılamadı; { tutar, tarih, neden, ref }.
   bekleyenSaglayiciIade Json?            @map("bekleyen_saglayici_iade")
+  /// P-04: Markalı ödeme sayfası ve açık bağlantı güvenliği için özet saklama.
+  odemeTokenOzeti      String?           @map("odeme_token_ozeti") @db.VarChar(64)
+  odemeGoruntulenme    Int               @default(0) @map("odeme_goruntulenme")
+  sonGoruntulenme      DateTime?         @map("son_goruntulenme")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  posHesap PosHesap          @relation(fields: [posHesapId], references: [id])
-  cari     CariHesap         @relation(fields: [cariId], references: [id])
-  fatura   Fatura?           @relation(fields: [faturaId], references: [id])
-  hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
-  iadeler  PosIade[]
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posHesap    PosHesap           @relation(fields: [posHesapId], references: [id])
+  cari        CariHesap          @relation(fields: [cariId], references: [id])
+  fatura      Fatura?            @relation(fields: [faturaId], references: [id])
+  hareket     KasaBankaHareket?  @relation(fields: [hareketId], references: [id])
+  iadeler     PosIade[]
+  olaylar     PosOlayKaydi[]
+  denemeler   PosOdemeDenemesi[]
 
   @@index([tenantId, durum, createdAt])
   @@map("pos_tahsilatlari")
+}
+
+/// P-04: Sağlayıcı webhook ve dönüş olay kaydı (çift işlem ve yarış durumunu engeller).
+model PosOlayKaydi {
+  id            String      @id @default(uuid()) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  posTahsilatId String      @map("pos_tahsilat_id") @db.Uuid
+  saglayici     String      @db.VarChar(32)
+  isAnahtari    String      @map("is_anahtari") @db.VarChar(128)
+  olayTuru      String      @map("olay_turu") @db.VarChar(32)
+  durum         String      @default("alindi") @db.VarChar(32)
+  istekOzeti    Json?       @map("istek_ozeti")
+  yanitKodu     Int?        @map("yanit_kodu")
+  hata          String?     @map("hata")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posTahsilat PosTahsilat @relation(fields: [posTahsilatId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, isAnahtari], map: "pos_olay_kayitlari_tenant_id_is_anahtari_key")
+  @@index([tenantId, posTahsilatId, createdAt])
+  @@map("pos_olay_kayitlari")
+}
+
+/// P-04: Bağlantı üzerindeki ödeme denemeleri (kart/sağlayıcı deneme geçmişi).
+model PosOdemeDenemesi {
+  id            String      @id @default(uuid()) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  posTahsilatId String      @map("pos_tahsilat_id") @db.Uuid
+  denemeNo      Int         @default(1) @map("deneme_no")
+  saglayici     String      @db.VarChar(32)
+  saglayiciToken String?    @map("saglayici_token")
+  durum         String      @default("baslatildi") @db.VarChar(32)
+  hataMesaji    String?     @map("hata_mesaji")
+  ipAdresi      String?     @map("ip_adresi") @db.VarChar(64)
+  tarayici      String?     @map("tarayici")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  tamamlandiAt  DateTime?   @map("tamamlandi_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posTahsilat PosTahsilat @relation(fields: [posTahsilatId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, posTahsilatId, denemeNo])
+  @@map("pos_odeme_denemeleri")
 }
 
 /// P1-2a: farklı dövizdeki iki kasa/banka hesabı arasında döviz alım/satımı.
@@ -4755,6 +4827,9 @@ model BankaEkstreSatir {
   eslesmeTuru  EkstreEslesmeTuru? @map("eslesme_turu")
   /// tarih+tutar+açıklama+dekont özeti; aynı satırın tekrar yüklenmesini önler.
   satirOzeti   String             @map("satir_ozeti")
+  /// P-05: Açıklanabilir eşleştirme güven skoru (0-100) ve sinyal kanıtları JSON
+  eslesmeSkoru Int?               @map("eslesme_skoru")
+  eslesmeKaniti Json?             @map("eslesme_kaniti")
   createdAt    DateTime           @default(now()) @map("created_at")
   updatedAt    DateTime           @updatedAt @map("updated_at")
 
@@ -4768,6 +4843,7 @@ model BankaEkstreSatir {
   pazaryeriHakedis PazaryeriHakedis?
   @@unique([tenantId, bankaHesapId, satirOzeti])
   @@index([tenantId, durum])
+  @@index([tenantId, eslesmeSkoru])
   @@map("banka_ekstre_satirlari")
 }
 
@@ -7442,9 +7518,29 @@ enum AiOnayTalepDurumu {
   hedef_degisti
 }
 
-// ─── OCR ve Taranan Belgeler (Faz 1 / 3) ───────────────────────────────────
+// ─── OCR ve Taranan Belgeler (Faz 1 / 3 - P-09) ────────────────────────────
 
-/// AI-13: tarama denetim izi — kim, ne zaman, hangi sağlayıcı/model, çıkarılan veri ve oluşan masraf/cari.
+model BelgeKuyrukIsi {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  kullaniciId     String?   @map("kullanici_id") @db.Uuid
+  toplamBelge     Int       @default(0) @map("toplam_belge")
+  tamamlananBelge Int       @default(0) @map("tamamlanan_belge")
+  hataliBelge     Int       @default(0) @map("hatali_belge")
+  durum           String    @default("KUYRUKTA") @map("durum")
+  hataMesaji      String?   @map("hata_mesaji")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  tamamlandiAt    DateTime? @map("tamamlandi_at")
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belgeler BelgeOcrKaydi[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, durum])
+  @@map("belge_kuyruk_isleri")
+}
+
+/// AI-13 / P-09: tarama denetim izi ve belge kuyruk kaydı.
 model BelgeOcrKaydi {
   id             String    @id @default(uuid()) @db.Uuid
   tenantId       String    @map("tenant_id") @db.Uuid
@@ -7452,22 +7548,40 @@ model BelgeOcrKaydi {
   belgeTuru      String    @map("belge_turu") // "FIS_FATURA", "KARTVIZIT", "CEK"
   hamMetin       String?   @map("ham_metin") @db.Text
   cikarilanVeri  Json      @map("cikarilan_veri")
-  durum          String    @default("BEKLIYOR") // "BEKLIYOR", "ISLENDI", "REDDEDILDI"
+  durum          String    @default("BEKLIYOR") // "BEKLIYOR", "ISLENIYOR", "INCELENECEK", "ONAYLANDI", "ISLENDI", "REDDEDILDI", "HATA"
   kaynakKayitId  String?   @map("kaynak_kayit_id") @db.Uuid
   kullaniciId    String?   @map("kullanici_id") @db.Uuid
   /// WEB (panel/saha) ya da TELEGRAM
   kanal          String?
   saglayici      String?
   model          String?
-  /// { masrafIdler?: string[], cariId?: string }
+  /// { masrafIdler?: string[], cariId?: string, faturaId?: string }
   olusanKayitlar Json?     @map("olusan_kayitlar")
   islendiAt      DateTime? @map("islendi_at")
   createdAt      DateTime  @default(now()) @map("created_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // P-09: Belge kuyruğu, alan kanıtı, güven puanı ve kullanıcı düzeltmesi
+  kuyrukIsId          String?         @map("kuyruk_is_id") @db.Uuid
+  dosyaAdi            String?         @map("dosya_adi")
+  dosyaHash           String?         @map("dosya_hash") @db.VarChar(64)
+  sayfaSayisi         Int             @default(1) @map("sayfa_sayisi")
+  dosyaBoyutu         Int             @default(0) @map("dosya_boyutu")
+  mimeTip             String?         @map("mime_tip") @db.VarChar(100)
+  ekId                String?         @map("ek_id") @db.Uuid
+  guvenPuani          Decimal?        @map("guven_puani") @db.Decimal(5, 4)
+  alanKanitlari       Json?           @map("alan_kanitlari")
+  dogrulamaSonucu     Json?           @map("dogrulama_sonucu")
+  kullaniciDuzeltmesi Json?           @map("kullanici_duzeltmesi")
+  hataMesaji          String?         @map("hata_mesaji")
+  mukerrerAdayId      String?         @map("mukerrer_aday_id") @db.Uuid
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kuyrukIsi BelgeKuyrukIsi? @relation(fields: [kuyrukIsId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, durum])
   @@index([tenantId, createdAt])
+  @@index([tenantId, dosyaHash])
+  @@index([tenantId, kuyrukIsId])
   @@map("belge_ocr_kayitlari")
 }
 
@@ -7563,6 +7677,7 @@ model TenantAiGorev {
   tenant     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   calismalar TenantAiGorevCalisma[]
   icgoruler  AiIcgoru[]
+  hazirliklar AiHazirlik[]
 
   @@index([tenantId, aktif])
   @@map("tenant_ai_gorevleri")
@@ -7603,6 +7718,8 @@ enum AiGorevCalismaDurumu {
   basarili
   hata
   kosul_saglanmadi
+  kismi_basarili
+  atlandi
 }
 
 /// Her zamanlama penceresi için tek kayıt; benzersiz anahtar çoklu worker'ın
@@ -7623,12 +7740,112 @@ model TenantAiGorevCalisma {
   createdAt        DateTime             @default(now()) @map("created_at")
   guncellendiAt    DateTime             @updatedAt @map("guncellendi_at")
 
-  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  gorev  TenantAiGorev @relation(fields: [gorevId], references: [id], onDelete: Cascade)
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  gorev       TenantAiGorev @relation(fields: [gorevId], references: [id], onDelete: Cascade)
+  hazirliklar AiHazirlik[]
 
   @@unique([gorevId, tetikGunu])
   @@index([tenantId, durum, sonrakiDenemeAt])
   @@map("tenant_ai_gorev_calismalari")
+}
+
+/// P-19: Ajan hazırlık katmanı ve sabah onay kutusu öğesi.
+/// Yapay zekâ işleri kendiliğinden kesinleştirmez; zamanlanmış görevle gece hazırlar,
+/// kullanıcı sabah tek ekrandan inceleyip onaylar/reddeder/düzenler.
+model AiHazirlik {
+  id                  String                @id @default(uuid()) @db.Uuid
+  tenantId            String                @map("tenant_id") @db.Uuid
+  tur                 String                @db.VarChar(50)
+  durum               String                @default("hazir") @map("durum") @db.VarChar(30)
+  tekilAnahtar        String                @map("tekil_anahtar") @db.VarChar(120)
+  kaynakTur           String?               @map("kaynak_tur") @db.VarChar(50)
+  kaynakId            String?               @map("kaynak_id") @db.VarChar(100)
+  baslik              String                @db.VarChar(200)
+  ozet                String                @db.Text
+  oneri               Json                  @default("{}")
+  kanit               Json?
+  alternatifler       Json?
+  hedefOzeti          String?               @map("hedef_ozeti") @db.VarChar(128)
+  gecerlilikBitisAt   DateTime              @map("gecerlilik_bitis_at")
+  hazirlayanGorevId   String?               @map("hazirlayan_gorev_id") @db.Uuid
+  hazirlayanCalismaId String?               @map("hazirlayan_calisma_id") @db.Uuid
+  olusturanUserId     String?               @map("olusturan_user_id") @db.Uuid
+  onaylayanUserId     String?               @map("onaylayan_user_id") @db.Uuid
+  kararAt             DateTime?             @map("karar_at")
+  kararNotu           String?               @map("karar_notu") @db.Text
+  olusanKayitTur      String?               @map("olusan_kayit_tur") @db.VarChar(50)
+  olusanKayitId       String?               @map("olusan_kayit_id") @db.VarChar(100)
+  hata                String?               @db.Text
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hazirlayanGorev     TenantAiGorev?        @relation(fields: [hazirlayanGorevId], references: [id], onDelete: SetNull)
+  hazirlayanCalisma   TenantAiGorevCalisma? @relation(fields: [hazirlayanCalismaId], references: [id], onDelete: SetNull)
+  olusturanUser       User?                 @relation("AiHazirlikOlusturan", fields: [olusturanUserId], references: [id], onDelete: SetNull)
+  onaylayanUser       User?                 @relation("AiHazirlikOnaylayan", fields: [onaylayanUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, tekilAnahtar])
+  @@index([tenantId, durum, gecerlilikBitisAt])
+  @@index([tenantId, tur, createdAt])
+  @@map("ai_hazirliklar")
+}
+
+/// P-10: Sürümlü ve yetkili sözleşme/şartname RAG belge üst kaydı.
+model SozlesmeBelge {
+  id              String                @id @default(uuid()) @db.Uuid
+  tenantId        String                @map("tenant_id") @db.Uuid
+  baslik          String                @db.VarChar(200)
+  tur             String                @default("sozlesme") @db.VarChar(50)
+  cariId          String?               @map("cari_id") @db.Uuid
+  dosyaAdi        String                @map("dosya_adi") @db.VarChar(255)
+  mimeTip         String                @map("mime_tip") @db.VarChar(100)
+  boyut           Int
+  depoAnahtari    String                @unique @map("depo_anahtari") @db.VarChar(255)
+  surum           Int                   @default(1)
+  oncekiSurumId   String?               @map("onceki_surum_id") @db.Uuid
+  durum           String                @default("hazir") @db.VarChar(30)
+  ozet            String?               @db.Text
+  sayfaSayisi     Int                   @default(1) @map("sayfa_sayisi")
+  gecerlilikBitis DateTime?             @map("gecerlilik_bitis") @db.Date
+  yetkiliRoller   Json?                 @map("yetkili_roller")
+  yukleyenUserId  String?               @map("yukleyen_user_id") @db.Uuid
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cari            CariHesap?            @relation(fields: [cariId], references: [id], onDelete: SetNull)
+  yukleyen        User?                 @relation("SozlesmeYukleyen", fields: [yukleyenUserId], references: [id], onDelete: SetNull)
+  oncekiSurum     SozlesmeBelge?        @relation("SozlesmeSurumleri", fields: [oncekiSurumId], references: [id], onDelete: SetNull)
+  sonrakiSurumler SozlesmeBelge[]       @relation("SozlesmeSurumleri")
+  parcalar        SozlesmeBelgeParca[]
+
+  @@index([tenantId, durum])
+  @@index([tenantId, cariId])
+  @@map("sozlesme_belgeler")
+}
+
+/// P-10: Sözleşme ve şartname parçaları (chunk'lar).
+/// PostgreSQL tam metin arama ve uzun bağlamla modele aktarım için kullanılır.
+model SozlesmeBelgeParca {
+  id              String          @id @default(uuid()) @db.Uuid
+  tenantId        String          @map("tenant_id") @db.Uuid
+  belgeId         String          @map("belge_id") @db.Uuid
+  parcaNo         Int             @map("parca_no")
+  sayfaNo         Int             @map("sayfa_no")
+  bolumBasligi    String?         @map("bolum_basligi") @db.VarChar(255)
+  icerik          String          @db.Text
+  karakterSayisi  Int             @map("karakter_sayisi")
+  kelimeSayisi    Int             @map("kelime_sayisi")
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belge           SozlesmeBelge   @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+
+  @@unique([belgeId, parcaNo])
+  @@index([tenantId, belgeId])
+  @@index([tenantId, sayfaNo])
+  @@map("sozlesme_belge_parcalar")
 }
 
 // Söz kimliği değişmeden ikinci e-posta çıkmaz. Belirsiz SMTP sonucu otomatik tekrarlanmaz.
@@ -8127,7 +8344,7 @@ model PlatformGorev {
   oncelik PlatformGorevOnceligi @default(normal)
   sonTarih DateTime? @map("son_tarih") @db.Date
   sorumluId String? @map("sorumlu_id") @db.Uuid
-  olusturanId String @map("olusturan_id") @db.Uuid
+  olusturanId String? @map("olusturan_id") @db.Uuid
   degisiklikId String? @map("degisiklik_id") @db.Uuid
   tenantId String? @map("tenant_id") @db.Uuid
   firma Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -8137,7 +8354,7 @@ model PlatformGorev {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   sorumlu PlatformKullanici? @relation("GorevSorumlusu", fields: [sorumluId], references: [id], onDelete: SetNull)
-  olusturan PlatformKullanici @relation("GoreviOlusturan", fields: [olusturanId], references: [id], onDelete: Restrict)
+  olusturan PlatformKullanici? @relation("GoreviOlusturan", fields: [olusturanId], references: [id], onDelete: Restrict)
   degisiklik MevzuatDegisiklik? @relation(fields: [degisiklikId], references: [id], onDelete: SetNull)
 
   @@index([kapsam, durum, sonTarih])
@@ -8785,6 +9002,7 @@ model FiyatListesiFiyatGecmisi {
 /// END-01/02/26: platform genelinde endeks seri kataloğu. Kiracı verisi içermez (RLS'siz);
 /// katalogu yalnız platform rolü yazar, uygulama rolü okur ve çekim durumunu günceller.
 model EndeksSerisi {
+  kullanimlar EndeksKullanimi[]
   /// Uygulama içi kısa kod (ör. TUFE, YIUFE); kiracı ekranları ve yapay zekâ bu kodu kullanır.
   kod             String    @id @db.VarChar(40)
   /// TCMB EVDS seri kodu (ör. TP.TUKFIY2025.GENEL); platformda sınanarak girilir.
@@ -8905,4 +9123,33 @@ model EndeksArtisOnerisi {
   @@unique([kuralId, yil])
   @@index([tenantId, durum])
   @@map("endeks_artis_onerileri")
+}
+
+/// END-26: göçten sonra gözlenen benzersiz firma/seri kullanımı; platform yalnız toplam okur.
+model EndeksKullanimi {
+  tenantId String @map("tenant_id") @db.Uuid
+  seriKodu String @map("seri_kodu") @db.VarChar(40)
+  ilkKullanimAt DateTime @default(now()) @map("ilk_kullanim_at")
+  sonKullanimAt DateTime @default(now()) @map("son_kullanim_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  seri EndeksSerisi @relation(fields: [seriKodu], references: [kod], onDelete: Cascade)
+  @@id([tenantId, seriKodu])
+  @@map("endeks_kullanimlari")
+}
+
+/// END-10: ana/ek birim değişikliği; yalnız ileriye dönük tarihçe.
+model StokBirimGecmisi {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  stokId String @map("stok_id") @db.Uuid
+  birim String
+  eskiBirim String? @map("eski_birim")
+  yeniBirim String? @map("yeni_birim")
+  eskiKatsayi Decimal? @map("eski_katsayi") @db.Decimal(15, 6)
+  yeniKatsayi Decimal? @map("yeni_katsayi") @db.Decimal(15, 6)
+  degistiAt DateTime @default(now()) @map("degisti_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stok StokKart @relation(fields: [stokId], references: [id], onDelete: Cascade)
+  @@index([tenantId, stokId, degistiAt], map: "stok_birim_gecmisi_stok_zaman")
+  @@map("stok_birim_gecmisi")
 }

@@ -35,6 +35,7 @@ export class ApiHata extends Error {
   constructor(
     message: string,
     readonly durum: number,
+    readonly kod?: string,
   ) {
     super(message);
   }
@@ -264,7 +265,7 @@ export async function api<T>(
     const mesaj = Array.isArray(govde.message)
       ? govde.message.join("; ")
       : String(govde.message ?? "İstek başarısız");
-    throw new ApiHata(mesaj, yanit.status);
+    throw new ApiHata(mesaj, yanit.status, typeof govde.kod === "string" ? govde.kod : undefined);
   }
   if (saklamaAnahtari) {
     try { window.sessionStorage.removeItem(saklamaAnahtari); } catch { /* storage erişimi isteği etkilemez */ }

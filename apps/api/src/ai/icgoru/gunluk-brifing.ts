@@ -30,6 +30,8 @@ export interface BrifingVerisi {
   kritikStok?: number;
   /** END-22: fiyat–endeks bulguları (plan özelliği ve rol erişimi varsa). */
   fiyatEndeks?: FiyatEndeksOzeti;
+  /** P-19: Ajan hazırlık katmanı ve sabah onay kutusu özeti. */
+  sabahHazirlik?: { toplam: number; dagilim: Record<string, number>; metin: string };
 }
 
 const gunEkle = (gun: string, n: number) => {
@@ -52,7 +54,7 @@ async function bolum<T>(f: () => Promise<T>): Promise<T | undefined> {
 }
 
 export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise<BrifingVerisi> {
-  const [vade, nakit, asistanOnay, satinAlma, gelen, irsaliye, duzeltme, stok, fiyatEndeks] = await Promise.all([
+  const [vade, nakit, asistanOnay, satinAlma, gelen, irsaliye, duzeltme, stok, fiyatEndeks, sabahHazirlik] = await Promise.all([
     bolum(async () => {
       const r = await oku<any>(UC.vadesiGecenler, []);
       return {
@@ -86,6 +88,8 @@ export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise
     bolum(async () => Number((await oku<any>(UC.stokKritik, [])).kritikStok ?? 0)),
     // END-22: plan özelliği kapalıysa ya da rol erişemiyorsa uç reddeder, bölüm atlanır.
     bolum(async () => oku<FiyatEndeksOzeti>(UC.fiyatEndeksOzet, [])),
+    // P-19: Sabah hazırlık özeti
+    bolum(async () => oku<{ toplam: number; dagilim: Record<string, number>; metin: string }>(UC.sabahHazirlikOzeti, [])),
   ]);
 
   const veri: BrifingVerisi = { bugun };
@@ -119,6 +123,7 @@ export async function brifingVerisiTopla(oku: UcOkuyucu, bugun: string): Promise
   if (duzeltme) veri.duzeltme = duzeltme;
   if (stok !== undefined) veri.kritikStok = stok;
   if (fiyatEndeks) veri.fiyatEndeks = fiyatEndeks;
+  if (sabahHazirlik) veri.sabahHazirlik = sabahHazirlik;
   return veri;
 }
 
@@ -128,6 +133,9 @@ const tarihTr = (g: string) => g.split("-").reverse().join(".");
 /** Belirlenimci brifing metni; bölüm yoksa satırı da yoktur. */
 export function brifingMetni(v: BrifingVerisi): string {
   const s: string[] = [`Günlük brifing — ${tarihTr(v.bugun)}`];
+  if (v.sabahHazirlik && v.sabahHazirlik.toplam > 0) {
+    s.push(`• ${v.sabahHazirlik.metin}`);
+  }
   if (v.vade) {
     s.push(`• Vadesi geçen: ${v.vade.alacakSayisi} alacak (${tl(v.vade.alacak)}), ${v.vade.borcSayisi} borç (${tl(v.vade.borc)}).`);
     if (v.vade.enEskiAlacaklar.length) s.push(`  En büyük alacaklar: ${v.vade.enEskiAlacaklar.map((a) => `${a.cari} ${tl(a.tutar)} (${a.gecikmeGun} gün)`).join("; ")}.`);
@@ -157,7 +165,7 @@ export function brifingMetni(v: BrifingVerisi): string {
 
 export function brifingOnemi(v: BrifingVerisi): "bilgi" | "uyari" | "kritik" {
   if (v.nakit?.ilkEksi || (v.gelenFatura?.yanitiYaklasan.length ?? 0) > 0 || (v.gelenIrsaliye?.yanitiYaklasan.length ?? 0) > 0) return "kritik";
-  if ((v.vade?.alacakSayisi ?? 0) > 0 || (v.onaylar?.asistan ?? 0) > 0 || (v.duzeltme?.kritik ?? 0) > 0) return "uyari";
+  if ((v.vade?.alacakSayisi ?? 0) > 0 || (v.onaylar?.asistan ?? 0) > 0 || (v.duzeltme?.kritik ?? 0) > 0 || (v.sabahHazirlik?.toplam ?? 0) > 0) return "uyari";
   return "bilgi";
 }
 

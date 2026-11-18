@@ -4,6 +4,7 @@ import { registerRapor, type RaporSatiri } from "../core/raporlar/rapor-kayit";
 import { aktifBaglam } from "../core/istek-baglami";
 import { FIYAT_ENDEKS_ROLLERI, fiyatEndeksErisimi, makasEsigi, tarafDenetle } from "./fiyat-endeks-erisim";
 import { ayAraligi, ayBasiMetni, ayKaydir, EN_AZ_SATIR, type AylikToplam } from "./fiyat-endeks-hesap";
+import { birimKirilmalariniOku } from "./birim-kirilmasi";
 import { aylikToplamlar, endeksVerisi, ozelPlan } from "./fiyat-endeks-veri";
 
 /**
@@ -133,10 +134,12 @@ registerRapor({
     const kartlar = new Map((await tx.stokKart.findMany({ where: { id: { in: ortakStok } }, select: { id: true, kod: true, ad: true, anaBirim: true } })).map((k) => [k.id, k]));
     const maliyetEnAz = cikis ? 1 : ALIS_EN_AZ_SATIR;
 
+    const kirik = new Set((await birimKirilmalariniOku(tx, [...S.keys()], baslangic, bitis)).map((k) => k.stokId));
     const satirlar: (RaporSatiri & { _sira: number })[] = [];
     for (const id of ortakStok) {
       const kart = kartlar.get(id);
       if (!kart) continue;
+      if (kirik.has(id)) { satirlar.push({ stokId: id, kod: kart.kod, ad: kart.ad, birim: kart.anaBirim, durum: "Birim değişikliği: dönemi kırılmanın tek tarafında seçin.", _sira: -Infinity }); continue; }
       const m = marjMakasi(aylar, (ay) => aylikFiyat(S.get(id)!.get(ay), EN_AZ_SATIR), (ay) => aylikFiyat(C.get(id)!.get(ay), maliyetEnAz));
       if (!m) continue;
       const durum = makasDurumu(m, esik);
@@ -166,8 +169,8 @@ export async function cariUrunToplamlari(tx: Prisma.TransactionClient, g: { basl
     JOIN faturalar f ON f.id = fs.fatura_id
     JOIN stok_kartlari s ON s.id = fs.stok_id
     JOIN LATERAL (
-      SELECT CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
-        ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END AS katsayi
+      SELECT COALESCE(fs.birim_katsayi, CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
+        ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END) AS katsayi
     ) k ON k.katsayi IS NOT NULL
     WHERE f.durum = 'kesin' AND f.tip = ${g.tip ?? "alis"}::"FaturaTip" AND fs.miktar > 0 AND fs.matrah > 0
       AND f.tarih >= ${g.baslangic}::date AND f.tarih < ${g.bitisHaric}::date
@@ -239,10 +242,12 @@ registerRapor({
     const kart = new Map(kartlar.map((k) => [k.id, k])), cari = new Map(cariler.map((c) => [c.id, c]));
 
     const satirlar: (RaporSatiri & { _sira: number })[] = [];
+    const kirik = new Set((await birimKirilmalariniOku(tx, [...new Set(toplamlar.map((t) => t.stokId))], baslangic, bitis)).map((k) => k.stokId));
     for (const [anahtar, aylik] of gruplar) {
       const [cariId, stokId, doviz] = anahtar.split("|");
       const k = kart.get(stokId), c = cari.get(cariId);
       if (!k || !c) continue;
+      if (kirik.has(stokId)) { satirlar.push({ stokId, cariId, kod: k.kod, ad: k.ad, tedarikci: c.unvan, dovizCinsi: doviz, durum: "Birim değişikliği: dönemi kırılmanın tek tarafında seçin.", _sira: -Infinity }); continue; }
       // İlk ve son ay: alış verisi ve endeks değeri olan aylar (endeks açıklanmamış ay karşılaştırılmaz).
       const verili = aylar.filter((ay) => { const t = aylik.get(ay); return t && t.satir >= ALIS_EN_AZ_SATIR && t.miktar.gt(0) && endeks.degerler.has(ay); });
       if (verili.length < 2) continue;

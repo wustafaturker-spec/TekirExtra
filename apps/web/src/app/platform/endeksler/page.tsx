@@ -4,6 +4,7 @@ import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "
 import { RefreshCw, LineChart } from "lucide-react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { EndeksGrafigi } from "@/components/endeks-grafigi";
+import { PlatformListeDurumu } from "@/components/platform-liste";
 import { platformApi } from "@/lib/platform-api";
 import { usePlatformVerisi } from "@/lib/use-platform-verisi";
 
@@ -11,7 +12,7 @@ interface Seri {
   kod: string; evdsKodu: string; ad: string; siklik: string; kaynakSiklik: "aylik" | "gunluk"; tur: "endeks" | "kur"; bazYili: string | null; kaynak: string; etkin: boolean; sira: number;
   oncekiSeriKodu: string | null; zincirKatsayisi: string | null; zincirDonemi: string | null;
   sonCekimAt: string | null; sonBasariliAt: string | null; sonDonem: string | null; sonHata: string | null;
-  degerSayisi: number; ilkDonem: string | null;
+  kiraciSayisi: number; degerSayisi: number; ilkDonem: string | null;
   /** END-05/04 */
   elleDegerSayisi: number; gorulmemisRevizyon: number;
 }
@@ -51,30 +52,32 @@ export default function PlatformEndeksler() {
   return <>
     <PageHeader title="Endeks verileri" subtitle="TÜFE, Yİ-ÜFE gibi aylık endeksler TCMB EVDS'den bütün firmalar için tek kopya olarak çekilir; firmalar yalnız okur."
       actions={<Button variant="primary" disabled={islem || !veri?.anahtarTanimli} onClick={() => void cek()}><RefreshCw size={16} aria-hidden="true" /> Etkin serileri şimdi çek</Button>} />
-    <Alert tone="error">{hata || listeHatasi}</Alert>
+    <Alert tone="error">{hata}</Alert>
     <Alert tone="success">{basari}</Alert>
     {veri && !veri.anahtarTanimli && <Alert tone="warning">EVDS API anahtarı (TCMB_EVDS_API_KEY) sunucuda tanımlı değil; çekim ve sınama yapılamaz.</Alert>}
     <div className="platform-workflow"><LineChart size={20} aria-hidden="true" /><div><strong>Worker serileri günde dört kez çeker.</strong><span>Son açıklanan dönemden 6 ay geriye bakılır; TÜİK revizyonları revizyon geçmişine düşer. Döviz kurları EVDS'den aylık ortalama olarak gelir; içinde bulunulan ayın değeri her çekimde güncellenir ve revizyon sayılmaz.</span></div></div>
 
     <Card title="Seriler" pad={false}>
-      <div className="platform-list-caption" role="status">{yukleniyor ? "Seriler yükleniyor…" : `${veri?.seriler.length ?? 0} seri`}</div>
+      {!yukleniyor && !listeHatasi && veri && <div className="platform-list-caption" role="status">{veri.seriler.length} seri</div>}
       <TableWrap className="platform-responsive-table">
-        <thead><tr><th>Kod</th><th>Seri</th><th>Baz</th><th>Son dönem</th><th>Değer</th><th>Son çekim</th><th>Durum</th></tr></thead>
+        <thead><tr><th>Kod</th><th>Seri</th><th>Baz</th><th>Son dönem</th><th>Değer</th><th>Kullanan firma</th><th>Son çekim</th><th>Durum</th><th>İşlem</th></tr></thead>
         <tbody>
-          {veri?.seriler.map((s) => (
-            <tr key={s.kod} className="row-link" tabIndex={0} role="button" aria-label={`${s.ad} ayrıntısı`} aria-pressed={secili === s.kod}
-              onClick={() => setSecili(s.kod)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSecili(s.kod); } }}>
+          {!yukleniyor && !listeHatasi && veri?.seriler.map((s) => (
+            <tr key={s.kod}>
               <td data-label="Kod"><strong>{s.kod}</strong></td>
               <td data-label="Seri">{s.ad}<div className="muted">{s.evdsKodu}{s.kaynakSiklik === "gunluk" ? " · günlük → aylık ortalama" : ""}</div>{s.tur === "kur" && <Badge variant="info">Kur</Badge>}</td>
               <td data-label="Baz">{s.bazYili ?? "—"}</td>
               <td data-label="Son dönem">{ay(s.sonDonem)}</td>
               <td data-label="Değer">{s.degerSayisi}<div className="muted">{s.ilkDonem ? `${ay(s.ilkDonem)}'dan` : ""}</div></td>
+              <td data-label="Kullanan firma" title="Kullanım izinin eklenmesinden bu yana gözlenen benzersiz firma sayısı">{s.kiraciSayisi ?? 0}</td>
               <td data-label="Son çekim">{zaman(s.sonCekimAt)}{s.sonHata && <div><Badge variant="danger">{s.sonHata}</Badge></div>}</td>
               <td data-label="Durum"><Badge variant={s.etkin ? "success" : "neutral"}>{s.etkin ? "Etkin" : "Durduruldu"}</Badge>
                 {s.gorulmemisRevizyon > 0 && <div><Badge variant="warning">{s.gorulmemisRevizyon} değişiklik görülmedi</Badge></div>}
                 {s.elleDegerSayisi > 0 && <div className="muted">{s.elleDegerSayisi} elle değer</div>}</td>
+              <td data-label="İşlem"><Button size="sm" aria-label={`${s.ad} ayrıntısı`} aria-pressed={secili === s.kod} onClick={() => setSecili(s.kod)}>Ayrıntı</Button></td>
             </tr>
           ))}
+          <PlatformListeDurumu sutun={9} yukleniyor={yukleniyor} hata={listeHatasi} bos={!veri?.seriler.length} baslik="Henüz seri yok." aciklama="Yeni seri bölümünden bir seri ekleyebilirsiniz." onTekrar={yenile} />
         </tbody>
       </TableWrap>
     </Card>

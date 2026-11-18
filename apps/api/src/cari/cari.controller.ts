@@ -445,6 +445,28 @@ export class CariController {
     res.send(buffer);
   }
 
+  @Roller("muhasebe", "satis", "salt_okunur", "mali_musavir")
+  @Get(":id/ekstre/dosya")
+  async ekstreDosyasi(
+    @Param("id") id: string,
+    @Query("format") format: "pdf" | "excel" = "pdf",
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
+    @Query("iptaller") iptaller?: string,
+    @Query() sorgu?: unknown,
+  ): Promise<{ tampon: Buffer; dosyaAdi: string; mimeType: string; cariTip: string }> {
+    const isExcel = format === "excel";
+    const buffer = isExcel
+      ? await this.cariService.ekstreExcel(id, baslangic, bitis, iptalleriGoster(iptaller), ekstreSecenekleri(sorgu))
+      : await this.cariService.ekstrePdf(id, baslangic, bitis, iptalleriGoster(iptaller), ekstreSecenekleri(sorgu));
+    const cari = await this.cariService.getir(id);
+    const unvanSade = cari.unvan.replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]/g, "_").slice(0, 30);
+    const uzanti = isExcel ? "xlsx" : "pdf";
+    const dosyaAdi = `Ekstre_${unvanSade}_${baslangic ?? "tumu"}_${bitis ?? "bugun"}.${uzanti}`;
+    const mimeType = isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf";
+    return { tampon: buffer, dosyaAdi, mimeType, cariTip: cari.tip };
+  }
+
   @Post(":id/ekstre/eposta")
   @Roller("muhasebe", "satis")
   async ekstreEposta(@Param("id") id: string, @Body() govde: unknown) {

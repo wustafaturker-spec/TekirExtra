@@ -36,9 +36,16 @@ export class HafizaController {
 
   @Post("tercihler/:cariId")
   async tercihEkle(@Param("cariId", ParseUUIDPipe) cariId: string, @Body() govde: unknown) {
-    const { metin } = coz(z.object({ metin: z.string().trim().min(3, "Tercih en az 3 karakter olmalı").max(TERCIH_METNI) }), govde);
-    const k = await this.hafiza.tercihEkle(cariId, metin, "kullanici");
-    return { id: k.id, metin: k.metin, durum: k.durum, kaynak: k.kaynak };
+    const { metin, kapsam, gecerlilikBitisAt } = coz(z.object({
+      metin: z.string().trim().min(3, "Tercih en az 3 karakter olmalı").max(TERCIH_METNI),
+      kapsam: z.enum(["firma", "cari", "kullanici"]).optional(),
+      gecerlilikBitisAt: z.string().datetime().optional().nullable(),
+    }), govde);
+    const k = await this.hafiza.tercihEkle(cariId, metin, "kullanici", null, {
+      kapsam: kapsam as any,
+      gecerlilikBitisAt: gecerlilikBitisAt ? new Date(gecerlilikBitisAt) : null,
+    });
+    return { id: k.id, metin: k.metin, durum: k.durum, kaynak: k.kaynak, kapsam: k.kapsam, surum: k.surum };
   }
 
   @Patch(":id")

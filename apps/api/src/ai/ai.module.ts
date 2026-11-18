@@ -29,6 +29,12 @@ import { HafizaController } from "./hafiza/hafiza.controller";
 import { HafizaService } from "./hafiza/hafiza.service";
 import { TeklifTalebiController } from "./teklif-talebi/teklif-talebi.controller";
 import { TeklifTalebiService } from "./teklif-talebi/teklif-talebi.service";
+import { BelgeKuyrukController } from "./belge-kuyruk/belge-kuyruk.controller";
+import { BelgeKuyrukService } from "./belge-kuyruk/belge-kuyruk.service";
+import { HazirlikController } from "./hazirlik/hazirlik.controller";
+import { HazirlikService } from "./hazirlik/hazirlik.service";
+import { SozlesmeController } from "./sozlesme/sozlesme.controller";
+import { SozlesmeService } from "./sozlesme/sozlesme.service";
 
 // Asistan araçları denetleyicilere ModuleRef ile çalışma anında ulaşır
 // (UcCagirici); modül importu gerekmez, döngü de oluşmaz.
@@ -36,8 +42,8 @@ import { TeklifTalebiService } from "./teklif-talebi/teklif-talebi.service";
 
 @Module({
   imports: [forwardRef(() => BildirimlerModule), EklerModule],
-  controllers: [AiController, AiAjanController, SohbetEkController, AiOnayOzetiController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController],
-  providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService],
-  exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService, UcCagirici, AracYurutucu],
+  controllers: [AiController, AiAjanController, SohbetEkController, AiOnayOzetiController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController, BelgeKuyrukController, HazirlikController, SozlesmeController],
+  providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService, BelgeKuyrukService, HazirlikService, SozlesmeService],
+  exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService, UcCagirici, AracYurutucu, BelgeKuyrukService, HazirlikService, SozlesmeService],
 })
 export class AiModule {}

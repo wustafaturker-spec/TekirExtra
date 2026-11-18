@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BaglanmamisOdemeler } from "@/components/fatura-baglama";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
@@ -348,6 +349,8 @@ export default function CariSayfasi() {
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [sonrakiCariImleci, setSonrakiCariImleci] = useState<string | null>(null);
   const [cariListesiYukleniyor, setCariListesiYukleniyor] = useState(false);
+  const [yuklenenSorgu, setYuklenenSorgu] = useState<string | null>(null);
+  const [listeHatasi, setListeHatasi] = useState<{ sorgu: string; imlec?: string; mesaj: string } | null>(null);
   const [cariFiltreleriHazir, setCariFiltreleriHazir] = useState(false);
   const cariYuklemeSirasi = useRef(0);
 
@@ -432,13 +435,20 @@ export default function CariSayfasi() {
     if (grupFiltre) parametreler.set("grup", grupFiltre);
     return parametreler.toString();
   }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama, grupFiltre]);
+  const filtreBekliyor = arama.trim() !== aramaSorgusu
+    || bakiyeMin.trim().replace(",", ".") !== bakiyeAraligi.min
+    || bakiyeMax.trim().replace(",", ".") !== bakiyeAraligi.max;
+  const guncelListe = !filtreBekliyor && yuklenenSorgu === listeParametreleri;
+  const guncelHata = !filtreBekliyor && listeHatasi?.sorgu === listeParametreleri ? listeHatasi : null;
+  const listeHazir = guncelListe && !guncelHata && !cariListesiYukleniyor;
   const [topluSecim, setTopluSecim] = useState<Set<string>>(new Set());
   // Süzgeç değişince görünmeyen carilere yanlışlıkla işlem yapılmasın.
-  useEffect(() => { setTopluSecim(new Set()); }, [listeParametreleri]);
+  useEffect(() => { setTopluSecim(new Set()); }, [listeParametreleri, filtreBekliyor]);
 
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++cariYuklemeSirasi.current;
     setCariListesiYukleniyor(true);
+    setListeHatasi(null);
     try {
       const parametreler = new URLSearchParams(listeParametreleri);
       if (imlec) parametreler.set("imlec", imlec);
@@ -447,9 +457,10 @@ export default function CariSayfasi() {
       if (istekSirasi !== cariYuklemeSirasi.current) return;
       setCariler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
       setSonrakiCariImleci(veri.sonrakiImlec);
+      setYuklenenSorgu(listeParametreleri);
     } catch (h) {
       if (istekSirasi === cariYuklemeSirasi.current) {
-        setHata(h instanceof Error ? h.message : "Yükleme hatası");
+        setListeHatasi({ sorgu: listeParametreleri, imlec, mesaj: h instanceof Error ? h.message : "Cari listesi alınamadı." });
       }
     } finally {
       if (istekSirasi === cariYuklemeSirasi.current) setCariListesiYukleniyor(false);
@@ -1046,14 +1057,19 @@ export default function CariSayfasi() {
         subtitle={detaySayfasi ? "Cari bilgileri, finansal durum, CRM ve iletişim kayıtları." : yeniSayfasi ? "Yeni müşteri, tedarikçi veya diğer cari kartını oluşturun." : "Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin."}
         actions={
           <>
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/kasa-banka/kur-farki">💱 Kur Farkı</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/vade-hatirlatma">⏰ Vade Hatırlatma</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/gruplar">🏢 Cari Grupları</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/mutabakatlar">🤝 Mutabakatlar</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && (rol === "yonetici" || rol === "muhasebe") && <ButtonLabel as="a" href="/panel/cari/mukerrer">👥 Mükerrer Kartlar</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
-            {!yeniSayfasi && !detaySayfasi && yonetici && <Button onClick={() => setTopluDenklestirme("onay")}>⚖ Toplu denkleştir</Button>}
+            {!yeniSayfasi && !detaySayfasi && <details className="record-list-tools">
+              <summary className="btn btn--ghost">Diğer işlemler</summary>
+              <div className="record-list-tools__menu">
+                <ButtonLabel as="a" href="/panel/kasa-banka/kur-farki">Kur Farkı</ButtonLabel>
+                <ButtonLabel as="a" href="/panel/cari/raporlar">Raporlar</ButtonLabel>
+                <ButtonLabel as="a" href="/panel/cari/vade-hatirlatma">Vade Hatırlatma</ButtonLabel>
+                <ButtonLabel as="a" href="/panel/cari/gruplar">Cari Grupları</ButtonLabel>
+                <ButtonLabel as="a" href="/panel/cari/mutabakatlar">Mutabakatlar</ButtonLabel>
+                {(rol === "yonetici" || rol === "muhasebe") && <ButtonLabel as="a" href="/panel/cari/mukerrer">Mükerrer Kartlar</ButtonLabel>}
+                <Button onClick={() => setIceAktarAcik(true)}>Excel&apos;den İçe Aktar</Button>
+                {yonetici && <Button onClick={() => setTopluDenklestirme("onay")}>Toplu denkleştir</Button>}
+              </div>
+            </details>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
         }
@@ -1715,32 +1731,7 @@ export default function CariSayfasi() {
         </Card>
       )}
 
-      <StatGrid>
-        <Stat label="Toplam Cari" value={cariler.length} />
-        <Stat label="Müşteri" value={musteriSayisi} tone="accent" />
-        <Stat label="Tedarikçi" value={tedarikciSayisi} tone="info" />
-        <Stat label="Bloke" value={blokeSayisi} tone={blokeSayisi > 0 ? "danger" : "default"} />
-      </StatGrid>
-
-      <section className="saved-view-bar" aria-label="Cari görünümü ve filtreleri">
-        <div className="saved-view-filters">
-          <Field label="Cari türü"><Select aria-label="Cari türü" value={filtreTip} onChange={(e) => filtreyiUygula(e.target.value as FiltreTip)}><option value="tumu">Tümü</option><option value="musteri">Müşteri</option><option value="tedarikci">Tedarikçi</option><option value="bloke">Bloke</option></Select></Field>
-          <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
-          <Field label="Bakiye"><Select aria-label="Bakiye durumu" value={bakiyeFiltre} onChange={(e) => setBakiyeFiltre(e.target.value as BakiyeFiltre)}>{BAKIYE_FILTRELERI.map(([deger, ad]) => <option value={deger} key={deger || "tumu"}>{ad}</option>)}</Select></Field>
-          <Field label="Bakiye en az (TL)"><Input aria-label="Bakiye alt sınırı (TL)" inputMode="decimal" value={bakiyeMin} onChange={(e) => setBakiyeMin(e.target.value)} placeholder="Örn. 10000" /></Field>
-          <Field label="Bakiye en çok (TL)"><Input aria-label="Bakiye üst sınırı (TL)" inputMode="decimal" value={bakiyeMax} onChange={(e) => setBakiyeMax(e.target.value)} placeholder="Örn. -5000" /></Field>
-          {(gruplar.length > 0 || grupFiltre) && <Field label="Cari grubu"><Select aria-label="Cari grubu" value={grupFiltre} onChange={(e) => setGrupFiltre(e.target.value)}><option value="">Tümü</option><option value="yok">Grubu olmayanlar</option>{gruplar.map((g) => <option key={g.id} value={g.id}>{g.ad}</option>)}{grupFiltre && grupFiltre !== "yok" && !gruplar.some((g) => g.id === grupFiltre) && <option value={grupFiltre}>Seçili grup</option>}</Select></Field>}
-          <Field label="Sıralama"><Select aria-label="Sıralama" value={siralama} onChange={(e) => setSiralama(e.target.value as CariSiralama)}>{SIRALAMALAR.map(([deger, ad]) => <option value={deger} key={deger}>{ad}</option>)}</Select></Field>
-        </div>
-        <div className="saved-view-actions">
-          {(filtreTip !== "tumu" || bakiyeFiltre || bakiyeMin || bakiyeMax || siralama !== "kod" || grupFiltre) && <Button size="sm" type="button" onClick={filtreleriTemizle}>Filtreleri temizle</Button>}
-          <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
-        </div>
-        {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Tahsilat yapılacak müşteriler" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
-        {kayitliGorunumler.length > 0 && <div className="saved-view-list" aria-label="Kaydedilmiş görünümleri yönet">{kayitliGorunumler.map((g) => <span key={g.id}><button type="button" onClick={() => gorunumuUygula(g)}>{g.ad}</button><button aria-label={g.ad + " görünümünü sil"} title="Görünümü sil" type="button" onClick={() => gorunumSil(g.id)}>×</button></span>)}</div>}
-      </section>
-
-      <div className="toolbar">
+      <div className="toolbar cari-liste-arama">
         <SearchInput
           className="grow"
           value={arama}
@@ -1759,8 +1750,30 @@ export default function CariSayfasi() {
         />
       </div>
 
-      <Card pad={false}>
-        <CariTopluIslem
+      <details className="saved-view-bar cari-liste-filtreleri">
+        <summary>Gelişmiş filtreler</summary>
+        <div className="saved-view-filters">
+          <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
+          <Field label="Bakiye"><Select aria-label="Bakiye durumu" value={bakiyeFiltre} onChange={(e) => setBakiyeFiltre(e.target.value as BakiyeFiltre)}>{BAKIYE_FILTRELERI.map(([deger, ad]) => <option value={deger} key={deger || "tumu"}>{ad}</option>)}</Select></Field>
+          <Field label="Bakiye en az (TL)"><Input aria-label="Bakiye alt sınırı (TL)" inputMode="decimal" value={bakiyeMin} onChange={(e) => setBakiyeMin(e.target.value)} placeholder="Örn. 10000" /></Field>
+          <Field label="Bakiye en çok (TL)"><Input aria-label="Bakiye üst sınırı (TL)" inputMode="decimal" value={bakiyeMax} onChange={(e) => setBakiyeMax(e.target.value)} placeholder="Örn. -5000" /></Field>
+          {(gruplar.length > 0 || grupFiltre) && <Field label="Cari grubu"><Select aria-label="Cari grubu" value={grupFiltre} onChange={(e) => setGrupFiltre(e.target.value)}><option value="">Tümü</option><option value="yok">Grubu olmayanlar</option>{gruplar.map((g) => <option key={g.id} value={g.id}>{g.ad}</option>)}{grupFiltre && grupFiltre !== "yok" && !gruplar.some((g) => g.id === grupFiltre) && <option value={grupFiltre}>Seçili grup</option>}</Select></Field>}
+          <Field label="Sıralama"><Select aria-label="Sıralama" value={siralama} onChange={(e) => setSiralama(e.target.value as CariSiralama)}>{SIRALAMALAR.map(([deger, ad]) => <option value={deger} key={deger}>{ad}</option>)}</Select></Field>
+        </div>
+        <div className="saved-view-actions">
+          {(filtreTip !== "tumu" || bakiyeFiltre || bakiyeMin || bakiyeMax || siralama !== "kod" || grupFiltre) && <Button size="sm" type="button" onClick={filtreleriTemizle}>Filtreleri temizle</Button>}
+          <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
+        </div>
+        {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Tahsilat yapılacak müşteriler" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
+        {kayitliGorunumler.length > 0 && <div className="saved-view-list" aria-label="Kaydedilmiş görünümleri yönet">{kayitliGorunumler.map((g) => <span key={g.id}><button type="button" onClick={() => gorunumuUygula(g)}>{g.ad}</button><button aria-label={g.ad + " görünümünü sil"} title="Görünümü sil" type="button" onClick={() => gorunumSil(g.id)}>×</button></span>)}</div>}
+      </details>
+
+      <Card pad={false} className="cari-liste-karti">
+        {guncelHata && <Alert tone="error">
+          <div>{guncelHata.mesaj}</div>
+          <Button size="sm" onClick={() => void yukle(guncelHata.imlec)}>Tekrar dene</Button>
+        </Alert>}
+        {listeHazir && <CariTopluIslem
           secili={topluSecim}
           setSecili={setTopluSecim}
           gorunenIdler={filtrelenmisCariler.map((c) => c.id)}
@@ -1769,8 +1782,8 @@ export default function CariSayfasi() {
           etiketler={etiketler}
           gruplar={gruplar}
           onTamam={() => { void yukle(); void etiketleriYukle(); }}
-        />
-        <TableWrap>
+        />}
+        <TableWrap className="platform-responsive-table cari-liste-tablo">
           <thead>
             <tr>
               <th aria-label="Seçim" />
@@ -1784,7 +1797,9 @@ export default function CariSayfasi() {
             </tr>
           </thead>
           <tbody>
-            {filtrelenmisCariler.length === 0 ? (
+            {!guncelListe ? (
+              <tr><td colSpan={8} className="empty" role="status">{guncelHata ? "Cari listesi şu anda gösterilemiyor." : "Cariler yükleniyor…"}</td></tr>
+            ) : filtrelenmisCariler.length === 0 ? (
               <tr>
                 <td colSpan={8} className="empty">Arama kriterlerinize uygun cari hesap kaydı bulunamadı.</td>
               </tr>
@@ -1803,38 +1818,39 @@ export default function CariSayfasi() {
                     <td className="cari-toplu__secim" onClick={(olay) => olay.stopPropagation()}>
                       <input
                         type="checkbox"
+                        disabled={!listeHazir}
                         aria-label={`${c.unvan} seç`}
                         checked={topluSecim.has(c.id)}
                         onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(c.id); else yeni.delete(c.id); setTopluSecim(yeni); }}
                       />
                     </td>
-                    <td>
+                    <td className="platform-cell-title cari-liste-adi">
                       <div className="cell-entity">
                         <Avatar isim={c.unvan} />
                         <div>
                           <div className="cell-entity__name">
                             {c.karaListe && <span title="Kara liste / işlem blokajı">🚫 </span>}
-                            {c.unvan}
+                            <Link href={`/panel/cari/${c.id}`} onClick={(olay) => olay.stopPropagation()}>{c.unvan}</Link>
                           </div>
                           <div className="cell-entity__meta">{c.kod}{c.grup && <> · <span title="Cari grubu">🏢 {c.grup.ad}</span></>}</div>
                         </div>
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Tür">
                       <Badge variant={c.tip === "musteri" ? "success" : c.tip === "tedarikci" ? "info" : "accent"}>
                         {c.tip === "musteri" ? "Müşteri" : c.tip === "tedarikci" ? "Tedarikçi" : "İkisi de"}
                       </Badge>
                     </td>
-                    <td>{c.sektor || "—"}</td>
-                    <td>{c.vknTckn || "—"}</td>
-                    <td>
+                    <td data-label="Sektör">{c.sektor || "—"}</td>
+                    <td data-label="VKN / TCKN">{c.vknTckn || "—"}</td>
+                    <td data-label="e-Belge">
                       {c.ebelgeTuru && (
                         <Badge variant={c.ebelgeTuru === "efatura" ? "info" : c.ebelgeTuru === "earsiv" ? "neutral" : c.ebelgeTuru === "yurtdisi" ? "accent" : "warning"}>
                           {CARI_EBELGE_ETIKETI[c.ebelgeTuru]}
                         </Badge>
                       )}
                     </td>
-                    <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>
+                    <td data-label="Bakiye (TL)" className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>
                       {tl(bakiyeNum)}
                       {/* CARI-36: döviz kırılımı; TL karşılığı toplamın içinde. */}
                       {c.bakiyeler.filter((b) => b.dovizCinsi !== "TRY" && Number(b.bakiye) !== 0).map((b) => (
@@ -1843,7 +1859,7 @@ export default function CariSayfasi() {
                         </small>
                       ))}
                     </td>
-                    <td>
+                    <td data-label="Risk durumu">
                       <Status tone={c.karaListe ? "danger" : c.aktif === false ? "warn" : "ok"}>{c.karaListe ? "Bloke" : c.aktif === false ? "Pasif" : "Normal"}</Status>
                     </td>
                   </tr>
@@ -1852,7 +1868,7 @@ export default function CariSayfasi() {
             )}
           </tbody>
         </TableWrap>
-        {sonrakiCariImleci && (
+        {guncelListe && sonrakiCariImleci && !guncelHata && (
           <div style={{ padding: "1rem", textAlign: "center" }}>
             <Button type="button" onClick={() => void yukle(sonrakiCariImleci)} disabled={cariListesiYukleniyor}>
               {cariListesiYukleniyor ? "Cariler yükleniyor…" : "Daha fazla cari yükle"}
@@ -1860,6 +1876,15 @@ export default function CariSayfasi() {
           </div>
         )}
       </Card>
+
+      {!yeniSayfasi && !detaySayfasi && guncelListe && <section aria-label="Yüklenen cari kayıtlarının özeti">
+        <StatGrid>
+          <Stat label="Yüklenen kayıtlar" value={cariler.length} />
+          <Stat label="Yüklenen müşteri" value={musteriSayisi} tone="accent" />
+          <Stat label="Yüklenen tedarikçi" value={tedarikciSayisi} tone="info" />
+          <Stat label="Yüklenen bloke cari" value={blokeSayisi} tone={blokeSayisi > 0 ? "danger" : "default"} />
+        </StatGrid>
+      </section>}
 
       <CariAiDoldurModal
         acik={aiModalAcik}

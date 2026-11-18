@@ -54,6 +54,12 @@ describe("Telegram veri kapısı (CNL-05)", () => {
     expect(((await ara.calistir(baglam, {})) as { kayitlar: unknown[] }).kayitlar).toEqual([{ id: "1", tip: "musteri" }]);
     await expect(ara.calistir(baglam, { tip: "personel" })).rejects.toThrow(/Personel carileri/);
     await expect(getir.calistir(baglam, { cariId: "2" })).rejects.toThrow(/Personel carileri/);
+
+    const asilEkstre = AJAN_ARACLARI.find((a) => a.ad === "cari_ekstre_dosyasi")!;
+    const [ekstrePersonel] = telegramAraclari([{ ...asilEkstre, calistir: async () => ({ cariTip: "personel", dosyaAdi: "Ekstre.pdf" }) }]);
+    const [ekstreMusteri] = telegramAraclari([{ ...asilEkstre, calistir: async () => ({ cariTip: "musteri", dosyaAdi: "Ekstre.pdf" }) }]);
+    await expect(ekstrePersonel.calistir(baglam, { cariId: "2" })).rejects.toThrow(/Personel carilerinin ekstresi Telegram'da gösterilmez/);
+    await expect(ekstreMusteri.calistir(baglam, { cariId: "1" })).resolves.toMatchObject({ cariTip: "musteri" });
   });
 
   it("nakit pozisyonundan maaş ve bordro yasal kalemleri çıkar, toplamlar kalır", () => {

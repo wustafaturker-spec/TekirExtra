@@ -56,15 +56,17 @@ export class PlatformEndeksController {
   @Get()
   async listele() {
     const db = this.platform.db;
-    const [seriler, sayimlar, elleSayim, uyariSayim] = await Promise.all([
+    const [seriler, sayimlar, elleSayim, uyariSayim, kullanimlar] = await Promise.all([
       db.endeksSerisi.findMany({ orderBy: [{ sira: "asc" }, { kod: "asc" }] }),
       db.endeksDegeri.groupBy({ by: ["seriKodu"], _count: { _all: true }, _min: { donem: true }, _max: { donem: true } }),
       db.endeksDegeri.groupBy({ by: ["seriKodu"], where: { kaynak: "elle" }, _count: { _all: true } }),
       db.endeksDegerRevizyonu.groupBy({ by: ["seriKodu"], where: { gorulduAt: null }, _count: { _all: true } }),
+      db.$queryRaw<{ seri_kodu: string; kiraci_sayisi: bigint }[]>`SELECT * FROM platform_endeks_kullanim_sayilari()`,
     ]);
     const sayim = new Map(sayimlar.map((s) => [s.seriKodu, s]));
     const elle = new Map(elleSayim.map((s) => [s.seriKodu, s._count._all]));
     const uyari = new Map(uyariSayim.map((s) => [s.seriKodu, s._count._all]));
+    const kullanim = new Map(kullanimlar.map((k) => [k.seri_kodu, Number(k.kiraci_sayisi)]));
     return {
       anahtarTanimli: this.endeks.anahtarTanimli(),
       seriler: seriler.map((s) => {
@@ -75,6 +77,7 @@ export class PlatformEndeksController {
           sonCekimAt: s.sonCekimAt, sonBasariliAt: s.sonBasariliAt, sonDonem: s.sonDonem ? donemMetni(s.sonDonem) : null, sonHata: s.sonHata,
           degerSayisi: c?._count._all ?? 0, ilkDonem: c?._min.donem ? donemMetni(c._min.donem) : null,
           elleDegerSayisi: elle.get(s.kod) ?? 0, gorulmemisRevizyon: uyari.get(s.kod) ?? 0,
+          kiraciSayisi: kullanim.get(s.kod) ?? 0,
         };
       }),
     };

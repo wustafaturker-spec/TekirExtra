@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ozelRolIstegiKapali, ozelRolPanelYoluKapali, yolIslemi, yolModulu, YETKI_MODULLERI } from "./yetki-modulleri";
+import { gecerliYetkiAnahtariMi, ozelRolIstegiKapali, ozelRolPanelYoluKapali, yolIslemi, yolModulu, YETKI_MODULLERI } from "./yetki-modulleri";
 
 describe("özel rol yetki matrisi (KLN-20)", () => {
   it("yol modülü en uzun önekten çözülür", () => {
@@ -61,4 +61,14 @@ describe("özel rol yetki matrisi (KLN-20)", () => {
     expect(YETKI_MODULLERI).toHaveLength(18);
     expect(new Set(YETKI_MODULLERI.map((m) => m.kod)).size).toBe(18);
   });
+});
+
+it("endeks özel rol kutuları geçerli ve araç/istek süzgecine bağlıdır", () => {
+  const satis = "fiyat_endeks_satis.goruntule", alis = "fiyat_endeks_alis.goruntule";
+  expect(gecerliYetkiAnahtariMi(satis)).toBe(true);
+  expect(gecerliYetkiAnahtariMi(alis)).toBe(true);
+  expect(gecerliYetkiAnahtariMi("fiyat_endeks_alis.duzenle")).toBe(false);
+  expect(ozelRolIstegiKapali([satis, alis], "GET", "/api/v1/fiyat-endeks/secenekler")).toBe(true);
+  expect(ozelRolIstegiKapali([alis], "GET", "fiyat-endeks/secenekler")).toBe(false);
+  expect(ozelRolIstegiKapali([satis], "GET", "fiyat-endeks/fiyat-onerisi")).toBe(true);
 });

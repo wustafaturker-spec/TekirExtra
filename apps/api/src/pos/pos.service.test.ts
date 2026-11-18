@@ -417,4 +417,195 @@ describe("PosService (P1-6)", () => {
       expect(tx.masraf.create).not.toHaveBeenCalled();
     });
   });
+
+  describe("P-04 kalıcı olay kaydı, eşzamanlılık ve markalı ödeme", () => {
+    it("en az 10 eşzamanlı aynı iyzico callback olayında tek finansal etki üretilir, diğer 9 çağrı tekrar olarak sonuçlanır", async () => {
+      let tahsilatDurumu = "baslatildi";
+      let hareketSayisi = 0;
+
+      const kayit = {
+        id: "t1",
+        durum: "baslatildi",
+        saglayiciToken: "tok-10",
+        posHesapId: "p1",
+        tutar: D(500),
+        dovizCinsi: "TRY",
+        cariId: "c1",
+        faturaId: null,
+        posHesap: {
+          id: "p1",
+          saglayici: "iyzico",
+          baglanti: { sifreliConfig: "x" },
+          komisyonOrani: D(2),
+          islemUcreti: D(0),
+          taksitOranlari: [],
+        },
+      };
+
+      const olaylar = new Map<string, any>();
+
+      const tx = {
+        posTahsilat: {
+          findUnique: vi.fn(async () => ({ ...kayit, durum: tahsilatDurumu })),
+          updateMany: vi.fn(async (arg: any) => {
+            if (arg.where.durum?.in?.includes(tahsilatDurumu) && tahsilatDurumu !== "odendi") {
+              tahsilatDurumu = "odendi";
+              return { count: 1 };
+            }
+            return { count: 0 };
+          }),
+          update: vi.fn(async () => ({})),
+        },
+        posHesap: {
+          findUnique: vi.fn(async () => kayit.posHesap),
+        },
+        posOlayKaydi: {
+          findUnique: vi.fn(async ({ where }: any) => olaylar.get(where.tenantId_isAnahtari.isAnahtari) ?? null),
+          upsert: vi.fn(async ({ create, update, where }: any) => {
+            const key = where.tenantId_isAnahtari.isAnahtari;
+            const obj = { ...(olaylar.get(key) ?? create), ...update };
+            olaylar.set(key, obj);
+            return obj;
+          }),
+          updateMany: vi.fn(async ({ where, data }: any) => {
+            const obj = olaylar.get(where.isAnahtari);
+            if (obj) Object.assign(obj, data);
+            return { count: 1 };
+          }),
+        },
+        kasaBankaHareket: {
+          create: vi.fn(async () => {
+            hareketSayisi++;
+            return { id: `h-${hareketSayisi}` };
+          }),
+        },
+        cariHareket: {
+          create: vi.fn(async () => ({ id: "c-h1" })),
+        },
+        tenant: {
+          findUnique: vi.fn(async () => ({ unvan: "Test Firma", vkn: "1234567890" })),
+        },
+      };
+
+      const casus = vi.spyOn(IyzicoAdapter.prototype, "odemeSonucu").mockResolvedValue({
+        basarili: true,
+        odemeId: "pay-10",
+        conversationId: "t1",
+        tutar: 500,
+        fiyat: 500,
+        odenen: 500,
+        taksit: 1,
+        dovizCinsi: "TRY",
+      } as never);
+
+      const { service } = kur(tx);
+
+      // 10 eşzamanlı callback isteği
+      const sonuclar = await Promise.all(
+        Array.from({ length: 10 }).map(() => service.callback("t1", "t1", "tok-10")),
+      );
+
+      // Bütün çağrılar başarılı dönmelidir
+      expect(sonuclar).toHaveLength(10);
+      for (const s of sonuclar) {
+        expect(s.basarili).toBe(true);
+      }
+
+      // Yalnızca 1 çağrı asıl işlemi yapmalı, diğer 9 çağrı tekrar olmalıdır
+      const tekrarlar = sonuclar.filter((s) => s.tekrar);
+      const ilkIslemler = sonuclar.filter((s) => !s.tekrar);
+
+      expect(ilkIslemler).toHaveLength(1);
+      expect(tekrarlar).toHaveLength(9);
+
+      // Kasa banka hareket sayısı kesinlikle 1 olmalıdır (tek finansal etki)
+      expect(hareketSayisi).toBe(1);
+      expect(tx.kasaBankaHareket.create).toHaveBeenCalledTimes(1);
+      expect(tx.cariHareket.create).toHaveBeenCalledTimes(1);
+
+      casus.mockRestore();
+    });
+
+    it("tenantCoz: veritabanı fonksiyonu farklı kiracı döndüğünde yol parametresindeki hint yerine gerçek kiracıyı kullanır", async () => {
+      const tx = {
+        posTahsilat: { findUnique: vi.fn() },
+      };
+      const prisma = {
+        tenantIslem: vi.fn((_t: string, cb: (tx: unknown) => unknown) => cb(tx)),
+        $queryRaw: vi.fn().mockResolvedValue([{ tenant_id: "gercek-tenant-uuid" }]),
+      } as any;
+      const s = new PosService(prisma, {} as any, {} as any, { uret: vi.fn() } as any, {} as any, {} as any);
+
+      const cozulmus = await s.tenantCoz("tahsilat-uuid", "saldirgan-tenant-hint");
+      expect(cozulmus).toBe("gercek-tenant-uuid");
+    });
+
+    it("publicOdemeBilgisi: geçerli token ile firma ve fatura bilgilerini güvenli döner, sayaç artar", async () => {
+      const { token, ozet } = await import("./makbuz-anahtari").then((m) => m.odemeTokeniUret());
+      const tx = {
+        posTahsilat: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "t1",
+            durum: "baslatildi",
+            tutar: D(1250),
+            dovizCinsi: "TRY",
+            sonKullanimTarihi: new Date(Date.now() + 86400000),
+            odemeTokenOzeti: ozet,
+            odemeSayfasiUrl: "https://sandbox-checkout.com/pay",
+            cari: { unvan: "Müşteri Ltd." },
+            fatura: { no: "FTR2026001", tarih: new Date("2026-11-18"), genelToplam: D(1250) },
+            posHesap: { ad: "Sanal POS", saglayici: "iyzico" },
+          }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        tenant: {
+          findUnique: vi.fn().mockResolvedValue({
+            unvan: "Tekir Örnek Firma A.Ş.",
+            vkn: "9876543210",
+            telefon: "02120000000",
+            eposta: "muhasebe@ornekfirma.com",
+            webSitesi: "https://ornekfirma.com",
+          }),
+        },
+      };
+
+      const { service } = kur(tx);
+      const bilgi = await service.publicOdemeBilgisi("t1", "t1", token);
+
+      expect(bilgi.tutar).toBe(1250);
+      expect(bilgi.durum).toBe("baslatildi");
+      expect(bilgi.firma.unvan).toBe("Tekir Örnek Firma A.Ş.");
+      expect(bilgi.cari.unvan).toBe("Müşteri Ltd.");
+      expect(bilgi.fatura?.no).toBe("FTR2026001");
+      expect(bilgi.odemeSayfasiUrl).toBe("https://sandbox-checkout.com/pay");
+      expect(tx.posTahsilat.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ odemeGoruntulenme: { increment: 1 } }) }),
+      );
+    });
+
+    it("publicOdemeBilgisi: geçersiz token 404 fırlatır", async () => {
+      const tx = {
+        posTahsilat: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "t1",
+            durum: "baslatildi",
+            tutar: D(100),
+            dovizCinsi: "TRY",
+            odemeTokenOzeti: "farkli-ozet",
+            makbuzAnahtarOzeti: null,
+            cari: { unvan: "M" },
+            fatura: null,
+            posHesap: { ad: "POS", saglayici: "iyzico" },
+          }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        tenant: {
+          findUnique: vi.fn().mockResolvedValue({ unvan: "F" }),
+        },
+      };
+
+      const { service } = kur(tx);
+      await expect(service.publicOdemeBilgisi("t1", "t1", "yanlis-token")).rejects.toThrow(/geçersiz veya süresi dolmuş/);
+    });
+  });
 });

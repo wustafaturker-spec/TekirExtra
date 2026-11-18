@@ -1,11 +1,20 @@
 import {
   ConflictException,
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
+import { OnayService } from "../onay/onay.service";
+import { fiyatListesiTopluSemasi } from "./fiyat-listeleri.semalar";
+import { fiyatListesiSurumu } from "./fiyat-listesi-surumu";
+import { ozelRolIstegiKapali, paketApiYoluKapali } from "@tekirextra/shared";
+import { AbonelikErisimService } from "../core/abonelik-erisim.service";
+import { kurCoz } from "../doviz/kur-coz";
+import { fiyatEndeksErisimi, tarafDenetle } from "../fiyat-endeks/fiyat-endeks-erisim";
 import { PrismaService } from "../core/prisma.service";
 import type {
   fiyatListesiGuncelleSemasi,
@@ -22,7 +31,58 @@ const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
  */
 @Injectable()
 export class FiyatListeleriService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly onay: OnayService) {
+    this.onay.yurutucuKaydet("fiyat_listesi_guncelle", {
+      yurut: (p, id) => this.topluKaydet(id!, fiyatListesiTopluSemasi.parse(p)),
+      hedefOzeti: async (id) => this.surum(id),
+    });
+  }
+
+  private async surum(id: string): Promise<string> {
+    const liste = await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => tx.fiyatListesi.findUnique({ where: { id }, include: { kalemler: true } }));
+    if (!liste) throw new NotFoundException("Fiyat listesi bulunamadı");
+    return fiyatListesiSurumu(liste);
+  }
+
+  /** Tek transaction: eski önizleme veya değişmiş hedef hiçbir kalemi yazamaz. */
+  async topluKaydet(listeId: string, g: z.infer<typeof fiyatListesiTopluSemasi>): Promise<{ id: string; adet: number }> {
+    const b = aktifBaglam();
+    const yol = `fiyat-listeleri/${listeId}/toplu-fiyat`;
+    const erisim = new AbonelikErisimService(this.prisma);
+    if (b.destek || !["yonetici", "muhasebe"].includes(b.rol)
+      || ozelRolIstegiKapali(b.ozelRol?.kapali ?? [], "POST", yol)
+      || paketApiYoluKapali(await erisim.modulleriGetir(b.tenantId), yol)
+      || (await erisim.getir(b.tenantId)).kisitli) throw new ForbiddenException("Fiyat güncelleme yetkiniz yok.");
+    if (g.kaynak === "endeks") await this.prisma.tenantIslem(b.tenantId, async (tx) => {
+      tarafDenetle(await fiyatEndeksErisimi(tx, b.tenantId, b.rol), "satis");
+    });
+    if (await this.surum(listeId) !== g.surum) throw new ConflictException("Fiyat listesi değişti; öneriyi yeniden önizleyin.");
+    const liste = await this.mevcut(listeId);
+    await this.onay.kapi({
+      islem: "fiyat_listesi_guncelle", hedefTur: "fiyat_listesi", hedefId: listeId,
+      ozet: `${liste.ad} · ${g.kalemler.length} kalem${g.yeniAd ? ` · yeni pasif liste: ${g.yeniAd}` : ""}`,
+      parametreler: g,
+      olc: async () => {
+        const kur = liste.dovizCinsi === "TRY" ? D(1) : await this.prisma.tenantIslem(b.tenantId, (tx) => kurCoz(tx, b.tenantId, liste.dovizCinsi, new Date(), "alis"));
+        if (!kur) throw new BadRequestException("Onay eşiği için döviz kuru bulunamadı.");
+        return { tutarTry: Number(g.kalemler.reduce((t, k) => t.add(k.fiyat), D(0)).mul(kur)), hedefOzeti: g.surum };
+      },
+    });
+    return this.prisma.tenantIslem(b.tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM fiyat_listeleri WHERE id = ${listeId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM fiyat_listesi_kalemleri WHERE liste_id = ${listeId}::uuid ORDER BY id FOR UPDATE`;
+      const hedef = await tx.fiyatListesi.findUnique({ where: { id: listeId }, include: { kalemler: true } });
+      if (!hedef || fiyatListesiSurumu(hedef) !== g.surum) throw new ConflictException("Fiyat listesi değişti; işlem yapılmadı.");
+      if (await tx.stokKart.count({ where: { id: { in: g.kalemler.map((k) => k.stokId) } } }) !== g.kalemler.length) throw new BadRequestException("Ürün bulunamadı.");
+      const id = g.yeniAd ? (await tx.fiyatListesi.create({ data: { tenantId: b.tenantId, ad: g.yeniAd, dovizCinsi: hedef.dovizCinsi, aktif: false } })).id : listeId;
+      for (const k of g.kalemler) await tx.fiyatListesiKalem.upsert({
+        where: { tenantId_listeId_stokId: { tenantId: b.tenantId, listeId: id, stokId: k.stokId } },
+        create: { tenantId: b.tenantId, listeId: id, stokId: k.stokId, fiyat: D(k.fiyat) }, update: { fiyat: D(k.fiyat) },
+      });
+      await tx.auditLog.create({ data: { tenantId: b.tenantId, userId: b.userId, islem: "fiyat_listesi_toplu_guncellendi", varlik: "fiyat_listesi", varlikId: id, detay: { kaynakListeId: listeId, adet: g.kalemler.length, surum: g.surum } } });
+      return { id, adet: g.kalemler.length };
+    }, { timeout: 60_000 });
+  }
 
   async listele() {
     const { tenantId } = aktifBaglam();
@@ -154,20 +214,10 @@ export class FiyatListeleriService {
     );
     if (!stok) throw new NotFoundException("Stok kartı bulunamadı");
 
-    const kalem = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.fiyatListesiKalem.upsert({
-        where: {
-          tenantId_listeId_stokId: { tenantId, listeId, stokId: girdi.stokId },
-        },
-        update: { fiyat: D(girdi.fiyat) },
-        create: {
-          tenantId,
-          listeId,
-          stokId: girdi.stokId,
-          fiyat: D(girdi.fiyat),
-        },
-      }),
-    );
+    await this.topluKaydet(listeId, { surum: await this.surum(listeId), kalemler: [girdi] });
+    const kalem = await this.prisma.tenantIslem(tenantId, (tx) => tx.fiyatListesiKalem.findUniqueOrThrow({
+      where: { tenantId_listeId_stokId: { tenantId, listeId, stokId: girdi.stokId } },
+    }));
 
     return {
       id: kalem.id,

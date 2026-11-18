@@ -1,6 +1,6 @@
 "use client";
 
-import { useEkranKaydi } from "@/lib/asistan-baglami";
+import { asistaniAc, useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BelgeCercevesi } from "@/components/belge-cercevesi";
@@ -487,15 +487,30 @@ export default function FaturaSayfasi() {
   /** FTR-26: faturaya sonradan irsaliye bağlama paneli. */
   const [irsaliyeBaglaFaturaId, setIrsaliyeBaglaFaturaId] = useState<string | null>(null);
   const [epostaAdresi, setEpostaAdresi] = useState("");
+  const [odemeBaglantisiFatura, setOdemeBaglantisiFatura] = useState<Fatura | null>(null);
+  const [odemeBaglantisiVeri, setOdemeBaglantisiVeri] = useState<{
+    baglantiVar: boolean;
+    tahsilat: {
+      id: string;
+      durum: string;
+      tutar: number;
+      dovizCinsi: string;
+      markaliOdemeUrl: string;
+      odemeSayfasiUrl: string | null;
+      makbuzUrl: string | null;
+      cari: { unvan: string; eposta: string | null; telefon: string | null };
+    } | null;
+  } | null>(null);
+  const [odemeBaglantisiYukleniyor, setOdemeBaglantisiYukleniyor] = useState(false);
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
+  const [taslakKaydediliyor, setTaslakKaydediliyor] = useState(false);
+  const taslakKaydiSuruyor = useRef(false);
   // EBLG-77: firma e-Fatura/e-Arşiv'e kayıtlı değilse fatura kağıda basılır;
   // "e-Fatura Oluştur" düğmesi hiç gösterilmez.
   const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
   const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null);
   /** Satırdan açılan fatura; eylem çubuğu ve salt okunur kararı buna bakar. */
   const [acikFatura, setAcikFatura] = useState<FaturaDetay | null>(null);
-  // AI-78: açık fatura asistan bağlamı olur.
-  useEkranKaydi(acikFatura ? { tur: "fatura", id: acikFatura.id, etiket: acikFatura.no ?? "Taslak fatura" } : null);
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
@@ -700,6 +715,14 @@ export default function FaturaSayfasi() {
     || dovizCinsi !== "TRY" || kur !== "1" || aciklama.trim() !== "" || notlar.trim() !== "" || dosyalar.length > 0 || satirlar.length !== 1
     || satirlar.some((satir) => satir.stokId !== "" || satir.miktar !== 1 || satir.birimFiyat !== 0 || satir.iskontoOrani !== 0 || satir.kdvOrani !== 20 || Boolean(satir.gibIstisnaKodu))
   );
+
+  // AI-78/P-14a: açık fatura asistan bağlamı olur; form düzenleniyorsa taslak verisi güvenilmeyen taslak olarak taşınır.
+  useEkranKaydi(acikFatura ? {
+    tur: "fatura",
+    id: acikFatura.id,
+    etiket: acikFatura.no ?? "Taslak fatura",
+    taslak: formAcik ? { tip, dovizCinsi, kur, satirSayisi: satirlar.length } : undefined,
+  } : null);
 
   useEffect(() => {
     if (!formKirli) return;
@@ -1233,6 +1256,7 @@ export default function FaturaSayfasi() {
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
+    if (taslakKaydiSuruyor.current) return;
     setHata("");
     setBasari("");
 
@@ -1282,6 +1306,8 @@ export default function FaturaSayfasi() {
       return;
     }
 
+    taslakKaydiSuruyor.current = true;
+    setTaslakKaydediliyor(true);
     try {
       const kurAciklamasi = kuruAciklamayaEkle && dovizCinsi !== "TRY" ? `Döviz kuru: 1 ${dovizCinsi} = ${Number(kur).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} TRY${kurBilgisi ? ` (${kurBilgisi})` : ""}` : "";
       const kullaniciAciklamasi = aciklama.split("\n").filter((satir) => !satir.startsWith("Döviz kuru:")).join("\n").trim();
@@ -1365,6 +1391,9 @@ export default function FaturaSayfasi() {
     } catch (h) {
       kullanimOlayi("fatura_dogrulama_hatasi");
       setHata(h instanceof Error ? h.message : "Fatura oluşturulamadı");
+    } finally {
+      taslakKaydiSuruyor.current = false;
+      setTaslakKaydediliyor(false);
     }
   }
 
@@ -1972,6 +2001,52 @@ export default function FaturaSayfasi() {
     }
   }
 
+  async function odemeBaglantisiAc(fatura: Fatura) {
+    setOdemeBaglantisiFatura(fatura);
+    setOdemeBaglantisiYukleniyor(true);
+    try {
+      const res = await api<{
+        baglantiVar: boolean;
+        tahsilat: any;
+      }>(`/pos/fatura/${fatura.id}/baglanti`);
+      setOdemeBaglantisiVeri(res);
+    } catch {
+      setOdemeBaglantisiVeri({ baglantiVar: false, tahsilat: null });
+    } finally {
+      setOdemeBaglantisiYukleniyor(false);
+    }
+  }
+
+  async function yeniOdemeBaglantisiOlustur(fatura: Fatura) {
+    setOdemeBaglantisiYukleniyor(true);
+    setHata("");
+    try {
+      const detay = await api<FaturaDetay>(`/fatura/${fatura.id}`);
+      const hesaplar = await api<Array<{ id: string; aktif: boolean; saglayici: string }>>("/kasa-banka/pos-hesaplari");
+      const aktifHesap = hesaplar.find((h) => h.aktif && ["iyzico", "paytr"].includes(h.saglayici));
+      if (!aktifHesap) {
+        setHata("Aktif bir sanal POS hesabı (iyzico / PayTR) bulunamadı. Lütfen Kasa & Banka > POS ayarlarından tanımlayın.");
+        return;
+      }
+      await api("/pos/tahsilatlar", {
+        method: "POST",
+        body: JSON.stringify({
+          posHesapId: aktifHesap.id,
+          cariId: detay.cari.id,
+          faturaId: fatura.id,
+          tutar: fatura.genelToplam,
+          bildirim: false,
+        }),
+      });
+      setBasari("Fatura için ödeme bağlantısı başarıyla oluşturuldu.");
+      await odemeBaglantisiAc(fatura);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Ödeme bağlantısı oluşturulamadı.");
+    } finally {
+      setOdemeBaglantisiYukleniyor(false);
+    }
+  }
+
   /**
    * EBLG-27: alıcıya giden belgenin görünümü. Kaynak arşivlenen UBL olduğu için
    * bu, yukarıdaki iç fatura çıktısından ayrı bir belgedir.
@@ -2044,8 +2119,12 @@ export default function FaturaSayfasi() {
     return () => window.removeEventListener("keydown", dinle);
   });
 
+  const formGorunumu = yeniSayfasi || formAcik;
+  const taslakKaydetDugmesi = <Button type="button" variant="primary" disabled={taslakKaydediliyor} onClick={kaydet}>
+    {taslakKaydediliyor ? "Kaydediliyor…" : duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}
+  </Button>;
   return (
-    <div className={yeniSayfasi ? "create-page" : undefined}>
+    <div className={formGorunumu ? "create-page" : undefined}>
       <PageHeader
         title={sayfaBasligi}
         subtitle={
@@ -2057,8 +2136,11 @@ export default function FaturaSayfasi() {
         }
         actions={
           <>
-            <ButtonLabel as="a" href="/panel/fatura/raporlar">📈 Raporlar</ButtonLabel>
-            {yeniSayfasi ? <Button onClick={() => router.push(`/panel/fatura${yonBaglami ? `?yon=${yonBaglami}` : ""}`)}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href={`/panel/fatura/yeni${yonBaglami ? `?yon=${yonBaglami}` : ""}`}>➕ Yeni Fatura</ButtonLabel>}
+            {!formGorunumu && <ButtonLabel as="a" href="/panel/fatura/raporlar">📈 Raporlar</ButtonLabel>}
+            {formGorunumu ? <Button disabled={taslakKaydediliyor} onClick={() => {
+              if (!yeniSayfasi) { faturaFormunuAcKapat(); return; }
+              if (!formKirli || window.confirm(KAYDEDILMEMIS_DEGISIKLIK_UYARISI)) router.push(`/panel/fatura${yonBaglami ? `?yon=${yonBaglami}` : ""}`);
+            }}>{yeniSayfasi ? "Listeye dön" : "Vazgeç"}</Button> : <ButtonLabel as="a" role="button" variant="primary" href={`/panel/fatura/yeni${yonBaglami ? `?yon=${yonBaglami}` : ""}`}>➕ Yeni Fatura</ButtonLabel>}
           </>
         }
       />
@@ -2126,11 +2208,91 @@ export default function FaturaSayfasi() {
         </Card>
       )}
 
+      {odemeBaglantisiFatura && (
+        <Card className="stack create-page__keep" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)", maxWidth: 640 }}>
+          <div className="between">
+            <div className="card__title" style={{ margin: 0 }}>
+              💳 Fatura Tahsilat &amp; Ödeme Bağlantısı
+            </div>
+            <Button size="sm" onClick={() => { setOdemeBaglantisiFatura(null); setOdemeBaglantisiVeri(null); }}>✖ Kapat</Button>
+          </div>
+          <p className="muted" style={{ fontSize: "0.9rem", margin: 0 }}>
+            {odemeBaglantisiFatura.no} · {odemeBaglantisiFatura.cari.unvan} · {tl(odemeBaglantisiFatura.genelToplam, odemeBaglantisiFatura.dovizCinsi)}
+          </p>
+
+          {odemeBaglantisiYukleniyor ? (
+            <p className="muted" style={{ padding: "1rem 0" }}>Bağlantı bilgileri kontrol ediliyor...</p>
+          ) : odemeBaglantisiVeri?.baglantiVar && odemeBaglantisiVeri.tahsilat ? (
+            <div className="stack" style={{ gap: "0.75rem", marginTop: "0.5rem" }}>
+              <div className="between" style={{ background: "var(--surface-muted, #f8fafc)", padding: "0.75rem 1rem", borderRadius: "8px" }}>
+                <div>
+                  <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>Durum: </span>
+                  <strong>{odemeBaglantisiVeri.tahsilat.durum === "odendi" ? "✓ Tahsil Edildi" : "Bekliyor"}</strong>
+                </div>
+                <div style={{ fontWeight: "bold", color: "#0f766e" }}>
+                  {tl(odemeBaglantisiVeri.tahsilat.tutar, odemeBaglantisiVeri.tahsilat.dovizCinsi)}
+                </div>
+              </div>
+
+              <Field label="Müşteri Markalı Ödeme Bağlantısı">
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <Input readOnly value={odemeBaglantisiVeri.tahsilat.markaliOdemeUrl} />
+                  <Button size="sm" onClick={() => {
+                    void navigator.clipboard.writeText(odemeBaglantisiVeri.tahsilat!.markaliOdemeUrl);
+                    setBasari("Ödeme bağlantısı panoya kopyalandı.");
+                  }}>📋 Kopyala</Button>
+                </div>
+              </Field>
+
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "0.25rem" }}>
+                <a
+                  href={odemeBaglantisiVeri.tahsilat.markaliOdemeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn--sm"
+                  style={{ textDecoration: "none" }}
+                >
+                  🔗 Ödeme Sayfasını Aç
+                </a>
+                {odemeBaglantisiVeri.tahsilat.cari.eposta && (
+                  <Button size="sm" onClick={() => {
+                    setEpostaGonderilen(odemeBaglantisiFatura);
+                    setOdemeBaglantisiFatura(null);
+                  }}>✉️ E-posta ile Gönder</Button>
+                )}
+                {odemeBaglantisiVeri.tahsilat.makbuzUrl && (
+                  <a
+                    href={odemeBaglantisiVeri.tahsilat.makbuzUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn--sm"
+                    style={{ textDecoration: "none" }}
+                  >
+                    📄 Makbuz İndir
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="stack" style={{ gap: "0.75rem", marginTop: "0.5rem" }}>
+              <p className="muted" style={{ fontSize: "0.85rem" }}>
+                Bu fatura için henüz oluşturulmuş aktif bir kredi kartı tahsilat bağlantısı bulunmuyor.
+              </p>
+              <div>
+                <Button variant="primary" size="sm" onClick={() => void yeniOdemeBaglantisiOlustur(odemeBaglantisiFatura)}>
+                  ⚡ Ödeme Bağlantısı Oluştur
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
       {formAcik && (
         <div className="document-editor invoice-editor">
           <div className="document-editor__head">
           <h3>{acikFatura ? `${saltOkunur ? "Fatura" : "Faturayı düzenle"} · ${acikFatura.no ?? (acikFatura.durum === "taslak" ? "Taslak" : acikFatura.durum === "kesin" ? "numara bekliyor" : "numarasız")}` :`Yeni ${tip.startsWith("alis") ? (tip === "alis_iade" ? "alış iade" : "alış") : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
-            <div className="row-tight">{acikFatura ? <FaturaDurumRozeti fatura={acikFatura} /> : <span className="badge badge--warning">Taslak</span>}{!yeniSayfasi && <Button size="sm" type="button" onClick={faturaFormunuAcKapat}>Vazgeç</Button>}</div>
+            <div className="row-tight">{acikFatura ? <FaturaDurumRozeti fatura={acikFatura} /> : <span className="badge badge--warning">Taslak</span>}</div>
           </div>
           {acikFatura && (
             <EylemCubugu etiket="Fatura eylemleri">
@@ -2142,9 +2304,29 @@ export default function FaturaSayfasi() {
               {acikFatura.gelenEbelge && <Button size="sm" type="button" onClick={() => void gelenPdfAc(acikFatura.gelenEbelge!.id)}>📄 Orijinal e-Fatura</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
+              {acikFatura.durum === "kesin" && ["satis", "alis_iade"].includes(acikFatura.tip) && (
+                <Button size="sm" type="button" onClick={() => void odemeBaglantisiAc(acikFatura)}>💳 Ödeme Bağlantısı</Button>
+              )}
               {acikFatura.ebelge?.entegratorRef && ["kuyrukta", "iletildi"].includes(acikFatura.ebelge.durum) && <Button size="sm" type="button" onClick={() => void ebelgeSorgula(acikFatura.id)}>Sorgula</Button>}
               {(acikFatura.ebelge?.durum === "hata" || acikFatura.ebelge?.takiliGonderim) && <Button size="sm" type="button" onClick={() => void ebelgeYenidenGonder(acikFatura.id)}>Yeniden gönder</Button>}
               <Button size="sm" type="button" onClick={() => setEkleriAcikFatura(acikFatura)}>📎 Ekler</Button>
+              {/* P-14a: Faturadaki fiyat sapmasını asistanla analiz etme ekran eylemi */}
+              <Button
+                size="sm"
+                variant="ghost"
+                type="button"
+                onClick={() =>
+                  asistaniAc(
+                    { tur: "fatura", id: acikFatura.id, etiket: acikFatura.no ?? "Taslak fatura" },
+                    {
+                      eylem: "fatura_fiyat_sapmasi",
+                      ilkMesaj: "Bu faturadaki kalemlerin birim fiyatlarını liste ve tavsiye fiyatlarıyla karşılaştırarak fiyat sapmasını açıkla.",
+                    },
+                  )
+                }
+              >
+                💡 Fiyat Sapması
+              </Button>
               <EylemMenusu>
                 {["satis", "alis"].includes(acikFatura.tip) && ["taslak", "kesin"].includes(acikFatura.durum) && (!acikFatura.ebelge || ["hata", "ret"].includes(acikFatura.ebelge.durum)) && <Button size="sm" type="button" onClick={() => setIrsaliyeBaglaFaturaId(acikFatura.id)}>🔗 İrsaliye bağla</Button>}
                 {acikFatura.tip === "proforma" && <Button size="sm" type="button" onClick={() => void satisaDonustur(acikFatura.id)}>➡️ Satışa Dönüştür</Button>}
@@ -2815,13 +2997,17 @@ export default function FaturaSayfasi() {
               </div>
             )}
             {!saltOkunur && (
-              <div className="invoice-summary__actions">
-                <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}</Button>
+              <div className="invoice-summary__actions invoice-desktop-save">
+                {taslakKaydetDugmesi}
                 <small className="muted">Kısayol: Ctrl+S</small>
               </div>
             )}
           </aside>
           </div>
+          {!saltOkunur && <div className="invoice-mobile-save" aria-label="Fatura toplamı ve kayıt">
+            <div><small>Genel toplam</small><strong>{tl(sonuc.genelToplam, dovizCinsi)}</strong></div>
+            {taslakKaydetDugmesi}
+          </div>}
         </div>
       )}
       <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={tip === "satis" || tip === "alis" ? kodTablosu.vergiTurleri : undefined} onKapat={() => { if (urunModali) urunPenceresindenDon(urunModali.satir, false); setUrunModali(null); }} onEkle={(urun) => {

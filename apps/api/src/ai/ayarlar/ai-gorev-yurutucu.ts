@@ -16,6 +16,7 @@ import { AnalizYapilamadi, icgoruMetni } from "../icgoru/nakit-tahsilat-analizi"
 import { AiSinirHatasi } from "../saglayici/ai-butce";
 import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
 import { brifingMetni, brifingOncelikleri, brifingOnemi, brifingTamMetni, brifingVerisiTopla } from "../icgoru/gunluk-brifing";
+import { HazirlikService } from "../hazirlik/hazirlik.service";
 import { nabizla } from "../../core/nabiz/nabiz";
 
 export { trSimdi, type TrSimdi };
@@ -52,6 +53,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     private readonly uc: UcCagirici,
     private readonly bildirimler: BildirimService,
     private readonly icgoru: AiIcgoruService,
+    private readonly hazirlik: HazirlikService,
     @Optional() private readonly erisim?: AbonelikErisimService,
   ) {}
 
@@ -76,6 +78,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
     let onem: "bilgi" | "uyari" | "kritik" = "bilgi";
     const nakitTahsilat = gorev.tur === "NAKIT_TAHSILAT";
     const brifing = gorev.tur === "BRIFING";
+    const hazirlik = gorev.tur === "HAZIRLIK";
     if (!sahip) {
       metin = "Çalışmadı: görev sahibi kullanıcı yok ya da etkin değil.";
       basarili = false;
@@ -104,6 +107,18 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         metin = hata instanceof AnalizYapilamadi ? `Çalışmadı: ${hata.message.replace(/^Analiz yapılamadı: /, "")}` : `Çalışmadı: ${hata instanceof Error ? hata.message : String(hata)}`;
         basarili = false;
       }
+    } else if (hazirlik) {
+      // P-19: Ajan hazırlık katmanı (gece çalışır, sabah onay kutusu için taslak öneriler üretir).
+      try {
+        const sonuc = await kullaniciAdinaCalistir(this.prisma, tenantId, sahip.id, () =>
+          this.hazirlik.hazirla(tenantId, sahip.id, { gorevId: gorev.id }),
+        );
+        metin = `Sabah onay kutusu için ${sonuc.uretilenSayisi} hazırlık üretildi.`;
+        onem = sonuc.uretilenSayisi > 0 ? "uyari" : "bilgi";
+      } catch (hata) {
+        metin = `Çalışmadı: ${hata instanceof Error ? hata.message : String(hata)}`;
+        basarili = false;
+      }
     } else {
       try {
         const sonuc = await kullaniciAdinaCalistir(this.prisma, tenantId, sahip.id, () => this.ajan.gorevYurut(gorev.ad, gorev.gorevTalimati));
@@ -127,7 +142,7 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         this.bildirimler.uret({
           tur: "yapay_zeka", onem, baslik: brifing ? gorev.ad : `Görev: ${gorev.ad}`, aciklama: metin.slice(0, 1500),
           birlesimAnahtari: `yapay_zeka:gorev:${gorev.id}:${trSimdi().gun}`, kaynakTur: "ai_gorev", kaynakRef: gorev.id,
-          hedefYol: nakitTahsilat ? "/panel/nakit-akisi" : brifing ? "/panel/bildirimler" : "/panel/ayarlar/yapay-zeka", roller: [], kullaniciIdler: [sahip.id],
+          hedefYol: nakitTahsilat ? "/panel/nakit-akisi" : brifing ? "/panel/bildirimler" : hazirlik ? "/panel/ai/sabah-onay" : "/panel/ayarlar/yapay-zeka", roller: [], kullaniciIdler: [sahip.id],
         }),
       ).catch((h: unknown) => this.logger.warn(`Görev bildirimi üretilemedi: ${String(h)}`));
     }

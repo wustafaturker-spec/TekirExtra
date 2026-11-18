@@ -315,33 +315,70 @@ ${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
     }
 
     const sistemRol = `
-Sen bir kurumsal CRM ve cari hesap uzmanısın.
-Verilen kartvizit görselinden, e-posta imzasından veya metinden firma veya kişinin cari bilgilerini eksiksiz çıkar.
+Sen Türkiye mevzuatına ve kurumsal cari/CRM yönetimine uzmanlaşmış bir asistansın.
+Verilen kartvizit, vergi levhası, antetli evrak veya iletişim metninden cari hesap bilgilerini eksiksiz çıkar.
+Lütfen yanıtı SADECE geçerli bir JSON objesi olarak ve AŞAĞIDAKİ camelCase alan adlarıyla üret:
+{
+  "unvan": string (firma resmi ünvanı veya şahıs adı soyadı),
+  "kisiTipi": "gercek" | "tuzel",
+  "ad": string | null,
+  "soyad": string | null,
+  "vknTckn": string | null (10 haneli VKN veya 11 haneli TCKN),
+  "vergiDairesi": string | null,
+  "ticaretSicilNo": string | null,
+  "eposta": string | null (geçerli e-posta veya null),
+  "telefon": string | null,
+  "faks": string | null,
+  "webSitesi": string | null,
+  "adres": string | null,
+  "il": string | null,
+  "ilce": string | null,
+  "postaKodu": string | null,
+  "iban": string | null (TR ile başlayan 26 haneli IBAN),
+  "bankaAdi": string | null,
+  "ibanListesi": [string],
+  "naceKodu": string | null,
+  "faaliyetKonusu": string | null,
+  "sektor": string | null,
+  "yetkiliKisi": { "adSoyad": string | null, "unvan": string | null, "telefon": string | null, "eposta": string | null } | null,
+  "guvenSkoru": number (0-1)
+}
+ÖNEMLİ KURAL: Alan adlarını kesinlikle snake_case yapma, tam olarak yukarıda belirtilen Türkçe camelCase formatı kullan. Bilinmeyen alanlar için null bırak, boş string üretme.
 `.trim();
 
     const prompt = `
-Aşağıdaki içerikten firma ve cari iletişim bilgilerini yapılandırılmış olarak çıkar:
-- Firma resmi ünvanı veya kişi adı soyadı
-- Gerçek kişi mi tüzel kişi mi?
-- VKN veya TCKN, Vergi dairesi, Ticaret sicil no
-- E-posta, Telefon, Faks, Web sitesi
-- Açık adres, İl, İlçe, Posta kodu
-- Banka IBAN numarası, Sektör
-- Yetkili kişi (Ad Soyad, Görev/Ünvan, Cep telefonu, E-posta)
-${girdi.hamMetin ? `\nİletişim / E-posta Metni:\n${girdi.hamMetin}` : ""}
+Aşağıdaki belgeden/içerikten firma ve cari bilgilerini yapılandırılmış olarak çıkar:
+- Firma resmi ünvanı (veya kişi adı soyadı)
+- VKN (10 haneli) veya TCKN (11 haneli), Vergi dairesi, Ticaret sicil no
+- NACE kodu ve faaliyet konusu (varsa)
+- IBAN numarası ve banka adı (varsa)
+- İletişim bilgileri: E-posta, Telefon, Web sitesi, Açık adres, İl, İlçe
+- Yetkili kişi bilgileri
+${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
 `.trim();
 
     // 1. Model-Agnostik Çıkarım
-    const { sonuc: hamSonuc, saglayici: kullanilan } = await this.taramaCalistir(tenantId, !!girdi.gorselBase64, (p) => p.yapilandirilmisUretim<CariIletisimCikarim>(
-      {
-        sistemRol,
-        prompt,
-        gorselBase64: girdi.gorselBase64,
-        mimeType: girdi.mimeType,
-        dusunmeKapali: true,
-      },
-      cariIletisimCikarimSemasi,
-    ));
+    let hamSonuc: CariIletisimCikarim;
+    let kullanilan: IAiProvider;
+    try {
+      const t = await this.taramaCalistir(tenantId, !!girdi.gorselBase64, (p) => p.yapilandirilmisUretim<CariIletisimCikarim>(
+        {
+          sistemRol,
+          prompt,
+          gorselBase64: girdi.gorselBase64,
+          mimeType: girdi.mimeType,
+          dusunmeKapali: true,
+        },
+        cariIletisimCikarimSemasi,
+      ));
+      hamSonuc = t.sonuc;
+      kullanilan = t.saglayici;
+    } catch (hata) {
+      if (hata instanceof z.ZodError) {
+        this.logger.warn(`Cari şema hatası: ${hata.issues.slice(0, 5).map((i) => `${i.path.join(".")}:${i.code}`).join(", ")}`);
+      }
+      throw hata;
+    }
 
     // 2. Doğrulama
     const dogrulama = cariIletisimDogrula(hamSonuc);

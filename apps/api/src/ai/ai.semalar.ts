@@ -30,41 +30,158 @@ const guvenSkoruAlani = () => z.preprocess((v) => {
   return n > 1 && n <= 100 ? n / 100 : n;
 }, z.number().min(0).max(1).default(1)).catch(0);
 
+const bosYoksaNull = (v: unknown): string | null => {
+  if (typeof v !== "string" && typeof v !== "number") return null;
+  const t = String(v).trim();
+  return !t || t.toLowerCase() === "yok" || t === "-" || t.toLowerCase() === "null" || t.toLowerCase() === "none" ? null : t;
+};
+
+const metinAlani = (max = 500) =>
+  z.preprocess(bosYoksaNull, z.string().max(max).nullable()).optional().catch(null);
+
+const epostaAlani = () =>
+  z.preprocess((v) => {
+    const t = bosYoksaNull(v);
+    if (!t || !t.includes("@")) return null;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t) ? t.toLowerCase() : null;
+  }, z.string().nullable().optional()).catch(null);
+
+const kisiTipiAlani = () =>
+  z.preprocess((v) => {
+    if (typeof v !== "string") return "tuzel";
+    const t = v.trim().toLowerCase();
+    return t.includes("gercek") || t.includes("gerçek") || t.includes("sahis") || t.includes("şahıs") || t.includes("bireysel") ? "gercek" : "tuzel";
+  }, z.enum(["gercek", "tuzel"]).default("tuzel")).catch("tuzel");
+
+const ibanListesiAlani = () =>
+  z.preprocess((v) => {
+    if (!v) return [];
+    if (typeof v === "string") {
+      const t = v.trim();
+      return t ? [t] : [];
+    }
+    if (Array.isArray(v)) {
+      return v.map((item) => (typeof item === "string" ? item.trim() : item && typeof item === "object" && "iban" in item ? String(item.iban).trim() : "")).filter(Boolean);
+    }
+    return [];
+  }, z.array(z.string()).optional().nullable().default([])).catch([]);
+
+const yetkiliKisiAlani = () =>
+  z.preprocess((v) => {
+    if (!v) return null;
+    if (typeof v === "string") {
+      const t = v.trim();
+      return t ? { adSoyad: t } : null;
+    }
+    if (typeof v === "object" && !Array.isArray(v)) {
+      const o = v as Record<string, unknown>;
+      return {
+        adSoyad: bosYoksaNull(o.adSoyad ?? o.ad_soyad ?? o.ad ?? o.isim),
+        unvan: bosYoksaNull(o.unvan ?? o.gorev ?? o.pozisyon),
+        telefon: bosYoksaNull(o.telefon ?? o.tel ?? o.gsm),
+        eposta: o.eposta ?? o.e_posta ?? o.mail ?? o.email,
+      };
+    }
+    return null;
+  }, z.object({
+    adSoyad: z.string().optional().nullable(),
+    unvan: z.string().optional().nullable(),
+    telefon: z.string().optional().nullable(),
+    eposta: epostaAlani(),
+  }).optional().nullable()).catch(null);
+
+export function normalizeCariJson(ham: unknown): unknown {
+  if (!ham || typeof ham !== "object") return ham;
+  let obj = ham as Record<string, unknown>;
+  if (Array.isArray(obj)) {
+    if (obj.length > 0 && typeof obj[0] === "object" && obj[0] !== null) obj = obj[0] as Record<string, unknown>;
+    else return ham;
+  }
+  for (const anahtar of ["cari", "cariBilgisi", "cari_bilgisi", "firma", "data", "sonuc", "result"]) {
+    if (obj[anahtar] && typeof obj[anahtar] === "object" && !Array.isArray(obj[anahtar])) {
+      obj = { ...obj, ...(obj[anahtar] as Record<string, unknown>) };
+    }
+  }
+
+  const unvan = obj.unvan ?? obj.firma_unvani ?? obj.firmaUnvani ?? obj.resmi_unvan ?? obj.resmiUnvan ?? obj.firma_adi ?? obj.firmaAdi ?? obj.unvani ?? obj.isim ?? (obj.ad && obj.soyad ? `${obj.ad} ${obj.soyad}`.trim() : undefined) ?? "";
+  const vknTckn = obj.vknTckn ?? obj.vkn_tckn ?? obj.vergi_no ?? obj.vergiNo ?? obj.vkn ?? obj.tckn ?? obj.tc_no ?? obj.tcKimlikNo;
+  const vergiDairesi = obj.vergiDairesi ?? obj.vergi_dairesi ?? obj.vergiDairesiAdi;
+  const ticaretSicilNo = obj.ticaretSicilNo ?? obj.ticaret_sicil_no ?? obj.sicil_no ?? obj.ticaretSicil;
+  const eposta = obj.eposta ?? obj.e_posta ?? obj.mail ?? obj.email;
+  const telefon = obj.telefon ?? obj.tel ?? obj.telefon_no ?? obj.gsm;
+  const faks = obj.faks ?? obj.fax;
+  const webSitesi = obj.webSitesi ?? obj.web_sitesi ?? obj.web ?? obj.website ?? obj.url;
+  const adres = obj.adres ?? obj.acik_adres ?? obj.adres_bilgisi;
+  const il = obj.il ?? obj.sehir ?? obj.vilayet;
+  const ilce = obj.ilce ?? obj.ilce_adi;
+  const postaKodu = obj.postaKodu ?? obj.posta_kodu ?? obj.zip;
+  const iban = obj.iban ?? obj.iban_no ?? obj.ibanNo;
+  const bankaAdi = obj.bankaAdi ?? obj.banka_adi ?? obj.banka;
+  const ibanListesi = obj.ibanListesi ?? obj.iban_listesi ?? obj.ibanlar ?? (iban ? [iban] : []);
+  const naceKodu = obj.naceKodu ?? obj.nace_kodu ?? obj.nace;
+  const faaliyetKonusu = obj.faaliyetKonusu ?? obj.faaliyet_konusu ?? obj.faaliyet ?? obj.istigal_konusu;
+  const sektor = obj.sektor ?? obj.sektor_adi;
+  const yetkiliKisi = obj.yetkiliKisi ?? obj.yetkili_kisi ?? obj.yetkili;
+
+  return {
+    ...obj,
+    unvan: typeof unvan === "string" ? unvan.trim() : typeof unvan === "number" ? String(unvan) : "",
+    ...(vknTckn !== undefined ? { vknTckn } : {}),
+    ...(vergiDairesi !== undefined ? { vergiDairesi } : {}),
+    ...(ticaretSicilNo !== undefined ? { ticaretSicilNo } : {}),
+    ...(eposta !== undefined ? { eposta } : {}),
+    ...(telefon !== undefined ? { telefon } : {}),
+    ...(faks !== undefined ? { faks } : {}),
+    ...(webSitesi !== undefined ? { webSitesi } : {}),
+    ...(adres !== undefined ? { adres } : {}),
+    ...(il !== undefined ? { il } : {}),
+    ...(ilce !== undefined ? { ilce } : {}),
+    ...(postaKodu !== undefined ? { postaKodu } : {}),
+    ...(iban !== undefined ? { iban } : {}),
+    ...(bankaAdi !== undefined ? { bankaAdi } : {}),
+    ...(ibanListesi !== undefined ? { ibanListesi } : {}),
+    ...(naceKodu !== undefined ? { naceKodu } : {}),
+    ...(faaliyetKonusu !== undefined ? { faaliyetKonusu } : {}),
+    ...(sektor !== undefined ? { sektor } : {}),
+    ...(yetkiliKisi !== undefined ? { yetkiliKisi } : {}),
+  };
+}
+
 /**
  * Fiş / Fatura OCR Çıkarım Şeması
  */
 export const fisFaturaOcrSonucSemasi = z.object({
-  belgeTuru: z.enum(["FIS", "FATURA", "E_ARSIV", "E_FATURA", "BILINMIYOR"]),
-  belgeNo: z.string().optional().nullable(),
-  tarih: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD formatında olmalıdır").optional().nullable(),
-  saticiUnvan: z.string().min(2, "Satıcı ünvanı en az 2 karakter olmalıdır"),
-  saticiVknTckn: z.string().regex(/^\d{10,11}$/, "VKN 10 veya TCKN 11 haneli olmalıdır").optional().nullable(),
-  saticiVergiDairesi: z.string().optional().nullable(),
-  saticiAdres: z.string().optional().nullable(),
-  saticiTelefon: z.string().optional().nullable(),
-  saticiEposta: z.string().email().optional().nullable(),
-  saticiIban: z.string().optional().nullable(),
-  paraBirimi: z.string().default("TRY"),
-  toplamKdv: z.number().min(0),
-  toplamMatrah: z.number().min(0),
-  genelToplam: z.number().min(0),
+  belgeTuru: z.enum(["FIS", "FATURA", "E_ARSIV", "E_FATURA", "BILINMIYOR"]).default("BILINMIYOR").catch("BILINMIYOR"),
+  belgeNo: metinAlani(100),
+  tarih: z.preprocess((v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null), z.string().nullable()).optional().catch(null),
+  saticiUnvan: z.preprocess((v) => (typeof v === "string" ? v.trim() : ""), z.string().default("")),
+  saticiVknTckn: z.preprocess((v) => (typeof v === "string" ? v.replace(/\D/g, "") || null : null), z.string().max(20).nullable()).optional().catch(null),
+  saticiVergiDairesi: metinAlani(120),
+  saticiAdres: metinAlani(500),
+  saticiTelefon: metinAlani(50),
+  saticiEposta: epostaAlani(),
+  saticiIban: metinAlani(50),
+  paraBirimi: z.string().default("TRY").catch("TRY"),
+  toplamKdv: z.preprocess((v) => ondalikSayi(v) ?? 0, z.number().min(0)).catch(0),
+  toplamMatrah: z.preprocess((v) => ondalikSayi(v) ?? 0, z.number().min(0)).catch(0),
+  genelToplam: z.preprocess((v) => ondalikSayi(v) ?? 0, z.number().min(0)).catch(0),
   kdvKirilimi: z.array(
     z.object({
-      oran: z.number(),
-      matrah: z.number(),
-      kdvTutari: z.number(),
+      oran: z.number().catch(0),
+      matrah: z.number().catch(0),
+      kdvTutari: z.number().catch(0),
     })
-  ).default([]),
+  ).default([]).catch([]),
   kalemler: z.array(
     z.object({
-      aciklama: z.string(),
+      aciklama: z.string().default(""),
       miktar: z.number().default(1),
       birim: z.string().default("ADET"),
       birimFiyat: z.number().default(0),
       toplamTutar: z.number().default(0),
       kdvOrani: z.number().optional().nullable(),
     })
-  ).default([]),
+  ).default([]).catch([]),
   guvenSkoru: guvenSkoruAlani(),
   // Ek alanlar (CNL-21/22) yardımcıdır: model biçimi tutturamazsa belge düşmez, alan boş kalır.
   /** CNL-21: fişte yazılıysa araç plakası (akaryakıt, otopark…); okunamazsa null. */
@@ -81,33 +198,35 @@ export type FisFaturaOcrSonuc = z.infer<typeof fisFaturaOcrSonucSemasi>;
 /**
  * Kartvizit / İletişim Formu / E-posta Metninden Cari Çıkarım Şeması
  */
-export const cariIletisimCikarimSemasi = z.object({
-  unvan: z.string().min(2, "Ünvan veya kişi adı zorunludur"),
-  kisiTipi: z.enum(["gercek", "tuzel"]).default("tuzel"),
-  ad: z.string().optional().nullable(),
-  soyad: z.string().optional().nullable(),
-  /** CNL-23: modelin yazdığı biçim ("742 112 60 13") kabul edilir; doğrulamada rakamlara indirgenir. */
-  vknTckn: z.string().max(40).optional().nullable(),
-  vergiDairesi: z.string().optional().nullable(),
-  ticaretSicilNo: z.string().optional().nullable(),
-  eposta: z.string().email().optional().nullable(),
-  telefon: z.string().optional().nullable(),
-  faks: z.string().optional().nullable(),
-  webSitesi: z.string().optional().nullable(),
-  adres: z.string().optional().nullable(),
-  il: z.string().optional().nullable(),
-  ilce: z.string().optional().nullable(),
-  postaKodu: z.string().optional().nullable(),
-  iban: z.string().optional().nullable(),
-  sektor: z.string().optional().nullable(),
-  yetkiliKisi: z.object({
-    adSoyad: z.string().optional().nullable(),
-    unvan: z.string().optional().nullable(),
-    telefon: z.string().optional().nullable(),
-    eposta: z.string().email().optional().nullable(),
-  }).optional().nullable(),
-  guvenSkoru: guvenSkoruAlani(),
-});
+export const cariIletisimCikarimSemasi = z.preprocess(
+  (ham) => normalizeCariJson(ham),
+  z.object({
+    unvan: z.preprocess((v) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : ""), z.string().default("")),
+    kisiTipi: kisiTipiAlani(),
+    ad: metinAlani(100),
+    soyad: metinAlani(100),
+    /** CNL-23: modelin yazdığı biçim ("742 112 60 13") kabul edilir; doğrulamada rakamlara indirgenir. */
+    vknTckn: metinAlani(40),
+    vergiDairesi: metinAlani(120),
+    ticaretSicilNo: metinAlani(100),
+    eposta: epostaAlani(),
+    telefon: metinAlani(50),
+    faks: metinAlani(50),
+    webSitesi: metinAlani(250),
+    adres: metinAlani(500),
+    il: metinAlani(100),
+    ilce: metinAlani(100),
+    postaKodu: metinAlani(20),
+    iban: metinAlani(50),
+    bankaAdi: metinAlani(100),
+    ibanListesi: ibanListesiAlani(),
+    naceKodu: metinAlani(50),
+    faaliyetKonusu: metinAlani(300),
+    sektor: metinAlani(100),
+    yetkiliKisi: yetkiliKisiAlani(),
+    guvenSkoru: guvenSkoruAlani(),
+  })
+);
 
 export type CariIletisimCikarim = z.infer<typeof cariIletisimCikarimSemasi>;
 

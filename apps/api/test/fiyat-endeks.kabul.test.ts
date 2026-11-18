@@ -23,6 +23,7 @@ const { aylikToplamlar } = await import("../src/fiyat-endeks/fiyat-endeks-veri")
 const { raporTanimiAl } = await import("../src/core/raporlar/rapor-kayit");
 const { degerleriYaz } = await import("../src/fiyat-endeks/endeks-deposu");
 const { endeksVerisi } = await import("../src/fiyat-endeks/fiyat-endeks-veri");
+const { birimKirilmalariniOku } = await import("../src/fiyat-endeks/birim-kirilmasi");
 await import("../src/fiyat-endeks/fiyat-endeks.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-makas.raporlar");
 await import("../src/fiyat-endeks/fiyat-endeks-erime.raporlar");
@@ -392,11 +393,131 @@ describe("kur serisi: EVDS aylık ortalaması", () => {
     await degerleriYaz(yonetim, KUR, [{ donem: "2026-10-01", deger: "49.31" }, { donem: "2026-11-01", deger: "50.00" }], "evds", "2026-11-01");
     const ikinci = await degerleriYaz(yonetim, KUR, [{ donem: "2026-10-01", deger: "49.31" }, { donem: "2026-11-01", deger: "50.02" }], "evds", "2026-11-01");
     expect(ikinci).toMatchObject({ yeni: 0, revize: 0 });
-    const ucuncu = await degerleriYaz(yonetim, KUR, [{ donem: "2026-10-01", deger: "49.35" }], "evds", "2026-11-01");
-    expect(ucuncu.revize).toBe(1);
+    const cek = () => degerleriYaz(prisma, KUR, [{ donem: "2026-10-01", deger: "49.35" }], "evds", "2026-11-01");
+    const tekrarlar = await Promise.all([cek(), cek()]);
+    expect(tekrarlar.map((r) => r.revize).sort()).toEqual([0, 1]);
+    const gorevler = await yonetim.platformGorev.findMany({ where: { baslik: { startsWith: `Endeks revizyonu · ${KUR} · ` } } });
+    expect(gorevler).toHaveLength(1);
+    const [gorev] = gorevler;
+    expect(gorev).toMatchObject({ kapsam: "platform", durum: "acik", olusturanId: null });
+    expect(gorev.aciklama).toMatch(/49\.31.*49\.35/);
+    expect(await yonetim.endeksDegerRevizyonu.findUnique({ where: { id: gorev.id } })).toMatchObject({ seriKodu: KUR });
     const v = await prisma.tenantIslem(A.tenant, (tx) => endeksVerisi(tx, KUR, "2026-10-01", "2026-11-01"));
     expect(v.tur).toBe("kur");
     expect([...v.degerler.entries()].map(([a, d]) => [a, d.toString()]).sort()).toEqual([["2026-10-01", "49.35"], ["2026-11-01", "50.02"]]);
     expect(await yonetim.endeksDegerRevizyonu.count({ where: { seriKodu: KUR } })).toBe(1);
   });
+});
+
+// END-08/10/23/26 tamamlaması: gerçek tablolar, RLS ve aynı servis yolu.
+describe("endeks tamamlaması", () => {
+  it("aynı şablondaki özel rollerde satış ve alış ayrı süzülür", async () => {
+    const sorgu = { baslangic: "2026-01", bitis: "2026-03", endeksler: [SERI], satisKapsami: "tum" as const, listeler: [], alis: true, cizgiler: [] };
+    const ileKutu = (kapali: string[]) => baglamlaCalistir({ tenantId: A.tenant, userId: A.yonetici, rol: "muhasebe", ozelRol: { id: randomUUID(), kapali } }, () => servis.urun(A.stok, sorgu));
+    expect((await ileKutu(["fiyat_endeks_alis.goruntule"])).seriler.map((s) => s.taraf)).toEqual(["satis"]);
+    expect((await ileKutu(["fiyat_endeks_satis.goruntule"])).seriler.map((s) => s.taraf)).toEqual(["alis"]);
+    await expect(ileKutu(["fiyat_endeks_satis.goruntule", "fiyat_endeks_alis.goruntule"])).rejects.toThrow(/erişiminiz yok/);
+  });
+
+  it("satış kuru serisi alış serisinden bağımsız hesaplanır", async () => {
+    await yonetim.endeksDegeri.upsert({ where: { seriKodu_donem: { seriKodu: "USD", donem: ay("2026-01-01") } },
+      create: { seriKodu: "USD", donem: ay("2026-01-01"), deger: "40" }, update: { deger: "40" } });
+    await yonetim.endeksDegeri.upsert({ where: { seriKodu_donem: { seriKodu: "USD_SATIS", donem: ay("2026-01-01") } },
+      create: { seriKodu: "USD_SATIS", donem: ay("2026-01-01"), deger: "41" }, update: { deger: "41" } });
+    const [alis, satis] = await ile(A.tenant, A.yonetici, "yonetici", () => prisma.tenantIslem(A.tenant, async (tx) => Promise.all([
+      endeksVerisi(tx, "USD", "2026-01-01", "2026-01-01"), endeksVerisi(tx, "USD_SATIS", "2026-01-01", "2026-01-01"),
+    ])));
+    expect(alis.degerler.get("2026-01-01")?.toString()).toBe("40");
+    expect(satis.degerler.get("2026-01-01")?.toString()).toBe("41");
+    expect(satis.ad).toMatch(/satış/);
+  });
+
+  it("seri kullanımı firma başına tek kayıt, RLS ile yalıtılmış; platform yalnız toplam okur", async () => {
+    for (const f of [A, A, B]) await ile(f.tenant, f.yonetici, "yonetici", () => prisma.tenantIslem(f.tenant, (tx) => endeksVerisi(tx, SERI, "2026-01-01", "2026-03-01")));
+    const sayi = await prisma.tenantIslem(A.tenant, (tx) => tx.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM endeks_kullanimlari WHERE seri_kodu = ${SERI}`);
+    expect(Number(sayi[0].n)).toBe(1);
+    const platform = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_PLATFORM });
+    try {
+      const toplam = await platform.$queryRaw<{ seri_kodu: string; kiraci_sayisi: bigint }[]>`SELECT * FROM platform_endeks_kullanim_sayilari()`;
+      expect(Number(toplam.find((s) => s.seri_kodu === SERI)?.kiraci_sayisi)).toBe(2);
+      await expect(platform.$queryRaw`SELECT tenant_id FROM endeks_kullanimlari`).rejects.toThrow();
+    } finally { await platform.$disconnect(); }
+  });
+
+  it("katsayı değişikliği izlenir, yeni faturanın katsayısı korunur ve iki dönem oranlanmaz", async () => {
+    const stokId = randomUUID();
+    await yonetim.stokKart.create({ data: { id: stokId, tenantId: A.tenant, kod: `BR-${ek}`, ad: "Birim geçmişi", tip: "urun", anaBirim: "adet" } });
+    const birim = await yonetim.stokBirim.create({ data: { tenantId: A.tenant, stokId, ad: "koli", katsayi: "12" } });
+    await fatura(A.tenant, A.cariListesiz, stokId, "2026-01-10", [{ miktar: "1", birim: "koli", matrah: "120" }, { miktar: "1", birim: "koli", matrah: "120" }]);
+    await yonetim.stokBirim.update({ where: { id: birim.id }, data: { katsayi: "24" } });
+    // Tarihli test verisi: değişiklik Şubat'ta olmuş gibi iki tarafı sınar.
+    await yonetim.$executeRaw`UPDATE stok_birim_gecmisi SET degisti_at = '2026-02-10 10:00:00' WHERE stok_id = ${stokId}::uuid`;
+    await fatura(A.tenant, A.cariListesiz, stokId, "2026-03-10", [{ miktar: "1", birim: "koli", matrah: "240" }, { miktar: "1", birim: "koli", matrah: "240" }]);
+    const r = await ile(A.tenant, A.yonetici, "yonetici", () => servis.urun(stokId, { baslangic: "2026-01", bitis: "2026-03", endeksler: [SERI], satisKapsami: "tum", listeler: [], alis: false, cizgiler: [] }));
+    expect(r.birimGecmisi[0]).toMatchObject({ eskiKatsayi: "12.000000", yeniKatsayi: "24.000000", ay: "2026-02-01" });
+    expect(r.seriler[0].satirlar[0].fiyat).toBe("10.0000");
+    expect(r.seriler[0].satirlar[2].fiyat).toBe("10.0000");
+    expect(r.seriler[0].satirlar[2].endeks100).toBeNull();
+    expect(r.seriler[0].karsilastirmalar[0].neden).toMatch(/Birim değişikliği/);
+    expect(await prisma.tenantIslem(B.tenant, (tx) => birimKirilmalariniOku(tx, [stokId], "2026-01-01", "2026-03-01"))).toEqual([]);
+    const rapor = raporTanimiAl("stok.fiyat_endeks")!;
+    const satirlar = await ile(A.tenant, A.yonetici, "yonetici", () => prisma.tenantIslem(A.tenant, (tx) => rapor.calistir({ filtreler: { baslangic: "2026-01-01", bitis: "2026-03-31", endeks: SERI, stok: stokId } }, { tenantId: A.tenant, tx })));
+    expect(satirlar[0].durum).toMatch(/Birim değişikliği/);
+    expect(satirlar[0].reelDegisim).toBeNull();
+  });
+});
+
+it("kullanılmamış stok kartının birimleriyle silinmesi tarihçe FK'sına takılmaz", async () => {
+  const s = await yonetim.stokKart.create({ data: { tenantId: A.tenant, kod: `SIL-${randomUUID()}`, ad: "Kullanılmamış kart", tip: "urun", anaBirim: "adet" } });
+  await yonetim.stokBirim.create({ data: { tenantId: A.tenant, stokId: s.id, ad: "koli", katsayi: "12" } });
+  await expect(prisma.tenantIslem(A.tenant, (tx) => tx.stokKart.delete({ where: { id: s.id } }))).resolves.toMatchObject({ id: s.id });
+});
+
+it("endeks önerisi onay beklerken plan veya özel rol erişimi kapanırsa fiyat değişmez", async () => {
+  await import("../src/ayar-tanimlari");
+  const onayListesi = await yonetim.fiyatListesi.create({ data: { tenantId: A.tenant, ad: `Endeks-onay-${ek}`, kalemler: { create: { tenantId: A.tenant, stokId: A.stok, fiyat: "100" } } } });
+  const { OnayService } = await import("../src/onay/onay.service");
+  const { OnayGerekliHatasi } = await import("../src/onay/onay-kurallari");
+  const { AyarlarService } = await import("../src/core/ayarlar/ayarlar.service");
+  const { FiyatListeleriService } = await import("../src/fiyat-listeleri/fiyat-listeleri.service");
+  const { fiyatListesiSurumu } = await import("../src/fiyat-listeleri/fiyat-listesi-surumu");
+  const onay = new OnayService(prisma, new AyarlarService(prisma));
+  const fiyat = new FiyatListeleriService(prisma, onay);
+  const talepEden = randomUUID();
+  const ozel = await yonetim.ozelRol.create({ data: { tenantId: A.tenant, ad: `Endeks onay-${ek}`, sablonRol: "muhasebe", kapaliKutular: [] } });
+  await yonetim.user.create({ data: { id: talepEden, tenantId: A.tenant, eposta: `onay-${talepEden}@test.local`, parolaHash: "x", adSoyad: "Fiyat talebi", rol: "muhasebe", ozelRolId: ozel.id } });
+  await ile(A.tenant, A.yonetici, "yonetici", () => onay.kuralKaydet(null, { islem: "fiyat_listesi_guncelle", ad: "Endeks onayı", adimlar: [{ rol: "yonetici" }] }));
+  for (const neden of ["rol", "plan"]) {
+    planAcik.add(A.tenant);
+    await yonetim.ozelRol.update({ where: { id: ozel.id }, data: { kapaliKutular: [] } });
+    const liste = await yonetim.fiyatListesi.findUniqueOrThrow({ where: { id: onayListesi.id }, include: { kalemler: true } });
+    const onceki = liste.kalemler.find((k) => k.stokId === A.stok)!.fiyat.toString();
+    let talep = "";
+    try {
+      await baglamlaCalistir({ tenantId: A.tenant, userId: talepEden, rol: "muhasebe", ozelRol: { id: ozel.id, kapali: [] } }, () => fiyat.topluKaydet(onayListesi.id, { surum: fiyatListesiSurumu(liste), kaynak: "endeks", kalemler: [{ stokId: A.stok, fiyat: "999" }] }));
+    } catch (e) {
+      if (!(e instanceof OnayGerekliHatasi)) throw e;
+      talep = (e.getResponse() as { onayTalebiId: string }).onayTalebiId;
+    }
+    expect(talep).not.toBe("");
+    if (neden === "rol") await yonetim.ozelRol.update({ where: { id: ozel.id }, data: { kapaliKutular: ["fiyat_endeks_satis.goruntule"] } });
+    else planAcik.delete(A.tenant);
+    const sonuc = await ile(A.tenant, A.yonetici, "yonetici", () => onay.karar(talep, "onay"));
+    expect(sonuc.durum).toBe("hata");
+    expect((await yonetim.fiyatListesiKalem.findFirstOrThrow({ where: { listeId: onayListesi.id, stokId: A.stok } })).fiyat.toString()).toBe(onceki);
+  }
+  planAcik.add(A.tenant);
+});
+
+it("taslakta değişen birim katsayısı kesinleşmede sabitlenir, sonraki değişim faturayı bozmaz", async () => {
+  const stokId = randomUUID();
+  await yonetim.stokKart.create({ data: { id: stokId, tenantId: A.tenant, kod: `SBT-${ek}`, ad: "Katsayı sabitleme", tip: "urun", anaBirim: "adet" } });
+  const birim = await yonetim.stokBirim.create({ data: { tenantId: A.tenant, stokId, ad: "koli", katsayi: "12" } });
+  const taslak = await fatura(A.tenant, A.cariListesiz, stokId, "2026-11-01", [{ miktar: "1", birim: "koli", matrah: "240" }], "taslak");
+  await yonetim.stokBirim.update({ where: { id: birim.id }, data: { katsayi: "24" } });
+  await prisma.tenantIslem(A.tenant, (tx) => tx.fatura.update({ where: { id: taslak.id }, data: { durum: "kesin" } }));
+  const oku = () => yonetim.faturaSatir.findFirstOrThrow({ where: { faturaId: taslak.id } });
+  expect((await oku()).birimKatsayi?.toString()).toBe("24");
+  await yonetim.stokBirim.update({ where: { id: birim.id }, data: { katsayi: "36" } });
+  expect((await oku()).birimKatsayi?.toString()).toBe("24");
 });

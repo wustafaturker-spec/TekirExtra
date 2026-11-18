@@ -4,6 +4,8 @@ import { DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 import { Prisma } from "@prisma/client";
 import {
   gecerliYetkiAnahtariMi,
+  ENDEKS_YETKI_KUTULARI,
+  ENDEKS_YETKI_ROLLERI,
   ROLLER,
   yetkiAnahtari,
   yolIslemi,
@@ -78,7 +80,10 @@ export class SablonMatrisiService {
         uclar.push({ anahtar: yetkiAnahtari(modul.kod, islem), gerekli: this.reflector.getAllAndOverride<Rol[] | undefined>(ROLLER_ANAHTAR, [handler as never, sinif]) });
       }
     }
-    this.onbellek = Object.fromEntries(SABLON_ROLLERI.map((rol) => [rol, [...new Set(uclar.filter((u) => rolUcaYetkili(rol, u.gerekli)).map((u) => u.anahtar))].sort()]));
+    this.onbellek = Object.fromEntries(SABLON_ROLLERI.map((rol) => [rol, [...new Set([
+      ...uclar.filter((u) => rolUcaYetkili(rol, u.gerekli)).map((u) => u.anahtar),
+      ...(rol === "yonetici" || (ENDEKS_YETKI_ROLLERI as readonly string[]).includes(rol) ? ENDEKS_YETKI_KUTULARI.map((k) => k.anahtar) : []),
+    ])].sort()]));
     return this.onbellek;
   }
 }

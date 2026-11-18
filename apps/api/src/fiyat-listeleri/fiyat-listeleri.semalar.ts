@@ -24,3 +24,10 @@ export const fiyatListesiKalemSemasi = z.object({
   stokId: z.uuid(),
   fiyat: pozitifOndalik,
 });
+
+export const fiyatListesiTopluSemasi = z.object({
+  surum: z.string().regex(/^[a-f0-9]{64}$/),
+  kaynak: z.literal("endeks").optional(),
+  kalemler: z.array(fiyatListesiKalemSemasi).min(1).max(5000),
+  yeniAd: z.string().trim().min(1).max(100).optional(),
+}).strict().refine((g) => new Set(g.kalemler.map((k) => k.stokId)).size === g.kalemler.length, "Ürün tekrar edemez");

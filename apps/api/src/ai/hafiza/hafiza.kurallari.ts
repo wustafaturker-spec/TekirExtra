@@ -7,13 +7,23 @@
 export type HafizaTuru = "urun_eslesme" | "cari_eslesme" | "musteri_tercihi" | "siniflandirma" | "susturma" | "fikir_isareti";
 export type HafizaKaynagi = "kullanici" | "otomatik" | "ai_onerisi";
 export type HafizaDurumu = "aktif" | "oneri" | "pasif";
+export type HafizaKapsami = "firma" | "cari" | "kullanici";
 
 export const HAFIZA_TURLERI: HafizaTuru[] = ["urun_eslesme", "cari_eslesme", "musteri_tercihi", "siniflandirma", "susturma", "fikir_isareti"];
+export const HAFIZA_KAPSAMLARI: HafizaKapsami[] = ["firma", "cari", "kullanici"];
 /** Sınıflandırma istemine giden son örnek sayısı ve örnek metni sınırı. */
 export const ORNEK_SAYISI = 6;
 export const ORNEK_METNI = 300;
 export const TERCIH_METNI = 300;
 export const AZAMI_TERCIH_ONERISI = 3;
+
+/** P-16: Hafızanın kullanım anında geçerli olup olmadığını sınar (aktiflik ve bitiş tarihi). */
+export function hafizaGecerliMi(h: { durum: string; gecerlilikBitisAt?: Date | string | null }): boolean {
+  if (h.durum !== "aktif") return false;
+  if (!h.gecerlilikBitisAt) return true;
+  const bitis = typeof h.gecerlilikBitisAt === "string" ? new Date(h.gecerlilikBitisAt) : h.gecerlilikBitisAt;
+  return bitis.getTime() >= Date.now();
+}
 
 const SADE: Record<string, string> = { ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u" };
 

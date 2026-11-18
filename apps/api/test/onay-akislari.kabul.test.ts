@@ -10,6 +10,8 @@ import { KasaBankaService } from "../src/kasa-banka/kasa-banka.service";
 import { MasraflarService } from "../src/masraflar/masraflar.service";
 import { OnayGerekliHatasi } from "../src/onay/onay-kurallari";
 import { OnayService } from "../src/onay/onay.service";
+import { FiyatListeleriService } from "../src/fiyat-listeleri/fiyat-listeleri.service";
+import { fiyatListesiSurumu } from "../src/fiyat-listeleri/fiyat-listesi-surumu";
 
 /**
  * ONY-01…10: genel onay akışı gerçek PostgreSQL'de, uygulama rolüyle (RLS). Kapı, onaycı listesi,
@@ -34,6 +36,7 @@ const ayarlar = new AyarlarService(prisma as never);
 const onay = new OnayService(prisma as never, ayarlar, new BildirimService(prisma as never));
 const masraf = new MasraflarService(prisma as never, donem, {} as never, undefined, onay);
 const kasa = new KasaBankaService(prisma as never, {} as never, donem, onay);
+const fiyat = new FiyatListeleriService(prisma as never, onay);
 const olarak = <T>(userId: string, rol: string, fn: () => Promise<T>) => { aktifKullanici = userId; return baglamlaCalistir({ tenantId, userId, rol } as never, fn); };
 const oku = <T>(fn: (t: PrismaClient) => Promise<T>) => prisma.tenantIslem(tenantId, (t: never) => fn(t as PrismaClient));
 async function onayaTakilir(fn: () => Promise<unknown>): Promise<string> {
@@ -120,4 +123,65 @@ describe("genel onay akışları (ONY-01…10)", () => {
   it("görev ayrılığı yalnız tek yöneticili firmada kapatılabilir", async () => {
     await expect(olarak(yonetici1, "yonetici", () => onay.gorevAyriligiKaydet(true))).rejects.toThrow(/tek etkin yöneticisi/);
   });
+});
+
+// END-16: gerçek genel onay yürütücüsü, sürüm koruması ve atomik fiyat yazımı.
+describe("fiyat önerisinin genel onayı", () => {
+  async function hazirla() {
+    const stoklar = [randomUUID(), randomUUID()];
+    for (const id of stoklar) await yonetim.stokKart.create({ data: { id, tenantId, kod: `F-${id}`, ad: "Fiyat ürünü", tip: "urun", anaBirim: "adet" } });
+    const l = await yonetim.fiyatListesi.create({ data: { tenantId, ad: `Fiyat-${randomUUID()}`, kalemler: { create: stoklar.map((stokId) => ({ tenantId, stokId, fiyat: "100" })) } }, include: { kalemler: true } });
+    return { l, g: { surum: fiyatListesiSurumu(l), kalemler: stoklar.map((stokId) => ({ stokId, fiyat: "120" })) } };
+  }
+  it("tek talep açılır, son onaya kadar fiyat değişmez; onay iki kalemi birlikte uygular", async () => {
+    await olarak(yonetici1, "yonetici", () => onay.kuralKaydet(null, { islem: "fiyat_listesi_guncelle", ad: "Fiyat değişikliği", adimlar: [{ rol: "yonetici" }] }));
+    const { l, g } = await hazirla();
+    const talep = await onayaTakilir(() => olarak(muhasebe, "muhasebe", () => fiyat.topluKaydet(l.id, g)));
+    expect((await yonetim.fiyatListesiKalem.findMany({ where: { listeId: l.id } })).map((k) => k.fiyat.toString())).toEqual(["100", "100"]);
+    await expect(olarak(muhasebe, "muhasebe", () => onay.karar(talep, "onay"))).rejects.toThrow(/onaycısı değilsiniz/);
+    expect((await olarak(yonetici1, "yonetici", () => onay.karar(talep, "onay"))).durum).toBe("onaylandi");
+    expect((await yonetim.fiyatListesiKalem.findMany({ where: { listeId: l.id } })).map((k) => k.fiyat.toString())).toEqual(["120", "120"]);
+    expect(await yonetim.auditLog.count({ where: { varlikId: l.id, islem: "fiyat_listesi_toplu_guncellendi", userId: muhasebe } })).toBe(1);
+    await expect(olarak(yonetici1, "yonetici", () => onay.karar(talep, "onay"))).rejects.toThrow(/karara bağlanmış/);
+  });
+  it("onay beklerken fiyat değişirse eski öneri uygulanmaz", async () => {
+    const { l, g } = await hazirla();
+    const talep = await onayaTakilir(() => olarak(muhasebe, "muhasebe", () => fiyat.topluKaydet(l.id, g)));
+    await yonetim.fiyatListesiKalem.update({ where: { id: l.kalemler[0].id }, data: { fiyat: "130" } });
+    expect((await olarak(yonetici1, "yonetici", () => onay.karar(talep, "onay"))).durum).toBe("gecersiz");
+    expect((await yonetim.fiyatListesiKalem.findMany({ where: { listeId: l.id } })).map((k) => k.fiyat.toString()).sort()).toEqual(["100", "130"]);
+  });
+  it("tek kalem ucuyla onay kuralı aşılamaz", async () => {
+    const { l, g } = await hazirla();
+    const talep = await onayaTakilir(() => olarak(muhasebe, "muhasebe", () => fiyat.kalemKaydet(l.id, g.kalemler[0])));
+    expect((await olarak(yonetici1, "yonetici", () => onay.karar(talep, "ret", "Yeni fiyat uygun değil"))).durum).toBe("reddedildi");
+    expect((await yonetim.fiyatListesiKalem.findUnique({ where: { id: l.kalemler[0].id } }))?.fiyat.toString()).toBe("100");
+  });
+  it("onaydan önce yetkisi daraltılan kullanıcının fiyatı değiştirilmez", async () => {
+    const { l, g } = await hazirla();
+    const talep = await onayaTakilir(() => olarak(muhasebe, "muhasebe", () => fiyat.topluKaydet(l.id, g)));
+    const ozel = await yonetim.ozelRol.create({ data: { tenantId, ad: `Kapalı-${randomUUID()}`, sablonRol: "muhasebe", kapaliKutular: ["satis.duzenle"] } });
+    await yonetim.user.update({ where: { id: muhasebe }, data: { ozelRolId: ozel.id } });
+    try {
+      expect((await olarak(yonetici1, "yonetici", () => onay.karar(talep, "onay"))).durum).toBe("hata");
+      expect((await yonetim.fiyatListesiKalem.findMany({ where: { listeId: l.id } })).every((k) => k.fiyat.toString() === "100")).toBe(true);
+    } finally { await yonetim.user.update({ where: { id: muhasebe }, data: { ozelRolId: null } }); }
+  });
+  it("eski önizleme ve yabancı firmanın listesi reddedilir", async () => {
+    const { l, g } = await hazirla();
+    await expect(olarak(muhasebe, "muhasebe", () => fiyat.topluKaydet(l.id, { ...g, surum: "0".repeat(64) }))).rejects.toThrow(/değişti/);
+    await expect(baglamlaCalistir({ tenantId: randomUUID(), userId: muhasebe, rol: "muhasebe" }, () => fiyat.topluKaydet(l.id, g))).rejects.toThrow(/bulunamadı/);
+  });
+});
+
+it("toplu fiyat yazımında ikinci kalem hata verirse ilk kalem de geri alınır", async () => {
+  const idler = [randomUUID(), randomUUID()];
+  for (const id of idler) await yonetim.stokKart.create({ data: { id, tenantId, kod: `ATOM-${id}`, ad: "Atomik fiyat", tip: "urun", anaBirim: "adet" } });
+  const l = await yonetim.fiyatListesi.create({ data: { tenantId, ad: `Atomik-${randomUUID()}`, kalemler: { create: idler.map((stokId) => ({ tenantId, stokId, fiyat: "100" })) } }, include: { kalemler: true } });
+  const kural = await yonetim.onayKurali.findFirstOrThrow({ where: { tenantId, islem: "fiyat_listesi_guncelle" } });
+  await yonetim.onayKurali.update({ where: { id: kural.id }, data: { aktif: false } });
+  try {
+    await expect(olarak(muhasebe, "muhasebe", () => fiyat.topluKaydet(l.id, { surum: fiyatListesiSurumu(l), kalemler: [{ stokId: idler[0], fiyat: "120" }, { stokId: idler[1], fiyat: "9999999999999" }] }))).rejects.toThrow();
+    expect((await yonetim.fiyatListesiKalem.findMany({ where: { listeId: l.id } })).every((k) => k.fiyat.toString() === "100")).toBe(true);
+  } finally { await yonetim.onayKurali.update({ where: { id: kural.id }, data: { aktif: true } }); }
 });

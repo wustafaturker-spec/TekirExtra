@@ -97,4 +97,140 @@ describe("CNL-23 görsel yönlendirmesi", () => {
     await k.isle("fiş");
     expect(k.gonderilen).toEqual(["masraf taslağı"]);
   });
+
+  it("cari talebi üretildiğinde satır içi hızlı onay/red klavyesi eklenir", async () => {
+    const masrafBelge = { yetkiDenetle: vi.fn(), belgedenMasraf: vi.fn() };
+    const cariBelge = {
+      yetkiDenetle: vi.fn(),
+      yetkiVar: vi.fn(() => true),
+      belgedenCari: vi.fn(async () => ({ sonuc: "Cari kartı taslağı", talepId: "talep-123" })),
+    };
+    const kanal = new TelegramKanalService({} as never, {} as never, {} as never, undefined, undefined, masrafBelge as never, undefined, cariBelge as never);
+    const klavyeliGonderilen: unknown[] = [];
+    Object.assign(kanal as object, {
+      firmayaKlavyeliGonder: vi.fn(async (_t: string, _u: string, _tur: string, metin: string, klavye: unknown) => {
+        klavyeliGonderilen.push({ metin, klavye });
+      }),
+    });
+    const bot = { istemci: { yaziyor: vi.fn(), dosyaIndir: vi.fn(async () => Buffer.from("pdf")) } };
+    await (kanal as unknown as { belgeIsle: (b: unknown, m: unknown, bot: unknown) => Promise<void> }).belgeIsle(
+      baglam,
+      {
+        message_id: 10,
+        date: 0,
+        chat: { id: 1, type: "private" },
+        from: { id: 1 },
+        caption: "müşteri cari aç",
+        document: { file_id: "doc-1", file_name: "vergi.pdf" },
+      },
+      bot,
+    );
+    expect(klavyeliGonderilen).toHaveLength(1);
+    expect(klavyeliGonderilen[0]).toEqual({
+      metin: "Cari kartı taslağı",
+      klavye: [
+        [
+          { text: "✅ Onayla ve Kartı Aç", callback_data: "onay:talep-123" },
+          { text: "❌ Reddet", callback_data: "red:talep-123" },
+        ],
+      ],
+    });
+  });
+});
+
+describe("CNL-27 Hızlı onay ve dosya gönderimi", () => {
+  it("onay callback'i aiOnay.onayla çağırır ve klavyeyi kaldırır", async () => {
+    const aiOnay = { onayla: vi.fn().mockResolvedValue({ ozet: "Cari oluştur: AKN BOYA" }), reddet: vi.fn() };
+    const prisma = {
+      tenantIslem: vi.fn().mockImplementation((_t, cb) => cb({
+        telegramBagi: { findFirst: vi.fn().mockResolvedValue({ oturumSurumu: 1, botKimlik: "platform" }) },
+        telegramMesaji: { create: vi.fn().mockResolvedValue({ id: "m1" }) },
+      })),
+    };
+    const telegram = {
+      bagKarari: vi.fn().mockResolvedValue({ rol: "yonetici", moduller: [] }),
+    };
+    const kanal = new TelegramKanalService(
+      prisma as never,
+      {} as never,
+      telegram as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      aiOnay as never,
+    );
+    Object.assign(kanal as object, {
+      coz: vi.fn().mockResolvedValue({ tenantId: "t1", userId: "u1", botKimlik: "platform" }),
+      gelenIz: vi.fn().mockResolvedValue(true),
+      firmayaGonder: vi.fn().mockResolvedValue("gonderildi"),
+    });
+
+    const bot = {
+      kimlik: "platform",
+      tenantId: null,
+      istemci: {
+        dugmeYanitla: vi.fn().mockResolvedValue(undefined),
+        klavyeKaldir: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    const dugme = {
+      id: "cb-1",
+      data: "onay:talep-123",
+      from: { id: 100, is_bot: false },
+      message: { message_id: 50, chat: { id: 100, type: "private" } },
+    };
+
+    await (kanal as unknown as { dugmeIsle: (g: unknown, d: unknown, bot: unknown) => Promise<void> }).dugmeIsle(
+      { update_id: 1, callback_query: dugme } as never,
+      dugme as never,
+      bot as never,
+    );
+
+    expect(aiOnay.onayla).toHaveBeenCalledWith("talep-123");
+    expect(bot.istemci.klavyeKaldir).toHaveBeenCalledWith(100, 50);
+    expect(bot.istemci.dugmeYanitla).toHaveBeenCalledWith("cb-1", "Onaylandı");
+  });
+
+  it("tutarGoster false olduğunda firmayaDosyaGonder uyarı verir ve dosya iletmez", async () => {
+    const prisma = {
+      tenantIslem: vi.fn().mockImplementation((_t, cb) => cb({
+        telegramBagi: {
+          findUnique: vi.fn().mockResolvedValue({ tenantId: "t1", telegramKullaniciId: BigInt(100), sohbetId: BigInt(100), botKimlik: "platform" }),
+        },
+        modulAyar: { findUnique: vi.fn().mockResolvedValue({ ayarlar: { etkin: true, tutarGoster: true } }) },
+        telegramMesaji: { create: vi.fn().mockResolvedValue({ id: "m1" }) },
+      })),
+    };
+    const kanal = new TelegramKanalService(prisma as never, {} as never, {} as never);
+    const firmayaGonder = vi.fn().mockResolvedValue("gonderildi");
+    const dosyaGonder = vi.fn().mockResolvedValue(undefined);
+    Object.assign(kanal as object, {
+      firmayaGonder,
+      gonderenBot: vi.fn(() => ({ istemci: { dosyaGonder } })),
+    });
+
+    // tutarGoster = false veriliyor
+    const sonuc = await kanal.firmayaDosyaGonder(
+      "t1",
+      "u1",
+      Buffer.from("dummy-pdf"),
+      "ekstre.pdf",
+      "Ekstre",
+      "application/pdf",
+      false, // tutarGoster
+    );
+
+    expect(sonuc).toBe("gonderildi");
+    expect(dosyaGonder).not.toHaveBeenCalled();
+    expect(firmayaGonder).toHaveBeenCalledWith(
+      "t1",
+      "u1",
+      null,
+      "bilgi",
+      expect.stringContaining("tutar gösterimi kapalı"),
+    );
+  });
 });

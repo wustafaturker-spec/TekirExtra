@@ -4,6 +4,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { FIYAT_ENDEKS_ROLLERI, fiyatEndeksErisimi, tarafDenetle, type FiyatTarafi } from "./fiyat-endeks-erisim";
 import { ayAraligi, ayBasiMetni, ayKaydir, fiyatSerisiHesapla } from "./fiyat-endeks-hesap";
 import { aylikToplamlar, endeksVerisi } from "./fiyat-endeks-veri";
+import { birimKirilmalariniOku } from "./birim-kirilmasi";
 
 /** Toplu raporun en uzun dönemi (ay). */
 const RAPOR_EN_UZUN_AY = 60;
@@ -24,7 +25,7 @@ registerRapor({
     { alan: "baslangic", ad: "Başlangıç (baz ay)", tip: "tarih", zorunlu: true },
     { alan: "bitis", ad: "Bitiş", tip: "tarih", zorunlu: true },
     { alan: "endeks", ad: "Endeks", tip: "secim", zorunlu: true, secenekler: [
-      { deger: "TUFE", ad: "TÜFE" }, { deger: "YIUFE", ad: "Yİ-ÜFE" }, { deger: "USD", ad: "ABD doları" }, { deger: "EUR", ad: "Euro" },
+      { deger: "TUFE", ad: "TÜFE" }, { deger: "YIUFE", ad: "Yİ-ÜFE" }, { deger: "USD", ad: "ABD doları" }, { deger: "EUR", ad: "Euro (alış)" }, { deger: "USD_SATIS", ad: "ABD doları (satış)" }, { deger: "EUR_SATIS", ad: "Euro (satış)" },
     ] },
     { alan: "taraf", ad: "Fiyat tarafı", tip: "secim", secenekler: [{ deger: "satis", ad: "Satış fiyatı" }, { deger: "alis", ad: "Alış fiyatı" }] },
     { alan: "fiyatListesi", ad: "Fiyat listesi adı (yalnız satış)", tip: "metin" },
@@ -78,12 +79,15 @@ registerRapor({
     }
     const kartlar = new Map((await tx.stokKart.findMany({ where: { id: { in: [...urunler.keys()] } }, select: { id: true, kod: true, ad: true, anaBirim: true } })).map((k) => [k.id, k]));
     const endeksler = new Map([[endeks.kod, endeks.degerler]]);
+    const kirilmalar = await birimKirilmalariniOku(tx, [...urunler.keys()], baslangic, bitis);
+    const kirilmaAylari = new Map<string, string[]>();
+    for (const k of kirilmalar) kirilmaAylari.set(k.stokId, [...(kirilmaAylari.get(k.stokId) ?? []), k.ay]);
 
     const satirlar: (RaporSatiri & { _sira: number })[] = [];
     for (const [stokId, ayToplamlari] of urunler) {
       const kart = kartlar.get(stokId);
       if (!kart) continue;
-      const k = fiyatSerisiHesapla(ayToplamlari, aylar, baslangic, endeksler).karsilastirmalar[0];
+      const k = fiyatSerisiHesapla(ayToplamlari, aylar, baslangic, endeksler, kirilmaAylari.get(stokId)).karsilastirmalar[0];
       satirlar.push({
         stokId, kod: kart.kod, ad: kart.ad, birim: kart.anaBirim,
         bazFiyat: k.bazFiyat, sonAy: k.sonAy ? k.sonAy.slice(0, 7) : null, sonFiyat: k.sonFiyat,

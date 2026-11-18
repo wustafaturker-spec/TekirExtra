@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { YETKI_ISLEM_ADI, YETKI_ISLEMLERI, YETKI_MODULLERI, yetkiAnahtari, type Rol } from "@tekirextra/shared";
+import { ENDEKS_YETKI_KUTULARI, YETKI_ISLEM_ADI, YETKI_ISLEMLERI, YETKI_MODULLERI, yetkiAnahtari, type Rol } from "@tekirextra/shared";
 import { api, tokenAl } from "@/lib/api";
 import { ROL_ADI } from "@/lib/rol-adlari";
 import { Alert, Badge, Button, Card, Field, Input, Modal, ModalEylem, PageHeader, Select, TableWrap } from "@/components/ui";
@@ -127,7 +127,7 @@ export default function OzelRollerSayfasi() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
               <Field label="Ad"><Input required minLength={2} maxLength={80} value={taslak.ad} onChange={(e) => setTaslak({ ...taslak, ad: e.target.value })} placeholder="ör. Muhasebe – kasa-bankasız" /></Field>
               <Field label="Şablon rol">
-                <Select value={taslak.sablonRol} disabled={Boolean(taslak.id)} onChange={(e) => setTaslak({ ...taslak, sablonRol: e.target.value as Rol, kapali: new Set() })}>
+                <Select value={taslak.sablonRol} disabled={Boolean(taslak.id)} onChange={(e) => setTaslak({ ...taslak, sablonRol: e.target.value as Rol, kapali: new Set(["yonetici", "muhasebe"].includes(e.target.value) ? [] : ENDEKS_YETKI_KUTULARI.map((k) => k.anahtar)) })}>
                   {sablonlar.map((s) => <option key={s} value={s}>{ROL_ADI[s] ?? s}</option>)}
                 </Select>
               </Field>
@@ -166,6 +166,15 @@ export default function OzelRollerSayfasi() {
                       })}
                     </tr>
                   ))}
+                  {ENDEKS_YETKI_KUTULARI.map((k) => <tr key={k.anahtar}>
+                    <td>{k.ad}</td><td style={{ textAlign: "center" }}><input type="checkbox" aria-label={k.ad}
+                      disabled={!(matris[taslak.sablonRol] ?? []).includes(k.anahtar)}
+                      checked={(matris[taslak.sablonRol] ?? []).includes(k.anahtar) && !taslak.kapali.has(k.anahtar)} onChange={(e) => {
+                        const kapali = new Set(taslak.kapali);
+                        if (e.target.checked) kapali.delete(k.anahtar); else kapali.add(k.anahtar);
+                        setTaslak({ ...taslak, kapali });
+                      }} /></td><td colSpan={3} className="subtle">Plan kapsamı ve Raporlar izni ayrıca uygulanır.</td>
+                  </tr>)}
                 </tbody>
               </table>
             </TableWrap>

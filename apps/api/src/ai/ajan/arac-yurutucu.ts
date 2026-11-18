@@ -23,6 +23,7 @@ export interface AracSonucu {
   hata?: boolean;
   talep?: OnayTalebiGorunumu;
   secim?: { tur: string; aranan: string; adaylar: Array<Record<string, unknown>> };
+  dosya?: { tampon: Buffer; dosyaAdi: string; mimeType: string; aciklama?: string };
 }
 
 export function hataMetni(hata: unknown): string {
@@ -230,7 +231,15 @@ export class AracYurutucu {
           talep,
         };
       }
-      return { icerik: jsonKisalt(await arac.calistir(baglam, ayristirma.data)) };
+      const sonuc = await arac.calistir(baglam, ayristirma.data);
+      let dosya: { tampon: Buffer; dosyaAdi: string; mimeType: string; aciklama?: string } | undefined;
+      let temizSonuc = sonuc;
+      if (sonuc && typeof sonuc === "object" && "_dosya" in (sonuc as Record<string, unknown>)) {
+        const { _dosya, ...kalan } = sonuc as { _dosya?: { tampon: Buffer; dosyaAdi: string; mimeType: string; aciklama?: string } };
+        if (_dosya) dosya = _dosya;
+        temizSonuc = kalan;
+      }
+      return { icerik: jsonKisalt(temizSonuc), dosya };
     } catch (hata) {
       this.logger.warn(`Araç ${arac.ad} hata verdi: ${String(hata)}`);
       return { icerik: `Hata: ${hataMetni(hata)}`, hata: true };

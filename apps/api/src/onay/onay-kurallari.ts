@@ -4,10 +4,11 @@ import { z } from "zod";
 import { ROLLER, type Rol } from "@tekirextra/shared";
 
 /** ONY-02: ilk sürümde onaya bağlanabilen işlemler. */
-export const ONAY_ISLEMLERI = ["fatura_kesinlestir_satis", "fatura_kesinlestir_alis", "belge_onayla_satis", "masraf_onayla", "kasa_banka_odeme"] as const;
+export const ONAY_ISLEMLERI = ["fatura_kesinlestir_satis", "fatura_kesinlestir_alis", "belge_onayla_satis", "masraf_onayla", "kasa_banka_odeme", "fiyat_listesi_guncelle"] as const;
 export type OnayIslemi = (typeof ONAY_ISLEMLERI)[number];
 
 export const ISLEM_ADLARI: Record<OnayIslemi, string> = {
+  fiyat_listesi_guncelle: "Fiyat listesi güncelleme",
   fatura_kesinlestir_satis: "Satış faturası kesinleştirme",
   fatura_kesinlestir_alis: "Alış faturası kesinleştirme",
   belge_onayla_satis: "Satış teklifi / siparişi onaylama",
@@ -17,6 +18,7 @@ export const ISLEM_ADLARI: Record<OnayIslemi, string> = {
 
 /** Hangi koşul hangi işlemde anlamlı (ONY-02). */
 export const KOSUL_KAPSAMI: Record<OnayIslemi, { iskonto: boolean; risk: boolean }> = {
+  fiyat_listesi_guncelle: { iskonto: false, risk: false },
   fatura_kesinlestir_satis: { iskonto: true, risk: true },
   fatura_kesinlestir_alis: { iskonto: true, risk: false },
   belge_onayla_satis: { iskonto: true, risk: true },

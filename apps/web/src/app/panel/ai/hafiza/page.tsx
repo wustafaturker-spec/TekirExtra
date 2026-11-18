@@ -7,12 +7,16 @@ import { Alert, Badge, Button, Card, PageHeader, Select, Table } from "@/compone
 
 type Tur = "urun_eslesme" | "cari_eslesme" | "musteri_tercihi" | "siniflandirma" | "susturma" | "fikir_isareti";
 type Durum = "aktif" | "oneri" | "pasif";
+type Kapsam = "firma" | "cari" | "kullanici";
+
 interface Kayit {
-  id: string; tur: Tur; anahtar: string; metin: string | null; etiket: string | null; kaynak: "kullanici" | "otomatik" | "ai_onerisi"; durum: Durum;
+  id: string; tur: Tur; anahtar: string; kapsam: Kapsam; metin: string | null; etiket: string | null; kaynak: "kullanici" | "otomatik" | "ai_onerisi"; durum: Durum;
   cari: { id: string; kod: string; unvan: string } | null;
   stok: { id: string; kod: string; ad: string; aktif: boolean } | null;
   varyant: { id: string; kod: string; ad: string; aktif: boolean } | null;
-  olusturan: string | null; kaynakEpostaId: string | null; kullanimSayisi: number; sonKullanimAt: string | null; guncellendi: string;
+  olusturan: string | null; onaylayan: string | null; kaynakEpostaId: string | null;
+  surum: number; sonDogrulamaAt: string | null; gecerlilikBitisAt: string | null; nedenOnerildi: string | null;
+  kullanimSayisi: number; sonKullanimAt: string | null; guncellendi: string;
 }
 
 const TUR_ADI: Record<Tur, string> = {
@@ -24,6 +28,7 @@ const TUR_ADI: Record<Tur, string> = {
   fikir_isareti: "Fikir işareti",
 };
 const KAYNAK_ADI = { kullanici: "Kullanıcı", otomatik: "Onaylı tekliften", ai_onerisi: "AI önerisi" } as const;
+const KAPSAM_ADI: Record<Kapsam, string> = { firma: "Firma geneli", cari: "Cariye özel", kullanici: "Kullanıcıya özel" };
 const DURUM: Record<Durum, { ad: string; varyant: "success" | "warning" | "neutral" }> = {
   aktif: { ad: "Kullanılıyor", varyant: "success" },
   oneri: { ad: "Onay bekliyor", varyant: "warning" },
@@ -33,26 +38,40 @@ const ADET = 50;
 const tarih = (iso: string) => new Date(iso).toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" });
 
 function Ne({ k }: { k: Kayit }) {
-  if (k.tur === "urun_eslesme") {
-    const pasif = (k.stok && !k.stok.aktif) || (k.varyant && !k.varyant.aktif);
-    return (
-      <div className="hafiza__ne">
-        <span>“{k.metin ?? k.anahtar}” → {k.stok ? `[${k.stok.kod}] ${k.stok.ad}` : "silinmiş kart"}{k.varyant ? ` — ${k.varyant.ad || k.varyant.kod}` : ""}</span>
-        <span className="muted">{k.cari?.unvan}{pasif ? " · kart/varyant pasif, kullanılmıyor" : ""}</span>
-      </div>
-    );
-  }
-  if (k.tur === "cari_eslesme") return <div className="hafiza__ne"><span>{k.metin ?? k.anahtar} → {k.cari?.unvan ?? "silinmiş cari"}</span></div>;
-  if (k.tur === "musteri_tercihi") return <div className="hafiza__ne"><span>{k.metin}</span><span className="muted">{k.cari?.unvan}</span></div>;
-  if (k.tur === "siniflandirma") {
-    return (
-      <div className="hafiza__ne">
-        <span>{k.etiket === "teklif" ? "Teklif talebiydi" : "Teklif talebi değildi"}</span>
-        <span className="muted">{(k.metin ?? "").split("\n")[0]}</span>
-      </div>
-    );
-  }
-  return <div className="hafiza__ne"><span>{k.metin ?? k.anahtar}</span><span className="muted">Bu adresin e-postaları teklif talebi olarak işlenmez.</span></div>;
+  return (
+    <div className="hafiza__ne">
+      {k.tur === "urun_eslesme" && (
+        <>
+          <span>“{k.metin ?? k.anahtar}” → {k.stok ? `[${k.stok.kod}] ${k.stok.ad}` : "silinmiş kart"}{k.varyant ? ` — ${k.varyant.ad || k.varyant.kod}` : ""}</span>
+          <span className="muted">{k.cari?.unvan}{(k.stok && !k.stok.aktif) || (k.varyant && !k.varyant.aktif) ? " · kart/varyant pasif, kullanılmıyor" : ""}</span>
+        </>
+      )}
+      {k.tur === "cari_eslesme" && <span>{k.metin ?? k.anahtar} → {k.cari?.unvan ?? "silinmiş cari"}</span>}
+      {k.tur === "musteri_tercihi" && (
+        <>
+          <span>{k.metin}</span>
+          <span className="muted">{k.cari?.unvan}</span>
+        </>
+      )}
+      {k.tur === "siniflandirma" && (
+        <>
+          <span>{k.etiket === "teklif" ? "Teklif talebiydi" : "Teklif talebi değildi"}</span>
+          <span className="muted">{(k.metin ?? "").split("\n")[0]}</span>
+        </>
+      )}
+      {k.tur === "susturma" && (
+        <>
+          <span>{k.metin ?? k.anahtar}</span>
+          <span className="muted">Bu adresin e-postaları teklif talebi olarak işlenmez.</span>
+        </>
+      )}
+      {k.nedenOnerildi && (
+        <span className="muted" style={{ fontSize: "0.85em", color: "var(--accent)" }}>
+          💡 Neden önerildi: {k.nedenOnerildi}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -107,12 +126,17 @@ export default function HafizaSayfasi() {
     {!!veri?.kayitlar.length && (
       <Card>
         <Table density="compact">
-          <thead><tr><th>Tür</th><th>Öğrenilen</th><th>Kaynak</th><th>Durum</th><th>Kullanım</th><th>Güncelleme</th><th aria-label="Eylemler" /></tr></thead>
+          <thead><tr><th>Tür</th><th>Öğrenilen</th><th>Kapsam</th><th>Kaynak</th><th>Durum</th><th>Kullanım</th><th>Güncelleme</th><th aria-label="Eylemler" /></tr></thead>
           <tbody>
             {veri.kayitlar.map((k) => (
               <tr key={k.id}>
                 <td>{TUR_ADI[k.tur]}</td>
                 <td><Ne k={k} /></td>
+                <td>
+                  <Badge variant="neutral">{KAPSAM_ADI[k.kapsam] ?? k.kapsam}</Badge>
+                  {k.surum > 1 && <span className="muted" style={{ display: "block", fontSize: "0.8em" }}>v{k.surum}</span>}
+                  {k.gecerlilikBitisAt && <span className="muted" style={{ display: "block", fontSize: "0.75em" }}>Bitiş: {tarih(k.gecerlilikBitisAt)}</span>}
+                </td>
                 <td>
                   <div className="hafiza__ne">
                     <span>{KAYNAK_ADI[k.kaynak]}</span>

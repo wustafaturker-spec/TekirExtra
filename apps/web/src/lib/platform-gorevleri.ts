@@ -8,7 +8,7 @@ export interface Gorev {
   id: string; baslik: string; aciklama: string | null; kapsam: GorevKapsami; durum: GorevDurumu; oncelik: GorevOnceligi;
   sonTarih: string | null; sorumluId: string | null; degisiklikId: string | null; surum: number;
   sorumlu: { id: string; adSoyad: string; rol: "yonetici" | "mevzuat_editoru"; aktif: boolean } | null;
-  olusturan: { id: string; adSoyad: string };
+  olusturan: { id: string; adSoyad: string } | null;
   degisiklik: { id: string; no: number; baslik: string } | null;
   createdAt: string; updatedAt: string; kapanisAt: string | null;
 }

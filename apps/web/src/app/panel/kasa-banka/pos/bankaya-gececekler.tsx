@@ -31,25 +31,28 @@ export interface GececekHesap {
 export function BankayaGececekler({ yenile, onAktar }: { yenile: number; onAktar: (hesapId: string, grup: AktarimGrubu) => void }) {
   const [hesaplar, setHesaplar] = useState<GececekHesap[] | null>(null);
   const [hata, setHata] = useState("");
+  const [tekrar, setTekrar] = useState(0);
 
   useEffect(() => {
     let iptal = false;
+    setHata("");
+    setHesaplar(null);
     api<GececekHesap[]>("/pos/bankaya-gececekler")
       .then((v) => { if (!iptal) { setHesaplar(v); setHata(""); } })
       .catch((e) => { if (!iptal) setHata(e instanceof Error ? e.message : "Bankaya geçecekler yüklenemedi"); });
     return () => { iptal = true; };
-  }, [yenile]);
+  }, [yenile, tekrar]);
 
   const dolu = (hesaplar ?? []).filter((h) => h.gruplar.length > 0 || Number(h.dagitilamayan) !== 0);
 
   return (
     <section className="pos-settlement" aria-label="Bankaya geçecekler">
       <div className="pos-section-head">
-        <div><span>VALÖR TAKVİMİ</span><h2>Bankaya geçecekler</h2></div>
-        <small>POS bakiyesi, en yeni tahsilattan geriye doğru valör tarihine göre dağıtılır.</small>
+        <h2>Valör takvimi</h2>
       </div>
-      {hata && <p className="pos-error">{hata}</p>}
-      {hesaplar && dolu.length === 0 && <div className="pos-empty"><strong>Bankaya geçecek tutar yok</strong><span>POS hesaplarındaki tahsilatlar bankaya aktarılmış.</span></div>}
+      {hata && <div role="alert"><p className="pos-error">{hata}</p><Button size="sm" onClick={() => setTekrar((v) => v + 1)}>Tekrar dene</Button></div>}
+      {!hata && !hesaplar && <p className="muted" role="status">Valör takvimi yükleniyor…</p>}
+      {hesaplar && dolu.length === 0 && <div className="pos-empty"><strong>Bankaya geçecek tutar yok</strong></div>}
       {dolu.map((h) => (
         <article key={h.posHesap.id} className="pos-settlement__account">
           <header>
@@ -68,16 +71,16 @@ export function BankayaGececekler({ yenile, onAktar }: { yenile: number; onAktar
               <tbody>
                 {h.gruplar.map((g) => (
                   <tr key={g.valorTarihi} className={g.vadesiGeldi ? "is-due" : undefined}>
-                    <td><Tarih deger={g.valorTarihi} /> {g.vadesiGeldi ? <Badge variant="warning">Vadesi geldi</Badge> : <Badge variant="neutral">Bekliyor</Badge>}</td>
-                    <td className="num">{g.adet}</td>
-                    <td className="num"><Para deger={g.brut} dovizCinsi={h.posHesap.dovizCinsi} /></td>
-                    <td className="num"><Para deger={g.onerilenKomisyon} dovizCinsi={h.posHesap.dovizCinsi} /></td>
-                    <td className="num"><strong><Para deger={g.net} dovizCinsi={h.posHesap.dovizCinsi} /></strong></td>
+                    <td data-label="Valör"><Tarih deger={g.valorTarihi} /> {g.vadesiGeldi ? <Badge variant="warning">Vadesi geldi</Badge> : <Badge variant="neutral">Bekliyor</Badge>}</td>
+                    <td className="num" data-label="Tahsilat">{g.adet}</td>
+                    <td className="num" data-label="Brüt"><Para deger={g.brut} dovizCinsi={h.posHesap.dovizCinsi} /></td>
+                    <td className="num" data-label="Önerilen komisyon"><Para deger={g.onerilenKomisyon} dovizCinsi={h.posHesap.dovizCinsi} /></td>
+                    <td className="num" data-label="Net"><strong><Para deger={g.net} dovizCinsi={h.posHesap.dovizCinsi} /></strong></td>
                     <td className="num"><Button size="sm" variant={g.vadesiGeldi ? "primary" : "ghost"} onClick={() => onAktar(h.posHesap.id, g)}>Aktar</Button></td>
                   </tr>
                 ))}
                 {Number(h.dagitilamayan) !== 0 && (
-                  <tr>
+                  <tr className="pos-settlement__unallocated">
                     <td colSpan={2}><small className="muted">Tahsilata bağlanamayan bakiye (elle girilmiş POS fişi vb.)</small></td>
                     <td className="num"><Para deger={h.dagitilamayan} dovizCinsi={h.posHesap.dovizCinsi} /></td>
                     <td colSpan={3} />

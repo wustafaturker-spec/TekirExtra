@@ -115,6 +115,17 @@ export function cariIletisimDogrula(cikti: CariIletisimCikarim): DogrulamaSonucu
     uyarilar.push("İletişim bilgisi (telefon veya e-posta) tespit edilemedi.");
   }
 
+  // CNL-23/24: IBAN tespiti ve normalizasyonu (TR + 24 hane).
+  if (duzeltilmisVeri.iban) {
+    const hamIban = duzeltilmisVeri.iban.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    const duzeltilmis = hamIban.startsWith("TR") ? hamIban : /^\d{24}$/.test(hamIban) ? `TR${hamIban}` : hamIban;
+    if (/^TR\d{24}$/.test(duzeltilmis)) {
+      duzeltilmisVeri.iban = duzeltilmis;
+    } else {
+      uyarilar.push(`Okunan IBAN (${duzeltilmisVeri.iban}) standart 26 haneli TR formatında değil.`);
+    }
+  }
+
   return {
     gecerli: hatalar.length === 0,
     veri: duzeltilmisVeri,

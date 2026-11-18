@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Select, TableWrap } from "@/components/ui";
 import { api } from "@/lib/api";
 
@@ -35,23 +35,84 @@ const IS_TURU: Record<IsTuru, { ad: string; aciklama: string; yol: string }> = {
 const BILINMEYEN_IS = { ad: "Arka plan işi", aciklama: "e-Belge kuyruğu işi", yol: "/panel/ebelge/kuyruk" };
 
 export default function EbelgeKuyrukSayfasi() {
-  const [isler, setIsler] = useState<KuyrukIsi[]>([]); const [ozet, setOzet] = useState<Ozet>({ sayilar: { waiting: 0, active: 0, delayed: 0, failed: 0, "dead-letter": 0, completed: 0 }, calisanWorker: null });
-  const [filtre, setFiltre] = useState<IsDurumu | "">(""); const [yukleniyor, setYukleniyor] = useState(true); const [islemde, setIslemde] = useState(""); const [hata, setHata] = useState(""); const [basari, setBasari] = useState(""); const [sonYenileme, setSonYenileme] = useState<Date | null>(null);
-  const yukle = useCallback(async (sessiz = false) => { if (!sessiz) setYukleniyor(true); try { const [liste, sayilar] = await Promise.all([api<KuyrukIsi[]>("/ebelge/kuyruk"), api<Ozet>("/ebelge/kuyruk/ozet")]); setIsler(liste); setOzet(sayilar); setSonYenileme(new Date()); if (!sessiz) setHata(""); } catch (e) { setHata(e instanceof Error ? e.message : "Kuyruk bilgileri alınamadı"); } finally { if (!sessiz) setYukleniyor(false); } }, []);
-  useEffect(() => { void yukle(); const zamanlayici = window.setInterval(() => void yukle(true), 10_000); return () => window.clearInterval(zamanlayici); }, [yukle]);
-  const filtreli = useMemo(() => filtre ? isler.filter((is) => is.durum === filtre) : isler, [isler, filtre]);
+  const [veri, setVeri] = useState<{ isler: KuyrukIsi[]; ozet: Ozet; zaman: Date } | null>(null);
+  const [filtre, setFiltre] = useState<IsDurumu | "">("");
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [islemde, setIslemde] = useState("");
+  const [listeHatasi, setListeHatasi] = useState("");
+  const [islemHatasi, setIslemHatasi] = useState("");
+  const [basari, setBasari] = useState("");
+  const istek = useRef<AbortController | null>(null);
+
+  const yukle = useCallback(async (sessiz = false) => {
+    if (sessiz && istek.current) return;
+    istek.current?.abort();
+    const kontrol = new AbortController();
+    istek.current = kontrol;
+    if (!sessiz) setYukleniyor(true);
+    try {
+      const [isler, ozet] = await Promise.all([
+        api<KuyrukIsi[]>("/ebelge/kuyruk", { signal: kontrol.signal }),
+        api<Ozet>("/ebelge/kuyruk/ozet", { signal: kontrol.signal }),
+      ]);
+      if (kontrol.signal.aborted) return;
+      setVeri({ isler, ozet, zaman: new Date() });
+      setListeHatasi("");
+    } catch (e) {
+      if (!kontrol.signal.aborted) setListeHatasi(e instanceof Error ? e.message : "Kuyruk bilgileri alınamadı.");
+    } finally {
+      if (istek.current === kontrol) {
+        istek.current = null;
+        setYukleniyor(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void yukle();
+    const zamanlayici = window.setInterval(() => void yukle(true), 10_000);
+    return () => {
+      window.clearInterval(zamanlayici);
+      istek.current?.abort();
+      istek.current = null;
+    };
+  }, [yukle]);
+
+  const ozet = veri?.ozet;
+  const filtreli = useMemo(() => (veri?.isler ?? []).filter((is) => !filtre || is.durum === filtre), [veri, filtre]);
   // Worker düştüğünde "active" işler de ilerlemediği için bekleyen sayılır.
-  const bekleyenIs = ozet.sayilar.waiting + ozet.sayilar.active + ozet.sayilar.delayed;
-  async function yenidenDene(is: KuyrukIsi) { setIslemde(is.id); setHata(""); setBasari(""); try { await api(`/ebelge/kuyruk/${encodeURIComponent(is.id)}/yeniden-dene`, { method: "POST" }); setBasari("İş yeniden kuyruğa alındı. Otomatik durum takibi devam ediyor."); await yukle(true); } catch (e) { setHata(e instanceof Error ? e.message : "İş yeniden başlatılamadı"); } finally { setIslemde(""); } }
+  const bekleyenIs = ozet ? ozet.sayilar.waiting + ozet.sayilar.active + ozet.sayilar.delayed : 0;
+
+  async function yenidenDene(is: KuyrukIsi) {
+    setIslemde(is.id);
+    setIslemHatasi("");
+    setBasari("");
+    try {
+      await api(`/ebelge/kuyruk/${encodeURIComponent(is.id)}/yeniden-dene`, { method: "POST" });
+      setBasari("İş yeniden kuyruğa alındı. Otomatik durum takibi devam ediyor.");
+      await yukle();
+    } catch (e) {
+      setIslemHatasi(e instanceof Error ? e.message : "İş yeniden başlatılamadı.");
+    } finally {
+      setIslemde("");
+    }
+  }
 
   return <div className="queue-page">
-    <header className="queue-hero"><div><span>E-BELGE OPERASYON MERKEZİ</span><h1>Entegrasyon kuyruğu</h1><p>Gönderim, durum sorgulama ve gelen belge senkronizasyonlarını tek merkezden izleyin.</p></div><div><small>{sonYenileme ? `Son güncelleme ${sonYenileme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Henüz güncellenmedi"}</small><Button disabled={yukleniyor} onClick={() => void yukle()}>{yukleniyor ? "Yükleniyor…" : "↻ Şimdi yenile"}</Button></div></header>
-    {hata && <Alert tone="error">{hata}</Alert>}{basari && <Alert tone="success">{basari}</Alert>}
-    {ozet.sinirli && <Alert tone="warning">Sayılar ve liste her durumun son {(ozet.taramaSiniri ?? 5000).toLocaleString("tr-TR")} işi içinden hesaplandı; daha eski işler gösterilmiyor.</Alert>}
-    {ozet.calisanWorker === 0 && <Alert tone="warning">e-Belge worker'ı çalışmıyor: kuyruğu dinleyen süreç yok. {bekleyenIs > 0 ? `${bekleyenIs} iş kuyrukta bekliyor ve ` : "Yeni gönderimler kuyruğa yazılır, "}worker başlatılana kadar hiçbiri ilerlemez; sistem yöneticinize bildirin.</Alert>}
-    <section className="queue-kpis"><button className={!filtre ? "is-selected" : ""} onClick={() => setFiltre("")}><span>Toplam görünür iş</span><strong>{Object.values(ozet.sayilar).reduce((a, b) => a + b, 0)}</strong><small>Tüm durumlar</small></button>{(["active", "waiting", "delayed", "dead-letter"] as IsDurumu[]).map((durum) => <button className={`${filtre === durum ? "is-selected" : ""} ${durum === "dead-letter" && ozet.sayilar["dead-letter"] ? "is-danger" : ""}`} key={durum} onClick={() => setFiltre(durum)}><span>{DURUM[durum].ad}</span><strong>{ozet.sayilar[durum]}</strong><small>{DURUM[durum].aciklama}</small></button>)}</section>
+    <header className="queue-hero"><div><span>E-BELGE OPERASYON MERKEZİ</span><h1>Entegrasyon kuyruğu</h1><p>Gönderim, durum sorgulama ve gelen belge senkronizasyonlarını tek merkezden izleyin.</p></div><div><small>{veri ? `Son güncelleme ${veri.zaman.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Henüz güncellenmedi"}</small><Button disabled={yukleniyor} onClick={() => void yukle()}>{yukleniyor ? "Yükleniyor…" : "↻ Şimdi yenile"}</Button></div></header>
+    {listeHatasi && <Alert tone="error">
+      <div>{listeHatasi}</div>
+      {veri && <div>Son başarılı güncellemenin verileri gösteriliyor.</div>}
+      <Button size="sm" disabled={yukleniyor} onClick={() => void yukle()}>Tekrar dene</Button>
+    </Alert>}
+    <Alert tone="error">{islemHatasi}</Alert>
+    <Alert tone="success">{basari}</Alert>
+    {ozet?.sinirli && <Alert tone="warning">Sayılar ve liste her durumun son {(ozet.taramaSiniri ?? 5000).toLocaleString("tr-TR")} işi içinden hesaplandı; daha eski işler gösterilmiyor.</Alert>}
+    {ozet?.calisanWorker === 0 && <Alert tone="warning">e-Belge worker'ı çalışmıyor: kuyruğu dinleyen süreç yok. {bekleyenIs > 0 ? `${bekleyenIs} iş kuyrukta bekliyor ve ` : "Yeni gönderimler kuyruğa yazılır, "}worker başlatılana kadar hiçbiri ilerlemez; sistem yöneticinize bildirin.</Alert>}
+    {ozet && <section className="queue-kpis"><button className={!filtre ? "is-selected" : ""} onClick={() => setFiltre("")}><span>Toplam görünür iş</span><strong>{Object.values(ozet.sayilar).reduce((a, b) => a + b, 0)}</strong><small>Tüm durumlar</small></button>{(["active", "waiting", "delayed", "dead-letter"] as IsDurumu[]).map((durum) => <button className={`${filtre === durum ? "is-selected" : ""} ${durum === "dead-letter" && ozet.sayilar["dead-letter"] ? "is-danger" : ""}`} key={durum} onClick={() => setFiltre(durum)}><span>{DURUM[durum].ad}</span><strong>{ozet.sayilar[durum]}</strong><small>{DURUM[durum].aciklama}</small></button>)}</section>}
     <Card className="queue-register" pad={false} title={<div className="queue-register__title"><div><span>CANLI İŞ AKIŞI</span><h2>Tüm e-Belge operasyonları</h2></div><Select aria-label="Kuyruk durumu filtresi" value={filtre} onChange={(e) => setFiltre(e.target.value as IsDurumu | "")}><option value="">Tüm durumlar</option>{Object.entries(DURUM).map(([kod, d]) => <option key={kod} value={kod}>{d.ad}</option>)}</Select></div>}>
-      <TableWrap><thead><tr><th>Operasyon / İş</th><th>Durum</th><th>Deneme</th><th>Zaman çizelgesi</th><th>Hata ayrıntısı</th><th>İşlem</th></tr></thead><tbody>{filtreli.map((is) => { const tur = IS_TURU[is.isTuru] ?? BILINMEYEN_IS; return <tr className={is.durum === "failed" || is.durum === "dead-letter" ? "is-failed" : ""} key={is.id}><td><Link href={tur.yol}><strong>{tur.ad}</strong></Link><small>{tur.aciklama}</small>{is.faturaId && <small title={is.faturaId}>Ref: {is.faturaId.slice(0, 8)}…</small>}<small className="mono" title={is.id}>{is.id}</small></td><td><Badge variant={DURUM[is.durum].ton}>{DURUM[is.durum].ad}</Badge><small>{DURUM[is.durum].aciklama}</small></td><td><strong>{Math.min(is.deneme + (is.durum === "active" ? 1 : 0), is.azamiDeneme)} / {is.azamiDeneme}</strong><small>{is.durum === "delayed" ? "Backoff bekleniyor" : "İşlem denemesi"}</small></td><td><span>Kuyruk: {tarihSaat(is.kuyrugaAlinmaZamani)}</span><small>Başlama: {tarihSaat(is.islenmeZamani)}</small><small>Bitiş: {tarihSaat(is.tamamlanmaZamani)}</small></td><td>{is.hata ? <p className="queue-error" title={is.hata}>{is.hata}</p> : <span className="queue-ok">Kayıtlı hata yok</span>}</td><td>{is.durum === "failed" || is.durum === "dead-letter" ? <Button size="sm" variant="primary" disabled={islemde === is.id} onClick={() => void yenidenDene(is)}>{islemde === is.id ? "Başlatılıyor…" : "Güvenle yeniden dene"}</Button> : <span className="queue-managed">Otomatik yönetiliyor</span>}</td></tr>; })}{!yukleniyor && filtreli.length === 0 && <tr><td colSpan={6}><div className="queue-empty"><strong>Bu durumda iş bulunmuyor</strong><span>Kuyruk her 10 saniyede otomatik güncellenir.</span></div></td></tr>}{yukleniyor && isler.length === 0 && <tr><td colSpan={6}><div className="queue-empty">Kuyruk bilgileri yükleniyor…</div></td></tr>}</tbody></TableWrap>
+      <TableWrap><thead><tr><th>Operasyon / İş</th><th>Durum</th><th>Deneme</th><th>Zaman çizelgesi</th><th>Hata ayrıntısı</th><th>İşlem</th></tr></thead><tbody>{filtreli.map((is) => { const tur = IS_TURU[is.isTuru] ?? BILINMEYEN_IS; return <tr className={is.durum === "failed" || is.durum === "dead-letter" ? "is-failed" : ""} key={is.id}><td><Link href={tur.yol}><strong>{tur.ad}</strong></Link><small>{tur.aciklama}</small>{is.faturaId && <small title={is.faturaId}>Ref: {is.faturaId.slice(0, 8)}…</small>}<small className="mono" title={is.id}>{is.id}</small></td><td><Badge variant={DURUM[is.durum].ton}>{DURUM[is.durum].ad}</Badge><small>{DURUM[is.durum].aciklama}</small></td><td><strong>{Math.min(is.deneme + (is.durum === "active" ? 1 : 0), is.azamiDeneme)} / {is.azamiDeneme}</strong><small>{is.durum === "delayed" ? "Backoff bekleniyor" : "İşlem denemesi"}</small></td><td><span>Kuyruk: {tarihSaat(is.kuyrugaAlinmaZamani)}</span><small>Başlama: {tarihSaat(is.islenmeZamani)}</small><small>Bitiş: {tarihSaat(is.tamamlanmaZamani)}</small></td><td>{is.hata ? <p className="queue-error" title={is.hata}>{is.hata}</p> : <span className="queue-ok">Kayıtlı hata yok</span>}</td><td>{is.durum === "failed" || is.durum === "dead-letter" ? <Button size="sm" variant="primary" disabled={Boolean(islemde || listeHatasi || yukleniyor)} onClick={() => void yenidenDene(is)}>{islemde === is.id ? "Başlatılıyor…" : "Güvenle yeniden dene"}</Button> : <span className="queue-managed">Otomatik yönetiliyor</span>}</td></tr>; })}{veri && filtreli.length === 0 && <tr><td colSpan={6}><div className="queue-empty" role="status"><strong>{listeHatasi ? "Son başarılı güncellemede bu durumda iş yoktu." : "Bu durumda iş bulunmuyor"}</strong></div></td></tr>}
+      {!veri && <tr><td colSpan={6}><div className="queue-empty" role="status">{yukleniyor ? "Kuyruk bilgileri yükleniyor…" : "Kuyruk bilgileri şu anda gösterilemiyor."}</div></td></tr>}</tbody></TableWrap>
     </Card>
   </div>;
 }

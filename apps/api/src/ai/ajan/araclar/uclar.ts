@@ -33,6 +33,8 @@ import { PersonelRaporController } from "../../../personel/personel-rapor.contro
 import { IzinController } from "../../../personel/izin.controller";
 import { SelfServisDavetController } from "../../../personel/self-servis.controller";
 import { FiyatEndeksController } from "../../../fiyat-endeks/fiyat-endeks.controller";
+import { HazirlikController } from "../../hazirlik/hazirlik.controller";
+import { SozlesmeController } from "../../sozlesme/sozlesme.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -46,8 +48,10 @@ export const UC = {
   cariGuncelle: uc(CariController, "guncelle", "PATCH /cari/:id"),
   cariKisiEkle: uc(CariController, "kisiEkle", "POST /cari/:id/kisiler"),
   cariAdresEkle: uc(CariController, "adresEkle", "POST /cari/:id/adresler"),
+  cariBankaHesapEkle: uc(CariController, "bankaHesapEkle", "POST /cari/:id/banka-hesaplari"),
   cariCrmGorev: uc(CariController, "crmGorevEkle", "POST /cari/:id/crm/gorevler"),
   cariEkstreEposta: uc(CariController, "ekstreEposta", "POST /cari/:id/ekstre/eposta"),
+  cariEkstreDosyasi: uc(CariController, "ekstreDosyasi", "GET /cari/:id/ekstre/dosya"),
 
   stokListe: uc(StokController, "listele", "GET /stok"),
   stokGetir: uc(StokController, "getir", "GET /stok/:id"),
@@ -61,6 +65,7 @@ export const UC = {
   belgeOnayla: uc(BelgelerController, "onayla", "POST /belgeler/:id/onayla"),
   belgeIptal: uc(BelgelerController, "iptal", "POST /belgeler/:id/iptal"),
   belgeDonustur: uc(BelgelerController, "donustur", "POST /belgeler/:id/donustur"),
+  belgeRevize: uc(BelgelerController, "revizeEt", "POST /belgeler/:id/revize"),
   belgeEposta: uc(BelgelerController, "pdfGonder", "POST /belgeler/:id/pdf-gonder"),
 
   faturaListe: uc(FaturaController, "listele", "GET /fatura"),
@@ -169,6 +174,9 @@ export const UC = {
 
   // AI-83: günlük brifing kaynakları.
   aiOnayOzeti: uc(AiOnayOzetiController, "ozet", "GET /ai/onay-ozeti"),
+  sabahHazirlikOzeti: uc(HazirlikController, "brifingOzeti", "GET /ai/hazirlik/brifing-ozeti"),
+  sozlesmeAra: uc(SozlesmeController, "ara", "POST /ai/sozlesme/ara"),
+  sozlesmeSor: uc(SozlesmeController, "sor", "POST /ai/sozlesme/sor"),
   stokKritik: uc(StokController, "kritikOzeti", "GET /stok/kritik-ozeti"),
 
   // AI-36: e-posta teklif talebinden açılan taslak fırsata bağlanır.

@@ -16,10 +16,10 @@ const ayGeri = (n: number) => { const [y, a] = buAy().split("-").map(Number); re
 export const FIYAT_ENDEKS_ARACLARI = [
   arac({
     ad: "endeks_getir",
-    aciklama: "TÜFE, Yİ-ÜFE gibi endekslerin ya da USD/EUR kurunun (TCMB alış, aylık ortalama) aylık değerleri; her ay için aylık ve yıllık değişim, dönem değişimi, son açıklanan ay. Enflasyon, endeks, kur artışı sorularında kullan. Geçerli kodlar için önce kod vermeden çağır: seçenek listesini döner. Yüzdeleri kendin hesaplama; araçtakileri aktar.",
+    aciklama: "TÜFE, Yİ-ÜFE gibi endekslerin ya da USD/EUR kurunun (TCMB alış veya satış, aylık ortalama) aylık değerleri; her ay için aylık ve yıllık değişim, dönem değişimi, son açıklanan ay. Enflasyon, endeks, kur artışı sorularında kullan. Geçerli kodlar için önce kod vermeden çağır: seçenek listesini döner. Yüzdeleri kendin hesaplama; araçtakileri aktar.",
     sinif: "okuma",
     girdi: z.object({
-      kod: endeksKodu.optional().describe("Seri kodu (ör. TUFE, YIUFE, USD, EUR). Boşsa seçilebilir endeksler listelenir."),
+      kod: endeksKodu.optional().describe("Seri kodu (ör. TUFE, YIUFE, USD, EUR; satış kuru: USD_SATIS, EUR_SATIS). Boşsa seçilebilir endeksler listelenir."),
       baslangic: ay("Başlangıç ayı; varsayılan 12 ay önce").optional(),
       bitis: ay("Bitiş ayı; varsayılan bu ay").optional(),
     }),

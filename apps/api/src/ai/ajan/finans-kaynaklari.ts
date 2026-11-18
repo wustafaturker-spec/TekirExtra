@@ -11,7 +11,7 @@ export const HESAP_SURUMLERI: Record<string, string> = {
   gelir_gider: "gelir_gider@1",
   rapor_calistir: "rapor_calistir@1",
   endeks_getir: "endeks_getir@1",
-  fiyat_endeks_karsilastir: "fiyat_endeks_karsilastir@1",
+  fiyat_endeks_karsilastir: "fiyat_endeks_karsilastir@2",
   cari_ara: "cari_bakiye@1", cari_getir: "cari_bakiye@1",
   fatura_ara: "belge_toplam@1", fatura_getir: "belge_toplam@1", belge_ara: "belge_toplam@1", belge_getir: "belge_toplam@1",
 };

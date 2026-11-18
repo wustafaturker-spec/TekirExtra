@@ -168,7 +168,7 @@ function GorevFormu({ gorev, ilkFirmaId, ilkDegisiklikId, onKapat, onTamam, onGu
     finally { setIslem(false); }
   }
 
-  return <Modal genis baslik={gorev ? "Görevi düzenle" : "Yeni görev"} aciklama={gorev ? `Oluşturan: ${gorev.olusturan.adSoyad}` : "Yeni görev açık durumda oluşturulur. Platform görevlerini yalnız yöneticiler görür."} onKapat={kapat}>
+  return <Modal genis baslik={gorev ? "Görevi düzenle" : "Yeni görev"} aciklama={gorev ? `Oluşturan: ${gorev.olusturan?.adSoyad ?? "Sistem"}` : "Yeni görev açık durumda oluşturulur. Platform görevlerini yalnız yöneticiler görür."} onKapat={kapat}>
     <Alert tone="error">{hata}</Alert>
     {cakisma && <div className="platform-task-conflict"><p className="muted">Girdiğiniz taslak korunuyor. Güncel kaydı yüklemek bu taslağı bırakır.</p><Button disabled={islem} onClick={() => void gunceliYukle()}>Taslağı bırak ve güncel kaydı yükle</Button></div>}
     {kisiHatasi && <Alert tone="error">Sorumlu listesi alınamadı. <Button onClick={kisiler.yenile}>Yeniden dene</Button></Alert>}

@@ -17,6 +17,8 @@ export interface TelegramMesaj {
   photo?: Array<{ file_id: string; file_size?: number; width: number; height: number }>;
   document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
   caption?: string;
+  /** CNL-24: medya grubu (albüm) kimliği; aynı albümdeki fotoğraflar aynı kimliği taşır. */
+  media_group_id?: string;
   /** CNL-15: sesli mesaj (ogg/opus) ve ses dosyası; süre saniye. */
   voice?: { file_id: string; duration?: number; mime_type?: string; file_size?: number };
   audio?: { file_id: string; duration?: number; mime_type?: string; file_size?: number };
@@ -127,5 +129,38 @@ export class TelegramIstemci {
 
   async yaziyor(sohbetId: bigint | number): Promise<void> {
     await this.cagir("sendChatAction", { chat_id: String(sohbetId), action: "typing" }, 5_000).catch(() => undefined);
+  }
+
+  /**
+   * PDF veya Excel gibi belgeleri Telegram sohbetine gönderir (sendDocument).
+   */
+  async dosyaGonder(
+    sohbetId: bigint | number,
+    tampon: Buffer,
+    dosyaAdi: string,
+    aciklama?: string,
+    mimeType = "application/pdf",
+  ): Promise<number> {
+    const form = new FormData();
+    form.append("chat_id", String(sohbetId));
+    const blob = new Blob([tampon], { type: mimeType });
+    form.append("document", blob, dosyaAdi);
+    if (aciklama) form.append("caption", aciklama.slice(0, 1024));
+
+    let yanit: Response;
+    try {
+      yanit = await fetch(`${this.taban}/bot${this.anahtar}/sendDocument`, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch (hata) {
+      throw new TelegramHatasi("ag", `Telegram'a dosya gönderilemedi: ${this.temizle(hata instanceof Error ? hata.message : String(hata))}`);
+    }
+    const veri = (await yanit.json().catch(() => null)) as { ok?: boolean; result?: { message_id: number }; description?: string; parameters?: { retry_after?: number } } | null;
+    if (yanit.ok && veri?.ok && veri.result) return veri.result.message_id;
+    const err = this.temizle(veri?.description ?? `HTTP ${yanit.status}`);
+    if (yanit.status === 429) throw new TelegramHatasi("hiz_siniri", err, veri?.parameters?.retry_after ?? 5);
+    throw new TelegramHatasi("red", err);
   }
 }

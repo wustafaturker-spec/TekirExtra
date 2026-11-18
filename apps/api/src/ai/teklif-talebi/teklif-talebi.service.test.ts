@@ -134,6 +134,22 @@ describe("e-posta teklif talebi hattı (AI-33…37)", () => {
     expect(k.service.saglayiciBul).not.toHaveBeenCalled();
   });
 
+  it("P-12: tekrar ileti tespit edildiğinde taslak açılmadan atlanır", async () => {
+    const k = kur({ kartlar: ["c1"], cikarim: { ...TEKLIF, iletiTuru: "tekrar" } });
+    const g = await k.calistir(() => k.service.isle(kayit));
+    expect(g.durum).toBe("atlandi");
+    expect(g.uyarilar[0]).toContain("mükerrer");
+    expect(k.taslak.calistir).not.toHaveBeenCalled();
+  });
+
+  it("P-12: sipariş/imza onayı tespit edildiğinde incelenmeli durumuna alınır", async () => {
+    const k = kur({ kartlar: ["c1"], cikarim: { ...TEKLIF, iletiTuru: "imza_onay" } });
+    const g = await k.calistir(() => k.service.isle(kayit));
+    expect(g.durum).toBe("incelenmeli");
+    expect(g.uyarilar[0]).toContain("onayı");
+    expect(k.taslak.calistir).not.toHaveBeenCalled();
+  });
+
   it("teklif talebi değilse ve model emin değilse taslak açılmaz", async () => {
     const degil = kur({ cikarim: { ...TEKLIF, teklifTalebi: false } });
     expect((await degil.calistir(() => degil.service.isle(kayit))).durum).toBe("teklif_degil");

@@ -4,6 +4,7 @@ import { registerRapor, type RaporSatiri } from "../core/raporlar/rapor-kayit";
 import { aktifBaglam } from "../core/istek-baglami";
 import { FIYAT_ENDEKS_ROLLERI, fiyatEndeksErisimi, tarafDenetle } from "./fiyat-endeks-erisim";
 import { ayAraligi, ayBasiMetni, ayKaydir } from "./fiyat-endeks-hesap";
+import { birimKirilmalariniOku } from "./birim-kirilmasi";
 import { endeksVerisi } from "./fiyat-endeks-veri";
 import { cariUrunToplamlari } from "./fiyat-endeks-makas.raporlar";
 
@@ -99,10 +100,12 @@ registerRapor({
     const kart = new Map(kartlar.map((k) => [k.id, k])), cari = new Map(cariler.map((c) => [c.id, c]));
 
     const satirlar: (RaporSatiri & { _gecen: number; _reel: number })[] = [];
+    const kirik = new Set((await birimKirilmalariniOku(tx, [...new Set(toplamlar.map((t) => t.stokId))], baslangic, bitis)).map((k) => k.stokId));
     for (const [anahtar, liste] of gruplar) {
       const [cariId, stokId, doviz] = anahtar.split("|");
       const k = kart.get(stokId), c = cari.get(cariId);
       if (!k || !c) continue;
+      if (kirik.has(stokId)) { satirlar.push({ stokId, cariId, kod: k.kod, ad: k.ad, musteri: c.unvan, dovizCinsi: doviz, durum: "Birim değişikliği: dönemi kırılmanın tek tarafında seçin.", _gecen: -Infinity, _reel: 0 }); continue; }
       const aylik = liste.filter((t) => t.miktar.gt(0)).sort((a, b) => a.ay.localeCompare(b.ay));
       if (!aylik.length) continue;
       const sonDegisiklik = sonFiyatDegisikligi(aylik.map((t) => ({ ay: t.ay, fiyat: t.dvz.div(t.miktar) })))!;

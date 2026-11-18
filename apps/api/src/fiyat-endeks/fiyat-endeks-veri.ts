@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { seriOku } from "./endeks-deposu";
 import type { AylikToplam } from "./fiyat-endeks-hesap";
 import type { FiyatTarafi } from "./fiyat-endeks-erisim";
+import { baglamAl } from "../core/istek-baglami";
 
 type Tx = Prisma.TransactionClient;
 
@@ -11,7 +12,10 @@ type Tx = Prisma.TransactionClient;
  * Asıl kaynak ortak endeks deposundaki USD/EUR serileridir (EVDS aylık
  * ortalaması); katalogda değer yoksa günlük `tcmb_kurlari`'ndan hesaplanır.
  */
-export const KUR_ENDEKSLERI = { USD: "ABD doları (TCMB döviz alış, aylık ortalama)", EUR: "Euro (TCMB döviz alış, aylık ortalama)" } as const;
+export const KUR_ENDEKSLERI = {
+  USD: "ABD doları (TCMB döviz alış, aylık ortalama)", EUR: "Euro (TCMB döviz alış, aylık ortalama)",
+  USD_SATIS: "ABD doları (TCMB döviz satış, aylık ortalama)", EUR_SATIS: "Euro (TCMB döviz satış, aylık ortalama)",
+} as const;
 export type KurEndeksi = keyof typeof KUR_ENDEKSLERI;
 export const kurEndeksiMi = (kod: string): kod is KurEndeksi => kod in KUR_ENDEKSLERI;
 
@@ -69,8 +73,8 @@ export async function aylikToplamlar(tx: Tx, g: {
     JOIN stok_kartlari s ON s.id = fs.stok_id
     LEFT JOIN cari_hesaplar c ON c.id = f.cari_id
     LEFT JOIN LATERAL (
-      SELECT CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
-        ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END AS katsayi
+      SELECT COALESCE(fs.birim_katsayi, CASE WHEN fs.birim = s.ana_birim THEN 1::numeric
+        ELSE (SELECT sb.katsayi FROM stok_birimleri sb WHERE sb.stok_id = fs.stok_id AND sb.ad = fs.birim LIMIT 1) END) AS katsayi
     ) k ON true
     WHERE f.durum = 'kesin' AND f.tip = ${g.taraf}::"FaturaTip"
       AND fs.miktar > 0 AND fs.matrah > 0
@@ -103,16 +107,24 @@ export interface EndeksVerisi {
 /** Endeks ya da kur serisinin aralıktaki aylık değerleri. Bilinmeyen kod 400. */
 export async function endeksVerisi(tx: Tx, kod: string, baslangic: string, bitis: string): Promise<EndeksVerisi> {
   const seri = await seriOku(tx, kod, baslangic, bitis);
+  const baglam = baglamAl();
+  if (seri && baglam && !baglam.destek) {
+    await tx.$executeRaw`INSERT INTO endeks_kullanimlari (tenant_id, seri_kodu)
+      VALUES (${baglam.tenantId}::uuid, ${kod}) ON CONFLICT (tenant_id, seri_kodu)
+      DO UPDATE SET son_kullanim_at = CURRENT_TIMESTAMP
+      WHERE endeks_kullanimlari.son_kullanim_at < CURRENT_TIMESTAMP - interval '1 day'`;
+  }
   if (seri && (seri.degerler.size || !kurEndeksiMi(kod))) return seri;
   if (kurEndeksiMi(kod)) {
     const sonrakiAy = new Date(`${bitis}T00:00:00.000Z`);
     sonrakiAy.setUTCMonth(sonrakiAy.getUTCMonth() + 1);
     const satirlar = await tx.$queryRaw<{ ay: string; deger: Prisma.Decimal }[]>`
-      SELECT to_char(date_trunc('month', tarih), 'YYYY-MM-01') AS ay, AVG(doviz_alis) AS deger
+      SELECT to_char(date_trunc('month', tarih), 'YYYY-MM-01') AS ay,
+        AVG(${kod.endsWith("_SATIS") ? Prisma.sql`doviz_satis` : Prisma.sql`doviz_alis`}) AS deger
       FROM tcmb_kurlari
-      WHERE doviz_cinsi = ${kod}::"DovizCinsi" AND tarih >= ${baslangic}::date AND tarih < ${sonrakiAy.toISOString().slice(0, 10)}::date
+      WHERE doviz_cinsi = ${kod.replace(/_SATIS$/, "")}::"DovizCinsi" AND tarih >= ${baslangic}::date AND tarih < ${sonrakiAy.toISOString().slice(0, 10)}::date
       GROUP BY 1`;
-    const son = await tx.tcmbKuru.findFirst({ where: { dovizCinsi: kod }, orderBy: { tarih: "desc" }, select: { tarih: true } });
+    const son = await tx.tcmbKuru.findFirst({ where: { dovizCinsi: kod.replace(/_SATIS$/, "") as "USD" | "EUR" }, orderBy: { tarih: "desc" }, select: { tarih: true } });
     return {
       kod, ad: KUR_ENDEKSLERI[kod], tur: "kur", bazYili: null,
       sonDonem: son ? son.tarih.toISOString().slice(0, 10) : null,

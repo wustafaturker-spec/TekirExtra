@@ -81,7 +81,7 @@ describe("hafızadan okuma (AI-61)", () => {
   it("yalnız aktif tercihler ve aktif susturma okunur", async () => {
     const k = kur({ hafizalar: [{ id: "h1", metin: "KDV hariç" }] });
     expect(await k.calistir(() => k.service.aktifTercihler("c1"))).toEqual(["KDV hariç"]);
-    expect(k.tx.aiHafiza.findMany.mock.calls[0][0].where).toEqual({ tenantId: "t1", tur: "musteri_tercihi", durum: "aktif", cariId: "c1" });
+    expect(k.tx.aiHafiza.findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", tur: "musteri_tercihi", durum: "aktif", cariId: "c1" });
     await k.calistir(() => k.service.susturulduMu(" Bilgi@Banka.com "));
     expect(k.tx.aiHafiza.findFirst.mock.calls[0][0].where).toEqual({ tenantId: "t1", tur: "susturma", durum: "aktif", anahtar: "bilgi@banka.com" });
   });
@@ -120,5 +120,37 @@ describe("hafıza ekranı yetkisi (AI-59)", () => {
     expect(k.tx.aiHafiza.delete).not.toHaveBeenCalled();
     await k.calistir(() => k.service.sil("h1"), "yonetici");
     expect(k.tx.aiHafiza.delete).toHaveBeenCalledWith({ where: { id: "h1" } });
+  });
+
+  it("kullanıcı kapsamındaki tercih diğer kullanıcıya uygulanmaz (P-16)", async () => {
+    const k = kur({
+      hafizalar: [
+        { id: "h1", metin: "Genel tercih", kapsam: "firma", olusturanUserId: null },
+        { id: "h2", metin: "U1 tercihi", kapsam: "kullanici", olusturanUserId: "u1" },
+        { id: "h3", metin: "U2 tercihi", kapsam: "kullanici", olusturanUserId: "u2" },
+      ],
+    });
+    // u1 ile çalıştırıldığında u2'nin tercihi gelmez
+    const t = await k.calistir(() => k.service.aktifTercihler("c1"));
+    expect(t).toEqual(["Genel tercih", "U1 tercihi"]);
+  });
+
+  it("pasife alınmış kayıt otomatik öğrenmeyle ezilemez (P-16)", async () => {
+    const k = kur({ mevcut: { id: "h1", durum: "pasif", kaynak: "kullanici", surum: 2 } });
+    const sonuc = await k.calistir(() => k.service.yaz({
+      tur: "urun_eslesme", anahtar: "bez", cariId: "c1", stokId: "s1", varyantId: null, kaynak: "otomatik",
+    }));
+    expect(sonuc.durum).toBe("pasif");
+    expect(k.tx.aiHafiza.update).not.toHaveBeenCalled();
+  });
+
+  it("durum değiştirildiğinde onaylayan, sürüm ve doğrulama tarihi yazılır (P-16)", async () => {
+    const k = kur({ kayit: { id: "h1", tenantId: "t1", durum: "oneri", surum: 1 } });
+    const r = await k.calistir(() => k.service.durumDegistir("h1", "aktif"));
+    expect(r).toEqual({ id: "h1", durum: "aktif", surum: 2 });
+    expect(k.tx.aiHafiza.update).toHaveBeenCalledWith({
+      where: { id: "h1" },
+      data: expect.objectContaining({ durum: "aktif", surum: 2, onaylayanUserId: "u1", sonDogrulamaAt: expect.any(Date) }),
+    });
   });
 });

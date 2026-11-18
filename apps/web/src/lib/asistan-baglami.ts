@@ -5,14 +5,62 @@ import { useEffect } from "react";
 /** AI-78: asistanın açıldığı ekranın kayıt türleri (sunucudaki EKRAN_TURLERI ile aynı). */
 export type EkranTuru = "cari" | "stok" | "fatura" | "belge" | "gelen_efatura" | "gelen_eirsaliye" | "satin_alma_talebi" | "rapor";
 
-/** CARI-48/AI-78: asistanın açıldığı ekranın kaydı; sunucu kimliği o kaydın ekran ucundan rol kontrolüyle doğrular. */
+/** CARI-48/AI-78/P-14a: asistanın açıldığı ekranın kaydı; sunucu kimliği o kaydın ekran ucundan rol kontrolüyle doğrular. */
 export interface AsistanBaglami {
   tur: EkranTuru;
   /** Kayıt kimliği; raporda katalog kodu. */
   id: string;
   /** Rozet adı (fatura no, cari unvanı…). */
   etiket: string;
+  /** P-14a: Açık formdaki kaydedilmemiş taslak veriler (güvenilmeyen istemci taslağı) */
+  taslak?: Record<string, unknown>;
+  /** P-14a: Doğrudan tetiklenen ekran eylemi kodu (ör. cari_analiz, fatura_fiyat_sapmasi, teklif_revize) */
+  eylem?: string;
+  /** P-14a: Asistan penceresi açıldığında doğrudan gönderilecek hazır talimat */
+  ilkMesaj?: string;
 }
+
+export interface EkranEylemi {
+  kod: string;
+  etiket: string;
+  mesaj: string;
+  simge?: string;
+}
+
+/** P-14a: Ekran bağlamına özel doğrudan tetiklenebilir akıllı eylemler. */
+export const EKRAN_EYLEMLERI: Record<EkranTuru, EkranEylemi[]> = {
+  cari: [
+    { kod: "cari_analiz", etiket: "Bu cariyi analiz et", mesaj: "Bu cariyi analiz et: ödeme performansı, tahsilat riski ve yaşlandırma durumunu çıkar.", simge: "📊" },
+    { kod: "tahsilat_riski", etiket: "Tahsilat riskini göster", mesaj: "Bu carinin tahsilat riskini ve açık faturaların beklenen vadelerini göster.", simge: "⚠️" },
+    { kod: "cari_ekstre", etiket: "Ekstreyi özetle", mesaj: "Bu carinin son hareketlerini ve açık bakiyesini özetle.", simge: "📄" },
+  ],
+  fatura: [
+    { kod: "fatura_fiyat_sapmasi", etiket: "Fiyat sapmasını açıkla", mesaj: "Bu faturadaki kalemlerin birim fiyatlarını liste ve tavsiye fiyatlarıyla karşılaştırarak fiyat sapmasını açıkla.", simge: "📈" },
+    { kod: "fatura_kontrol", etiket: "Bu faturayı denetle", mesaj: "Bu faturayı kontrol et: KDV oranları, kalem tutarları ve tahsilat durumunda anomali var mı?", simge: "🔍" },
+    { kod: "fatura_tahsilat", etiket: "Tahsilat durumu", mesaj: "Bu faturanın tahsilat ve kapama geçmişini özetle.", simge: "💳" },
+  ],
+  belge: [
+    { kod: "teklif_revize", etiket: "Bu teklifi revize et", mesaj: "Bu teklifi revize et: yeni bir taslak revizyon oluştur ve parasal değişiklikleri hazırla.", simge: "📝" },
+    { kod: "belge_analiz", etiket: "Kalemleri analiz et", mesaj: "Bu belgenin kalemlerini, birim fiyatlarını ve iskonto oranlarını analiz et.", simge: "📊" },
+  ],
+  stok: [
+    { kod: "endeks_karsilastir", etiket: "Fiyat-Endeks analizi", mesaj: "Bu ürünün satış fiyatı seyrini enflasyon ve kur endeksleriyle karşılaştır.", simge: "📈" },
+    { kod: "stok_hareket", etiket: "Stok hareketleri", mesaj: "Bu ürünün mevcut stok miktarını, depo dağılımını ve son hareketlerini özetle.", simge: "📦" },
+  ],
+  gelen_efatura: [
+    { kod: "fiyat_karsilastir", etiket: "Alış fiyatlarını kontrol et", mesaj: "Bu gelen faturadaki kalemlerin birim fiyatlarını tedarikçiden geçmiş alışlarımızla karşılaştır.", simge: "🔍" },
+    { kod: "efatura_denetle", etiket: "e-Faturayı denetle", mesaj: "Bu faturadaki vergi, tevkifat ve kalem hesaplarını denetle.", simge: "📋" },
+  ],
+  gelen_eirsaliye: [
+    { kod: "eirsaliye_ozet", etiket: "İrsaliyeyi kontrol et", mesaj: "Bu irsaliyenin içeriğini ve açık siparişlerimizle uyumunu kontrol et.", simge: "🚚" },
+  ],
+  satin_alma_talebi: [
+    { kod: "talep_karsilastir", etiket: "Teklifleri karşılaştır", mesaj: "Bu satın alma talebine bağlı tedarikçi tekliflerini fiyat ve teslimat açısından karşılaştır.", simge: "⚖️" },
+  ],
+  rapor: [
+    { kod: "rapor_yorumla", etiket: "Bu raporu yorumla", mesaj: "Bu raporun sonuçlarını yönetici özeti şeklinde yorumla ve kritik sapmaları belirt.", simge: "💡" },
+  ],
+};
 
 export const EKRAN_TURU_ADI: Record<EkranTuru, string> = {
   cari: "cari", stok: "stok kartı", fatura: "fatura", belge: "belge", gelen_efatura: "gelen e-Fatura",
@@ -34,9 +82,20 @@ export const EKRAN_ONERILERI: Record<EkranTuru | "genel", string[]> = {
 
 export const ASISTAN_AC_OLAYI = "tekir-asistan-ac";
 
-/** Asistanı her ekrandan açar; bağlam verilmezse ekranın bildirdiği kayıt (yoksa genel sohbet) kullanılır. */
-export function asistaniAc(baglam?: AsistanBaglami) {
-  window.dispatchEvent(new CustomEvent<AsistanBaglami | undefined>(ASISTAN_AC_OLAYI, { detail: baglam }));
+/** P-14a: Asistanı ekrandan açar; doğrudan ekran eylemi, taslak verisi veya ilk mesaj eklenebilir. */
+export function asistaniAc(
+  baglam?: AsistanBaglami,
+  secenekler?: { eylem?: string; ilkMesaj?: string; taslak?: Record<string, unknown> },
+) {
+  const birlesik: AsistanBaglami | undefined = baglam
+    ? {
+        ...baglam,
+        ...(secenekler?.taslak ? { taslak: secenekler.taslak } : {}),
+        ...(secenekler?.eylem ? { eylem: secenekler.eylem } : {}),
+        ...(secenekler?.ilkMesaj ? { ilkMesaj: secenekler.ilkMesaj } : {}),
+      }
+    : undefined;
+  window.dispatchEvent(new CustomEvent<AsistanBaglami | undefined>(ASISTAN_AC_OLAYI, { detail: birlesik }));
 }
 
 /*

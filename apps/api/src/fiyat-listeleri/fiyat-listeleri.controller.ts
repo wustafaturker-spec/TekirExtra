@@ -15,6 +15,7 @@ import {
   fiyatListesiGuncelleSemasi,
   fiyatListesiKalemSemasi,
   fiyatListesiOlusturSemasi,
+  fiyatListesiTopluSemasi,
 } from "./fiyat-listeleri.semalar";
 
 @Controller("fiyat-listeleri")
@@ -66,6 +67,14 @@ export class FiyatListeleriController {
       throw new BadRequestException(a.error.issues.map((s) => s.message).join("; "));
     }
     return this.servis.kalemKaydet(id, a.data);
+  }
+
+  @Post(":id/toplu-fiyat")
+  @Roller("muhasebe")
+  topluKaydet(@Param("id") id: string, @Body() govde: unknown) {
+    const a = fiyatListesiTopluSemasi.safeParse(govde);
+    if (!a.success) throw new BadRequestException(a.error.issues.map((s) => s.message).join("; "));
+    return this.servis.topluKaydet(id, a.data);
   }
 
   @Delete(":id/kalemler/:kalemId")

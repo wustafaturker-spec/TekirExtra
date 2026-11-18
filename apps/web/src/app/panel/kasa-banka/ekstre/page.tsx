@@ -64,8 +64,18 @@ export default function EkstreSayfasi() {
   // Yönetim P2-1: muhasebe bağlantı ayarlarına girmeden bankadan elle çekim yapabilir.
   const [cekilenler, setCekilenler] = useState<{ id: string; saglayici: string; durum: string; sonSenkronTarihi: string | null }[]>([]);
   const [cekiliyor, setCekiliyor] = useState(false);
+  const [taraniyor, setTaraniyor] = useState(false);
   const [uyari, setUyari] = useState("");
   const listeRef = useRef<HTMLDivElement>(null);
+  const eslestirmeRef = useRef<HTMLElement>(null);
+
+  function satirSec(id: string) {
+    setSeciliId(id);
+    if (window.matchMedia("(max-width: 1100px)").matches) {
+      eslestirmeRef.current?.focus({ preventScroll: true });
+      eslestirmeRef.current?.scrollIntoView({ block: "start" });
+    }
+  }
 
   const listeYukle = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -185,6 +195,20 @@ export default function EkstreSayfasi() {
   const seciliHesap = hesaplar.find((h) => h.id === bankaFiltresi);
   const fark = mutabakat?.son ? Number(mutabakat.son.fark) : 0;
 
+  async function onerileriTara() {
+    setTaraniyor(true);
+    setHata("");
+    try {
+      const res = await api<{ toplam: number; puanlanan: number }>(`/kasa-banka/ekstre/onerileri-tara${bankaFiltresi ? `?bankaHesapId=${bankaFiltresi}` : ""}`, { method: "POST" });
+      setBasari(`${res.puanlanan} satır için yapay zekâ ve kural analizi tamamlandı, güven skorları güncellendi.`);
+      await listeYukle();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Öneri analizi yapılamadı");
+    } finally {
+      setTaraniyor(false);
+    }
+  }
+
   return (
     <div className="statement-page">
       <section className="statement-hero">
@@ -199,6 +223,9 @@ export default function EkstreSayfasi() {
               {cekiliyor ? "Çekiliyor…" : "Bankadan çek"}
             </Button>
           )}
+          <Button disabled={taraniyor} onClick={() => void onerileriTara()}>
+            {taraniyor ? "Taranıyor…" : "Önerileri Tara"}
+          </Button>
           <Button onClick={() => void kurallariAc()}>Kurallar</Button>
           <Button onClick={() => setTopluAcik(true)}>Kesin eşleşmeleri onayla</Button>
           <Button variant="primary" onClick={() => setYuklemeAcik(true)}>Ekstre yükle</Button>
@@ -313,12 +340,19 @@ export default function EkstreSayfasi() {
                 aria-selected={s.id === seciliId}
                 tabIndex={0}
                 className={`statement-row${s.id === seciliId ? " is-selected" : ""}`}
-                onClick={() => setSeciliId(s.id)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSeciliId(s.id); } }}
+                onClick={() => satirSec(s.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); satirSec(s.id); } }}
               >
                 <span className="statement-row__date"><Tarih deger={s.tarih} /></span>
                 <span className="statement-row__text">
-                  <strong>{s.aciklama}</strong>
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <strong>{s.aciklama}</strong>
+                    {s.durum === "beklemede" && s.eslesmeSkoru !== undefined && s.eslesmeSkoru !== null && (
+                      <Badge variant={s.eslesmeSkoru >= 90 ? "success" : s.eslesmeSkoru >= 70 ? "warning" : "neutral"}>
+                        %{s.eslesmeSkoru} Güven
+                      </Badge>
+                    )}
+                  </span>
                   <small>
                     {!bankaFiltresi && `${s.bankaHesap.ad} · `}
                     {s.durum === "eslesti" && s.eslesmeTuru ? ESLESME_ADI[s.eslesmeTuru] + (s.hareketler[0]?.cari ? ` · ${s.hareketler[0].cari.unvan}` : s.hareketler[0]?.kategori ? ` · ${s.hareketler[0].kategori}` : "")
@@ -337,9 +371,9 @@ export default function EkstreSayfasi() {
         </div>
 
         {secili ? (
-          <EslestirmePaneli satir={secili} cariler={cariler} posHesaplari={posHesaplari} onDegisti={(m) => void islemSonrasi(m)} />
+          <EslestirmePaneli panelRef={eslestirmeRef} satir={secili} cariler={cariler} posHesaplari={posHesaplari} onDegisti={(m) => void islemSonrasi(m)} />
         ) : (
-          <aside className="match-panel match-panel--empty"><p>Eşleştirmek için soldan bir satır seçin.</p></aside>
+          <aside className="match-panel match-panel--empty"><p>Eşleştirmek için listeden bir satır seçin.</p></aside>
         )}
       </div>
 

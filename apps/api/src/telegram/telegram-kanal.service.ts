@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
 import { AiAjanService, type AjanYaniti } from "../ai/ajan/ai-ajan.service";
+import { AiOnayService } from "../ai/onay/ai-onay.service";
 import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
 import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-soru.kurallari";
 import { AsistanSoruService, type SoruYaniti, type YanitSonucu } from "../asistan-soru/asistan-soru.service";
@@ -21,7 +22,7 @@ import { PrismaService } from "../core/prisma.service";
 import { structuredLogger } from "../core/observability/structured-logger";
 import { uzayanKilitle } from "../core/redis-kilit";
 import { DUSME_METNI, telegramAyariOku, telegramBotAdi, type DusmeNedeni } from "./telegram-ayar";
-import { TelegramHatasi, TelegramIstemci, type TelegramDugme, type TelegramGuncelleme, type TelegramMesaj } from "./telegram-istemci";
+import { TelegramHatasi, TelegramIstemci, type Klavye, type TelegramDugme, type TelegramGuncelleme, type TelegramMesaj } from "./telegram-istemci";
 import { parcala, telegramSuz } from "./telegram-suzgec";
 import { gunSonu, ritimKomutu } from "./telegram-bildirim.kurallari";
 import { kodOzeti, TelegramService } from "./telegram.service";
@@ -98,6 +99,8 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   private readonly yanlisKod = new Map<string, number[]>();
   private calisan = 0;
   private readonly bekleyenler: Array<() => void> = [];
+  /** CNL-28: medya grubu (albüm) kuyruğu; aynı albümdeki fotoğraflar sırayla işlenir. */
+  private readonly albumler = new Map<string, { mesajlar: TelegramMesaj[]; zamanlayici: NodeJS.Timeout }>();
   /** Testlerde sahte istemci vermek için. */
   istemciKur = (anahtar: string) => new TelegramIstemci(anahtar);
 
@@ -110,6 +113,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly masrafBelge?: MasrafBelgeService,
     @Optional() private readonly bildirimler?: BildirimService,
     @Optional() private readonly cariBelge?: CariBelgeService,
+    @Optional() private readonly aiOnay?: AiOnayService,
   ) {}
 
   /** Mesajın geldiği bot verilmezse platform botu (birim testleri ve eski çağrılar). */
@@ -491,6 +495,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const dosyaId = m.document?.file_id ?? foto?.file_id;
     const ad = m.document?.file_name ?? `telegram-${m.message_id}`;
     let metin: string;
+    let talepId: string | undefined;
     try {
       if (!dosyaId) throw new BadRequestException("Fotoğraf 6 MB'tan büyük; daha küçük gönderin.");
       if (m.document?.mime_type && !/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(m.document.mime_type)) throw new BadRequestException("Yalnız JPEG, PNG, WebP fotoğraf ya da PDF gönderebilirsiniz.");
@@ -508,6 +513,7 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
           if (!geriDon) throw hata;
           return baglamlaCalistir(baglam, () => this.cariBelge!.belgedenCari({ ad, buffer }, undefined, false));
         });
+      if (r.talepId) talepId = r.talepId;
       if (r.soru && r.masrafId) {
         // CNL-22: taslak açıldı, ödeme hesabı belirsiz; önce sonuç, ardından ödeme sorusu.
         await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", r.sonuc));
@@ -522,7 +528,17 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     } catch (hata) {
       metin = this.kullaniciHatasi(hata, "Belgeyi işleyemedim; biraz sonra yeniden deneyin ya da panelden yükleyin.");
     }
-    await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", metin));
+    if (talepId) {
+      const klavye: Klavye = [
+        [
+          { text: "✅ Onayla ve Kartı Aç", callback_data: `onay:${talepId}` },
+          { text: "❌ Reddet", callback_data: `red:${talepId}` },
+        ],
+      ];
+      await baglamlaCalistir(baglam, () => this.firmayaKlavyeliGonder(tenantId, userId, "belge_sonuc", metin, klavye));
+    } else {
+      await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", metin));
+    }
   }
 
   /** CNL-09: soru düğmesi. "Panelde bakacağım" yalnız Telegram'daki düğmeleri kaldırır; soru panelde açık kalır. */
@@ -538,6 +554,33 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const { baglam, karar } = hazir;
     if (!(await this.gelenIz(baglam, g.update_id, "soru_yanit", bot))) return;
     olay("soru_yanit");
+
+    // CNL-27: Satır içi hızlı onay/red düğmesi (cari kartı açma vb.)
+    if (d.data?.startsWith("onay:") || d.data?.startsWith("red:")) {
+      const [eylem, talepId] = d.data.split(":");
+      if (!this.aiOnay) {
+        await bot.istemci.dugmeYanitla(d.id, "Onay servisi şu anda kullanılamıyor.");
+        return;
+      }
+      let metin: string;
+      try {
+        if (eylem === "onay") {
+          const sonuc = await baglamlaCalistir(baglam, () => this.aiOnay!.onayla(talepId));
+          metin = `✅ ${sonuc.ozet} onaylandı ve tamamlandı.`;
+        } else {
+          await baglamlaCalistir(baglam, () => this.aiOnay!.reddet(talepId));
+          metin = "❌ İşlem talebi iptal edildi.";
+        }
+        await bot.istemci.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);
+        await bot.istemci.dugmeYanitla(d.id, eylem === "onay" ? "Onaylandı" : "İptal edildi");
+      } catch (hata) {
+        metin = this.kullaniciHatasi(hata, "Onay işlemi yürütülemedi; panelden kontrol edin.");
+        await bot.istemci.dugmeYanitla(d.id, metin.slice(0, 100));
+      }
+      await baglamlaCalistir(baglam, () => this.firmayaGonder(baglam.tenantId, baglam.userId, null, "onay_sonuc", metin));
+      return;
+    }
+
     const f = fikirDugmesiCoz(d.data ?? "");
     if (f && this.fikirler && karar.neden !== "rol_kapali") {
       let metin: string;
@@ -739,6 +782,19 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
         "komut",
       ));
     }
+    if (tur === "belge" && m.media_group_id) {
+      const grupId = m.media_group_id;
+      const mevcut = this.albumler.get(grupId);
+      if (mevcut) {
+        clearTimeout(mevcut.zamanlayici);
+        mevcut.mesajlar.push(m);
+        mevcut.zamanlayici = setTimeout(() => void this.albumuIsle(grupId, bot), 600);
+        return;
+      }
+      const zamanlayici = setTimeout(() => void this.albumuIsle(grupId, bot), 600);
+      this.albumler.set(grupId, { mesajlar: [m], zamanlayici });
+      return;
+    }
     if (tur === "belge") return this.belgeIsle(baglam, m, bot);
     if (tur === "desteklenmeyen") return void (await yanitla("Bu tür mesajı anlayamıyorum. Soru yazabilir, sesli mesaj ya da fiş/fatura fotoğrafı gönderebilirsiniz.", "bilgi"));
     if (tur === "ses") {
@@ -800,6 +856,19 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     clearInterval(yaziyor);
     await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { botKimlik: izKimlik(bot), guncellemeNo: BigInt(g.update_id) }, data: { durum: "islendi" } })));
     await yanitla(telegramYaniti(yanit), "sohbet");
+    if (yanit.dosya) {
+      await baglamlaCalistir(baglam, () =>
+        this.firmayaDosyaGonder(
+          tenantId,
+          userId,
+          yanit.dosya!.tampon,
+          yanit.dosya!.dosyaAdi,
+          yanit.dosya!.aciklama,
+          yanit.dosya!.mimeType,
+          karar.tutarGoster,
+        ),
+      );
+    }
   }
 
   /**
@@ -838,6 +907,97 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     if (hataTuru) this.hataSay(hataTuru);
     await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, hataTuru ? "gonderilmedi" : "gonderildi", hataTuru));
     return hataTuru ? "hata" : "gonderildi";
+  }
+
+  /** CNL-27: Satır içi düğmeli mesaj gönderir. */
+  async firmayaKlavyeliGonder(tenantId: string, userId: string, tur: string, metin: string, klavye: Klavye, tutarGoster?: boolean): Promise<GonderimSonucu> {
+    const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, telegramKullaniciId: true, sohbetId: true, botKimlik: true } }),
+      ayar: await telegramAyariOku(tx, tenantId),
+    }));
+    if (!bag || bag.tenantId !== tenantId || !ayar.etkin) {
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderilmedi", "bag_gecersiz"));
+      return "bag_gecersiz";
+    }
+    const bot = this.gonderenBot(bag.botKimlik, tenantId);
+    if (!bot) {
+      this.hataSay("bot_calismiyor");
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderilmedi", "bot_calismiyor"));
+      return "hata";
+    }
+    const temiz = telegramSuz(metin, { tutarGoster: tutarGoster ?? ayar.tutarGoster });
+    try {
+      await bot.istemci.klavyeliGonder(bag.sohbetId, parcala(temiz)[0], klavye);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderildi"));
+      return "gonderildi";
+    } catch (hata) {
+      const turu = hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen";
+      this.hataSay(turu);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, "gonderilmedi", turu));
+      return "hata";
+    }
+  }
+
+  /** CNL-27: PDF veya Excel dosyasını Telegram sohbetine gönderir (sendDocument). */
+  async firmayaDosyaGonder(
+    tenantId: string,
+    userId: string,
+    tampon: Buffer,
+    dosyaAdi: string,
+    aciklama?: string,
+    mimeType = "application/pdf",
+    tutarGoster?: boolean,
+  ): Promise<GonderimSonucu> {
+    const { bag, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      bag: await tx.telegramBagi.findUnique({ where: { userId }, select: { tenantId: true, telegramKullaniciId: true, sohbetId: true, botKimlik: true } }),
+      ayar: await telegramAyariOku(tx, tenantId),
+    }));
+    if (!bag || bag.tenantId !== tenantId || !ayar.etkin) {
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "dosya", "gonderilmedi", "bag_gecersiz"));
+      return "bag_gecersiz";
+    }
+    const bot = this.gonderenBot(bag.botKimlik, tenantId);
+    if (!bot) {
+      this.hataSay("bot_calismiyor");
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "dosya", "gonderilmedi", "bot_calismiyor"));
+      return "hata";
+    }
+    const tutarlarAcik = tutarGoster ?? ayar.tutarGoster;
+    if (!tutarlarAcik) {
+      await this.firmayaGonder(tenantId, userId, null, "bilgi", "Firmanızda Telegram'da tutar gösterimi kapalı olduğundan finansal belge dosyası gönderilmedi. Belgeyi panelden görüntüleyebilirsiniz.");
+      return "gonderildi";
+    }
+    try {
+      await bot.istemci.dosyaGonder(bag.sohbetId, tampon, dosyaAdi, aciklama, mimeType);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "dosya", "gonderildi"));
+      return "gonderildi";
+    } catch (hata) {
+      const turu = hata instanceof TelegramHatasi ? hata.tur : "bilinmeyen";
+      this.hataSay(turu);
+      await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", "dosya", "gonderilmedi", turu));
+      return "hata";
+    }
+  }
+
+  /** CNL-28: medya grubu (albüm) içindeki mesajları sırayla işler. */
+  private async albumuIsle(grupId: string, bot: Bot): Promise<void> {
+    const grup = this.albumler.get(grupId);
+    this.albumler.delete(grupId);
+    if (!grup || !grup.mesajlar.length) return;
+    const ilk = grup.mesajlar[0];
+    const cozum = await this.coz(BigInt(ilk.from!.id));
+    if (!cozum) return;
+    const hazir = await this.baglamHazirla(cozum.tenantId, cozum.userId, BigInt(ilk.from!.id), ilk.chat.id, bot);
+    if (!hazir) return;
+    const { baglam } = hazir;
+    if (grup.mesajlar.length > 1) {
+      await baglamlaCalistir(baglam, () =>
+        this.firmayaGonder(baglam.tenantId, baglam.userId, null, "bilgi", `📦 Albümde ${grup.mesajlar.length} belge alındı, sırayla işleniyor...`)
+      );
+    }
+    for (const m of grup.mesajlar) {
+      await this.belgeIsle(baglam, m, bot);
+    }
   }
 
   /** CNL-07: "sus" / "bugünlük yeter" / "/devam"; kullanıcı ayarına (sessiz saatle aynı kayıt) yazılır. */

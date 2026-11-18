@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 /**
  * SEC-23: POS makbuzu açık bağlantı anahtarı. Saklanmaz; firma ve tahsilat
@@ -67,3 +67,22 @@ export function makbuzAnahtariGecerli(tenantId: string, tahsilatId: string, veri
 }
 
 export const makbuzYolu = (tenantId: string, tahsilatId: string) => `/pos/makbuz/${tenantId}/${tahsilatId}/${makbuzAnahtari(tenantId, tahsilatId)}`;
+
+/**
+ * P-04: Markalı ödeme sayfası için opaque rastgele token.
+ * Sır veritabanında düz metin olarak tutulmaz, SHA-256 özeti saklanır.
+ */
+export function odemeTokeniUret(): { token: string; ozet: string } {
+  const token = randomBytes(24).toString("hex");
+  const ozet = anahtarOzeti(token);
+  return { token, ozet };
+}
+
+export function odemeTokeniDogrula(verilen: string, beklenenOzet: string | null): boolean {
+  if (!verilen || !beklenenOzet) return false;
+  const ozet = anahtarOzeti(verilen);
+  return esit(ozet, beklenenOzet);
+}
+
+export const odemeYolu = (tenantId: string, tahsilatId: string, token: string) =>
+  `/odeme/${tenantId}/${tahsilatId}/${token}`;

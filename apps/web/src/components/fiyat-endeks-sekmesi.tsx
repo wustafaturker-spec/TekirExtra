@@ -12,7 +12,7 @@ export interface FiyatEndeksSecenekleri {
   fiyatListeleri: { id: string; ad: string; dovizCinsi: string }[];
   buAy: string;
 }
-interface FiyatSatiri { ay: string; durum: "tamam" | "yetersiz" | "yok"; satir: number; fiyat: string | null; endeks100: string | null; aylikDegisim: string | null; yillikDegisim: string | null }
+interface FiyatSatiri { ay: string; durum: "tamam" | "yetersiz" | "yok" | "birim_kirilmasi"; satir: number; fiyat: string | null; endeks100: string | null; aylikDegisim: string | null; yillikDegisim: string | null }
 interface Karsilastirma { endeks: string; bazAy: string; sonAy: string | null; bazFiyat: string | null; sonFiyat: string | null; fiyatDegisim: string | null; endeksDegisim: string | null; reelDegisim: string | null; olmasiGerekenFiyat: string | null; fark: string | null; neden: string | null }
 interface Sonuc {
   stok: { id: string; kod: string; ad: string; anaBirim: string };
@@ -24,6 +24,7 @@ interface Sonuc {
   /** END-07: liste fiyatı, ağırlıklı ortalama maliyet, son alış fiyatı. */
   ekCizgiler: { anahtar: string; tur: EkCizgiTuru; ad: string; kaynak: string; yatay: boolean; degerler: { ay: string; fiyat: string | null; normal: string | null }[] }[];
   ekCizgiOlcegi: { seri: string; bazFiyat: string } | null;
+  birimGecmisi: { ay: string; degistiAt: string; birim: string; eskiBirim: string | null; yeniBirim: string | null; eskiKatsayi: string | null; yeniKatsayi: string | null }[];
   uyarilar: string[];
 }
 type EkCizgiTuru = "liste" | "maliyet" | "sonAlis";
@@ -47,8 +48,8 @@ function ozetCumlesi(seriAdi: string, endeksAdi: string, k: Karsilastirma, birim
 /** CSV (Excel Türkçe ayarına uygun: noktalı virgül, ondalık virgül, BOM). */
 function csvIndir(s: Sonuc) {
   const sayi = (v: string | null) => (v === null ? "" : v.replace(".", ","));
-  const baslik = ["Ay", ...s.seriler.flatMap((x) => [`${x.ad} fiyat (TL/${s.stok.anaBirim})`, `${x.ad} aylık %`, `${x.ad} yıllık %`, `${x.ad} satır`]), ...s.ekCizgiler.map((c) => `${c.ad} (TL/${s.stok.anaBirim})`), ...s.endeksler.flatMap((e) => [e.ad, `${e.ad} (baz=100)`])];
-  const satirlar = s.aylar.map((ay, i) => [ay.slice(0, 7), ...s.seriler.flatMap((x) => { const r = x.satirlar[i]; return [sayi(r.fiyat), sayi(r.aylikDegisim), sayi(r.yillikDegisim), String(r.satir)]; }), ...s.ekCizgiler.map((c) => sayi(c.degerler[i].fiyat)), ...s.endeksler.flatMap((e) => [sayi(e.degerler[i].deger), sayi(e.degerler[i].normal)])]);
+  const baslik = ["Ay", ...s.seriler.flatMap((x) => [`${x.ad} fiyat (TL/${s.stok.anaBirim})`, `${x.ad} aylık %`, `${x.ad} yıllık %`, `${x.ad} satır`, `${x.ad} durum`]), ...s.ekCizgiler.map((c) => `${c.ad} (TL/${s.stok.anaBirim})`), ...s.endeksler.flatMap((e) => [e.ad, `${e.ad} (baz=100)`])];
+  const satirlar = s.aylar.map((ay, i) => [ay.slice(0, 7), ...s.seriler.flatMap((x) => { const r = x.satirlar[i]; return [sayi(r.fiyat), sayi(r.aylikDegisim), sayi(r.yillikDegisim), String(r.satir), r.durum]; }), ...s.ekCizgiler.map((c) => sayi(c.degerler[i].fiyat)), ...s.endeksler.flatMap((e) => [sayi(e.degerler[i].deger), sayi(e.degerler[i].normal)])]);
   const metin = [baslik, ...satirlar].map((r) => r.map((h) => `"${h.replace(/"/g, '""')}"`).join(";")).join("\r\n");
   const url = URL.createObjectURL(new Blob(["﻿" + metin], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
@@ -81,9 +82,8 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
   const [varyantId, setVaryantId] = useState("");
   const [cizgiler, setCizgiler] = useState<EkCizgiTuru[]>([]);
   const secilebilirCizgiler = (Object.keys(EK_CIZGI_ADLARI) as EkCizgiTuru[]).filter((c) => (c === "liste" ? secenekler.erisim.satis : secenekler.erisim.alis));
-  const [sonuc, setSonuc] = useState<Sonuc | null>(null);
-  const [hata, setHata] = useState("");
-  const [yukleniyor, setYukleniyor] = useState(false);
+  const [tekrar, setTekrar] = useState(0);
+  const [yanit, setYanit] = useState<{ anahtar: string; sonuc: Sonuc | null; hata: string } | null>(null);
 
   const [baslangic, bitis] = donem === "12" ? [ayEkle(buAy, -11), buAy] : donem === "24" ? [ayEkle(buAy, -23), buAy] : donem === "yil" ? [`${buAy.slice(0, 4)}-01`, buAy] : [ozelBas, ozelBit];
   const bazAy = baz && baz >= baslangic && baz <= bitis ? baz : baslangic;
@@ -95,18 +95,33 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
     if (cizgiler.length) q.set("cizgiler", cizgiler.join(","));
     return q.toString();
   }, [baslangic, bitis, bazAy, endeksler, kapsam, listeler, alis, varyantId, cizgiler, secenekler.erisim.satis]);
-  const gecerli = endeksler.length > 0 && baslangic <= bitis && !(kapsam === "liste" && secenekler.erisim.satis && !listeler.length) && (secenekler.erisim.satis || alis);
+  const filtreUyarisi = !baslangic || !bitis
+    ? "Başlangıç ve bitiş ayını seçin."
+    : baslangic > bitis
+      ? "Başlangıç ayı bitiş ayından sonra olamaz."
+      : !endeksler.length
+        ? "En az bir endeks seçin."
+        : kapsam === "liste" && secenekler.erisim.satis && !listeler.length
+          ? "Fiyat listesine göre karşılaştırma için en az bir liste seçin."
+          : !secenekler.erisim.satis && !alis ? "Karşılaştırılabilecek fiyat serisi yok." : "";
+  const yol = filtreUyarisi ? null : `/fiyat-endeks/urun/${stokId}?${sorgu}`;
+  const sorguAnahtari = yol ? JSON.stringify([yol, tekrar]) : null;
+  const guncelYanit = sorguAnahtari && yanit?.anahtar === sorguAnahtari ? yanit : null;
+  const sonuc = guncelYanit?.sonuc ?? null;
+  const hata = guncelYanit?.hata ?? "";
+  const yukleniyor = Boolean(sorguAnahtari && !guncelYanit);
 
   useEffect(() => {
-    if (!gecerli) return;
+    setYanit(null);
+    if (!yol || !sorguAnahtari) return;
     const kontrol = new AbortController();
-    setYukleniyor(true); setHata("");
-    api<Sonuc>(`/fiyat-endeks/urun/${stokId}?${sorgu}`, { signal: kontrol.signal })
-      .then((r) => { if (!kontrol.signal.aborted) setSonuc(r); })
-      .catch((e: unknown) => { if (!kontrol.signal.aborted) { setSonuc(null); setHata(e instanceof Error ? e.message : "Karşılaştırma alınamadı."); } })
-      .finally(() => { if (!kontrol.signal.aborted) setYukleniyor(false); });
+    api<Sonuc>(yol, { signal: kontrol.signal })
+      .then((sonuc) => { if (!kontrol.signal.aborted) setYanit({ anahtar: sorguAnahtari, sonuc, hata: "" }); })
+      .catch((e: unknown) => {
+        if (!kontrol.signal.aborted) setYanit({ anahtar: sorguAnahtari, sonuc: null, hata: e instanceof Error ? e.message : "Karşılaştırma alınamadı." });
+      });
     return () => kontrol.abort();
-  }, [stokId, sorgu, gecerli]);
+  }, [yol, sorguAnahtari]);
 
   const degistir = (liste: string[], deger: string, acik: boolean, sinir: number) => (acik ? (liste.includes(deger) || liste.length >= sinir ? liste : [...liste, deger]) : liste.filter((x) => x !== deger));
   const endeksAdi = (kod: string) => sonuc?.endeksler.find((e) => e.kod === kod)?.ad ?? kod;
@@ -155,12 +170,17 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
         </div>
       </Card>
 
-      {!gecerli && <Alert tone="warning">{endeksler.length ? "Fiyat listesine göre karşılaştırma için en az bir liste seçin." : "En az bir endeks seçin."}</Alert>}
-      <Alert tone="error">{hata}</Alert>
+      {filtreUyarisi && <Alert tone="warning">{filtreUyarisi}</Alert>}
+      {hata && <Alert tone="error">{hata} <Button size="sm" onClick={() => setTekrar((v) => v + 1)}>Tekrar dene</Button></Alert>}
       {yukleniyor && <p className="muted" role="status">Karşılaştırma hesaplanıyor…</p>}
 
-      {sonuc && !yukleniyor && <>
+      {sonuc && <>
         {sonuc.uyarilar.length > 0 && <Alert tone="warning"><ul style={{ margin: 0, paddingLeft: "1.1rem" }}>{sonuc.uyarilar.map((u) => <li key={u}>{u}</li>)}</ul></Alert>}
+        {sonuc.birimGecmisi?.length > 0 && <Card title="Birim değişikliği tarihçesi">
+          <ul>{sonuc.birimGecmisi.map((k, i) => <li key={`${k.degistiAt}-${i}`}>
+            {new Date(k.degistiAt + (k.degistiAt.endsWith("Z") ? "" : "Z")).toLocaleDateString("tr-TR")}: {k.eskiBirim ?? "—"} ({k.eskiKatsayi ?? "—"}) → {k.yeniBirim ?? "silindi"} ({k.yeniKatsayi ?? "—"}). {ayAdi(k.ay)} kırılma ayıdır.
+          </li>)}</ul>
+        </Card>}
         <Card title="Özet">
           <ul className="endeks-ozet">
             {sonuc.seriler.flatMap((s) => s.karsilastirmalar.map((k) => <li key={`${s.anahtar}-${k.endeks}`}>{ozetCumlesi(s.ad, endeksAdi(k.endeks), k, anaBirim)}</li>))}
@@ -184,7 +204,7 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
                 <tr key={ay}>
                   <td>{ayAdi(ay)}</td>
                   {sonuc.seriler.map((s) => { const r = s.satirlar[i]; return <Fragment key={s.anahtar}>
-                    <td className={r.fiyat ? undefined : "is-bos"} title={`${r.satir} fatura satırı`}>{r.fiyat ? tl(r.fiyat) : r.durum === "yetersiz" ? `Yetersiz veri (${r.satir})` : "—"}</td>
+                    <td className={r.fiyat ? undefined : "is-bos"} title={`${r.satir} fatura satırı`}>{r.fiyat ? tl(r.fiyat) : r.durum === "birim_kirilmasi" ? "Birim kırılması" : r.durum === "yetersiz" ? `Yetersiz veri (${r.satir})` : "—"}</td>
                     <td>{yuzde(r.aylikDegisim)}</td><td>{yuzde(r.yillikDegisim)}</td>
                   </Fragment>; })}
                   {sonuc.ekCizgiler.map((c) => <td key={c.anahtar} className={c.degerler[i].fiyat ? undefined : "is-bos"}>{tl(c.degerler[i].fiyat)}</td>)}
@@ -203,7 +223,7 @@ export function FiyatEndeksSekmesi({ stokId, anaBirim, varyantlar, secenekler }:
             <li>Fiyat, kesinleşmiş faturaların satırlarından aylık miktar ağırlıklı ortalamadır: KDV hariç, satır ve genel iskonto düşülmüş tutar × belge kuru ÷ ana birime ({anaBirim}) çevrilmiş miktar. İade, proforma, taslak, iptal ve bedelsiz satırlar girmez.</li>
             <li>Bir ayda {sonuc.esik.enAzSatir} fatura satırından az varsa o ay “yetersiz veri”dir; önceki ayın fiyatı taşınmaz.</li>
             <li>Reel değişim = (1 + fiyat değişimi) ÷ (1 + endeks değişimi) − 1. Endekse göre fiyat = baz fiyat × son endeks ÷ baz endeks.</li>
-            <li>Karşılaştırma, hem fiyatı hem endeksi olan son aya kadar yapılır. Endeksler ve kurlar TCMB EVDS'den gelir: endeksler TÜİK'in aylık değerleri, kurlar TCMB döviz alış kurunun aylık ortalamasıdır; * işaretli ay ay başından bugüne ortalamadır.</li>
+            <li>Karşılaştırma, hem fiyatı hem endeksi olan son aya kadar yapılır. Endeksler ve kurlar TCMB EVDS'den gelir: endeksler TÜİK'in aylık değerleri, kurlar seçilen seriye göre TCMB döviz alış veya satış kurunun aylık ortalamasıdır; * işaretli ay ay başından bugüne ortalamadır.</li>
             {sonuc.endeksler.filter((e) => e.bazYili).map((e) => <li key={e.kod}>{e.ad}: baz {e.bazYili}, son açıklanan dönem {e.sonDonem?.slice(0, 7) ?? "—"}.</li>)}
           </ul>
         </details>

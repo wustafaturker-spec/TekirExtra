@@ -6,7 +6,7 @@
  * gösterir; altında dönem ekstreleri gezilir. Limit aşan işlem onayla geçer.
  */
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Badge, Button, Card, Field, Input, Para, Select, Tarih } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, Select, Tarih } from "@/components/ui";
 import { api, ApiHata, tokenAl } from "@/lib/api";
 import { EkstrePaneli } from "./ekstre-paneli";
 import { CariOdemeFormu, EkstreOdemeFormu, HareketFormu, KartAyarFormu, type Gonder } from "./islem-formlari";
@@ -89,14 +89,8 @@ export default function KrediKartlariSayfasi() {
 
   return (
     <div className="cc-page">
-      <header className="cc-header">
-        <div>
-          <span>FİNANS YÖNETİMİ</span>
-          <h1>Şirket kredi kartları</h1>
-          <p>Dönem ekstrelerini, son ödeme günlerini, taksitleri ve kart giderlerini tek merkezden yönetin.</p>
-        </div>
-        <Button variant="primary" onClick={() => setKartFormu((v) => !v)}>+ Yeni kart hesabı</Button>
-      </header>
+      <PageHeader title="Şirket kredi kartları"
+        actions={<Button variant="primary" onClick={() => setKartFormu((v) => !v)}>Yeni kart hesabı</Button>} />
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
@@ -110,7 +104,9 @@ export default function KrediKartlariSayfasi() {
         </div>
       )}
 
-      <section className="cc-summary">
+      <section aria-labelledby="cc-try-summary">
+        <h2 id="cc-try-summary" className="card__title">TRY kartları özeti</h2>
+        <div className="cc-summary">
         <div className="cc-summary__lead">
           <span>Bu dönem ödenecek</span>
           <strong><Para deger={ozet.odenecek} dovizCinsi="TRY" /></strong>
@@ -122,6 +118,7 @@ export default function KrediKartlariSayfasi() {
           <span>Limit kullanımı</span>
           <strong>%{ozet.limit ? ((ozet.borc / ozet.limit) * 100).toLocaleString("tr-TR", { maximumFractionDigits: 1 }) : "0"}</strong>
           <div className="cc-progress"><i style={{ width: `${Math.min(100, ozet.limit ? (ozet.borc / ozet.limit) * 100 : 0)}%` }} /></div>
+        </div>
         </div>
       </section>
 

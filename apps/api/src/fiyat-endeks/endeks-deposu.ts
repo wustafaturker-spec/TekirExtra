@@ -24,41 +24,45 @@ export async function degerleriYaz(db: Db, seriKodu: string, degerler: EvdsDeger
   const not = kaynak === "elle" ? aciklama ?? null : null;
   const sonuc: YazimSonucu = { yeni: 0, revize: 0, elleUyusmaz: 0 };
   if (!degerler.length) return sonuc;
-  const mevcut = new Map(
-    (await db.endeksDegeri.findMany({ where: { seriKodu, donem: { in: degerler.map((d) => donemTarihi(d.donem)) } } }))
-      .map((d) => [donemMetni(d.donem), d]),
-  );
-  const yeniler: Prisma.EndeksDegeriCreateManyInput[] = [];
-  const islemler: Prisma.PrismaPromise<unknown>[] = [];
-  const simdi = new Date();
-  for (const d of degerler) {
-    const eski = mevcut.get(d.donem);
-    const deger = D(d.deger);
-    if (!eski) { yeniler.push({ seriKodu, donem: donemTarihi(d.donem), deger, kaynak, aciklama: not, alindiAt: simdi }); continue; }
-    if (eski.deger.equals(deger)) {
-      // Elle girilmiş değer EVDS'de aynı geldiyse kaynak EVDS olur; revizyon değildir.
-      if (eski.kaynak !== kaynak && kaynak === "evds") islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { kaynak, aciklama: null, alindiAt: simdi } }));
-      else if (kaynak === "elle" && eski.kaynak === "elle" && (eski.aciklama ?? null) !== not) islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { aciklama: not } }));
-      continue;
-    }
-    // Kur serisinde içinde bulunulan ay ay başından bugüne ortalamadır; her çekimde değişir, revizyon sayılmaz.
-    if (kismiDonem && d.donem === kismiDonem && eski.kaynak === kaynak) {
-      islemler.push(db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, alindiAt: simdi } }));
-      continue;
-    }
-    if (eski.kaynak === "elle" && kaynak === "evds") sonuc.elleUyusmaz++;
-    sonuc.revize++;
-    islemler.push(
-      db.endeksDegerRevizyonu.create({ data: { seriKodu, donem: eski.donem, eskiDeger: eski.deger, yeniDeger: deger, eskiKaynak: eski.kaynak, yeniKaynak: kaynak,
-        // Platform yöneticisinin kendi düzeltmesi uyarı üretmez; EVDS'den gelen fark görülene kadar uyarıdır.
-        gorulduAt: kaynak === "elle" ? simdi : null } }),
-      db.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, kaynak, aciklama: not, alindiAt: simdi } }),
+  return db.$transaction(async (tx) => {
+    // Zamanlayıcı ve platform çekimi aynı eski değerden iki görev açmasın.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"endeks-degeri:" + seriKodu}, 0))::text`;
+    const mevcut = new Map(
+      (await tx.endeksDegeri.findMany({ where: { seriKodu, donem: { in: degerler.map((d) => donemTarihi(d.donem)) } } }))
+        .map((d) => [donemMetni(d.donem), d]),
     );
-  }
-  if (yeniler.length) islemler.unshift(db.endeksDegeri.createMany({ data: yeniler, skipDuplicates: true }));
-  sonuc.yeni = yeniler.length;
-  if (islemler.length) await db.$transaction(islemler);
-  return sonuc;
+    const yeniler: Prisma.EndeksDegeriCreateManyInput[] = [];
+    const islemler: Prisma.PrismaPromise<unknown>[] = [];
+    const simdi = new Date();
+    for (const d of degerler) {
+      const eski = mevcut.get(d.donem);
+      const deger = D(d.deger);
+      if (!eski) { yeniler.push({ seriKodu, donem: donemTarihi(d.donem), deger, kaynak, aciklama: not, alindiAt: simdi }); continue; }
+      if (eski.deger.equals(deger)) {
+        // Elle girilmiş değer EVDS'de aynı geldiyse kaynak EVDS olur; revizyon değildir.
+        if (eski.kaynak !== kaynak && kaynak === "evds") islemler.push(tx.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { kaynak, aciklama: null, alindiAt: simdi } }));
+        else if (kaynak === "elle" && eski.kaynak === "elle" && (eski.aciklama ?? null) !== not) islemler.push(tx.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { aciklama: not } }));
+        continue;
+      }
+      // Kur serisinde içinde bulunulan ay ay başından bugüne ortalamadır; her çekimde değişir, revizyon sayılmaz.
+      if (kismiDonem && d.donem === kismiDonem && eski.kaynak === kaynak) {
+        islemler.push(tx.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, alindiAt: simdi } }));
+        continue;
+      }
+      if (eski.kaynak === "elle" && kaynak === "evds") sonuc.elleUyusmaz++;
+      sonuc.revize++;
+      islemler.push(
+        tx.endeksDegerRevizyonu.create({ data: { seriKodu, donem: eski.donem, eskiDeger: eski.deger, yeniDeger: deger, eskiKaynak: eski.kaynak, yeniKaynak: kaynak,
+          // Platform yöneticisinin kendi düzeltmesi uyarı üretmez; EVDS'den gelen fark görülene kadar uyarıdır.
+          gorulduAt: kaynak === "elle" ? simdi : null } }),
+        tx.endeksDegeri.update({ where: { seriKodu_donem: { seriKodu, donem: eski.donem } }, data: { deger, kaynak, aciklama: not, alindiAt: simdi } }),
+      );
+    }
+    if (yeniler.length) islemler.unshift(tx.endeksDegeri.createMany({ data: yeniler, skipDuplicates: true }));
+    sonuc.yeni = yeniler.length;
+    for (const islem of islemler) await islem;
+    return sonuc;
+  });
 }
 
 /** Çekim sonucunu seri kaydına yazar (uygulama rolünün yazabildiği sütunlar). */

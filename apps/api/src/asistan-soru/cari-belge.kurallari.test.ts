@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cariIletisimDogrula } from "../ai/ai.dogrulama";
 import type { CariIletisimCikarim } from "../ai/ai.semalar";
-import { belgeYolu, cariBilgisiYeterli, cariOzeti, cariTaslagi, cariTipSorusu, sonrakiCariKodu } from "./cari-belge.kurallari";
+import { belgeYolu, cariBilgisiYeterli, cariOzeti, cariTaslagi, cariTipSorusu, ibandanBankaAdi, sonrakiCariKodu } from "./cari-belge.kurallari";
 
 /** Kullanıcının Telegram'dan gönderdiği cari bilgi kartı (CNL-23 kabul örneği). */
 const AKN: CariIletisimCikarim = {
@@ -17,6 +17,8 @@ describe("CNL-23 Telegram görsel yolu", () => {
     ["yeni tedarikçi", { yol: "cari", tip: "tedarikci" }],
     ["hem müşteri hem tedarikçi carisi", { yol: "cari", tip: "her_ikisi" }],
     ["kartvizit", { yol: "cari" }],
+    ["vergi levhası", { yol: "cari" }],
+    ["şirket kartı", { yol: "cari" }],
     ["CARİ AÇ", { yol: "cari" }],
     ["benzin fişi", { yol: "masraf" }],
     ["", { yol: "masraf" }],
@@ -53,6 +55,32 @@ describe("CNL-23 cari bilgisi", () => {
     // İl/ilçe adreste zaten yazılıysa yinelenmez.
     expect(cariOzeti({ ...t, faturaAdresi: { adres: "Özkan Sk. No:5/5 Nilüfer / Bursa", il: "BURSA", ilce: "NİLÜFER" } })).toContain("Adres: Özkan Sk. No:5/5 Nilüfer / Bursa ·");
     expect(cariTipSorusu(t).secenekler.map((s) => s.kod)).toEqual(["musteri", "tedarikci", "her_ikisi", "panel"]);
+  });
+
+  it("IBAN ve e-fatura mükellefiyeti varsa taslağa ve özete yansır", () => {
+    expect(ibandanBankaAdi("TR120006200000012345678901")).toBe("Garanti BBVA");
+    expect(ibandanBankaAdi("TR120006400000012345678901")).toBe("İş Bankası");
+    expect(ibandanBankaAdi("TR120001000000012345678901")).toBe("Ziraat Bankası");
+    expect(ibandanBankaAdi("TR129999900000012345678901")).toBe("Banka Hesabı");
+
+    const t = cariTaslagi(
+      {
+        ...AKN,
+        iban: "TR120006200000012345678901",
+        bankaAdi: "Garanti BBVA",
+        ticaretSicilNo: "12345-BURSA",
+      },
+      "C-0043",
+      "musteri",
+    );
+    expect(t.bankaHesaplari).toEqual([
+      { iban: "TR120006200000012345678901", bankaAdi: "Garanti BBVA", paraBirimi: "TRY" },
+    ]);
+    expect(t.ticaretSicilNo).toBe("12345-BURSA");
+
+    const ozet = cariOzeti({ ...t, efaturaMukellefi: true });
+    expect(ozet).toContain("⚡ e-Fatura Mükellefi");
+    expect(ozet).toContain("🏦 Garanti BBVA (TR1200062...)");
   });
 });
 

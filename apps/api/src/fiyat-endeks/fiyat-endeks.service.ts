@@ -10,7 +10,9 @@ import { ayAraligi, ayBasiMetni, ayKaydir, endeksNormalle, fiyatSerisiHesapla, t
 import { aylikToplamlar, endeksVerisi, KUR_ENDEKSLERI } from "./fiyat-endeks-veri";
 import { EK_CIZGILER, listeFiyatCizgileri, maliyetCizgisi, sonAlisCizgisi, type EkCizgi } from "./fiyat-endeks-cizgiler";
 import { Prisma } from "@prisma/client";
+import { fiyatListesiSurumu } from "../fiyat-listeleri/fiyat-listesi-surumu";
 import { bazAyi, oneriHesapla, YUVARLAMALAR } from "./fiyat-onerisi";
+import { ayniBirimDonemi, birimKirilmalariniOku } from "./birim-kirilmasi";
 
 /** Ekranda gösterilebilecek en uzun dönem (ay). */
 export const EN_UZUN_DONEM_AY = 60;
@@ -112,14 +114,14 @@ export class FiyatEndeksService {
   /**
    * END-16: TL fiyat listesindeki kalemler için "son fiyat değişikliğinden bu
    * yana endeks kadar" yeni fiyat önizlemesi. Yazmaz; uygulama ekrandan,
-   * kullanıcı onayıyla mevcut fiyat listesi uçlarıyla yapılır.
+   * kullanıcı onayıyla sürüm korumalı toplu fiyat ucunda ve ONY kapısıyla yapılır.
    */
   async fiyatOnerisi(s: OneriSorgusu) {
     const { tenantId, rol } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const erisim = await fiyatEndeksErisimi(tx, tenantId, rol);
       if (!erisim.satis) throw new ForbiddenException("Satış fiyatı tarafına erişiminiz yok.");
-      const liste = await tx.fiyatListesi.findFirst({ where: { id: s.listeId }, select: { id: true, ad: true, dovizCinsi: true } });
+      const liste = await tx.fiyatListesi.findFirst({ where: { id: s.listeId }, include: { kalemler: true } });
       if (!liste) throw new NotFoundException("Fiyat listesi bulunamadı");
       if (liste.dovizCinsi !== "TRY") throw new BadRequestException(`${liste.ad} listesi ${liste.dovizCinsi} cinsinden; endeks önerisi yalnız TL listelerde yapılır.`);
       const kalemler = await tx.fiyatListesiKalem.findMany({
@@ -141,7 +143,7 @@ export class FiyatEndeksService {
         ...oneriHesapla(k.fiyat, bazlar[i], son, endeks.degerler, s.yuvarlama),
       })).sort((a, b) => a.kod.localeCompare(b.kod, "tr"));
       return {
-        liste, endeks: { kod: endeks.kod, ad: endeks.ad, tur: endeks.tur, bazYili: endeks.bazYili, sonAy: son }, yuvarlama: s.yuvarlama,
+        liste: { id: liste.id, ad: liste.ad, dovizCinsi: liste.dovizCinsi }, surum: fiyatListesiSurumu(liste), endeks: { kod: endeks.kod, ad: endeks.ad, tur: endeks.tur, bazYili: endeks.bazYili, sonAy: son }, yuvarlama: s.yuvarlama,
         satirlar,
         ozet: { oneri: satirlar.filter((r) => r.durum === "oneri").length, toplam: satirlar.length },
       };
@@ -207,12 +209,14 @@ export class FiyatEndeksService {
       if (!satisAcik && !alisAcik) throw new ForbiddenException("Bu ürün için görebileceğiniz fiyat tarafı yok.");
 
       const toplamBasi = ayKaydir(baslangic, -12), toplamSonu = ayKaydir(bitis, 1);
+      const birimGecmisi = await birimKirilmalariniOku(tx, [stokId], toplamBasi, bitis);
+      const kirilmalar = birimGecmisi.map((k) => k.ay);
       const endeksler = await Promise.all([...new Set(s.endeksler)].map((kod) => endeksVerisi(tx, kod, baslangic, bitis)));
       const endeksHaritasi = new Map(endeksler.map((e) => [e.kod, e.degerler]));
       const uyarilar: string[] = [];
       const seriler: { anahtar: string; ad: string; taraf: "satis" | "alis"; listeId: string | null; ozet: { satir: number }; satirlar: ReturnType<typeof fiyatSerisiHesapla>["satirlar"]; karsilastirmalar: ReturnType<typeof fiyatSerisiHesapla>["karsilastirmalar"] }[] = [];
       const ekle = (anahtar: string, ad: string, taraf: "satis" | "alis", listeId: string | null, toplamlar: Map<string, AylikToplam>) => {
-        const h = fiyatSerisiHesapla(toplamlar, aylar, baz, endeksHaritasi);
+        const h = fiyatSerisiHesapla(toplamlar, aylar, baz, endeksHaritasi, kirilmalar);
         seriler.push({ anahtar, ad, taraf, listeId, ozet: { satir: h.satirlar.reduce((t, r) => t + r.satir, 0) }, ...h });
       };
       const harita = (satirlar: Awaited<ReturnType<typeof aylikToplamlar>>, grup: string) => new Map(satirlar.filter((r) => r.grup === grup).map((r) => [r.ay, r.toplam]));
@@ -258,9 +262,11 @@ export class FiyatEndeksService {
       if (erisim.alis && cizgiler.has("maliyet")) ekCizgiler.push(await maliyetCizgisi(tx, { stokId, varyantId: s.varyantId ?? null, aylar, bazFiyat }));
       if (erisim.alis && cizgiler.has("sonAlis")) ekCizgiler.push(await sonAlisCizgisi(tx, { stokId, varyantId: s.varyantId ?? null, aylar, bazFiyat }));
       if (ekCizgiler.length && !bazFiyat) uyarilar.push("Baz ayda gerçekleşen fiyat olmadığı için ek çizgiler grafikte ölçeklenemedi; TL değerleri tabloda.");
+      for (const c of ekCizgiler) for (const d of c.degerler) if (!ayniBirimDonemi(d.ay, baz, kirilmalar)) d.normal = null;
+      if (birimGecmisi.length) uyarilar.push("Birim değişiklikleri tarihçede gösterildi; kırılma ayı ve kırılmanın iki tarafındaki oranlar hesaplanmadı. Eski kayıtlar kendi döneminin birimindedir.");
 
       return {
-        stok, aylar, baz, erisim,
+        stok, aylar, baz, erisim, birimGecmisi,
         esik: { enAzSatir: 2 },
         seriler,
         ekCizgiler,

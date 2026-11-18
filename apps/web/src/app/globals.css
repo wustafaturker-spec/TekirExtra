@@ -1554,6 +1554,7 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .invoice-summary.is-warning ul { font-size: .8rem; margin: 0; padding-left: 1rem; }
 .invoice-summary__actions { display: grid; gap: .35rem; text-align: center; }
 .invoice-summary__actions .btn { width: 100%; }
+.invoice-mobile-save { display: none; }
 /* Senaryo özeti dar panelde satır satır okunur. */
 .invoice-layout__side .scenario-summary { background: none; border: 0; display: block; margin: 0 0 .4rem; padding: 0; }
 .invoice-layout__side .scenario-summary > div { align-items: baseline; border-bottom: 1px dashed var(--border); border-right: 0; display: flex; gap: .5rem; justify-content: space-between; padding: .35rem 0; }
@@ -1575,6 +1576,23 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
   .invoice-layout__side { margin: 0 1.25rem; position: static; }
 }
 @media (max-width: 760px) {
+  .invoice-editor .invoice-desktop-save { display: none; }
+  .invoice-mobile-save {
+    align-items: center;
+    background: var(--surface);
+    border-top: 1px solid var(--border-strong);
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem .75rem;
+    justify-content: space-between;
+    padding: .6rem .85rem calc(.6rem + env(safe-area-inset-bottom));
+    position: sticky;
+    z-index: 5;
+  }
+  .invoice-mobile-save > div { display: grid; min-width: 0; overflow-wrap: anywhere; }
+  .invoice-mobile-save small { color: var(--text-muted); }
+  .invoice-mobile-save .btn { min-height: 44px; max-width: 100%; white-space: normal; }
   .invoice-head-fields, .invoice-notes { grid-template-columns: 1fr; }
   .document-fields__genis { grid-column: auto; }
   .invoice-line__index { display: none; }
@@ -2984,7 +3002,7 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 
 /* ─── Sanal POS operasyon merkezi ───────────────────────────────────────── */
 .pos-page{display:grid;gap:1rem}.pos-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;padding:1.8rem;border-radius:22px;color:#fff;background:radial-gradient(circle at 85% 10%,rgba(45,212,191,.35),transparent 28%),linear-gradient(135deg,#062d35,#0f5960 58%,#0f766e);box-shadow:0 20px 46px rgba(6,78,82,.2)}.pos-hero span,.pos-section-head span,.pos-register .card__title span,.pos-form__head span{display:block;font-size:.68rem;font-weight:850;letter-spacing:.14em;color:#99f6e4}.pos-hero h1{margin:.3rem 0;font-size:clamp(1.8rem,3vw,2.65rem)}.pos-hero p{max-width:760px;margin:0;color:#ccfbf1;line-height:1.55}.pos-hero>div:last-child{display:flex;gap:.5rem;white-space:nowrap}.pos-hero .btn--ghost{border-color:rgba(255,255,255,.28);color:#fff;background:rgba(255,255,255,.1)}.pos-kpis{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:.8rem}.pos-kpis>div{padding:1rem 1.1rem;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 6px 20px rgba(15,23,42,.04)}.pos-kpis span,.pos-kpis small{display:block;color:var(--text-muted)}.pos-kpis strong{display:block;margin:.25rem 0;font-size:1.7rem}.pos-kpis .is-lead{border-color:#14b8a6;background:linear-gradient(145deg,#ecfdf5,#fff)}.pos-kpis .is-danger{border-color:#fb7185;background:#fff1f2}.pos-form{border-color:color-mix(in srgb,#0f766e 32%,var(--border));box-shadow:0 12px 34px rgba(15,118,110,.08)}.pos-form__head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;padding-bottom:.85rem;border-bottom:1px solid var(--border)}.pos-form__head span{color:#0f766e}.pos-form__head h2{margin:.18rem 0}.pos-form__head p{margin:0;color:var(--text-muted)}.pos-form__grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items: flex-end;gap:.8rem}.pos-form__grid>.btn{min-height:42px}.pos-readiness{grid-column:1/-2;display:flex;align-items:center;gap:.45rem;min-height:42px;padding:.45rem .65rem;border-radius:10px;background:var(--surface-muted)}.pos-readiness>span:last-child{margin-left:auto;color:var(--text-muted);font-size:.8rem}.pos-accounts{display:grid;gap:.7rem}.pos-section-head{display:flex;align-items: flex-end;justify-content:space-between}.pos-section-head span{color:#0f766e}.pos-section-head h2{margin:.18rem 0}.pos-account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.pos-account-grid article{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:.85rem;padding:1rem;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 5px 18px rgba(15,23,42,.04)}.pos-account-grid article.is-error{border-color:#fb7185;background:#fff7f7}.pos-provider{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:linear-gradient(145deg,#ccfbf1,#99f6e4);color:#115e59;font-weight:900}.pos-account-grid article>div:nth-child(2){display:grid;gap:.15rem;min-width:0}.pos-account-grid article small{color:var(--text-muted)}.pos-account-grid article>div:nth-child(2)>span{display:flex;align-items:center;gap:.35rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-size:.73rem}.pos-account-grid article i{width:7px;height:7px;border-radius:50%;background:#f43f5e}.pos-account-grid article i.is-online{background:#10b981;box-shadow:0 0 0 3px #d1fae5}.pos-account-grid article>div:last-child{display:grid;justify-items:end;gap:.25rem}.pos-filter__grid{display:grid;grid-template-columns:minmax(260px,2fr) repeat(2,minmax(170px,1fr)) auto;align-items: flex-end;gap:.75rem}.pos-filter__grid>span{align-self:center;color:var(--text-muted);font-size:.82rem}.pos-register .card__title span{color:#0f766e}.pos-register .card__title h2{margin:.18rem 0}.pos-register td{vertical-align:middle}.pos-register td>strong,.pos-register td>small{display:block}.pos-register td>small{margin-top:.2rem;color:var(--text-muted)}.pos-register tr.is-error{background:color-mix(in srgb,#f43f5e 5%,transparent)}.pos-delivery,.pos-actions{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.pos-error{display:block;max-width:260px;color:#b91c1c!important;line-height:1.35}.pos-empty{display:grid;place-items:center;gap:.3rem;min-height:130px;color:var(--text-muted)}.pos-pagination{display:flex;align-items:center;justify-content:space-between;padding:.8rem 1rem;border-top:1px solid var(--border);color:var(--text-muted)}.pos-pagination>div{display:flex;gap:.4rem}
-@media(max-width:1100px){.pos-kpis,.pos-form__grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pos-readiness{grid-column:1/-1}.pos-filter__grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.pos-hero{align-items:flex-start;flex-direction:column}.pos-hero>div:last-child{flex-wrap:wrap}.pos-kpis,.pos-form__grid,.pos-account-grid,.pos-filter__grid{grid-template-columns:1fr}.pos-readiness{align-items:flex-start;flex-direction:column}.pos-readiness>span:last-child{margin-left:0}.pos-account-grid article{grid-template-columns:44px minmax(0,1fr)}.pos-account-grid article>div:last-child{grid-column:2;justify-items:start}.pos-register th:nth-child(3),.pos-register td:nth-child(3),.pos-register th:nth-child(4),.pos-register td:nth-child(4){display:none}.pos-pagination{align-items:flex-start;flex-direction:column;gap:.6rem}}
+@media(max-width:1100px){.pos-kpis,.pos-form__grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pos-readiness{grid-column:1/-1}.pos-filter__grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.pos-hero{align-items:flex-start;flex-direction:column}.pos-hero>div:last-child{flex-wrap:wrap}.pos-kpis,.pos-form__grid,.pos-account-grid,.pos-filter__grid{grid-template-columns:1fr}.pos-readiness{align-items:flex-start;flex-direction:column}.pos-readiness>span:last-child{margin-left:0}.pos-account-grid article{grid-template-columns:44px minmax(0,1fr)}.pos-account-grid article>div:last-child{grid-column:2;justify-items:start}.pos-pagination{align-items:flex-start;flex-direction:column;gap:.6rem}}
 .market-page{display:grid;gap:1rem}.market-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;padding:1.75rem;border-radius:20px;color:#fff;background:linear-gradient(135deg,#172554,#1d4ed8 60%,#0284c7);box-shadow:0 18px 42px rgba(30,64,175,.2)}.market-hero span,.market-drawer header span{display:block;font-size:.68rem;font-weight:800;letter-spacing:.14em;color:#bfdbfe}.market-hero h1{margin:.3rem 0;font-size:clamp(1.7rem,3vw,2.55rem)}.market-hero p{max-width:720px;margin:0;color:#dbeafe}.market-hero>div:last-child{display:flex;gap:.5rem}.market-kpis{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:.8rem}.market-kpis>div{padding:1rem 1.1rem;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 5px 18px rgba(15,23,42,.04)}.market-kpis span,.market-kpis small{display:block;color:var(--text-muted)}.market-kpis strong{display:block;margin:.25rem 0;font-size:1.65rem}.market-kpis .is-lead{border-color:#3b82f6;background:linear-gradient(145deg,#eff6ff,#fff)}.market-kpis .is-warning{border-color:#f59e0b;background:#fffbeb}.market-kpis .is-danger{border-color:#ef4444;background:#fff1f2}.market-filter__grid{display:grid;grid-template-columns:minmax(280px,2fr) repeat(2,minmax(160px,1fr)) auto;align-items: flex-end;gap:.75rem}.market-selection{display:flex;align-items:center;justify-content:space-between;gap:1rem}.market-selection>div{display:flex;align-items:center;gap:.5rem}.market-selection span{color:var(--text-muted);font-size:.85rem}.market-register tr.is-error{background:color-mix(in srgb,#ef4444 5%,transparent)}.market-register tr.is-cancelled{opacity:.6}.market-register td{vertical-align:middle}.market-register td>small,.market-register td>strong{display:block}.market-register td>small{margin-top:.2rem;color:var(--text-muted)}.market-order{display:flex;align-items:center;gap:.6rem}.market-order i{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#dbeafe;color:#1d4ed8;font-style:normal;font-size:.75rem;font-weight:800}.market-order span{display:grid}.market-order small{color:var(--text-muted)}.market-error{max-width:220px;color:#b91c1c!important}.market-empty{display:grid;place-items:center;gap:.35rem;min-height:140px;color:var(--text-muted)}.market-backdrop{position:fixed;z-index:100;inset:0;display:flex;justify-content:flex-end;background:rgba(2,16,35,.55);backdrop-filter:blur(3px)}.market-drawer{width:min(760px,96vw);height:100%;overflow:auto;background:var(--surface);box-shadow:-20px 0 50px rgba(0,0,0,.2)}.market-drawer>header{position:sticky;z-index:2;top:0;display:flex;align-items:flex-start;justify-content:space-between;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(8px)}.market-drawer header span{color:#2563eb}.market-drawer h2{margin:.2rem 0 .45rem}.market-drawer header button{border:0;background:none;font-size:1.8rem;cursor:pointer;color:var(--text-muted)}.market-detail-summary{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:.7rem;padding:1.25rem 1.5rem}.market-detail-summary>div{display:grid;gap:.2rem;padding:.8rem;border:1px solid var(--border);border-radius:12px}.market-detail-summary span{font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)}.market-detail-summary small{color:var(--text-muted)}.market-lines{padding:0 1.5rem 1rem}.market-lines article{display:grid;grid-template-columns:minmax(200px,1.5fr) auto minmax(180px,1fr);align-items:center;gap:.8rem;padding:.9rem 0;border-bottom:1px solid var(--border)}.market-lines article.is-missing{margin:.45rem 0;padding:.9rem;border:1px solid #f59e0b;border-radius:12px;background:#fffbeb}.market-lines article>div:first-child{display:grid}.market-lines small{color:var(--text-muted)}.market-map{display:grid;gap:.4rem}.market-drawer>footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.5rem;border-top:1px solid var(--border);color:var(--text-muted)}
 @media(max-width:1100px){.market-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.market-filter__grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.market-hero,.market-selection{align-items:flex-start;flex-direction:column}.market-hero>div:last-child,.market-selection>div{flex-wrap:wrap}.market-kpis,.market-filter__grid,.market-detail-summary{grid-template-columns:1fr}.market-lines article{grid-template-columns:1fr}.market-drawer{width:100%}.market-register th:nth-child(3),.market-register td:nth-child(3),.market-register th:nth-child(5),.market-register td:nth-child(5){display:none}}
 .fee-page{display:grid;gap:1rem}.fee-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;padding:1.75rem;border-radius:20px;color:#fff;background:linear-gradient(135deg,#3f1d0b,#9a3412 60%,#ea580c);box-shadow:0 18px 42px rgba(124,45,18,.2)}.fee-hero span,.fee-drawer header span{display:block;font-size:.68rem;font-weight:800;letter-spacing:.14em;color:#fed7aa}.fee-hero h1{margin:.3rem 0;font-size:clamp(1.7rem,3vw,2.55rem)}.fee-hero p{max-width:720px;margin:0;color:#ffedd5}.fee-hero>div:last-child{display:flex;gap:.5rem}.fee-kpis{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:.8rem}.fee-kpis>div{padding:1rem 1.1rem;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 5px 18px rgba(15,23,42,.04)}.fee-kpis span,.fee-kpis small{display:block;color:var(--text-muted)}.fee-kpis strong{display:block;margin:.25rem 0;font-size:1.65rem}.fee-kpis .is-lead{border-color:#f97316;background:linear-gradient(145deg,#fff7ed,#fff)}.fee-kpis .is-warning{border-color:#f59e0b;background:#fffbeb}.fee-filter__grid{display:grid;grid-template-columns:minmax(250px,1.7fr) repeat(4,minmax(130px,1fr)) auto;align-items: flex-end;gap:.7rem}.fee-selection{display:flex;align-items:center;justify-content:space-between;gap:1rem}.fee-selection>div{display:flex;align-items:center;gap:.5rem}.fee-selection span,.fee-muted{color:var(--text-muted);font-size:.83rem}.fee-register td{vertical-align:middle}.fee-register td>strong,.fee-register td>small{display:block}.fee-register td>small{margin-top:.2rem;color:var(--text-muted)}.fee-amount{color:#c2410c}.fee-empty{display:grid;place-items:center;gap:.35rem;min-height:140px;color:var(--text-muted)}.fee-backdrop{position:fixed;z-index:100;inset:0;display:flex;justify-content:flex-end;background:rgba(35,12,2,.55);backdrop-filter:blur(3px)}.fee-drawer{width:min(650px,96vw);height:100%;overflow:auto;background:var(--surface);box-shadow:-20px 0 50px rgba(0,0,0,.2)}.fee-drawer>header{position:sticky;z-index:2;top:0;display:flex;align-items:flex-start;justify-content:space-between;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(8px)}.fee-drawer header span{color:#ea580c}.fee-drawer h2{margin:.2rem 0 .45rem}.fee-drawer header button{border:0;background:none;font-size:1.8rem;cursor:pointer;color:var(--text-muted)}.fee-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.7rem;padding:1.25rem 1.5rem}.fee-detail-grid>div,.fee-note{display:grid;gap:.2rem;padding:.8rem;border:1px solid var(--border);border-radius:12px}.fee-detail-grid span,.fee-note span{font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)}.fee-note{margin:0 1.5rem .8rem}.fee-note p{margin:.2rem 0}.fee-raw{padding:0 1.5rem 1rem}.fee-raw pre{max-height:330px;overflow:auto;padding:1rem;border-radius:12px;background:#1e293b;color:#e2e8f0;font-size:.75rem}.fee-drawer>footer{padding:1rem 1.5rem;border-top:1px solid var(--border);color:var(--text-muted)}
@@ -3803,6 +3821,19 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .undo-form p { color: var(--text-muted); font-size: .72rem; margin: 0; }
 .undo-form footer { display: flex; gap: .5rem; justify-content: flex-end; }
 .treasury-register .row-link.is-reversed td { color: var(--text-subtle); }
+.treasury-page-actions { flex-wrap: wrap; }
+.treasury-register .treasury-filter-grid { padding: .75rem 1rem; }
+.treasury-register .treasury-filter-grid > * { min-width: 0; }
+.cheque-register .cheque-filter { padding: .75rem 1rem; }
+.match-panel { scroll-margin-top: 4.5rem; }
+@media (max-width: 1100px) {
+  .statement-workspace .statement-list { min-height: 0; }
+}
+@media (max-width: 760px) {
+  .treasury-movement-table td[data-label="Hesap"] { grid-column: 1 / -1; }
+  .treasury-movement-table td[data-label="Tutar"] strong { font-size: .85rem !important; }
+  .treasury-movement-table td[data-label="Durum"]:empty::after { content: "—"; }
+}
 .treasury-register .row-link.is-reversed strong.treasury-in, .treasury-register .row-link.is-reversed strong.treasury-out { text-decoration: line-through; }
 .payment-slip__correction { display: grid; gap: .6rem; }
 @media (max-width: 620px) {
@@ -4433,6 +4464,32 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .cari-toplu__form { align-items: flex-end; background: var(--surface-2); border: 1px solid var(--border); border-radius: .65rem; display: flex; flex-wrap: wrap; gap: .6rem .8rem; padding: .75rem; }
 .cari-toplu__form .field { min-width: 180px; }
 .cari-toplu__secim { width: 2.25rem; }
+.record-list-tools { position: relative; }
+.record-list-tools__menu { position: absolute; inset-inline-end: 0; z-index: 4; display: grid; gap: .25rem; width: max-content; max-width: min(280px, 85vw); padding: .5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); }
+.record-list-tools__menu > .btn { justify-content: flex-start; white-space: normal; }
+.cari-liste-filtreleri > summary { cursor: pointer; font-weight: 600; }
+.cari-liste-filtreleri[open] > summary { margin-bottom: .65rem; }
+:is(.cari-liste-karti, .stok-liste-karti) > .alert { margin: .75rem 1rem; }
+:is(.cari-liste-adi, .stok-liste-adi) a { color: var(--accent-text); }
+@media (max-width: 760px) {
+  .record-list-tools__menu { inset-inline: 0 auto; }
+  .cari-liste-tablo .table td.cari-liste-adi { grid-row: 1; padding-inline-end: 2.5rem; }
+  .cari-liste-tablo .cari-toplu__secim { grid-column: 2; grid-row: 1; justify-self: end; width: auto; z-index: 1; }
+  .cari-liste-tablo .table td:is([data-label="Sektör"], [data-label="VKN / TCKN"], [data-label="e-Belge"]) { display: none; }
+  .stok-liste-tablo .stok-liste-adi { grid-row: 1; }
+  .stok-liste-tablo .table td:is([data-label="KDV"], [data-label="Ort. maliyet"], [data-label="Alış fiyatı"]) { display: none; }
+}
+.ocr-actions { flex-wrap: wrap; }
+.ocr-actions > .btn { max-width: 100%; white-space: normal; }
+.ocr-liste > .between { flex-wrap: wrap; gap: .5rem; padding: .75rem 1rem 0; }
+.ocr-liste .ocr-actions > .select { min-width: 0; max-width: 100%; }
+.ocr-liste-hatasi { margin: .75rem 1rem; }
+.ocr-inceleme-grid { border: 0; display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; min-width: 0; padding: 0; overflow-wrap: anywhere; }
+.ocr-inceleme-grid > * { min-width: 0; }
+@media (max-width: 760px) {
+  .ocr-liste-tablo .table td:is([data-label="Tür ve sayfa"], [data-label="Satıcı ve belge no"], [data-label="Güven skoru"]) { display: none; }
+  .ocr-inceleme-grid { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 640px) { .cari-toplu__eylemler { margin-left: 0; } }
 
 /* CARI-41: cari grupları */
@@ -5979,6 +6036,48 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 
 /* PLT-40: POS satırında kart ve işlem numaraları */
 .pos-ids { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pos-form-anchor { height: 0; scroll-margin-top: 5rem; }
+.pos-page-actions { justify-content: flex-end; }
+.pos-workspace .pos-kpis > div { padding: .65rem .85rem; min-width: 0; }
+.pos-workspace .pos-kpis strong { font-size: clamp(1rem, 2vw, 1.5rem); }
+.pos-currency-balances { display: flex; flex-wrap: wrap; gap: .15rem .8rem; }
+.pos-currency-balances strong { overflow-wrap: anywhere; font-size: clamp(1rem, 2vw, 1.5rem); }
+.pos-payment-register .pos-filter__grid { padding: .75rem 1rem; }
+.pos-payment-register td { overflow-wrap: anywhere; }
+.pos-payment-detail > td { background: var(--surface-muted); }
+.pos-payment-detail__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr); gap: .75rem 1rem; padding: .35rem; }
+.pos-payment-detail__grid > div { display: grid; align-content: start; gap: .25rem; }
+.pos-payment-detail__grid small { color: var(--text-muted); }
+.pos-accounts .pos-section-head { flex-wrap: wrap; gap: .5rem; }
+.pos-accounts .pos-section-head select { width: auto; }
+.pos-provider-list { display: grid; }
+.pos-provider-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .75rem; padding: .85rem 0; }
+.pos-provider-row + .pos-provider-row { border-top: 1px solid var(--border); }
+.pos-provider-description { display: grid; gap: .2rem; overflow-wrap: anywhere; }
+.pos-provider-fields > * { min-width: 0; }
+@media (max-width: 760px) {
+  .pos-provider-row { grid-template-columns: auto minmax(0, 1fr); }
+  .pos-provider-row > .pos-actions { grid-column: 1 / -1; }
+  .pos-page-actions { justify-content: flex-start; }
+  .pos-workspace .pos-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .pos-page .pos-currency-balances { gap: .25rem .65rem; }
+  .pos-payment-register .table { display: block; min-width: 0; }
+  .pos-payment-register thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pos-payment-register tbody { display: grid; gap: .5rem; padding: .5rem; }
+  .pos-payment-register tbody > tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: .65rem; }
+  .pos-payment-register tbody td { display: block; min-width: 0; padding: .6rem; border: 0; white-space: normal; text-align: left; }
+  .pos-payment-register td[data-label]::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: .7rem; margin-bottom: .25rem; }
+  .pos-payment-register td:is([colspan], [data-label="İşlem"]) { grid-column: 1 / -1; }
+  .pos-payment-detail__grid { grid-template-columns: 1fr; }
+  .pos-settlement__account .table { display: block; min-width: 0; }
+  .pos-settlement__account thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pos-settlement__account tbody { display: block; }
+  .pos-settlement__account tbody > tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--border); }
+  .pos-settlement__account tbody td { display: block; min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; border: 0; }
+  .pos-settlement__account td[data-label]::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: .7rem; }
+  .pos-settlement__account td:first-child { grid-column: 1 / -1; }
+  .pos-settlement__unallocated td:last-child { display: none; }
+}
 
 /* PLT-42: abonelik iadesi formu (firma kartı ve ödeme raporu) */
 .subscription-refund { display: grid; gap: 0.75rem; padding: 0.25rem 0; }
@@ -6273,6 +6372,11 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .endeks-secim { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
 .endeks-secim label { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
 .endeks-tablo td.is-bos { color: var(--text-muted); }
+.endeks-fiyat-onerisi,
+.endeks-fiyat-onerisi .form-grid > * { min-width: 0; }
+.endeks-fiyat-onerisi .endeks-tablo { max-width: 100%; }
+.endeks-oneri-eylemleri { gap: .5rem; flex-wrap: wrap; }
+.endeks-oneri-eylemleri > .btn { max-width: 100%; white-space: normal; }
 .evds-secici { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
 .evds-secici > summary { cursor: pointer; margin-bottom: .75rem; }
 .evds-secici__tablo { max-height: 420px; overflow-y: auto; }

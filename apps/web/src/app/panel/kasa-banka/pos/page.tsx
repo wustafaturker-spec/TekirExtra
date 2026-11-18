@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, ApiHata, tumSayfalariAl } from "@/lib/api";
 import { BankayaGececekler, type AktarimGrubu } from "./bankaya-gececekler";
 import { SlipFormu } from "./slip-formu";
 import { TahsilatIslemi, type IslemHedefi } from "./tahsilat-islemi";
 import { HesapAyarlari } from "./hesap-ayarlari";
 import { CariBakiye } from "@/components/cari-bakiye";
-import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TabPanel, Tabs, TableWrap } from "@/components/ui";
 import { bugunTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { CariSecici } from "@/components/cari-secici";
@@ -167,10 +167,12 @@ export default function PosHesaplari() {
     [faturalar, setFaturalar] = useState<Fatura[]>([]),
     [faturaId, setFaturaId] = useState(""),
     [tutar, setTutar] = useState("");
+  const [gorunum, setGorunum] = useState<"tahsilatlar" | "hesaplar" | "mutabakat">("tahsilatlar");
   const [arama, setArama] = useState(""),
     [durum, setDurum] = useState(""),
     [posFiltresi, setPosFiltresi] = useState(""),
     [sayfa, setSayfa] = useState(1),
+    [acikAyrinti, setAcikAyrinti] = useState<string | null>(null),
     [islemde, setIslemde] = useState(""),
     [hata, setHata] = useState(""),
     [basari, setBasari] = useState("");
@@ -240,11 +242,20 @@ export default function PosHesaplari() {
     cariDetay.eposta &&
     (seciliPos.saglayici !== "iyzico" || cariDetay.adresler.length),
   );
-  const toplamBakiye = hesaplar.reduce((t, x) => t + Number(x.bakiye), 0),
-    basarili = liste.durumOzetleri.odendi ?? 0,
+  const dovizBakiyeleri = new Map<string, number>();
+  for (const hesap of hesaplar) {
+    dovizBakiyeleri.set(hesap.dovizCinsi, (dovizBakiyeleri.get(hesap.dovizCinsi) ?? 0) + Number(hesap.bakiye));
+  }
+  const basarili = liste.durumOzetleri.odendi ?? 0,
     basarisiz = liste.durumOzetleri.basarisiz ?? 0,
     bekleyen = liste.durumOzetleri.baslatildi ?? 0;
   const basariOrani = basarili + basarisiz ? (basarili / (basarili + basarisiz)) * 100 : 0;
+  const formKonumu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    formKonumu.current?.focus({ preventScroll: true });
+    formKonumu.current?.scrollIntoView({ block: "start" });
+  }, [panel, islemHedefi, ayarHesap, aktarim, aktarimOn]);
+
   const acikPanel = (p: "tahsilat" | "hesap" | "slip") => {
     setPanel(p);
     setAktarim(null);
@@ -264,7 +275,6 @@ export default function PosHesaplari() {
     setAyarHesap(null);
     setAktarim(h);
     setAktarimOn({ brut: g.brut, komisyon: g.onerilenKomisyon, tarih: g.vadesiGeldi ? g.valorTarihi : bugun() });
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function islemAc(h: IslemHedefi) {
     setPanel(null);
@@ -273,7 +283,6 @@ export default function PosHesaplari() {
     setIslemHedefi(h);
     setHata("");
     setBasari("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
   async function calistir(anahtar: string, is: () => Promise<void>) {
     setIslemde(anahtar);
@@ -401,30 +410,19 @@ export default function PosHesaplari() {
     }
   }
   return (
-    <div className="pos-page">
-      <header className="pos-hero">
-        <div>
-          <span>TAHSİLAT & MUTABAKAT</span>
-          <h1>POS çalışma alanı</h1>
-          <p>
-            Sanal POS ödeme bağlantılarını ve banka POS'u sliplerini yönetin, bankaya geçecek tutarları valör tarihine göre takip edip
-            bankayla mutabık hâle getirin.
-          </p>
-        </div>
-        <div>
-          <Button onClick={() => acikPanel("hesap")}>POS hesabı aç</Button>
-          {bankaPoslari.length > 0 && <Button onClick={() => acikPanel("slip")}>Slip gir</Button>}
-          <Button variant="primary" onClick={() => acikPanel("tahsilat")}>
-            + Ödeme bağlantısı
-          </Button>
-        </div>
-      </header>
+    <div className="pos-page pos-workspace">
+      <PageHeader title="POS tahsilatları" actions={<div className="pos-actions pos-page-actions">
+        {bankaPoslari.length > 0 && <Button onClick={() => acikPanel("slip")}>Slip gir</Button>}
+        <Button variant="primary" onClick={() => acikPanel("tahsilat")}>Ödeme bağlantısı oluştur</Button>
+      </div>} />
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
       <section className="pos-kpis">
         <div className="is-lead">
           <span>Bekleyen POS alacağı</span>
-          <strong>{para(toplamBakiye)}</strong>
+          <div className="pos-currency-balances">
+            {dovizBakiyeleri.size ? Array.from(dovizBakiyeleri, ([doviz, bakiye]) => <strong key={doviz}>{para(bakiye, doviz)}</strong>) : <strong>—</strong>}
+          </div>
           <small>{hesaplar.length} sağlayıcı hesabı</small>
         </div>
         <div>
@@ -443,6 +441,7 @@ export default function PosHesaplari() {
           <small>{basarili} tamamlanan ödeme</small>
         </div>
       </section>
+      {(panel || islemHedefi || ayarHesap || aktarim) && <div ref={formKonumu} tabIndex={-1} className="pos-form-anchor" aria-label="POS işlem formu" />}
       {panel === "hesap" && (
         <Card className="pos-form">
           <div className="pos-form__head">
@@ -702,349 +701,367 @@ export default function PosHesaplari() {
           </form>
         </Card>
       )}
-      <BankayaGececekler yenile={yenile} onAktar={grubuAktar} />
-      <section className="pos-accounts">
-        <div className="pos-section-head">
-          <div>
-            <span>SAĞLAYICI HESAPLARI</span>
-            <h2>POS bakiyeleri</h2>
-          </div>
-          <Select aria-label="Özet dönemi" value={ozetDonemi} onChange={(e) => setOzetDonemi(e.target.value as OzetDonemi)}>
-            <option value="bu_ay">Bu ay</option>
-            <option value="gecen_ay">Geçen ay</option>
-          </Select>
-        </div>
-        <div className="pos-account-grid">
-          {hesaplar.map((x) => (
-            <article key={x.id} className={x.saglayici !== "banka" && x.baglanti?.durum !== "aktif" ? "is-error" : ""}>
-              <div className="pos-provider">{x.saglayici.slice(0, 2).toUpperCase()}</div>
-              <div>
-                <strong>{x.ad}</strong>
-                <small>
-                  {x.saglayici === "banka" ? "Banka POS'u" : x.saglayici} · {x.dovizCinsi} · valör{" "}
-                  {x.valorGun === 0 ? "aynı gün" : `${x.valorGun} gün`} · %{Number(x.komisyonOrani).toLocaleString("tr-TR")}
-                  {Number(x.islemUcreti) > 0 && ` + ${para(x.islemUcreti, x.dovizCinsi)}`}
-                  {x.taksitOranlari?.length ? ` · taksit ${x.taksitOranlari.map((t) => t.taksit).join(", ")}` : " · tek çekim"}
-                </small>
-                {x.saglayici === "banka" ? (
-                  <span>
-                    <i className="is-online" />
-                    {x.varsayilanBankaHesap ? `→ ${x.varsayilanBankaHesap.ad}` : "Banka hesabı seçilmeli"}
-                  </span>
-                ) : (
-                  <span>
-                    <i className={x.baglanti?.durum === "aktif" ? "is-online" : ""} />
-                    {x.baglanti?.durum === "aktif" ? "Bağlantı hazır" : (x.baglanti?.sonSenkronHatasi ?? "Bağlantı kontrol edilmeli")}
-                  </span>
+      <Tabs ariaLabel="POS çalışma alanı" idPrefix="pos-workspace" value={gorunum} onChange={setGorunum} items={[
+        { deger: "tahsilatlar", baslik: "Tahsilatlar" },
+        { deger: "hesaplar", baslik: "POS hesapları" },
+        { deger: "mutabakat", baslik: "Bankaya geçecekler" },
+      ]} />
+      <div hidden={gorunum !== "tahsilatlar"}>
+        <TabPanel idPrefix="pos-workspace" value="tahsilatlar">
+          <Card className="pos-register pos-payment-register" pad={false} title="Tahsilat listesi">
+            <div className="pos-filter__grid">
+              <Field label="Talep ara">
+                <Input
+                  value={arama}
+                  onChange={(e) => {
+                    setArama(e.target.value);
+                    setSayfa(1);
+                  }}
+                  placeholder="Cari, fatura veya hata mesajı…"
+                />
+              </Field>
+              <Field label="Durum">
+                <Select
+                  value={durum}
+                  onChange={(e) => {
+                    setDurum(e.target.value);
+                    setSayfa(1);
+                  }}
+                >
+                  <option value="">Tüm durumlar</option>
+                  {Object.entries(durumAdi).map(([k, v]) => (
+                    <option value={k} key={k}>
+                      {v}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="POS hesabı">
+                <Select
+                  value={posFiltresi}
+                  onChange={(e) => {
+                    setPosFiltresi(e.target.value);
+                    setSayfa(1);
+                  }}
+                >
+                  <option value="">Tüm hesaplar</option>
+                  {hesaplar.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.ad}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <span>{liste.toplam} kayıt</span>
+            </div>
+            <TableWrap>
+              <thead>
+                <tr>
+                  <th>Tarih</th>
+                  <th>Cari / fatura</th>
+                  <th>Durum</th>
+                  <th className="num">Tutar</th>
+                  <th>İşlem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {liste.kayitlar.map((t) => (
+                  <Fragment key={t.id}>
+                    <tr className={t.durum === "basarisiz" ? "is-error" : undefined}>
+                      <td data-label="Tarih">
+                        <strong>{new Date(t.createdAt).toLocaleString("tr-TR")}</strong>
+                        <small>
+                          {t.odemeTarihi
+                            ? `Ödendi: ${t.kanal === "slip" ? new Date(t.odemeTarihi).toLocaleDateString("tr-TR") : new Date(t.odemeTarihi).toLocaleString("tr-TR")}`
+                            : t.sonKullanimTarihi
+                              ? `Son kullanım: ${new Date(t.sonKullanimTarihi).toLocaleDateString("tr-TR")}`
+                              : "—"}
+                        </small>
+                      </td>
+                      <td data-label="Cari / fatura">
+                        <strong>{t.cari.unvan}</strong>
+                        <small>
+                          {t.cari.kod}
+                          {t.fatura?.no ? ` · Fatura ${t.fatura.no}` : " · Cari bakiye"}
+                        </small>
+                      </td>
+                      <td data-label="Durum">
+                        <div className="pos-delivery">
+                          {t.kanal === "abonelik" && <Badge variant="info">Abonelik</Badge>}
+                          <Badge variant={durumRengi(t.durum)}>{durumAdi[t.durum] ?? t.durum}</Badge>
+                          {t.gecOdeme && <Badge variant="warning">Geç ödeme</Badge>}
+                          {t.fraudDurumu === 0 && (
+                            <span title="iyzico ödemeyi dolandırıcılık incelemesine aldı; teslimi inceleme sonuçlanana kadar bekletin.">
+                              <Badge variant="warning">iyzico incelemesinde</Badge>
+                            </span>
+                          )}
+                          {Number(t.iadeEdilen) > 0 && (
+                            <Badge variant="info">{Number(t.iadeEdilen) >= Number(t.tutar) ? "İade edildi" : "Kısmi iade"}</Badge>
+                          )}
+                        </div>
+                        {t.hataMesaji && <small className="pos-error">{t.hataMesaji}</small>}
+                        {t.iptalNedeni && <small>İptal: {t.iptalNedeni}</small>}
+                        {t.iadeler.map((i) => (
+                          <small key={i.id} className="pos-refund">
+                            İade {para(i.tutar, t.dovizCinsi)} · {new Date(i.tarih).toLocaleDateString("tr-TR")} · {i.neden}
+                            {t.kanal === "abonelik" ? (
+                              <> · platformdan iade</>
+                            ) : i.saglayiciyaGonderildi ? (
+                              <> · {t.posHesap.saglayici === "paytr" ? "PayTR" : "iyzico"} üzerinden iade edildi</>
+                            ) : (
+                              <>
+                                {t.kanal !== "slip" && " · elle"}{" "}
+                                <button type="button" className="link-button" onClick={() => islemAc({ tur: "iade_geri_al", tahsilat: t, iade: i })}>
+                                  geri al
+                                </button>
+                              </>
+                            )}
+                          </small>
+                        ))}
+                      </td>
+                      <td className="num" data-label="Tutar">
+                        <strong>{para(t.tutar, t.dovizCinsi)}</strong>
+                      </td>
+                      <td data-label="İşlem">
+                        <div className="pos-actions">
+                          <Button size="sm" aria-expanded={acikAyrinti === t.id} onClick={() => setAcikAyrinti(acikAyrinti === t.id ? null : t.id)}>
+                            {acikAyrinti === t.id ? "Ayrıntıyı kapat" : "Ayrıntı"}
+                          </Button>
+                          {t.makbuzYolu && (
+                            <a
+                              className="btn btn--primary btn--sm"
+                              href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1"}${t.makbuzYolu}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Makbuz PDF
+                            </a>
+                          )}
+                          {t.odemeSayfasiUrl && t.durum === "baslatildi" && (
+                            <>
+                              <Button size="sm" onClick={() => void kopyala(t.odemeSayfasiUrl!)}>
+                                Kopyala
+                              </Button>
+                              <a className="btn btn--ghost btn--sm" href={t.odemeSayfasiUrl} target="_blank" rel="noreferrer">
+                                Aç
+                              </a>
+                            </>
+                          )}
+                          {t.durum === "baslatildi" && t.epostaHatasi && (
+                            <Button size="sm" onClick={() => void eylem(t.id, "eposta")}>
+                              E-posta
+                            </Button>
+                          )}
+                          {t.durum === "baslatildi" && t.smsHatasi && (
+                            <Button size="sm" onClick={() => void eylem(t.id, "sms")}>
+                              SMS
+                            </Button>
+                          )}
+                          {["basarisiz", "suresi_doldu"].includes(t.durum) && t.kanal !== "slip" && (
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              disabled={islemde === `yeniden-dene-${t.id}`}
+                              onClick={() => void eylem(t.id, "yeniden-dene")}
+                            >
+                              Yeniden dene
+                            </Button>
+                          )}
+                          {["baslatildi", "suresi_doldu", "iptal"].includes(t.durum) && t.kanal !== "slip" && t.posHesap.saglayici === "iyzico" && (
+                            <Button size="sm" disabled={islemde === `sorgula-${t.id}`} onClick={() => void saglayicidanSorgula(t.id)}>
+                              {islemde === `sorgula-${t.id}` ? "Sorgulanıyor…" : "iyzico'dan sorgula"}
+                            </Button>
+                          )}
+                          {t.durum === "baslatildi" && t.posHesap.saglayici === "paytr" && (
+                            <small className="muted" title="PayTR Link API ödeme öncesinde sorgulanabilir sipariş numarası vermez.">
+                              PayTR ödemesi bildirimle kaydedilir
+                            </small>
+                          )}
+                          {t.durum === "baslatildi" && (
+                            <Button size="sm" variant="danger" onClick={() => islemAc({ tur: "iptal", tahsilat: t })}>
+                              İptal
+                            </Button>
+                          )}
+                          {t.durum === "odendi" && t.kanal === "abonelik" && (
+                            <small className="muted" title="Abonelik ödemesi platformun tahsilatıdır; iadesi platform tarafında yapılır.">
+                              İade platformdan yapılır
+                            </small>
+                          )}
+                          {t.durum === "odendi" && t.kanal !== "abonelik" && Number(t.iadeEdilen) < Number(t.tutar) && (
+                            <Button size="sm" onClick={() => islemAc({ tur: "iade", tahsilat: t })}>
+                              İade
+                            </Button>
+                          )}
+                          {t.durum === "odendi" && t.kanal === "slip" && !t.iadeler.length && (
+                            <Button size="sm" variant="danger" onClick={() => islemAc({ tur: "slip_geri_al", tahsilat: t })}>
+                              Geri al
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {acikAyrinti === t.id && <tr className="pos-payment-detail">
+                      <td colSpan={5}>
+                        <div className="pos-payment-detail__grid">
+                          <div>
+                            <strong>Kanal</strong>
+                            <span>{t.posHesap.ad}</span>
+                            <small>{t.kanal === "slip" ? `Slip${t.slipNo ? ` · ${t.slipNo}` : ""}` : t.kanal === "abonelik" ? `Abonelik · ${t.posHesap.saglayici}` : t.posHesap.saglayici}</small>
+                          </div>
+                          <div>
+                            <strong>Gönderim</strong>
+                            {t.kanal === "slip" ? (
+                              <small>Cihazda çekildi</small>
+                            ) : t.kanal !== "abonelik" ? (
+                              <div className="pos-delivery">
+                                <Badge variant={t.epostaGonderimTarihi ? "success" : t.epostaHatasi ? "danger" : "neutral"}>E-posta</Badge>
+                                <Badge variant={t.smsGonderimTarihi ? "success" : t.smsHatasi ? "danger" : "neutral"}>SMS</Badge>
+                              </div>
+                            ) : <small>Abonelik tahsilatı</small>}
+                          </div>
+                          <div>
+                            <strong>Ödeme bilgileri</strong>
+                            {/* KSB-36: taksit, komisyon ve bankaya geçecek net */}
+                            {t.durum === "odendi" && t.komisyonTutari !== null && (
+                              <small>
+                                {t.kartSon4 ? `${[t.kartMarkasi?.replace(/_/g, " "), t.kartAilesi].filter(Boolean).join(" ")} ${maskeliKart(t.kartBin, t.kartSon4)} · ` : ""}
+                                {t.taksitSayisi > 1 ? `${t.taksitSayisi} taksit · ` : ""}komisyon {para(t.komisyonTutari, t.dovizCinsi)}
+                                {t.komisyonKaynagi === "tahmin" ? " (tahmini)" : ""} · net {para(t.netTutar ?? t.tutar, t.dovizCinsi)}
+                              </small>
+                            )}
+                            {/* PLT-40: kart no (BIN + son 4), ödeme ve provizyon numaraları, sağlayıcı kesintisinin dökümü */}
+                            {t.durum === "odendi" && t.kanal !== "slip" && t.saglayiciOdemeId && (
+                              <small className="pos-ids">
+                                {[
+                                  `Ödeme no ${t.saglayiciOdemeId}`,
+                                  t.provizyonKodu && `Provizyon ${t.provizyonKodu}`,
+                                ].filter(Boolean).join(" · ")}
+                              </small>
+                            )}
+                            {t.durum === "odendi" && t.komisyonKaynagi === "saglayici" && (t.saglayiciKomisyonu !== null || t.saglayiciUcreti !== null) && (
+                              <small className="pos-ids">
+                                {t.posHesap.saglayici === "iyzico" ? "iyzico" : "Sağlayıcı"} komisyonu {para(t.saglayiciKomisyonu ?? "0", t.dovizCinsi)}
+                                {t.saglayiciUcreti !== null && Number(t.saglayiciUcreti) > 0 ? ` + işlem ücreti ${para(t.saglayiciUcreti, t.dovizCinsi)}` : ""}
+                              </small>
+                            )}
+                            {t.odenenTutar !== null && Number(t.odenenTutar) > Number(t.tutar) && (
+                              <small title="Müşteriye yansıtılan vade farkını sağlayıcı alır; firmanın geliri değildir.">
+                                müşteri {para(t.odenenTutar, t.dovizCinsi)} ödedi
+                              </small>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>}
+                  </Fragment>
+                ))}
+                {!liste.kayitlar.length && (
+                  <tr>
+                    <td colSpan={5}>
+                      <div className="pos-empty">
+                        <strong>Kayıt bulunamadı</strong>
+                        <span>Filtreleri değiştirin veya yeni tahsilat başlatın.</span>
+                      </div>
+                    </td>
+                  </tr>
                 )}
-                {ozetler[x.id] && <PosOzetSatiri o={ozetler[x.id]} />}
-              </div>
+              </tbody>
+            </TableWrap>
+            <div className="pos-pagination">
+              <span>
+                Sayfa {liste.sayfa} · {liste.toplam} kayıt
+              </span>
               <div>
-                <small>Bekleyen alacak</small>
-                <strong>{para(x.bakiye, x.dovizCinsi)}</strong>
-                <div className="pos-actions">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setAyarHesap(x);
-                      setAktarim(null);
-                      setPanel(null);
-                      setIslemHedefi(null);
-                    }}
-                  >
-                    Ayarlar
-                  </Button>
-                  <Link className="btn btn--sm" href={`/panel/kasa-banka/hesap-ekstresi?hesap=pos:${x.id}`}>
-                    Hareketler
-                  </Link>
-                  <Button
-                    size="sm"
-                    disabled={!x.aktif || Number(x.bakiye) <= 0}
-                    onClick={() => {
-                      setAktarim(x);
-                      setAktarimOn(null);
-                      setPanel(null);
-                    }}
-                  >
-                    Bankaya aktar
-                  </Button>
-                </div>
+                <Button size="sm" disabled={sayfa <= 1} onClick={() => setSayfa((x) => x - 1)}>
+                  Önceki
+                </Button>
+                <Button size="sm" disabled={sayfa * liste.adet >= liste.toplam} onClick={() => setSayfa((x) => x + 1)}>
+                  Sonraki
+                </Button>
               </div>
-            </article>
-          ))}
-        </div>
-      </section>
-      <Card className="pos-filter">
-        <div className="pos-filter__grid">
-          <Field label="Talep ara">
-            <Input
-              value={arama}
-              onChange={(e) => {
-                setArama(e.target.value);
-                setSayfa(1);
-              }}
-              placeholder="Cari, fatura veya hata mesajı…"
-            />
-          </Field>
-          <Field label="Durum">
-            <Select
-              value={durum}
-              onChange={(e) => {
-                setDurum(e.target.value);
-                setSayfa(1);
-              }}
-            >
-              <option value="">Tüm durumlar</option>
-              {Object.entries(durumAdi).map(([k, v]) => (
-                <option value={k} key={k}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="POS hesabı">
-            <Select
-              value={posFiltresi}
-              onChange={(e) => {
-                setPosFiltresi(e.target.value);
-                setSayfa(1);
-              }}
-            >
-              <option value="">Tüm hesaplar</option>
+            </div>
+          </Card>
+        </TabPanel>
+      </div>
+      <div hidden={gorunum !== "hesaplar"}>
+        <TabPanel idPrefix="pos-workspace" value="hesaplar">
+          <section className="pos-accounts">
+            <div className="pos-section-head">
+              <div>
+                <h2>POS hesapları</h2>
+              </div>
+              <div className="pos-actions"><Select aria-label="Özet dönemi" value={ozetDonemi} onChange={(e) => setOzetDonemi(e.target.value as OzetDonemi)}>
+                <option value="bu_ay">Bu ay</option>
+                <option value="gecen_ay">Geçen ay</option>
+              </Select><Button onClick={() => acikPanel("hesap")}>POS hesabı aç</Button></div>
+            </div>
+            <div className="pos-account-grid">
               {hesaplar.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.ad}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <span>{liste.toplam} kayıt</span>
-        </div>
-      </Card>
-      <Card
-        className="pos-register"
-        pad={false}
-        title={
-          <div>
-            <span>ÖDEME TALEPLERİ</span>
-            <h2>Operasyon günlüğü</h2>
-          </div>
-        }
-      >
-        <TableWrap>
-          <thead>
-            <tr>
-              <th>Talep / ödeme</th>
-              <th>Cari / fatura</th>
-              <th>Kanal</th>
-              <th>Gönderim</th>
-              <th>Durum / hata</th>
-              <th className="num">Tutar</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {liste.kayitlar.map((t) => (
-              <tr key={t.id} className={t.durum === "basarisiz" ? "is-error" : ""}>
-                <td>
-                  <strong>{new Date(t.createdAt).toLocaleString("tr-TR")}</strong>
-                  <small>
-                    {t.odemeTarihi
-                      ? `Ödendi: ${t.kanal === "slip" ? new Date(t.odemeTarihi).toLocaleDateString("tr-TR") : new Date(t.odemeTarihi).toLocaleString("tr-TR")}`
-                      : t.sonKullanimTarihi
-                        ? `Son kullanım: ${new Date(t.sonKullanimTarihi).toLocaleDateString("tr-TR")}`
-                        : "—"}
-                  </small>
-                </td>
-                <td>
-                  <strong>{t.cari.unvan}</strong>
-                  <small>
-                    {t.cari.kod}
-                    {t.fatura?.no ? ` · Fatura ${t.fatura.no}` : " · Cari bakiye"}
-                  </small>
-                </td>
-                <td>
-                  <strong>{t.posHesap.ad}</strong>
-                  <small>{t.kanal === "slip" ? `Slip${t.slipNo ? ` · ${t.slipNo}` : ""}` : t.kanal === "abonelik" ? `Abonelik · ${t.posHesap.saglayici}` : t.posHesap.saglayici}</small>
-                </td>
-                <td>
-                  {t.kanal === "slip" ? (
-                    <small>Cihazda çekildi</small>
-                  ) : t.kanal === "abonelik" ? (
-                    <Badge variant="info">Abonelik</Badge>
-                  ) : (
-                    <div className="pos-delivery">
-                      <Badge variant={t.epostaGonderimTarihi ? "success" : t.epostaHatasi ? "danger" : "neutral"}>E-posta</Badge>
-                      <Badge variant={t.smsGonderimTarihi ? "success" : t.smsHatasi ? "danger" : "neutral"}>SMS</Badge>
-                    </div>
-                  )}
-                </td>
-                <td>
-                  <div className="pos-delivery">
-                    <Badge variant={durumRengi(t.durum)}>{durumAdi[t.durum] ?? t.durum}</Badge>
-                    {t.gecOdeme && <Badge variant="warning">Geç ödeme</Badge>}
-                    {t.fraudDurumu === 0 && (
-                      <span title="iyzico ödemeyi dolandırıcılık incelemesine aldı; teslimi inceleme sonuçlanana kadar bekletin.">
-                        <Badge variant="warning">iyzico incelemesinde</Badge>
+                <article key={x.id} className={x.saglayici !== "banka" && x.baglanti?.durum !== "aktif" ? "is-error" : ""}>
+                  <div className="pos-provider">{x.saglayici.slice(0, 2).toUpperCase()}</div>
+                  <div>
+                    <strong>{x.ad}</strong>
+                    <small>
+                      {x.saglayici === "banka" ? "Banka POS'u" : x.saglayici} · {x.dovizCinsi} · valör{" "}
+                      {x.valorGun === 0 ? "aynı gün" : `${x.valorGun} gün`} · %{Number(x.komisyonOrani).toLocaleString("tr-TR")}
+                      {Number(x.islemUcreti) > 0 && ` + ${para(x.islemUcreti, x.dovizCinsi)}`}
+                      {x.taksitOranlari?.length ? ` · taksit ${x.taksitOranlari.map((t) => t.taksit).join(", ")}` : " · tek çekim"}
+                    </small>
+                    {x.saglayici === "banka" ? (
+                      <span>
+                        <i className="is-online" />
+                        {x.varsayilanBankaHesap ? `→ ${x.varsayilanBankaHesap.ad}` : "Banka hesabı seçilmeli"}
+                      </span>
+                    ) : (
+                      <span>
+                        <i className={x.baglanti?.durum === "aktif" ? "is-online" : ""} />
+                        {x.baglanti?.durum === "aktif" ? "Bağlantı hazır" : (x.baglanti?.sonSenkronHatasi ?? "Bağlantı kontrol edilmeli")}
                       </span>
                     )}
-                    {Number(t.iadeEdilen) > 0 && (
-                      <Badge variant="info">{Number(t.iadeEdilen) >= Number(t.tutar) ? "İade edildi" : "Kısmi iade"}</Badge>
-                    )}
+                    {ozetler[x.id] && <PosOzetSatiri o={ozetler[x.id]} />}
                   </div>
-                  {t.hataMesaji && <small className="pos-error">{t.hataMesaji}</small>}
-                  {t.iptalNedeni && <small>İptal: {t.iptalNedeni}</small>}
-                  {t.iadeler.map((i) => (
-                    <small key={i.id} className="pos-refund">
-                      İade {para(i.tutar, t.dovizCinsi)} · {new Date(i.tarih).toLocaleDateString("tr-TR")} · {i.neden}
-                      {t.kanal === "abonelik" ? (
-                        <> · platformdan iade</>
-                      ) : i.saglayiciyaGonderildi ? (
-                        <> · {t.posHesap.saglayici === "paytr" ? "PayTR" : "iyzico"} üzerinden iade edildi</>
-                      ) : (
-                        <>
-                          {t.kanal !== "slip" && " · elle"}{" "}
-                          <button type="button" className="link-button" onClick={() => islemAc({ tur: "iade_geri_al", tahsilat: t, iade: i })}>
-                            geri al
-                          </button>
-                        </>
-                      )}
-                    </small>
-                  ))}
-                </td>
-                <td className="num">
-                  <strong>{para(t.tutar, t.dovizCinsi)}</strong>
-                  {/* KSB-36: taksit, komisyon ve bankaya geçecek net */}
-                  {t.durum === "odendi" && t.komisyonTutari !== null && (
-                    <small>
-                      {t.kartSon4 ? `${[t.kartMarkasi?.replace(/_/g, " "), t.kartAilesi].filter(Boolean).join(" ")} ${maskeliKart(t.kartBin, t.kartSon4)} · ` : ""}
-                      {t.taksitSayisi > 1 ? `${t.taksitSayisi} taksit · ` : ""}komisyon {para(t.komisyonTutari, t.dovizCinsi)}
-                      {t.komisyonKaynagi === "tahmin" ? " (tahmini)" : ""} · net {para(t.netTutar ?? t.tutar, t.dovizCinsi)}
-                    </small>
-                  )}
-                  {/* PLT-40: kart no (BIN + son 4), ödeme ve provizyon numaraları, sağlayıcı kesintisinin dökümü */}
-                  {t.durum === "odendi" && t.kanal !== "slip" && t.saglayiciOdemeId && (
-                    <small className="pos-ids">
-                      {[
-                        `Ödeme no ${t.saglayiciOdemeId}`,
-                        t.provizyonKodu && `Provizyon ${t.provizyonKodu}`,
-                      ].filter(Boolean).join(" · ")}
-                    </small>
-                  )}
-                  {t.durum === "odendi" && t.komisyonKaynagi === "saglayici" && (t.saglayiciKomisyonu !== null || t.saglayiciUcreti !== null) && (
-                    <small className="pos-ids">
-                      {t.posHesap.saglayici === "iyzico" ? "iyzico" : "Sağlayıcı"} komisyonu {para(t.saglayiciKomisyonu ?? "0", t.dovizCinsi)}
-                      {t.saglayiciUcreti !== null && Number(t.saglayiciUcreti) > 0 ? ` + işlem ücreti ${para(t.saglayiciUcreti, t.dovizCinsi)}` : ""}
-                    </small>
-                  )}
-                  {t.odenenTutar !== null && Number(t.odenenTutar) > Number(t.tutar) && (
-                    <small title="Müşteriye yansıtılan vade farkını sağlayıcı alır; firmanın geliri değildir.">
-                      müşteri {para(t.odenenTutar, t.dovizCinsi)} ödedi
-                    </small>
-                  )}
-                </td>
-                <td>
-                  <div className="pos-actions">
-                    {t.makbuzYolu && (
-                      <a
-                        className="btn btn--primary btn--sm"
-                        href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1"}${t.makbuzYolu}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Makbuz PDF
-                      </a>
-                    )}
-                    {t.odemeSayfasiUrl && t.durum === "baslatildi" && (
-                      <>
-                        <Button size="sm" onClick={() => void kopyala(t.odemeSayfasiUrl!)}>
-                          Kopyala
-                        </Button>
-                        <a className="btn btn--ghost btn--sm" href={t.odemeSayfasiUrl} target="_blank" rel="noreferrer">
-                          Aç
-                        </a>
-                      </>
-                    )}
-                    {t.durum === "baslatildi" && t.epostaHatasi && (
-                      <Button size="sm" onClick={() => void eylem(t.id, "eposta")}>
-                        E-posta
-                      </Button>
-                    )}
-                    {t.durum === "baslatildi" && t.smsHatasi && (
-                      <Button size="sm" onClick={() => void eylem(t.id, "sms")}>
-                        SMS
-                      </Button>
-                    )}
-                    {["basarisiz", "suresi_doldu"].includes(t.durum) && t.kanal !== "slip" && (
+                  <div>
+                    <small>Bekleyen alacak</small>
+                    <strong>{para(x.bakiye, x.dovizCinsi)}</strong>
+                    <div className="pos-actions">
                       <Button
                         size="sm"
-                        variant="primary"
-                        disabled={islemde === `yeniden-dene-${t.id}`}
-                        onClick={() => void eylem(t.id, "yeniden-dene")}
+                        onClick={() => {
+                          setAyarHesap(x);
+                          setAktarim(null);
+                          setPanel(null);
+                          setIslemHedefi(null);
+                        }}
                       >
-                        Yeniden dene
+                        Ayarlar
                       </Button>
-                    )}
-                    {["baslatildi", "suresi_doldu", "iptal"].includes(t.durum) && t.kanal !== "slip" && t.posHesap.saglayici === "iyzico" && (
-                      <Button size="sm" disabled={islemde === `sorgula-${t.id}`} onClick={() => void saglayicidanSorgula(t.id)}>
-                        {islemde === `sorgula-${t.id}` ? "Sorgulanıyor…" : "iyzico'dan sorgula"}
+                      <Link className="btn btn--sm" href={`/panel/kasa-banka/hesap-ekstresi?hesap=pos:${x.id}`}>
+                        Hareketler
+                      </Link>
+                      <Button
+                        size="sm"
+                        disabled={!x.aktif || Number(x.bakiye) <= 0}
+                        onClick={() => {
+                          setAktarim(x);
+                          setAktarimOn(null);
+                          setPanel(null);
+                        }}
+                      >
+                        Bankaya aktar
                       </Button>
-                    )}
-                    {t.durum === "baslatildi" && t.posHesap.saglayici === "paytr" && (
-                      <small className="muted" title="PayTR Link API ödeme öncesinde sorgulanabilir sipariş numarası vermez.">
-                        PayTR ödemesi bildirimle kaydedilir
-                      </small>
-                    )}
-                    {t.durum === "baslatildi" && (
-                      <Button size="sm" variant="danger" onClick={() => islemAc({ tur: "iptal", tahsilat: t })}>
-                        İptal
-                      </Button>
-                    )}
-                    {t.durum === "odendi" && t.kanal === "abonelik" && (
-                      <small className="muted" title="Abonelik ödemesi platformun tahsilatıdır; iadesi platform tarafında yapılır.">
-                        İade platformdan yapılır
-                      </small>
-                    )}
-                    {t.durum === "odendi" && t.kanal !== "abonelik" && Number(t.iadeEdilen) < Number(t.tutar) && (
-                      <Button size="sm" onClick={() => islemAc({ tur: "iade", tahsilat: t })}>
-                        İade
-                      </Button>
-                    )}
-                    {t.durum === "odendi" && t.kanal === "slip" && !t.iadeler.length && (
-                      <Button size="sm" variant="danger" onClick={() => islemAc({ tur: "slip_geri_al", tahsilat: t })}>
-                        Geri al
-                      </Button>
-                    )}
+                    </div>
                   </div>
-                </td>
-              </tr>
-            ))}
-            {!liste.kayitlar.length && (
-              <tr>
-                <td colSpan={7}>
-                  <div className="pos-empty">
-                    <strong>Kayıt bulunamadı</strong>
-                    <span>Filtreleri değiştirin veya yeni tahsilat başlatın.</span>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </TableWrap>
-        <div className="pos-pagination">
-          <span>
-            Sayfa {liste.sayfa} · {liste.toplam} kayıt
-          </span>
-          <div>
-            <Button size="sm" disabled={sayfa <= 1} onClick={() => setSayfa((x) => x - 1)}>
-              Önceki
-            </Button>
-            <Button size="sm" disabled={sayfa * liste.adet >= liste.toplam} onClick={() => setSayfa((x) => x + 1)}>
-              Sonraki
-            </Button>
-          </div>
-        </div>
-      </Card>
+                </article>
+              ))}
+            </div>
+          </section>
+        </TabPanel>
+      </div>
+      <div hidden={gorunum !== "mutabakat"}>
+        <TabPanel idPrefix="pos-workspace" value="mutabakat">
+          <BankayaGececekler yenile={yenile} onAktar={grubuAktar} />
+        </TabPanel>
+      </div>
     </div>
   );
 }
