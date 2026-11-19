@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../../core/istek-baglami";
+import { hedefOzetiHesapla } from "./hazirlik.kurallari";
 import { HazirlikService } from "./hazirlik.service";
 
 describe("HazirlikService", () => {
@@ -23,9 +24,11 @@ describe("HazirlikService", () => {
           count: vi.fn().mockResolvedValue(0),
         },
         faturaSatir: {
+          findFirst: vi.fn().mockResolvedValue(null),
           update: vi.fn().mockResolvedValue({}),
         },
         stokKart: {
+          findFirst: vi.fn().mockResolvedValue({ id: "stok-1" }),
           findMany: vi.fn().mockResolvedValue([]),
         },
         bankaEkstreSatir: {
@@ -52,7 +55,7 @@ describe("HazirlikService", () => {
           findMany: vi.fn().mockResolvedValue([]),
           upsert: vi.fn().mockResolvedValue({ id: "haz-1" }),
           update: vi.fn().mockImplementation(({ where, data }) => Promise.resolve({ id: where.id, ...data })),
-          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           groupBy: vi.fn().mockResolvedValue([]),
         },
       },
@@ -156,14 +159,11 @@ describe("HazirlikService", () => {
         kaynakTur: "fatura",
         kaynakId: "fatura-1",
         hedefOzeti: "eski_hash_12345",
+        oneri: { satirId: "satir-1", stokId: "stok-1" },
         gecerlilikBitisAt: new Date(Date.now() + 86400000),
       });
 
-      mockPrisma.tx.fatura.findUnique.mockResolvedValue({
-        id: "fatura-1",
-        durum: "onaylandi", // taslaktı, onaylandı!
-        genelToplam: { toString: () => "5000" },
-      });
+      mockPrisma.tx.faturaSatir.findFirst.mockResolvedValue({ id: "satir-1", miktar: 5, toplamTutar: 5000 });
 
       await expect(
         baglamlaCalistir({ tenantId, userId, rol: "yonetici" }, () =>
@@ -186,13 +186,14 @@ describe("HazirlikService", () => {
         olusturanUserId: userId,
         durum: "hazir",
         tur: "fatura_stok_esleme",
-        kaynakTur: null,
-        kaynakId: null,
-        hedefOzeti: null,
-        oneri: { satirId: "satir-1", stokId: "stok-1", stokAd: "Cıvata M8" },
+        kaynakTur: "fatura",
+        kaynakId: "fatura-1",
+        hedefOzeti: hedefOzetiHesapla({ faturaId: "fatura-1", satirId: "satir-1", miktar: "1", tutar: "10" }),
+        oneri: { faturaId: "fatura-1", satirId: "satir-1", stokId: "stok-1", stokAd: "Cıvata M8" },
         gecerlilikBitisAt: new Date(Date.now() + 86400000),
       });
 
+      mockPrisma.tx.faturaSatir.findFirst.mockResolvedValue({ id: "satir-1", miktar: 1, toplamTutar: 10 });
       const sonuc = await baglamlaCalistir({ tenantId, userId, rol: "yonetici" }, () =>
         service.onayla("h-1"),
       );
@@ -200,11 +201,12 @@ describe("HazirlikService", () => {
       expect(sonuc.durum).toBe("onaylandi");
       expect(sonuc.olusanKayitTur).toBe("fatura_satir");
       expect(mockPrisma.tx.faturaSatir.update).toHaveBeenCalledWith({
-        where: { id: "satir-1" },
+        where: { id: "satir-1", faturaId: "fatura-1" },
         data: { stokId: "stok-1" },
       });
       expect(mockHafiza.yaz).toHaveBeenCalledWith(
         expect.objectContaining({ stokId: "stok-1", anahtar: "Cıvata M8", tur: "urun_eslesme" }),
+        mockPrisma.tx,
       );
     });
   });
@@ -223,9 +225,9 @@ describe("HazirlikService", () => {
       );
 
       expect(sonuc.durum).toBe("reddedildi");
-      expect(mockPrisma.tx.aiHazirlik.update).toHaveBeenCalledWith(
+      expect(mockPrisma.tx.aiHazirlik.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "h-1" },
+          where: { id: "h-1", tenantId, durum: "hazir" },
           data: expect.objectContaining({
             durum: "reddedildi",
             kararNotu: "Hatalı öneri",

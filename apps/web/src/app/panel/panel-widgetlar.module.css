@@ -1,0 +1,151 @@
+.section {
+  display: grid;
+  gap: .85rem;
+  min-width: 0;
+  margin-bottom: 1.5rem;
+}
+
+.header, .toolbar, .heading, .formActions, .templates {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.header { justify-content: space-between; }
+.heading { flex-wrap: nowrap; gap: .75rem; }
+
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.section h2, .section h3, .section h4, .section p { margin: 0; }
+.section h2 { font-size: 1.15rem; }
+.section h3 { font-size: .95rem; overflow-wrap: anywhere; }
+.section h4 { font-size: .875rem; }
+.muted { color: var(--text-muted); font-size: .825rem; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: .85rem;
+}
+
+.widget, .builder {
+  display: grid;
+  align-content: start;
+  gap: .6rem;
+  padding: 1rem;
+  min-width: 0;
+}
+
+.builder { gap: .85rem; }
+.value { font-size: 1.55rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.link, .list a { color: var(--accent-text); font-weight: 600; }
+.link { font-size: .825rem; }
+.link:hover, .list a:hover { text-decoration: underline; }
+
+.list { display: grid; padding: 0; margin: 0; list-style: none; }
+.list li {
+  display: flex;
+  justify-content: space-between;
+  gap: .65rem;
+  padding: .55rem 0;
+  border-top: 1px solid var(--border);
+  font-size: .85rem;
+  overflow-wrap: anywhere;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: .75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.fields label { display: grid; gap: .35rem; min-width: 0; font-size: .825rem; font-weight: 600; }
+.fields :global(.select) { min-width: 0; }
+.formActions { justify-content: flex-end; margin-top: 1rem; }
+
+.templates {
+  padding: .65rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.templates > span { margin-inline-end: .25rem; font-weight: 600; }
+
+.preview {
+  display: grid;
+  gap: .45rem;
+  padding: .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+.chart { display: grid; gap: .35rem; }
+
+.chartPlot {
+  position: relative;
+  display: flex;
+  height: 5.5rem;
+  gap: clamp(2px, .35vw, 6px);
+  padding-inline: .2rem;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.chartBaseline {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--border-strong);
+}
+
+.chartDay { position: relative; flex: 1; min-width: 0; }
+
+.chartBar, .chartNegative {
+  position: absolute;
+  inset-inline: 0;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.chartNegative { background: var(--danger); }
+
+.chartDates {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: .75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chartValues {
+  padding-top: .5rem;
+  border-top: 1px solid var(--border);
+  font-size: .825rem;
+}
+
+.chartValues summary { cursor: pointer; color: var(--accent-text); font-weight: 600; }
+.chartValues dl { margin-block: .5rem 0; font-variant-numeric: tabular-nums; }
+.chartValues dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  padding-block: .25rem;
+}
+
+.chartValues dd { margin: 0; text-align: end; overflow-wrap: anywhere; }

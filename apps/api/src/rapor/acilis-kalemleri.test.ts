@@ -18,5 +18,12 @@ describe("vadesi geçmiş açılış kalemleri (VAK-06)", () => {
     expect(r.alacaklar.map((a) => [a.no, a.kalanTry])).toEqual([["F2", "50.00"]]);
     expect(r.alacaklar[0]).toMatchObject({ acilis: true, tip: "satis", cariUnvan: "Müşteri" });
     expect(r.borclar.map((b) => [b.no, b.kalanTry, b.tip])).toEqual([["B1", "70.00", "alis"]]);
+    const donem = await vadesiGecmisAcilisKalemleri(tx as never, "t1", new Date("2026-11-11T00:00:00Z"), {
+      baslangic: new Date("2026-10-10T00:00:00Z"),
+      bitisHaric: new Date("2026-11-01T00:00:00Z"),
+    });
+    // Dönem dışındaki F1, tahsilat havuzundan yine önce düşer.
+    expect(donem.alacaklar.map((a) => [a.no, a.kalanTry])).toEqual([["F2", "50.00"]]);
+    expect(donem.borclar).toEqual([]);
   });
 });

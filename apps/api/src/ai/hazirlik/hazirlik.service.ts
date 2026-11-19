@@ -7,6 +7,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { ozelRolIstegiKapali, paketApiYoluKapali } from "@tekirextra/shared";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { trSimdi } from "../ai-zaman";
@@ -16,7 +18,6 @@ import {
   HAZIRLIK_GECERLILIK_SURESI_MS,
   HAZIRLIK_TURLERI,
   TUR_METINLERI,
-  hazirlikGecerliMi,
   hedefOzetiHesapla,
   type HazirlikDurumu,
   type HazirlikTuru,
@@ -595,6 +596,19 @@ export class HazirlikService {
   /**
    * Sabah onay kutusu listeleme
    */
+  async kullaniciBekleyenSayisi() {
+    const { tenantId, userId } = aktifBaglam();
+    const adet = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiHazirlik.count({
+      where: {
+        tenantId,
+        OR: [{ olusturanUserId: userId }, { olusturanUserId: null }],
+        durum: "hazir",
+        gecerlilikBitisAt: { gte: new Date() },
+      },
+    }));
+    return { adet };
+  }
+
   async listele(kapsam: "bana" | "firma" = "bana", filtre: HazirlikFiltresi = {}) {
     const { tenantId, userId, rol } = aktifBaglam();
     if (kapsam === "firma" && rol !== "yonetici") {
@@ -649,53 +663,71 @@ export class HazirlikService {
    * Onay anında hedef ve yetki yeniden denetlenir (P-11); kaynak değiştiyse eski onay kullanılamaz.
    */
   async onayla(id: string, duzeltilmisOneri?: unknown) {
-    const { tenantId, userId, rol } = aktifBaglam();
+    const { tenantId, userId, rol, ozelRol, paketModulleri } = aktifBaglam();
 
-    const hazirlik = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiHazirlik.findUnique({ where: { id } }),
-    );
-
-    if (!hazirlik) throw new NotFoundException("Hazırlık öğesi bulunamadı.");
-    if (hazirlik.tenantId !== tenantId) throw new ForbiddenException("Yetkisiz erişim.");
-
-    // Yetki kontrolü (kendi görevi veya yönetici)
-    if (rol !== "yonetici" && hazirlik.olusturanUserId && hazirlik.olusturanUserId !== userId) {
-      throw new ForbiddenException("Bu hazırlığı yalnız oluşturan kullanıcı veya yönetici onaylayabilir.");
-    }
-
-    // Durum ve geçerlilik kontrolü
-    if (!hazirlikGecerliMi(hazirlik)) {
-      if (hazirlik.durum === "hazir" && hazirlik.gecerlilikBitisAt < new Date()) {
-        await this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.aiHazirlik.update({ where: { id }, data: { durum: "suresi_doldu" } }),
-        );
-        throw new BadRequestException("Hazırlığın süresi dolmuş; işlem yapılamaz.");
+    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hazirlik = await tx.aiHazirlik.findUnique({ where: { id } });
+      if (!hazirlik) throw new NotFoundException("Hazırlık öğesi bulunamadı.");
+      if (hazirlik.tenantId !== tenantId || (rol !== "yonetici" && hazirlik.olusturanUserId && hazirlik.olusturanUserId !== userId)) {
+        throw new ForbiddenException("Bu hazırlığı onaylama yetkiniz yok.");
       }
-      throw new ConflictException(`Bu hazırlık zaten karara bağlanmış (${hazirlik.durum}).`);
-    }
+      if (hazirlik.durum !== "hazir") throw new ConflictException("Bu hazırlık zaten karara bağlanmış.");
 
-    // Hedef tazeliği denetimi (P-11)
-    await this.hedefTazeligiDogrula(hazirlik);
+      const oneri = { ...(hazirlik.oneri as Record<string, unknown>) };
+      if (duzeltilmisOneri !== undefined) {
+        if (hazirlik.tur !== "vadesi_gecen_hatirlatma") throw new BadRequestException("Bu hazırlık türü düzenlenemez.");
+        const duzeltme = z.strictObject({
+          konu: z.string().trim().min(1).max(250).optional(),
+          metin: z.string().trim().min(1).max(10000).optional(),
+        }).safeParse(duzeltilmisOneri);
+        if (!duzeltme.success) throw new BadRequestException("Yalnızca hatırlatma konusu ve metni düzenlenebilir.");
+        Object.assign(oneri, duzeltme.data);
+      }
 
-    // İşlem kesinleştirme (türe göre)
-    const oneri = duzeltilmisOneri ?? hazirlik.oneri;
-    const { olusanTur, olusanId } = await this.kesinlestir(hazirlik.tur as HazirlikTuru, oneri, userId);
+      const hedefler: Partial<Record<HazirlikTuru, { yontem: string; yol: string; muhasebe?: boolean }>> = {
+        fatura_stok_esleme: { yontem: "PATCH", yol: `/fatura/${oneri.faturaId}`, muhasebe: true },
+        banka_ekstre_esleme: { yontem: "POST", yol: `/kasa-banka/ekstre/satirlar/${oneri.satirId}/eslestir`, muhasebe: true },
+        vadesi_gecen_hatirlatma: { yontem: "POST", yol: `/cari/${oneri.cariId}/crm/etkilesimler` },
+        kritik_stok_talep: { yontem: "POST", yol: "/belgeler" },
+      };
+      const hedef = hedefler[hazirlik.tur as HazirlikTuru];
+      if (hedef && ((hedef.muhasebe && rol !== "yonetici" && rol !== "muhasebe")
+        || paketApiYoluKapali(paketModulleri, hedef.yol)
+        || ozelRolIstegiKapali(ozelRol?.kapali ?? [], hedef.yontem, hedef.yol))) {
+        throw new ForbiddenException("Hazırlığın oluşturacağı işlem için yetkiniz yok.");
+      }
 
-    // Durumu güncelle
-    const guncel = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiHazirlik.update({
+      const an = new Date();
+      const suresiDoldu = hazirlik.gecerlilikBitisAt <= an;
+      // Rakip karar aynı satırı bekler; iş yazımı hata verirse bu geçiş de geri alınır.
+      const sahiplenilen = await tx.aiHazirlik.updateMany({
+        where: { id, tenantId, durum: "hazir" },
+        data: { durum: suresiDoldu ? "suresi_doldu" : "onaylandi" },
+      });
+      if (sahiplenilen.count !== 1) throw new ConflictException("Bu hazırlık zaten karara bağlanmış.");
+      if (suresiDoldu) return { hata: "sure" } as const;
+
+      if (!(await this.hedefGuncelMi(tx, hazirlik))) {
+        await tx.aiHazirlik.update({ where: { id }, data: { durum: "hedef_degisti" } });
+        return { hata: "hedef" } as const;
+      }
+
+      const { olusanTur, olusanId } = await this.kesinlestir(tx, hazirlik.tur as HazirlikTuru, oneri, userId);
+      const guncel = await tx.aiHazirlik.update({
         where: { id },
         data: {
-          durum: "onaylandi",
           onaylayanUserId: userId,
-          kararAt: new Date(),
+          kararAt: an,
           olusanKayitTur: olusanTur,
           olusanKayitId: olusanId,
+          ...(duzeltilmisOneri !== undefined ? { oneri: oneri as Prisma.InputJsonObject } : {}),
         },
-      }),
-    );
-
-    return { id: guncel.id, durum: guncel.durum, olusanKayitTur: olusanTur, olusanKayitId: olusanId };
+      });
+      return { id: guncel.id, durum: "onaylandi" as const, olusanKayitTur: olusanTur, olusanKayitId: olusanId };
+    });
+    if (sonuc.hata === "sure") throw new BadRequestException("Hazırlığın süresi dolmuş; işlem yapılamaz.");
+    if (sonuc.hata === "hedef") throw new ConflictException("Kaynak kayıt değişti; eski onay kullanılamaz.");
+    return sonuc;
   }
 
   /**
@@ -739,8 +771,8 @@ export class HazirlikService {
     }
 
     const guncel = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiHazirlik.update({
-        where: { id },
+      tx.aiHazirlik.updateMany({
+        where: { id, tenantId, durum: "hazir" },
         data: {
           durum: "reddedildi",
           onaylayanUserId: userId,
@@ -749,8 +781,8 @@ export class HazirlikService {
         },
       }),
     );
-
-    return { id: guncel.id, durum: guncel.durum };
+    if (guncel.count !== 1) throw new ConflictException("Bu hazırlık zaten karara bağlanmış.");
+    return { id, durum: "reddedildi" as const };
   }
 
   /**
@@ -803,49 +835,58 @@ export class HazirlikService {
   /**
    * Kaynak kaydın onay anındaki durumu ile hazırlık zamanındaki durumunu kıyaslar.
    */
-  private async hedefTazeligiDogrula(hazirlik: { id: string; tenantId: string; kaynakTur: string | null; kaynakId: string | null; hedefOzeti: string | null }) {
-    if (!hazirlik.hedefOzeti || !hazirlik.kaynakTur || !hazirlik.kaynakId) return;
+  private async hedefGuncelMi(
+    tx: Prisma.TransactionClient,
+    hazirlik: { kaynakTur: string | null; kaynakId: string | null; hedefOzeti: string | null; oneri: Prisma.JsonValue },
+  ): Promise<boolean> {
+    const { kaynakTur, kaynakId, hedefOzeti } = hazirlik;
+    if (!hedefOzeti || !kaynakTur || !kaynakId) return true;
 
-    const guncelOzet = await this.prisma.tenantIslem(hazirlik.tenantId, async (tx) => {
-      switch (hazirlik.kaynakTur) {
-        case "fatura": {
-          const f = await tx.fatura.findUnique({ where: { id: hazirlik.kaynakId! }, select: { id: true, durum: true, genelToplam: true } });
-          return f ? hedefOzetiHesapla({ faturaId: f.id, durum: f.durum, tutar: f.genelToplam.toString() }) : null;
-        }
-        case "banka_ekstre_satir": {
-          const s = await tx.bankaEkstreSatir.findUnique({ where: { id: hazirlik.kaynakId! }, select: { id: true, durum: true, tutar: true, tarih: true } });
-          return s ? hedefOzetiHesapla({ satirId: s.id, tutar: s.tutar.toString(), tarih: s.tarih.toISOString(), durum: s.durum }) : null;
-        }
-        default:
-          return hazirlik.hedefOzeti;
+    switch (kaynakTur) {
+      case "fatura": {
+        const oneri = hazirlik.oneri as Record<string, unknown> | null;
+        if (typeof oneri?.satirId !== "string" || typeof oneri.stokId !== "string") return false;
+        const satir = await tx.faturaSatir.findFirst({
+          where: { id: oneri.satirId, faturaId: kaynakId, fatura: { durum: "taslak", tip: "alis" } },
+          select: { id: true, miktar: true, toplamTutar: true },
+        });
+        if (!satir || hedefOzetiHesapla({ faturaId: kaynakId, satirId: satir.id, miktar: satir.miktar.toString(), tutar: satir.toplamTutar.toString() }) !== hedefOzeti) return false;
+        return !!(await tx.stokKart.findFirst({ where: { id: oneri.stokId, aktif: true }, select: { id: true } }));
       }
-    });
-
-    if (guncelOzet && guncelOzet !== hazirlik.hedefOzeti) {
-      await this.prisma.tenantIslem(hazirlik.tenantId, (tx) =>
-        tx.aiHazirlik.update({ where: { id: hazirlik.id }, data: { durum: "hedef_degisti" } }),
-      );
-      throw new ConflictException("Kaynak kayıt bu hazırlık oluşturulduktan sonra değişti; eski onay kullanılamaz.");
+      case "banka_ekstre_satir": {
+        const s = await tx.bankaEkstreSatir.findUnique({ where: { id: kaynakId }, select: { id: true, durum: true, tutar: true, tarih: true } });
+        return !!s && hedefOzetiHesapla({ satirId: s.id, tutar: s.tutar.toString(), tarih: s.tarih.toISOString(), durum: s.durum }) === hedefOzeti;
+      }
+      case "cari":
+        return !!(await tx.cariHesap.findFirst({ where: { id: kaynakId, aktif: true }, select: { id: true } }));
+      case "stok": {
+        const stok = await tx.stokKart.findFirst({
+          where: { id: kaynakId, aktif: true },
+          select: { id: true, mevcutMiktar: true, kritikSeviye: true },
+        });
+        return !!stok?.kritikSeviye && hedefOzetiHesapla({
+          stokId: stok.id, bakiye: stok.mevcutMiktar.toString(), kritik: stok.kritikSeviye.toString(),
+        }) === hedefOzeti;
+      }
+      default:
+        return true;
     }
   }
 
   /**
    * Onaylanan hazırlığı kesinleştirir (taslağı kayda veya eyleme dönüştürür).
    */
-  private async kesinlestir(tur: HazirlikTuru, oneri: unknown, userId: string): Promise<{ olusanTur: string; olusanId: string }> {
+  private async kesinlestir(tx: Prisma.TransactionClient, tur: HazirlikTuru, veri: Record<string, unknown>, userId: string): Promise<{ olusanTur: string; olusanId: string }> {
     const { tenantId } = aktifBaglam();
-    const veri = oneri as Record<string, unknown>;
 
     switch (tur) {
       case "fatura_stok_esleme": {
         // Satırın stok kartını bağla ve hafızaya yaz
         if (veri.satirId && veri.stokId) {
-          await this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.faturaSatir.update({
-              where: { id: String(veri.satirId) },
-              data: { stokId: String(veri.stokId) },
-            }),
-          );
+          await tx.faturaSatir.update({
+            where: { id: String(veri.satirId), ...(veri.faturaId ? { faturaId: String(veri.faturaId) } : {}) },
+            data: { stokId: String(veri.stokId) },
+          });
         }
         // AI-59: öğrenilen eşleşmeyi hafızaya kaydet
         if (veri.stokAd && veri.stokId) {
@@ -856,7 +897,7 @@ export class HazirlikService {
             cariId: veri.cariId ? String(veri.cariId) : undefined,
             kapsam: "firma",
             kaynak: "kullanici",
-          });
+          }, tx);
         }
         return { olusanTur: "fatura_satir", olusanId: String(veri.satirId ?? veri.faturaId ?? "") };
       }
@@ -864,15 +905,13 @@ export class HazirlikService {
       case "banka_ekstre_esleme": {
         // Banka ekstre satırının cari ve durumunu bağla
         if (veri.satirId) {
-          await this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.bankaEkstreSatir.update({
-              where: { id: String(veri.satirId) },
-              data: {
-                durum: "eslesti",
-                karsiUnvan: veri.cariUnvan ? String(veri.cariUnvan) : undefined,
-              },
-            }),
-          );
+          await tx.bankaEkstreSatir.update({
+            where: { id: String(veri.satirId), durum: "beklemede" },
+            data: {
+              durum: "eslesti",
+              karsiUnvan: veri.cariUnvan ? String(veri.cariUnvan) : undefined,
+            },
+          });
         }
         return { olusanTur: "banka_ekstre_satir", olusanId: String(veri.satirId) };
       }
@@ -880,70 +919,66 @@ export class HazirlikService {
       case "vadesi_gecen_hatirlatma": {
         // Hatırlatma kaydı veya CRM etkileşimi oluştur
         const cariId = String(veri.cariId);
-        const etkilesim = await this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.crmEtkilesim.create({
-            data: {
-              tenantId,
-              cariId,
-              tip: "eposta",
-              konu: String(veri.konu ?? "Vade Hatırlatması"),
-              aciklama: String(veri.metin ?? ""),
-              tarih: new Date(),
-              userId,
-            },
-          }),
-        );
+        const etkilesim = await tx.crmEtkilesim.create({
+          data: {
+            tenantId,
+            cariId,
+            tip: "eposta",
+            konu: String(veri.konu ?? "Vade Hatırlatması"),
+            aciklama: String(veri.metin ?? ""),
+            tarih: new Date(),
+            userId,
+          },
+        });
         return { olusanTur: "crm_etkilesim", olusanId: etkilesim.id };
       }
 
       case "kritik_stok_talep": {
         // Satın alma talebi / sipariş taslağı belgesi aç
-        const belge = await this.prisma.tenantIslem(tenantId, async (tx) => {
-          // Varsayılan cari veya tedarikçi
-          const tedarikciId = veri.tedarikciId ? String(veri.tedarikciId) : (await tx.cariHesap.findFirst({ where: { tenantId, aktif: true }, select: { id: true } }))?.id;
-          if (!tedarikciId) throw new BadRequestException("Satın alma taslağı için tanımlı cari kart bulunamadı.");
+        // Varsayılan cari veya tedarikçi
+        const tedarikciId = veri.tedarikciId ? String(veri.tedarikciId) : (await tx.cariHesap.findFirst({ where: { tenantId, aktif: true }, select: { id: true } }))?.id;
+        if (!tedarikciId) throw new BadRequestException("Satın alma taslağı için tanımlı cari kart bulunamadı.");
 
-          const birimFiyat = new Prisma.Decimal(String(veri.tahminiBirimFiyat ?? 0));
-          const miktar = new Prisma.Decimal(String(veri.onerilenMiktar ?? 1));
-          const matrah = birimFiyat.mul(miktar);
-          const kdvTutari = matrah.mul(0.2);
-          const netKdvTutari = kdvTutari;
-          const toplamTutar = matrah.add(kdvTutari);
+        const birimFiyat = new Prisma.Decimal(String(veri.tahminiBirimFiyat ?? 0));
+        const miktar = new Prisma.Decimal(String(veri.onerilenMiktar ?? 1));
+        const matrah = birimFiyat.mul(miktar);
+        const kdvTutari = matrah.mul(0.2);
+        const netKdvTutari = kdvTutari;
+        const toplamTutar = matrah.add(kdvTutari);
 
-          return tx.belge.create({
-            data: {
-              tenantId,
-              tur: "siparis",
-              yon: "alis",
-              durum: "taslak",
-              cariId: tedarikciId,
-              tarih: new Date(),
-              dovizCinsi: "TRY",
-              kur: new Prisma.Decimal(1),
-              toplamBrut: matrah,
-              toplamSatirIskontosu: new Prisma.Decimal(0),
-              genelIskontoToplam: new Prisma.Decimal(0),
-              toplamMatrah: matrah,
-              toplamKdv: kdvTutari,
-              toplamNetKdv: netKdvTutari,
-              genelToplam: toplamTutar,
-              aciklama: `Kritik stok ikmali için otomatik hazırlık onayı: [${veri.stokKod}] ${veri.stokAd}`,
-              satirlar: {
-                create: {
-                  tenantId,
-                  stokId: String(veri.stokId),
-                  miktar,
-                  birim: String(veri.anaBirim ?? "adet"),
-                  birimFiyat,
-                  kdvOrani: new Prisma.Decimal(20),
-                  matrah,
-                  kdvTutari,
-                  netKdvTutari,
-                  toplamTutar,
-                },
+        const belge = await tx.belge.create({
+          data: {
+            tenantId,
+            tur: "siparis",
+            yon: "alis",
+            durum: "taslak",
+            cariId: tedarikciId,
+            tarih: new Date(),
+            dovizCinsi: "TRY",
+            kur: new Prisma.Decimal(1),
+            toplamBrut: matrah,
+            toplamSatirIskontosu: new Prisma.Decimal(0),
+            genelIskontoToplam: new Prisma.Decimal(0),
+            toplamMatrah: matrah,
+            toplamKdv: kdvTutari,
+            toplamNetKdv: netKdvTutari,
+            genelToplam: toplamTutar,
+            aciklama: `Kritik stok ikmali için otomatik hazırlık onayı: [${veri.stokKod}] ${veri.stokAd}`,
+            satirlar: {
+              create: {
+                tenantId,
+                stokId: String(veri.stokId),
+                miktar,
+                birim: String(veri.anaBirim ?? "adet"),
+                birimFiyat,
+                kdvOrani: new Prisma.Decimal(20),
+                matrah,
+                kdvTutari,
+                netKdvTutari,
+                toplamTutar,
               },
             },
-          });
+          },
         });
         return { olusanTur: "belge", olusanId: belge.id };
       }

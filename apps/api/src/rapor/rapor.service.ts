@@ -1,10 +1,13 @@
 import { planOzelligiAcik } from "../core/abonelik-erisim.service";
 import { endeksVerisi } from "../fiyat-endeks/fiyat-endeks-veri";
 import { reelDegerleyici } from "../fiyat-endeks/reel";
+import { vadeDonemAraligi, type VadeAraligi } from "./vade-donemi";
 import { vadesiGecmisAcilisKalemleri } from "./acilis-kalemleri";
 import { fifoDegerleri, satisSatirlari } from "../stok/satis-ozeti";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { bugunTR, type TahsilatDonemi, type VadeDonemi } from "@tekirextra/shared";
+import { tahsilatCekFiltresi, tahsilatDonemAraligi, tahsilatDonemiTopla, tahsilatHareketFiltresi, tahsilatTopla } from "./tahsilat-ozeti";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { kategoriOzeti, toplam } from "./tahakkuk";
@@ -170,7 +173,7 @@ export class RaporService {
   async gunlukOzet(tarihMetni?: string) {
     const tarih = tarihMetni && /^\d{4}-\d{2}-\d{2}$/.test(tarihMetni)
       ? new Date(`${tarihMetni}T00:00:00.000Z`)
-      : new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
+      : new Date(`${bugunTR()}T00:00:00.000Z`);
     const tarihIso = tarih.toISOString().slice(0, 10);
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -182,26 +185,43 @@ export class RaporService {
         }),
         tx.kasaBankaHareket.findMany({
           // P1-9: açılış fişi bakiye devridir, günün tahsilatı değildir.
-          where: { tenantId, tarih, tip: "tahsilat", kaynakTur: { not: "acilis" } },
+          where: tahsilatHareketFiltresi(tenantId, tarih),
           select: { id: true, tarih: true, tutar: true, tutarTry: true, dovizCinsi: true, aciklama: true, kaynakTur: true, kaynakRef: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } }, cari: { select: { unvan: true } }, fatura: { select: { id: true, no: true } } },
           orderBy: { createdAt: "desc" },
         }),
         tx.cekSenet.findMany({
-          where: { tenantId, islemTarihi: tarih, yon: "alinan", durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "tahsil_edildi"] } },
+          where: tahsilatCekFiltresi(tenantId, tarih),
           select: { id: true, tur: true, portfoyNo: true, tutar: true, tutarTry: true, dovizCinsi: true, borclu: true, cari: { select: { unvan: true } } },
         }),
       ]);
       const satisTry = satislar.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur)), D(0));
-      const hareketKaynaklari = new Set(hareketler.map((h) => h.kaynakRef).filter(Boolean));
-      const yeniCekler = cekler.filter((cek) => !hareketKaynaklari.has(cek.id));
-      const tahsilatTry = hareketler.reduce((toplam, hareket) => toplam.add(hareket.tutarTry), D(0)).add(yeniCekler.reduce((toplam, cek) => toplam.add(cek.tutarTry), D(0)));
+      const { toplam, adet, yeniCekler } = tahsilatTopla(hareketler, cekler);
       return {
         tarih: tarihIso,
         satis: { toplam: satisTry.toFixed(2), adet: satislar.length },
-        tahsilat: { toplam: tahsilatTry.toFixed(2), adet: hareketler.length + yeniCekler.length },
+        tahsilat: { toplam, adet },
         tahsilatlar: [...hareketler.map((h) => ({ ...h, hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "Diğer", tutar: h.tutar.toFixed(2), tutarTry: h.tutarTry.toFixed(2) })), ...yeniCekler.map((cek) => ({ id: cek.id, tarih, tutar: cek.tutar.toFixed(2), tutarTry: cek.tutarTry.toFixed(2), dovizCinsi: cek.dovizCinsi, aciklama: `${cek.tur.toUpperCase()} tahsilatı · ${cek.portfoyNo}`, kaynakTur: "cek_senet", hesap: "Çek / Senet", cari: cek.cari, fatura: null }))],
       };
     });
+  }
+
+  async tahsilatDonemiOzeti(donem: TahsilatDonemi) {
+    const { tenantId } = aktifBaglam();
+    const { baslangic, bitis } = tahsilatDonemAraligi(donem);
+    const tarih = { gte: new Date(`${baslangic}T00:00:00Z`), lte: new Date(`${bitis}T00:00:00Z`) };
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [hareketler, cekler] = await Promise.all([
+        tx.kasaBankaHareket.findMany({
+          where: tahsilatHareketFiltresi(tenantId, tarih),
+          select: { kaynakRef: true, tutarTry: true, tarih: true },
+        }),
+        tx.cekSenet.findMany({
+          where: tahsilatCekFiltresi(tenantId, tarih),
+          select: { id: true, tutarTry: true, islemTarihi: true },
+        }),
+      ]);
+      return { donem, baslangic, bitis, ...tahsilatDonemiTopla(hareketler, cekler, tarih) };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
   /**
@@ -234,6 +254,17 @@ export class RaporService {
   async vadesiGecenler() {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) => vadesiGecenleriHesapla(tx, tenantId));
+  }
+
+  async vadeDonemiOzeti(donem: VadeDonemi) {
+    const { tenantId } = aktifBaglam();
+    const { baslangic, bitis, bugunBaslangic, aralik } = vadeDonemAraligi(donem);
+    const ozet = await this.prisma.tenantIslem(
+      tenantId,
+      (tx) => vadesiGecenleriHesapla(tx, tenantId, { aralik, bugunBaslangic }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+    return { donem, baslangic, bitis, ...ozet };
   }
 
   /**
@@ -398,9 +429,10 @@ export class RaporService {
  * RPR-17: vadesi geçmiş satış/alış faturaları (kalan TL karşılığıyla). Rapor ve
  * bildirim taraması aynı tanımı kullanır; taramada çağıran kendi işlemini verir.
  */
-export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenantId: string, secenek: { yalnizOzet?: boolean } = {}) {
-  const bugun = new Date();
-  const bugunBaslangic = new Date(Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth(), bugun.getUTCDate()));
+export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenantId: string, secenek: { yalnizOzet?: boolean; aralik?: VadeAraligi; bugunBaslangic?: Date } = {}) {
+  const bugunBaslangic = secenek.bugunBaslangic ?? new Date(`${bugunTR()}T00:00:00Z`);
+  const { aralik } = secenek;
+  const tarihSiniri = aralik ? { gte: aralik.baslangic, lt: aralik.bitisHaric } : { lt: bugunBaslangic };
   // RPR-17 (inceleme P2-2): eskiden en eski 200 fatura alınıp ödenmişler
   // sonradan eleniyordu; 200'den fazla vadesi geçmiş faturada toplam ve sayı
   // eksik kalıyordu. Şimdi hepsi 500'erli sayfalarla taranır; toplam ve
@@ -413,7 +445,7 @@ export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenan
   for (;;) {
     const faturalar = await tx.fatura.findMany({
       // Vadesiz fatura fatura tarihinde vadesi gelmiş sayılır (yaşlandırma, vade hatırlatma ve tahsilat riskiyle aynı kural).
-      where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, OR: [{ vadeTarihi: { lt: bugunBaslangic } }, { vadeTarihi: null, tarih: { lt: bugunBaslangic } }] },
+      where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, OR: [{ vadeTarihi: tarihSiniri }, { vadeTarihi: null, tarih: tarihSiniri }] },
       orderBy: { id: "asc" }, take: 500, ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
       select: { id: true, no: true, tip: true, tarih: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, durum: true, ...FATURA_ODEME_SECIMI },
     });
@@ -421,7 +453,7 @@ export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenan
       const kalanTry = faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2);
       if (!kalanTry.gt(0)) continue;
       const vade = f.vadeTarihi ?? f.tarih;
-      const gecikmeGun = Math.max(1, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
+      const gecikmeGun = Math.max(0, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
       const satir = { faturaId: f.id, no: f.no, cariId: f.cari.id, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10), gecikmeGun, kalanTry: kalanTry.toFixed(2), tip: f.tip };
       if (f.tip === "satis") { toplamAlacak = toplamAlacak.add(kalanTry); alacakSayisi++; alacaklar.push(satir); }
       else { toplamBorc = toplamBorc.add(kalanTry); borcSayisi++; borclar.push(satir); }
@@ -430,7 +462,7 @@ export async function vadesiGecenleriHesapla(tx: Prisma.TransactionClient, tenan
     imlec = faturalar[faturalar.length - 1].id;
   }
   // VAK-06: devreden açık faturalar ve açılış bakiyeleri (cari hareketi olarak aktarılır, faturaya bağlı değildir).
-  const acilis = await vadesiGecmisAcilisKalemleri(tx, tenantId, bugunBaslangic);
+  const acilis = await vadesiGecmisAcilisKalemleri(tx, tenantId, bugunBaslangic, aralik);
   for (const a of acilis.alacaklar) { toplamAlacak = toplamAlacak.add(a.kalanTry); alacakSayisi++; alacaklar.push(a); }
   for (const b of acilis.borclar) { toplamBorc = toplamBorc.add(b.kalanTry); borcSayisi++; borclar.push(b); }
   // Vade veritabanında boş olabildiği için en eskiler hesaplanan vadeyle seçilir.

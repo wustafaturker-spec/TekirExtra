@@ -17,6 +17,13 @@ interface Onizleme {
   satirlar: { satir: number; durum: Durum; etiket: string; aciklama: string; hatalar: string[]; uyarilar: string[] }[];
   kirpildi: boolean;
 }
+interface AiOneri {
+  baslik: string;
+  anahtar: string | null;
+  alanBaslik: string | null;
+  guven: number;
+  gerekce: string;
+}
 interface Ozet {
   tarih: string | null;
   cari: { kartSayisi: number; dovizler: { dovizCinsi: string; borc: string; alacak: string; bakiye: string }[] };
@@ -158,6 +165,8 @@ function AdimPaneli({ adim, ad, alanlar, onUygulandi }: { adim: Adim; ad: string
   const [dosya, setDosya] = useState<File | null>(null);
   const [eslemeler, setEslemeler] = useState<Record<string, string>>({});
   const [onizleme, setOnizleme] = useState<Onizleme | null>(null);
+  const [aiOnerileri, setAiOnerileri] = useState<AiOneri[]>([]);
+  const [aiYukleniyor, setAiYukleniyor] = useState(false);
   const [yalnizSorunlu, setYalnizSorunlu] = useState(false);
   const [hata, setHata] = useState("");
   const [islemde, setIslemde] = useState(false);
@@ -175,7 +184,7 @@ function AdimPaneli({ adim, ad, alanlar, onUygulandi }: { adim: Adim; ad: string
     const secilen = e.target.files?.[0];
     e.target.value = "";
     if (!secilen) return;
-    setDosya(secilen); setEslemeler({}); setOnizleme(null);
+    setDosya(secilen); setEslemeler({}); setOnizleme(null); setAiOnerileri([]);
     void onizle(secilen, {});
   }
 
@@ -183,6 +192,34 @@ function AdimPaneli({ adim, ad, alanlar, onUygulandi }: { adim: Adim; ad: string
     const yeni = { ...eslemeler, [baslik]: anahtar };
     setEslemeler(yeni);
     if (dosya) void onizle(dosya, yeni);
+  }
+
+  async function aiOnerileriGetir() {
+    if (!dosya) return;
+    setHata(""); setAiYukleniyor(true);
+    try {
+      const r = await api<{ oneriler: AiOneri[]; taninmayanSayisi: number; onerilenSayisi: number }>(
+        `/veri-aktarimi/${adim}/ai-kolon-onerisi`,
+        { method: "POST", body: form(dosya, eslemeler) }
+      );
+      setAiOnerileri(r.oneriler);
+    } catch (err) {
+      setHata(hataMetni(err, "Yapay zekâ önerileri alınamadı"));
+    } finally {
+      setAiYukleniyor(false);
+    }
+  }
+
+  function tumAiOnerileriniUygula() {
+    if (!dosya || !aiOnerileri.length) return;
+    const yeni = { ...eslemeler };
+    for (const o of aiOnerileri) {
+      if (o.anahtar) {
+        yeni[o.baslik] = o.anahtar;
+      }
+    }
+    setEslemeler(yeni);
+    void onizle(dosya, yeni);
   }
 
   async function uygula() {
@@ -223,19 +260,64 @@ function AdimPaneli({ adim, ad, alanlar, onUygulandi }: { adim: Adim; ad: string
       {onizleme && (
         <div className="stack" style={{ marginTop: "1rem" }}>
           {elleBasliklar.length > 0 && (
-            <div>
-              <strong>Tanınmayan sütunlar</strong>
-              <p className="subtle" style={{ margin: "0.25rem 0 0.5rem" }}>Bu başlıklar bir alanla eşleşmedi. Doğru alanı seçin ya da yok sayın; önizleme yenilenir.</p>
-              <div className="row" style={{ flexWrap: "wrap", gap: "0.75rem" }}>
-                {elleBasliklar.map((b) => (
-                  <Field key={b.baslik} label={b.baslik}>
-                    <Select value={eslemeler[b.baslik] ?? "__sec"} onChange={(e) => esle(b.baslik, e.target.value)} disabled={islemde}>
-                      <option value="__sec" disabled>Seçin…</option>
-                      <option value="">Yok say</option>
-                      {alanlar.filter((a) => !kullanilan.has(a.anahtar) || eslemeler[b.baslik] === a.anahtar).map((a) => <option key={a.anahtar} value={a.anahtar}>{a.baslik}</option>)}
-                    </Select>
-                  </Field>
-                ))}
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "1rem" }}>
+              <div className="row" style={{ alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div>
+                  <strong>Tanınmayan sütunlar ({elleBasliklar.length})</strong>
+                  <p className="subtle" style={{ margin: "0.25rem 0 0" }}>Bu başlıklar bir alanla eşleşmedi. Doğru alanı seçin ya da yapay zekâdan öneri isteyin.</p>
+                </div>
+                <div className="row" style={{ gap: "0.5rem" }}>
+                  <Button size="sm" variant="primary" disabled={aiYukleniyor || islemde} onClick={() => void aiOnerileriGetir()}>
+                    {aiYukleniyor ? "✨ Öneriler Hazırlanıyor…" : "✨ Yapay Zekâ ile Eşle"}
+                  </Button>
+                  {aiOnerileri.length > 0 && (
+                    <Button size="sm" onClick={tumAiOnerileriniUygula} disabled={islemde}>
+                      Tüm AI Önerilerini Uygula
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {aiOnerileri.length > 0 && (
+                <div style={{ marginTop: "0.75rem", marginBottom: "0.5rem", padding: "0.5rem 0.75rem", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, fontSize: "0.875rem", color: "#166534" }}>
+                  ✨ Yapay zekâ <strong>{aiOnerileri.filter((o) => Boolean(o.anahtar)).length}</strong> sütun için eşleme önerdi. Önerilen alanları aşağıda inceleyip onaylayabilirsiniz.
+                </div>
+              )}
+
+              <div className="row" style={{ flexWrap: "wrap", gap: "0.75rem", marginTop: "0.75rem" }}>
+                {elleBasliklar.map((b) => {
+                  const oneri = aiOnerileri.find((o) => o.baslik === b.baslik);
+                  return (
+                    <div key={b.baslik} style={{ background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: "0.5rem 0.75rem", minWidth: 240, flex: "1 1 240px" }}>
+                      <Field label={b.baslik}>
+                        <Select value={eslemeler[b.baslik] ?? "__sec"} onChange={(e) => esle(b.baslik, e.target.value)} disabled={islemde}>
+                          <option value="__sec" disabled>Seçin…</option>
+                          <option value="">Yok say</option>
+                          {alanlar.filter((a) => !kullanilan.has(a.anahtar) || eslemeler[b.baslik] === a.anahtar).map((a) => (
+                            <option key={a.anahtar} value={a.anahtar}>{a.baslik}</option>
+                          ))}
+                        </Select>
+                      </Field>
+                      {oneri && oneri.anahtar && (
+                        <div style={{ marginTop: "0.35rem", fontSize: "0.75rem", color: "#334155" }}>
+                          <span style={{ fontWeight: 600, color: "#16a34a" }}>✨ Öneri: {oneri.alanBaslik}</span>
+                          <span style={{ marginLeft: "0.35rem", color: "#64748b" }}>({oneri.guven}% güven)</span>
+                          {oneri.gerekce && <div style={{ color: "#64748b", marginTop: 2 }}>{oneri.gerekce}</div>}
+                          {eslemeler[b.baslik] !== oneri.anahtar && (
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              style={{ marginTop: 4, padding: "0.15rem 0.4rem", fontSize: "0.75rem" }}
+                              onClick={() => esle(b.baslik, oneri.anahtar!)}
+                            >
+                              Bu Öneriyi Seç
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

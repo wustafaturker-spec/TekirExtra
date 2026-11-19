@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { FileText, FolderOpen, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   Alert,
   Badge,
   Button,
   Card,
+  Input,
   PageHeader,
   Select,
 } from "@/components/ui";
+import styles from "./sozlesmeler.module.css";
 
 type SozlesmeTuru = "sozlesme" | "sartname" | "protokol" | "teklif_eki" | "diger";
 type SozlesmeDurumu = "isleniyor" | "hazir" | "hatali" | "arsivlendi";
@@ -21,7 +24,6 @@ interface KaynakAlinti {
   sayfaNo: number;
   bolumBasligi?: string;
   alinti: string;
-  skor?: number;
 }
 
 interface SozlesmeBelge {
@@ -35,11 +37,8 @@ interface SozlesmeBelge {
   boyut: number;
   ozet: string | null;
   gecerlilikBitis: string | null;
-  yetkiliRoller: string[] | null;
-  createdAt: string;
-  cari?: { id: string; unvan: string; kod: string } | null;
-  yukleyen?: { id: string; adSoyad: string; eposta: string } | null;
-  _count?: { parcalar: number; sonrakiSurumler: number };
+  cari?: { unvan: string } | null;
+  _count?: { parcalar: number };
 }
 
 interface SozlesmeSoruSonucu {
@@ -65,10 +64,28 @@ const TUR_RENKLERI: Record<SozlesmeTuru, "accent" | "info" | "warning" | "succes
   diger: "neutral",
 };
 
+const DURUMLAR = {
+  hazir: { etiket: "Hazır", renk: "success" },
+  isleniyor: { etiket: "İşleniyor", renk: "info" },
+  hatali: { etiket: "Hatalı", renk: "warning" },
+  arsivlendi: { etiket: "Arşivlendi", renk: "neutral" },
+} as const;
+
+const ORNEK_SORULAR = [
+  ["Cezai şartlar", "Cezai şart ve tazminat koşulları nelerdir?"],
+  ["Fesih süreleri", "Fesih ihbar süresi ve haklı fesih halleri nelerdir?"],
+  ["Ödeme ve vade", "Ödeme vadeleri ve faturalandırma şartları nedir?"],
+  ["Garanti ve bakım", "Garanti, bakım ve destek taahhütleri nelerdir?"],
+];
+
+const TARIH_BICIMI = new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeZone: "UTC" });
+
 export default function SozlesmelerRAGPage() {
   const [aktifSekme, setAktifSekme] = useState<"liste" | "sor" | "yukle">("liste");
   const [belgeler, setBelgeler] = useState<SozlesmeBelge[]>([]);
-  const [yukleniyor, setYukleniyor] = useState(false);
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [listeHatasi, setListeHatasi] = useState<string | null>(null);
+  const [listeSurumu, setListeSurumu] = useState(0);
   const [hata, setHata] = useState<string | null>(null);
   const [basari, setBasari] = useState<string | null>(null);
 
@@ -82,6 +99,8 @@ export default function SozlesmelerRAGPage() {
   const [soruluyor, setSoruluyor] = useState(false);
   const [ragSonuc, setRagSonuc] = useState<SozlesmeSoruSonucu | null>(null);
 
+  const [silinenBelgeId, setSilinenBelgeId] = useState<string | null>(null);
+
   // Yeni Belge Yükleme Formu
   const [yeniBaslik, setYeniBaslik] = useState("");
   const [yeniTur, setYeniTur] = useState<SozlesmeTuru>("sozlesme");
@@ -89,32 +108,47 @@ export default function SozlesmelerRAGPage() {
   const [secilenDosya, setSecilenDosya] = useState<File | null>(null);
   const [dosyaYukleniyor, setDosyaYukleniyor] = useState(false);
 
-  // Belgeleri Listele
-  const listele = useCallback(async () => {
-    setYukleniyor(true);
-    setHata(null);
-    try {
-      const p = new URLSearchParams();
-      if (turFiltre !== "hepsi") p.set("tur", turFiltre);
-      if (aramaMetni.trim()) p.set("arama", aramaMetni.trim());
-
-      const res = await api<SozlesmeBelge[]>(`/ai/sozlesme?${p.toString()}`);
-      setBelgeler(res || []);
-    } catch (e: any) {
-      setHata(e?.message || "Sözleşmeler yüklenirken bir hata oluştu.");
-    } finally {
-      setYukleniyor(false);
-    }
-  }, [turFiltre, aramaMetni]);
+  const listeFiltresi = aktifSekme === "liste" ? turFiltre : "hepsi";
+  const listeAramasi = aktifSekme === "liste" ? aramaMetni.trim() : "";
+  const belgeYuklemeAcik = aktifSekme === "yukle";
 
   useEffect(() => {
-    listele();
-  }, [listele]);
+    if (belgeYuklemeAcik) return;
+    const istek = new AbortController();
+    setYukleniyor(true);
+    setListeHatasi(null);
+
+    const p = new URLSearchParams();
+    if (listeFiltresi !== "hepsi") p.set("tur", listeFiltresi);
+    if (listeAramasi) p.set("arama", listeAramasi);
+    const sorgu = p.size ? `?${p}` : "";
+
+    async function listele() {
+      try {
+        const sonuc = await api<SozlesmeBelge[]>(`/ai/sozlesme${sorgu}`, { signal: istek.signal });
+        if (!istek.signal.aborted) setBelgeler(sonuc || []);
+      } catch (e) {
+        if (!istek.signal.aborted) {
+          setListeHatasi(e instanceof Error ? e.message : "Sözleşmeler yüklenirken bir hata oluştu.");
+        }
+      } finally {
+        if (!istek.signal.aborted) setYukleniyor(false);
+      }
+    }
+
+    const zamanlayici = window.setTimeout(listele, listeAramasi ? 250 : 0);
+    return () => {
+      window.clearTimeout(zamanlayici);
+      istek.abort();
+    };
+  }, [belgeYuklemeAcik, listeFiltresi, listeAramasi, listeSurumu]);
 
   // Soru Sor (RAG)
   const soruSor = async (soruMetni?: string) => {
     const sorulacak = (soruMetni || soru).trim();
-    if (!sorulacak) return;
+    if (!sorulacak || soruluyor) return;
+
+    setRagSonuc(null);
 
     setSoruluyor(true);
     setHata(null);
@@ -127,8 +161,8 @@ export default function SozlesmelerRAGPage() {
         }),
       });
       setRagSonuc(res);
-    } catch (e: any) {
-      setHata(e?.message || "Soru yanıtlanırken bir hata oluştu.");
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Soru yanıtlanırken bir hata oluştu.");
     } finally {
       setSoruluyor(false);
     }
@@ -137,12 +171,18 @@ export default function SozlesmelerRAGPage() {
   // Yeni Belge Yükle
   const belgeYukle = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dosyaYukleniyor) return;
     if (!secilenDosya) {
       setHata("Lütfen bir dosya seçin.");
       return;
     }
     if (!yeniBaslik.trim()) {
       setHata("Lütfen belge başlığı girin.");
+      return;
+    }
+
+    if (secilenDosya.size > 25 * 1024 * 1024) {
+      setHata("Dosya boyutu 25 MB sınırını aşamaz.");
       return;
     }
 
@@ -173,14 +213,14 @@ export default function SozlesmelerRAGPage() {
         }),
       });
 
-      setBasari("Sözleşme başarıyla yüklendi, metin katmanı ayrıştırıldı ve parçalandı.");
+      setBasari("Belge yüklendi ve sorgulamaya hazır.");
       setYeniBaslik("");
       setSecilenDosya(null);
       setYeniGecerlilik("");
       setAktifSekme("liste");
-      listele();
-    } catch (e: any) {
-      setHata(e?.message || "Belge yüklenirken bir hata oluştu.");
+      setListeSurumu((surum) => surum + 1);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Belge yüklenirken bir hata oluştu.");
     } finally {
       setDosyaYukleniyor(false);
     }
@@ -188,426 +228,247 @@ export default function SozlesmelerRAGPage() {
 
   // Belge Sil
   const belgeSil = async (id: string, baslik: string) => {
-    if (!confirm(`"${baslik}" belgesini ve tüm indeks parçalarını silmek istediğinize emin misiniz?`)) return;
+    if (silinenBelgeId || !confirm(`"${baslik}" belgesini ve tüm indeks parçalarını silmek istediğinize emin misiniz?`)) return;
 
+    setSilinenBelgeId(id);
+    setHata(null);
     try {
       await api(`/ai/sozlesme/${id}`, { method: "DELETE" });
       setBasari(`"${baslik}" başarıyla silindi.`);
-      listele();
-    } catch (e: any) {
-      setHata(e?.message || "Belge silinirken hata oluştu.");
+      setSecilenBelgeId((secilen) => secilen === id ? "" : secilen);
+      setListeSurumu((surum) => surum + 1);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Belge silinirken hata oluştu.");
+    } finally {
+      setSilinenBelgeId(null);
     }
   };
 
+  const filtreVar = turFiltre !== "hepsi" || Boolean(aramaMetni.trim());
+
+  function sekmeyeGec(sekme: typeof aktifSekme) {
+    if (aktifSekme === "yukle" && sekme !== "yukle") setSecilenDosya(null);
+    setAktifSekme(sekme);
+  }
+
+  function filtreleriTemizle() {
+    setTurFiltre("hepsi");
+    setAramaMetni("");
+  }
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Sözleşme & Şartname Belge Sorgulama (RAG)"
-        subtitle="PostgreSQL tam metin araması ve sayfa kaynaklı yapay zekâ analiz motoru (P-10). Sözleşmelerdeki maddeleri, cezai şartları ve teslimat koşullarını kaynak atıflarıyla sorgulayın."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant={aktifSekme === "sor" ? "primary" : "ghost"}
-              onClick={() => setAktifSekme("sor")}
-            >
-              🔍 Soru Sor (RAG)
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div className={styles.headerIcon}><FileText size={25} aria-hidden /></div>
+        <PageHeader
+          title="Sözleşmeler"
+          subtitle="Sözleşme, şartname ve protokollerinizi yönetin. Yapay zekâ ile maddeleri sayfa referanslarıyla inceleyin."
+          actions={
+            <Button type="button" variant="primary" onClick={() => setAktifSekme("yukle")}>
+              <Upload size={16} aria-hidden /> Yeni belge
             </Button>
-            <Button
-              variant={aktifSekme === "yukle" ? "primary" : "ghost"}
-              onClick={() => setAktifSekme("yukle")}
-            >
-              ➕ Yeni Belge Yükle
-            </Button>
-            <Button
-              variant={aktifSekme === "liste" ? "primary" : "ghost"}
-              onClick={() => setAktifSekme("liste")}
-            >
-              📑 Belgelerim ({belgeler.length})
-            </Button>
-          </div>
-        }
-      />
+          }
+        />
+      </header>
 
-      {hata && (
-        <Alert tone="error">
-          <div className="flex items-center justify-between w-full">
-            <span>{hata}</span>
-            <button type="button" onClick={() => setHata(null)} className="ml-2 underline text-xs">Kapat</button>
-          </div>
-        </Alert>
-      )}
-      {basari && (
-        <Alert tone="success">
-          <div className="flex items-center justify-between w-full">
-            <span>{basari}</span>
-            <button type="button" onClick={() => setBasari(null)} className="ml-2 underline text-xs">Kapat</button>
-          </div>
-        </Alert>
-      )}
+      <nav aria-label="Sözleşme işlemleri" className={styles.navigation}>
+        <button type="button" disabled={dosyaYukleniyor} aria-current={aktifSekme === "liste" ? "page" : undefined} onClick={() => sekmeyeGec("liste")}>
+          <FolderOpen size={17} aria-hidden /> Belge kütüphanesi
+        </button>
+        <button type="button" disabled={dosyaYukleniyor} aria-current={aktifSekme === "sor" ? "page" : undefined} onClick={() => sekmeyeGec("sor")}>
+          <Sparkles size={17} aria-hidden /> Belgelere soru sor
+        </button>
+      </nav>
 
-      {/* SEKME 1: AKILLI SORU-CEVAP (RAG) */}
-      {aktifSekme === "sor" && (
-        <div className="space-y-6">
-          <Card className="p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <span>🔍</span> Sözleşme veya Şartname Üzerinde Soru Sor
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Yapay zekâ modeli yalnızca yetkili olduğunuz sözleşme metinlerine dayanarak, hangi sayfadan ve maddeden alıntı yaptığını göstererek yanıt verir.
-            </p>
+      {hata && <Alert tone="error"><div className={styles.between}><span>{hata}</span><Button type="button" size="sm" onClick={() => setHata(null)}>Kapat</Button></div></Alert>}
+      {basari && <Alert tone="success"><div className={styles.between}><span>{basari}</span><Button type="button" size="sm" onClick={() => setBasari(null)}>Kapat</Button></div></Alert>}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-1">
-                <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                  Kapsam (Belge Seçimi)
-                </label>
-                <Select
-                  value={secilenBelgeId}
-                  onChange={(e) => setSecilenBelgeId(e.target.value)}
-                  className="w-full"
-                >
-                  <option value="">🌐 Tüm Yetkili Belgeler</option>
-                  {belgeler.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      [{TUR_METINLERI[b.tur]}] {b.baslik} (v{b.surum})
-                    </option>
-                  ))}
-                </Select>
+      {aktifSekme === "liste" && (
+        <Card pad={false} className={styles.library} aria-busy={yukleniyor}>
+          <div className={styles.toolbar}>
+            <div>
+              <h2>Belge kütüphanesi</h2>
+              {!yukleniyor && !listeHatasi && <p role="status">{belgeler.length} {filtreVar ? "sonuç" : "belge"}</p>}
+            </div>
+            <div className={styles.filters}>
+              <div className={styles.search}>
+                <Search size={16} aria-hidden />
+                <Input type="search" aria-label="Belgelerde ara" placeholder="Başlık, dosya adı veya özet" value={aramaMetni} onChange={(e) => setAramaMetni(e.target.value)} />
               </div>
+              <Select aria-label="Belge türüne göre filtrele" value={turFiltre} onChange={(e) => setTurFiltre(e.target.value)}>
+                <option value="hepsi">Tüm belge türleri</option>
+                {Object.entries(TUR_METINLERI).map(([deger, etiket]) => <option key={deger} value={deger}>{etiket}</option>)}
+              </Select>
+            </div>
+          </div>
 
-              <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                  Soru veya İnceleme Konusu
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={soru}
-                    onChange={(e) => setSoru(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && soruSor()}
-                    placeholder="Örn: Sözleşmede gecikme cezası ve fesih şartları nelerdir?"
-                    className="flex-1 px-3 py-2 border rounded-md text-sm bg-background"
-                  />
-                  <Button
-                    variant="primary"
-                    disabled={soruluyor || !soru.trim()}
-                    onClick={() => soruSor()}
-                  >
-                    {soruluyor ? "Taranıyor..." : "Analiz Et"}
-                  </Button>
-                </div>
+          {yukleniyor ? (
+            <div className={styles.empty} role="status">Belgeler yükleniyor…</div>
+          ) : listeHatasi ? (
+            <div className={styles.empty}>
+              <Alert tone="error">{listeHatasi}</Alert>
+              <Button type="button" onClick={() => setListeSurumu((surum) => surum + 1)}>Tekrar dene</Button>
+            </div>
+          ) : belgeler.length === 0 ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyIcon}>{filtreVar ? <Search size={23} aria-hidden /> : <FolderOpen size={23} aria-hidden />}</div>
+              <h3>{filtreVar ? "Eşleşen belge bulunamadı" : "Henüz belge yok"}</h3>
+              <p>{filtreVar ? "Başka bir arama yapın veya filtreleri temizleyin." : "Sözleşme, şartname veya protokol yükleyerek kütüphanenizi oluşturun."}</p>
+              {filtreVar ? (
+                <Button type="button" onClick={filtreleriTemizle}>Filtreleri temizle</Button>
+              ) : (
+                <Button type="button" onClick={() => setAktifSekme("yukle")}><Upload size={16} aria-hidden /> Belge yükle</Button>
+              )}
+            </div>
+          ) : (
+            <ul className={styles.documents}>
+              {belgeler.map((belge) => (
+                <li key={belge.id} className={styles.document}>
+                  <div className={styles.fileIcon}><FileText size={20} aria-hidden /></div>
+                  <div className={styles.documentDetails}>
+                    <h3>{belge.baslik}</h3>
+                    <p>{belge.dosyaAdi}{belge.cari && ` · ${belge.cari.unvan}`}</p>
+                    {belge.ozet && <p className={styles.summary}>{belge.ozet}</p>}
+                    <div className={styles.metadata}>
+                      <span>Sürüm {belge.surum}</span>
+                      <span>{belge.sayfaSayisi} sayfa</span>
+                      {belge._count && <span>{belge._count.parcalar} metin parçası</span>}
+                      <span>{Math.ceil(belge.boyut / 1024)} KB</span>
+                      {belge.gecerlilikBitis && <span>Geçerlilik sonu {TARIH_BICIMI.format(new Date(belge.gecerlilikBitis))}</span>}
+                    </div>
+                  </div>
+                  <div className={styles.tags}>
+                    <Badge variant={TUR_RENKLERI[belge.tur]}>{TUR_METINLERI[belge.tur]}</Badge>
+                    <Badge variant={DURUMLAR[belge.durum].renk}>{DURUMLAR[belge.durum].etiket}</Badge>
+                  </div>
+                  <div className={styles.documentActions}>
+                    <Button type="button" size="sm" disabled={soruluyor} onClick={() => {
+                      setSecilenBelgeId(belge.id);
+                      setRagSonuc(null);
+                      setAktifSekme("sor");
+                    }}>
+                      <Sparkles size={15} aria-hidden /> Soru sor
+                    </Button>
+                    <Button type="button" size="sm" className={styles.delete} aria-label={`${belge.baslik} belgesini sil`} title="Belgeyi sil" disabled={silinenBelgeId !== null} onClick={() => belgeSil(belge.id, belge.baslik)}>
+                      <Trash2 size={16} aria-hidden />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {aktifSekme === "sor" && (
+        <>
+          <Card pad={false} className={styles.content} aria-busy={soruluyor}>
+            <div className={styles.sectionTitle}>
+              <div className={styles.fileIcon}><Sparkles size={20} aria-hidden /></div>
+              <div>
+                <h2>Belgelere soru sor</h2>
+                <p>Yetkili olduğunuz belgelerde arayın ve yanıtı dayanak alıntılarıyla inceleyin.</p>
               </div>
             </div>
-
-            {/* Hızlı Öneri Butonları */}
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t text-xs text-muted-foreground">
-              <span>Hızlı Sorular:</span>
-              <button
-                type="button"
-                className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-foreground transition"
-                onClick={() => {
-                  setSoru("Cezai şart ve tazminat koşulları nelerdir?");
-                  soruSor("Cezai şart ve tazminat koşulları nelerdir?");
-                }}
-              >
-                ⚖️ Cezai Şartlar
-              </button>
-              <button
-                type="button"
-                className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-foreground transition"
-                onClick={() => {
-                  setSoru("Fesih ihbar süresi ve haklı fesih halleri nelerdir?");
-                  soruSor("Fesih ihbar süresi ve haklı fesih halleri nelerdir?");
-                }}
-              >
-                ⏱️ Fesih Süreleri
-              </button>
-              <button
-                type="button"
-                className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-foreground transition"
-                onClick={() => {
-                  setSoru("Ödeme vadeleri ve faturalandırma şartları nedir?");
-                  soruSor("Ödeme vadeleri ve faturalandırma şartları nedir?");
-                }}
-              >
-                💳 Ödeme ve Vade
-              </button>
-              <button
-                type="button"
-                className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-foreground transition"
-                onClick={() => {
-                  setSoru("Garanti, bakım ve destek taahhütleri nelerdir?");
-                  soruSor("Garanti, bakım ve destek taahhütleri nelerdir?");
-                }}
-              >
-                🛡️ Garanti ve Bakım
-              </button>
+            {listeHatasi && <Alert tone="error">{listeHatasi}</Alert>}
+            <form className={styles.form} onSubmit={(e) => { e.preventDefault(); void soruSor(); }}>
+              <label className={styles.field}>
+                Belge kapsamı
+                <Select value={secilenBelgeId} disabled={yukleniyor || soruluyor} onChange={(e) => {
+                  setSecilenBelgeId(e.target.value);
+                  setRagSonuc(null);
+                }}>
+                  <option value="">Tüm yetkili belgeler</option>
+                  {belgeler.map((belge) => <option key={belge.id} value={belge.id}>{belge.baslik} (v{belge.surum})</option>)}
+                </Select>
+              </label>
+              <label className={styles.field}>
+                Sorunuz
+                <Input value={soru} disabled={soruluyor} onChange={(e) => setSoru(e.target.value)} placeholder="Örneğin, gecikme cezası nasıl hesaplanır?" />
+              </label>
+              <div className={styles.formActions}>
+                <Button type="submit" variant="primary" disabled={soruluyor || !soru.trim()}>
+                  <Sparkles size={16} aria-hidden /> {soruluyor ? "Belgeler inceleniyor…" : "Yanıtı getir"}
+                </Button>
+              </div>
+            </form>
+            <div className={styles.examples}>
+              <span>Örnek sorular</span>
+              {ORNEK_SORULAR.map(([etiket, metin]) => (
+                <Button key={etiket} type="button" size="sm" disabled={soruluyor} onClick={() => { setSoru(metin); void soruSor(metin); }}>{etiket}</Button>
+              ))}
             </div>
           </Card>
 
-          {/* Yanıt Alanı */}
           {ragSonuc && (
-            <Card className="p-6 space-y-6 border-primary/40 shadow-sm">
-              <div className="flex items-center justify-between pb-3 border-b">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-foreground">Yapay Zekâ Analiz Yanıtı</h3>
-                  {ragSonuc.guvenSkoru === "yuksek" ? (
-                    <Badge variant="success">✓ Kanıtlı Yanıt</Badge>
-                  ) : ragSonuc.guvenSkoru === "orta" ? (
-                    <Badge variant="warning">Kısmi Kanıt</Badge>
-                  ) : (
-                    <Badge variant="neutral">Hüküm Bulunamadı</Badge>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  İncelenen Parça: {ragSonuc.toplamParcaSayisi}
-                </span>
+            <Card pad={false} className={styles.content} aria-live="polite">
+              <div className={styles.between}>
+                <h2>Yanıt</h2>
+                {ragSonuc.guvenSkoru === "yuksek" ? <Badge variant="success">Yüksek güven</Badge>
+                  : ragSonuc.guvenSkoru === "orta" ? <Badge variant="warning">Kısmi dayanak</Badge>
+                    : <Badge variant="neutral">Hüküm bulunamadı</Badge>}
               </div>
-
-              <div className="prose dark:prose-invert max-w-none text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                {ragSonuc.cevap}
-              </div>
-
-              {/* Dayanak Gösterilen Kaynak Alıntıları */}
-              {ragSonuc.kaynaklar && ragSonuc.kaynaklar.length > 0 && (
-                <div className="space-y-3 pt-4 border-t">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <span>📑</span> Dayanak Gösterilen Belge ve Sayfalar ({ragSonuc.kaynaklar.length})
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {ragSonuc.kaynaklar.map((k, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 border rounded-lg bg-card/60 text-xs space-y-1.5 hover:border-primary/50 transition"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-foreground truncate">
-                            {k.belgeBaslik} <span className="text-muted-foreground font-normal">(v{k.surum})</span>
-                          </span>
-                          <span className="px-2 py-0.5 bg-primary/10 text-primary font-bold rounded">
-                            Sayfa {k.sayfaNo}
-                          </span>
-                        </div>
-                        {k.bolumBasligi && (
-                          <div className="text-muted-foreground font-medium truncate">
-                            📌 {k.bolumBasligi}
-                          </div>
-                        )}
-                        <p className="text-muted-foreground line-clamp-3 italic bg-background p-2 rounded border border-border/50">
-                          &quot;{k.alinti}&quot;
-                        </p>
+              <p className={styles.answer}>{ragSonuc.cevap}</p>
+              <p className={styles.answerDetails}>İncelenen metin parçası sayısı {ragSonuc.toplamParcaSayisi}</p>
+              {ragSonuc.kaynaklar?.length > 0 && (
+                <section className={styles.sources}>
+                  <h3>Kaynak alıntıları ({ragSonuc.kaynaklar.length})</h3>
+                  {ragSonuc.kaynaklar.map((kaynak, sira) => (
+                    <article className={styles.source} key={`${kaynak.belgeId}-${kaynak.sayfaNo}-${sira}`}>
+                      <div className={styles.between}>
+                        <strong>{kaynak.belgeBaslik} · v{kaynak.surum}</strong>
+                        <Badge variant="accent">Sayfa {kaynak.sayfaNo}</Badge>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      {kaynak.bolumBasligi && <p>{kaynak.bolumBasligi}</p>}
+                      <blockquote>{kaynak.alinti}</blockquote>
+                    </article>
+                  ))}
+                </section>
               )}
             </Card>
           )}
-        </div>
+        </>
       )}
 
-      {/* SEKME 2: YENİ BELGE YÜKLE */}
       {aktifSekme === "yukle" && (
-        <Card className="p-6 max-w-2xl mx-auto space-y-4">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <span>📤</span> Yeni Sözleşme / Şartname Yükle
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            PDF veya metin dosyasını yükleyin. Sistem metin katmanını ayıklayıp otomatik olarak sayfa ve maddelere göre indeksleyecektir.
-          </p>
-
-          <form onSubmit={belgeYukle} className="space-y-4 pt-2">
+        <Card pad={false} className={`${styles.content} ${styles.upload}`}>
+          <div className={styles.sectionTitle}>
+            <div className={styles.fileIcon}><Upload size={20} aria-hidden /></div>
             <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                Belge Başlığı *
-              </label>
-              <input
-                type="text"
-                required
-                value={yeniBaslik}
-                onChange={(e) => setYeniBaslik(e.target.value)}
-                placeholder="Örn: 2026 ERP Yazılım ve Lisans Sözleşmesi"
-                className="w-full px-3 py-2 border rounded-md text-sm bg-background"
-              />
+              <h2>Yeni belge yükle</h2>
+              <p>Yüklenen belgenin metni, kaynak göstererek sorgulanabilmesi için indekslenir.</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                  Belge Türü
-                </label>
-                <Select
-                  value={yeniTur}
-                  onChange={(e) => setYeniTur(e.target.value as SozlesmeTuru)}
-                  className="w-full"
-                >
-                  <option value="sozlesme">Ticari Sözleşme</option>
-                  <option value="sartname">Teknik / İdari Şartname</option>
-                  <option value="protokol">Ek Protokol / Zeyilname</option>
-                  <option value="teklif_eki">Teklif Şartı & Eki</option>
-                  <option value="diger">Diğer Hukuki Belge</option>
+          </div>
+          <form className={styles.form} onSubmit={belgeYukle} aria-busy={dosyaYukleniyor}>
+            <label className={styles.field}>
+              Belge başlığı
+              <Input required value={yeniBaslik} onChange={(e) => setYeniBaslik(e.target.value)} placeholder="Örneğin, ERP lisans sözleşmesi" />
+            </label>
+            <div className={styles.formGrid}>
+              <label className={styles.field}>
+                Belge türü
+                <Select value={yeniTur} onChange={(e) => setYeniTur(e.target.value as SozlesmeTuru)}>
+                  {Object.entries(TUR_METINLERI).map(([deger, etiket]) => <option key={deger} value={deger}>{etiket}</option>)}
                 </Select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                  Geçerlilik Bitiş Tarihi (Opsiyonel)
-                </label>
-                <input
-                  type="date"
-                  value={yeniGecerlilik}
-                  onChange={(e) => setYeniGecerlilik(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-md text-sm bg-background"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                Dosya Seç (PDF veya Metin, azami 25 MB) *
               </label>
-              <input
-                type="file"
-                required
-                accept=".pdf,.txt,.md"
-                onChange={(e) => setSecilenDosya(e.target.files?.[0] || null)}
-                className="w-full p-2 border border-dashed rounded-md text-sm bg-background file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
-              />
-              {secilenDosya && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  Seçilen: {secilenDosya.name} ({(secilenDosya.size / (1024 * 1024)).toFixed(2)} MB)
-                </div>
-              )}
+              <label className={styles.field}>
+                Geçerlilik bitişi (isteğe bağlı)
+                <Input type="date" value={yeniGecerlilik} onChange={(e) => setYeniGecerlilik(e.target.value)} />
+              </label>
             </div>
-
-            <div className="pt-3 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setAktifSekme("liste")}
-              >
-                İptal
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={dosyaYukleniyor || !secilenDosya || !yeniBaslik.trim()}
-              >
-                {dosyaYukleniyor ? "İşleniyor..." : "Yükle ve İndeksle"}
+            <label className={`${styles.field} ${styles.fileField}`}>
+              Belge dosyası
+              <span>PDF, TXT veya MD · En fazla 25 MB</span>
+              <Input type="file" required accept=".pdf,.txt,.md" onChange={(e) => setSecilenDosya(e.target.files?.[0] ?? null)} />
+            </label>
+            <div className={styles.formActions}>
+              <Button type="button" disabled={dosyaYukleniyor} onClick={() => sekmeyeGec("liste")}>İptal</Button>
+              <Button type="submit" variant="primary" disabled={dosyaYukleniyor || !secilenDosya || !yeniBaslik.trim()}>
+                <Upload size={16} aria-hidden /> {dosyaYukleniyor ? "Belge işleniyor…" : "Yükle ve indeksle"}
               </Button>
             </div>
           </form>
         </Card>
-      )}
-
-      {/* SEKME 3: BELGE LİSTESİ */}
-      {aktifSekme === "liste" && (
-        <div className="space-y-4">
-          <Card className="p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <Select
-                value={turFiltre}
-                onChange={(e) => setTurFiltre(e.target.value)}
-                className="w-48"
-              >
-                <option value="hepsi">Tüm Türler</option>
-                <option value="sozlesme">Ticari Sözleşmeler</option>
-                <option value="sartname">Şartnameler</option>
-                <option value="protokol">Protokoller</option>
-                <option value="teklif_eki">Teklif Ekleri</option>
-                <option value="diger">Diğer</option>
-              </Select>
-              <input
-                type="text"
-                placeholder="Başlık, dosya adı veya özette ara..."
-                value={aramaMetni}
-                onChange={(e) => setAramaMetni(e.target.value)}
-                className="px-3 py-1.5 border rounded-md text-sm bg-background w-full md:w-72"
-              />
-            </div>
-
-            <div className="text-xs text-muted-foreground">
-              Toplam {belgeler.length} aktif belge
-            </div>
-          </Card>
-
-          {yukleniyor ? (
-            <div className="text-center py-12 text-sm text-muted-foreground">
-              Sözleşmeler listeleniyor...
-            </div>
-          ) : belgeler.length === 0 ? (
-            <Card className="p-12 text-center space-y-3">
-              <div className="text-3xl">📄</div>
-              <h3 className="font-semibold text-foreground">Henüz Sözleşme Bulunmuyor</h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Hukuki sözleşme, idari/teknik şartname veya protokollerinizi PDF formatında yükleyerek yapay zekâ destekli semantik arama ve madde analizi yapabilirsiniz.
-              </p>
-              <Button variant="primary" onClick={() => setAktifSekme("yukle")}>
-                İlk Belgenizi Yükleyin
-              </Button>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {belgeler.map((b) => (
-                <Card key={b.id} className="p-5 flex flex-col justify-between space-y-4 hover:border-primary/40 transition">
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <Badge variant={TUR_RENKLERI[b.tur]}>
-                        {TUR_METINLERI[b.tur]}
-                      </Badge>
-                      <span className="text-xs font-semibold px-2 py-0.5 bg-muted rounded text-muted-foreground">
-                        v{b.surum}
-                      </span>
-                    </div>
-
-                    <h3 className="font-semibold text-foreground text-base line-clamp-2">
-                      {b.baslik}
-                    </h3>
-
-                    {b.cari && (
-                      <div className="text-xs text-primary font-medium flex items-center gap-1">
-                        <span>🏢</span> {b.cari.unvan}
-                      </div>
-                    )}
-
-                    {b.ozet && (
-                      <p className="text-xs text-muted-foreground line-clamp-3 bg-muted/30 p-2 rounded">
-                        {b.ozet}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-3 pt-3 border-t text-xs text-muted-foreground">
-                    <div className="flex items-center justify-between">
-                      <span>📄 {b.sayfaSayisi} sayfa ({b._count?.parcalar ?? 0} parça)</span>
-                      <span>{(b.boyut / 1024).toFixed(0)} KB</span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => {
-                          setSecilenBelgeId(b.id);
-                          setAktifSekme("sor");
-                        }}
-                      >
-                        🔍 Soru Sor
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => belgeSil(b.id, b.baslik)}
-                      >
-                        Sil
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
       )}
     </div>
   );

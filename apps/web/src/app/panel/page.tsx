@@ -7,6 +7,7 @@ import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 import { finansalOzetGorebilir } from "@/lib/rol-yetkileri";
 import { bugunTR, paraBicimle } from "@tekirextra/shared";
 import { Para, Tarih } from "@/components/ui";
+import { PanelWidgetlar } from "./panel-widgetlar";
 import { YoneticiOzetiKart } from "@/components/yonetici-ozeti-kart";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik" | "calisan";
@@ -38,6 +39,9 @@ export default function PanelSayfasi() {
   const [cekler, setCekler] = useState<CekSenet[]>([]);
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(true);
+  const [destekOturumu, setDestekOturumu] = useState(false);
+  const [widgetOturumu, setWidgetOturumu] = useState("");
+  const [vadeHatasi, setVadeHatasi] = useState(false);
   const [sonGuncelleme, setSonGuncelleme] = useState<Date | null>(null);
   const [gunluk, setGunluk] = useState<GunlukOzet | null>(null);
   const [alisKurlari, setAlisKurlari] = useState<DovizKurlari | null>(null);
@@ -47,11 +51,12 @@ export default function PanelSayfasi() {
   const yukle = useCallback(async () => {
     setYukleniyor(true); setHata("");
     try {
-      const ben = await api<{ rol: Rol }>("/auth/ben");
+      const ben = await api<{ rol: Rol; tenantId: string; userId: string; destek?: unknown }>("/auth/ben");
       // PRS-21: çalışanın ana sayfası self-servis.
       if (ben.rol === "calisan") { router.replace("/panel/self-servis"); return; }
       const firmaVeri = await api<{ unvan: string }>("/firma");
-      setRol(ben.rol); setFirma(firmaVeri.unvan);
+      setRol(ben.rol); setFirma(firmaVeri.unvan); setDestekOturumu(Boolean(ben.destek));
+      setWidgetOturumu(ben.tenantId && ben.userId ? `${ben.tenantId}:${ben.userId}` : "");
       // RPR-11: finansal özet yalnız finans rollerine; API de aynı rolleri uygular.
       const finansalErisim = finansalOzetGorebilir(ben.rol);
       const sonuclar = await Promise.allSettled([
@@ -75,8 +80,9 @@ export default function PanelSayfasi() {
         if (sonuclar[6]?.status === "fulfilled") setEkstre((sonuclar[6].value as unknown[]).length);
         if (sonuclar[7]?.status === "fulfilled") setGelen((sonuclar[7].value as { ozet: { adet: number } }).ozet.adet);
         if (sonuclar[8]?.status === "fulfilled") setCekler(sonuclar[8].value as CekSenet[]);
-        if (sonuclar[9]?.status === "fulfilled") setVadesiGecenler(sonuclar[9].value as VadesiGecenler);
-        else setVadesiGecenler({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" });
+        const vadeSonucu = sonuclar[9];
+        setVadeHatasi(vadeSonucu?.status !== "fulfilled");
+        setVadesiGecenler(vadeSonucu?.status === "fulfilled" ? vadeSonucu.value as VadesiGecenler : null);
       }
       if (sonuclar.some((sonuc) => sonuc.status === "rejected")) setHata("Bazı özetler şu anda yüklenemedi; erişilebilen güncel veriler gösteriliyor.");
       setSonGuncelleme(new Date());
@@ -153,6 +159,10 @@ export default function PanelSayfasi() {
         <div style={{ backgroundColor: "var(--danger-soft)", border: "1px solid var(--danger)", borderRadius: "12px", padding: "12px 20px", color: "var(--danger)", fontSize: "13px", fontWeight: "500", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
           <span>⚠️</span> {hata}
         </div>
+      )}
+
+      {rol && widgetOturumu && !destekOturumu && (
+        <PanelWidgetlar key={widgetOturumu} rol={rol} yenileme={sonGuncelleme?.getTime() ?? 0} />
       )}
 
       {/* AI-08: yönetici özeti — rakamlar rapor modülünden, yapay zekâ yalnız yorumlar. */}
@@ -388,7 +398,7 @@ export default function PanelSayfasi() {
                 ))}
                 {!grup.liste.length && (
                   <div style={{ padding: "20px", textAlign: "center", color: "var(--text-subtle)", fontSize: "13px" }}>
-                    {vadesiGecenler ? grup.bos : "Veriler yükleniyor…"}
+                    {vadeHatasi ? "Vade verisi yüklenemedi." : vadesiGecenler ? grup.bos : "Veriler yükleniyor…"}
                   </div>
                 )}
               </div>

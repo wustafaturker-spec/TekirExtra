@@ -73,6 +73,11 @@ export class HazirlikController {
     return this.hazirlik.hazirla(tenantId, userId, { turler: turler as HazirlikTuru[] | undefined });
   }
 
+  @Get("bekleyen-sayisi")
+  bekleyenSayisi() {
+    return this.hazirlik.kullaniciBekleyenSayisi();
+  }
+
   @Get("brifing-ozeti")
   brifingOzeti() {
     const { tenantId } = aktifBaglam();

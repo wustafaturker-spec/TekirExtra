@@ -48,7 +48,7 @@ export class HafizaService {
    * Tekil (tür, cari, anahtar) kaydı yazar. Kullanıcının pasife aldığı kaydı yalnız kullanıcı yeniden açar;
    * kullanıcı kaydının üstüne AI önerisi yazılmaz.
    */
-  async yaz(g: YazGirdisi): Promise<AiHafiza> {
+  async yaz(g: YazGirdisi, islem?: Prisma.TransactionClient): Promise<AiHafiza> {
     const { tenantId, userId } = aktifBaglam();
     const cariId = g.cariId ?? null;
     const kapsam: HafizaKapsami = g.kapsam ?? (g.cariId ? "cari" : g.tur === "musteri_tercihi" && g.kaynak === "kullanici" ? "kullanici" : "firma");
@@ -60,39 +60,41 @@ export class HafizaService {
       nedenOnerildi: g.nedenOnerildi?.slice(0, 1000) ?? null,
     };
     const olusturanUserId = g.kaynak === "otomatik" ? null : userId;
+    const yaz = async (tx: Prisma.TransactionClient) => {
+      const mevcut = await tx.aiHafiza.findFirst({ where: { tenantId, tur: g.tur, cariId, anahtar: g.anahtar } });
+      if (!mevcut) {
+        return tx.aiHafiza.create({
+          data: {
+            tenantId, tur: g.tur, anahtar: g.anahtar, cariId, olusturanUserId,
+            onaylayanUserId: g.kaynak === "kullanici" ? userId : null,
+            sonDogrulamaAt: g.kaynak === "kullanici" ? new Date() : null,
+            surum: 1,
+            ...veri,
+          },
+        });
+      }
+      // P-16: Pasife alınmış kayıt yeniden otomatik öğrenilemez ya da AI önerisiyle ezilemez. Yalnız kullanıcı açabilir.
+      if (mevcut.durum === "pasif" && g.kaynak !== "kullanici") return mevcut;
+      // AI önerisi var olan kaydı değiştirmez (onaylanmış öneri öneriye geri dönmez)
+      if (g.kaynak === "ai_onerisi") return mevcut;
+      // Kullanıcı kaydının üstüne otomatik öğrenme yazılmaz
+      if (g.kaynak === "otomatik" && (mevcut.kaynak === "kullanici" || mevcut.durum === "pasif")) return mevcut;
+
+      const yeniSurum = (mevcut.surum ?? 1) + 1;
+      return tx.aiHafiza.update({
+        where: { id: mevcut.id },
+        data: {
+          ...veri,
+          surum: yeniSurum,
+          ...(g.kaynak === "kullanici" ? { olusturanUserId, onaylayanUserId: userId, sonDogrulamaAt: new Date() } : {}),
+          updatedAt: new Date(),
+        },
+      });
+    };
+    if (islem) return yaz(islem);
     for (let deneme = 0; deneme < 2; deneme++) {
       try {
-        return await this.prisma.tenantIslem(tenantId, async (tx) => {
-          const mevcut = await tx.aiHafiza.findFirst({ where: { tenantId, tur: g.tur, cariId, anahtar: g.anahtar } });
-          if (!mevcut) {
-            return tx.aiHafiza.create({
-              data: {
-                tenantId, tur: g.tur, anahtar: g.anahtar, cariId, olusturanUserId,
-                onaylayanUserId: g.kaynak === "kullanici" ? userId : null,
-                sonDogrulamaAt: g.kaynak === "kullanici" ? new Date() : null,
-                surum: 1,
-                ...veri,
-              },
-            });
-          }
-          // P-16: Pasife alınmış kayıt yeniden otomatik öğrenilemez ya da AI önerisiyle ezilemez. Yalnız kullanıcı açabilir.
-          if (mevcut.durum === "pasif" && g.kaynak !== "kullanici") return mevcut;
-          // AI önerisi var olan kaydı değiştirmez (onaylanmış öneri öneriye geri dönmez)
-          if (g.kaynak === "ai_onerisi") return mevcut;
-          // Kullanıcı kaydının üstüne otomatik öğrenme yazılmaz
-          if (g.kaynak === "otomatik" && (mevcut.kaynak === "kullanici" || mevcut.durum === "pasif")) return mevcut;
-
-          const yeniSurum = (mevcut.surum ?? 1) + 1;
-          return tx.aiHafiza.update({
-            where: { id: mevcut.id },
-            data: {
-              ...veri,
-              surum: yeniSurum,
-              ...(g.kaynak === "kullanici" ? { olusturanUserId, onaylayanUserId: userId, sonDogrulamaAt: new Date() } : {}),
-              updatedAt: new Date(),
-            },
-          });
-        });
+        return await this.prisma.tenantIslem(tenantId, yaz);
       } catch (hata) {
         // Eşzamanlı ilk yazım: tekil indeks ikinciyi reddeder, güncellemeyle yeniden denenir.
         if (deneme === 0 && hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") continue;

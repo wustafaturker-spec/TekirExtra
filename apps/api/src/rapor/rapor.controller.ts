@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Header, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import { tahsilatDonemiSemasi, vadeDonemiSemasi } from "@tekirextra/shared";
 import type { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { RaporService } from "./rapor.service";
@@ -69,6 +70,14 @@ export class RaporController {
     return this.raporService.gunlukOzet(tarih);
   }
 
+  @Get("tahsilat-donemi")
+  @Roller("muhasebe", "mali_musavir", "salt_okunur")
+  tahsilatDonemi(@Query("donem") donem: unknown) {
+    const sonuc = tahsilatDonemiSemasi.safeParse(donem);
+    if (!sonuc.success) throw new BadRequestException("Geçerli bir tahsilat dönemi seçin.");
+    return this.raporService.tahsilatDonemiOzeti(sonuc.data);
+  }
+
   /** CARI-49: tahmini gecikmenin isabeti (son 12 ay kapanan satış faturaları). */
   @Get("tahmin-isabeti")
   @Roller("muhasebe", "mali_musavir", "salt_okunur")
@@ -80,6 +89,14 @@ export class RaporController {
   @Roller("muhasebe", "mali_musavir", "salt_okunur")
   async vadesiGecenler() {
     return this.raporService.vadesiGecenler();
+  }
+
+  @Get("vade-donemi")
+  @Roller("muhasebe", "mali_musavir", "salt_okunur")
+  vadeDonemi(@Query("donem") donem: unknown) {
+    const sonuc = vadeDonemiSemasi.safeParse(donem);
+    if (!sonuc.success) throw new BadRequestException("Geçerli bir vade dönemi seçin.");
+    return this.raporService.vadeDonemiOzeti(sonuc.data);
   }
 
   @Get("smm")

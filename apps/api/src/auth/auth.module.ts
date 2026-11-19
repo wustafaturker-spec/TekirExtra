@@ -7,6 +7,7 @@ import { TelefonController } from "./telefon.controller";
 import { AuthGuard } from "./auth.guard";
 import { AuthService } from "./auth.service";
 import { GirisDenemeSayaci } from "./giris-deneme-sayaci";
+import { PanelWidgetController } from "./panel-widget.controller";
 import { RollerGuard } from "./roller.guard";
 
 @Module({
@@ -19,7 +20,7 @@ import { RollerGuard } from "./roller.guard";
       }),
     }),
   ],
-  controllers: [AuthController, TelefonController],
+  controllers: [AuthController, TelefonController, PanelWidgetController],
   providers: [
     AuthService,
     GirisDenemeSayaci,

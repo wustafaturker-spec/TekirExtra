@@ -73,29 +73,30 @@ Bu programla kesişimi:
 
 `apps/api/src/` ve `apps/web/src/` yukarıdaki göreli kaynakların kökleridir. Kaynakların başlangıç envanterinde mevcut olduğu doğrulanmıştır; P-00 uygulama başlangıcında sürüm ve davranışı tekrar kaydeder.
 
-### 2.1 Kod tabanı karşılaştırması (sürüm 3.1)
+### 2.1 Kod tabanı ve kabul durumu (19 Kasım 2026)
 
-Karşılaştırma şema ve servis kodunun okunmasına dayanır; test koşulmamış, davranış çalıştırılarak doğrulanmamıştır. Esas alınan çalışma ağacı `ilt-merkezi-ileti` dalıdır (`main`'in 65 commit önünde); P-00 hangi dalın esas alınacağını kaydeder.
+Dayanak: `ilt-merkezi-ileti` dalı, `5cfbc3d1` ve çalışma ağacındaki 19 Kasım değişiklikleri. Tablo uygulama kapsamını ve bekleyen kabulü gösterir.
 
-| Paket | Kodda bulunan | Kodda bulunmayan / açık |
+| Paket | Uygulama | Açık iş veya kabul |
 |---|---|---|
-| P-01 | Panel, MCP ve Telegram bağlamı `ozelRol` + `paketModulleri` ile kurulur; paket kapsamı `UcCagirici.cagir` içinde DB'den yeniden denetlenir | Worker yolları yalnız `{tenantId, userId, rol}` verir (`ai-gorev-yurutucu.ts:84-135`, `onay.service.ts:156`, `teklif-talebi.service.ts:590,639`): özel rolün kapattığı kutular zamanlanmış görevde ve onay sonrası yürütmede uygulanmaz. 20'den fazla zamanlayıcı `SISTEM_USER_ID` + `rol: "yonetici"` ile çalışır |
-| P-02 | `TenantAiGorevCalisma`: benzersiz pencere, `sahiplikAnahtari`, koşullu sahiplenme, üç deneme | Sonuç yazımı sahipliğe bağlı değil (`ai-gorev-yurutucu.ts:228`, yalnız `where: { id }`). Durum enum'u 4 değerli (`calisiyor/basarili/hata/kosul_saglanmadi`) |
-| P-03 | `FinansKaynagi`: araç, adres, alınma zamanı, dönem, decimal-string kalem, döviz, uyarılar | Olgu kimliği, metrik kodu ve hesaplama sürümü yok |
-| P-06 | Sayaçlı kiracı sağlayıcısı, ekonomik/güçlü model, aktarım onayı | Yetenek profili kavramı yok; `AiOzelligi` içinde OCR ve embedding ayrı özellik değil |
-| P-07 | Çağrı öncesi bütçe denetimi, günlük sayaç için advisory kilit, tahmini maliyet işareti | Rezervasyon, uzlaştırma ve fiyat sürümü yok; maliyet çağrıdan sonra yazılır, son çağrı sınırı aşabilir |
-| P-08 | Web `AbortController`; API SSE kapanınca `sinyal`, araç turları arasında bakılır | Sinyal sağlayıcı isteğine taşınmaz (`aracli-ortak.ts:36` yalnız `AbortSignal.timeout`); `IAiProvider` arayüzünde sinyal yok |
-| P-04 | İmza, tutar, döviz, üye işyeri doğrulaması; geç ödeme; kısmi iade; sağlayıcı sorgusu; `bekleyenSaglayiciIade`; `durum = odendi` tekrar koruması | Firma markalı ödeme sayfası (`odemeSayfasiUrl` sağlayıcının sayfası), kalıcı sağlayıcı olay tablosu, bağlantı/deneme/tahsilat ayrımı (tek satır + `denemeSayisi`); `makbuzAnahtari` düz metin; callback rotası `tenantId`'yi URL'den alır |
-| P-05 | Sıralı kurallar: VKN → fatura no → ad benzerliği → AI karşı taraf çıkarımı; çoklu fatura dağıtımı | Sayısal skor ve aday/kanıt modeli yok; ETTN ve IBAN sinyali yok; fatura no regex'i `[A-Z0-9]{3}20\d{11}` yüzyıla sabit (`ekstre-eslestirme.service.ts:701`) |
-| P-11 | 1–2 adım (rol ya da kullanıcı), görev ayrılığı, geri çekme, hedef özeti, hatırlatma | Üçüncü kademe, departman, maliyet merkezi, vekâlet, özel role bağlı onaylayıcı; yürütmede güncel özel rol denetimi |
-| P-09 | Eşzamanlı OCR çağrıları, içeriksiz `AiOcrDenetim` izi, `ekler/` deposu | Belge/sayfa/iş kuyruğu yok (BullMQ yalnız e-Belge, tarama, ileti, personel); alan kanıtı ve düzeltme kaydı yok |
-| P-10 | — | Embedding/pgvector izi yok; imaj `postgres:16-alpine` pgvector içermez |
-| P-12 | Taslak asistan aracıyla açılır, fiyat ERP'den gelir, fiyatsız satır 0 + uyarı, tekrar ileti denetimi | Gönderim onayı alıcıya ve belge durumuna bağlıdır (`araclar/onayli.ts` `hedefDurumu` → `belgeGonderimi`, AI-27 özeti); konu/metin ve PDF ek sürümünün onaya bağlanması ile revizyon/alıntı ayrımı yoktur ya da doğrulanmamıştır |
-| P-13 | Sihirbaz, parti kaydı, geri alma; `tablo.ts` Logo/Mikro/Netsis/Paraşüt başlık eşanlamlıları | AI çağrısı yok |
-| P-16 | Kapsam `olusturanUserId` + rol ile; kaynak, durum, kullanım sayısı | Geçerlilik, son doğrulama, sürüm alanı yok |
-| P-17 | `AiCagriIz` (süre, hata sınıfı, token, maliyet) | p50/p95 ve belirsiz işlem gösteren ekran yok |
-| P-15 | `ai/kalite/` altında 3 senaryo | Hedef 50+ |
-| P-18 | Paket modülleri ve ayar anahtarları | Firma/özellik/kanal bayrağı altyapısı yok |
+| P-00 | [Başlangıç ölçüm raporu](docs/ai-olcum/2026-11-15.md) yayımlandı. | Gerçek dosyalarda tanınmayan kolon oranı ve paket bazında pilot hedefleri. |
+| P-01 | Görev yürütme, genel onay ve teklif otomasyonu ortak kullanıcı bağlamını kullanıyor. | Devam ve sistem kimliği yollarının paket bazında kabulü. |
+| P-02 | Görev sonuçları beklenen durum ve sahiplik anahtarıyla yazılıyor. | Belirsiz sağlayıcı sonucu ile ayrıntılı yeniden deneme ve bildirim politikası. |
+| P-03 | Finans kaynaklarında metrik, hesap sürümü ve olgu seçimi var. | Yönetici yorumlarının ve model hatasındaki özetin paket kabulü. |
+| P-04 | Ödeme denemesi ve sağlayıcı olay kaydı modelleri var. [Servis testi](apps/api/src/pos/pos.service.test.ts) aynı olay için 10 eşzamanlı çağrıyı kapsıyor. | Sağlayıcı sandbox’ı ve gerçek HTTP/PostgreSQL kabulü. |
+| P-05 | ETTN, fatura no, IBAN, güven skoru ve alternatif adaylar var. | 500 etiketli hareketle kalibrasyon ve yanlış pozitif ölçümü. |
+| P-06–08 | Sayaçlı sağlayıcı ve asistan iptalinin sağlayıcı HTTP isteğine aktarılması var. | Ortak yetenek profilleri, bütçe rezervasyonu ve uzlaştırma, e-Belge iptal zinciri ve kalıcı ilişkilendirme. |
+| P-09 | OCR ve içeriksiz denetim izi var. | Belge kuyruğu, alan kanıtı ve kullanıcı düzeltmesi. |
+| P-10 | Sürümlü sözleşme belgeleri, rol filtresi ve kaynaklı Türkçe tam metin araması var. | pgvector, dağıtım/yedek geri yükleme uyumu ve gerçek PostgreSQL erişim iptali kabulü. |
+| P-11–12 | Genel onay ve ERP fiyatlı teklif taslağı var. Genel onay en fazla iki adımlı. | Ek kademeler, departman, maliyet merkezi, vekâlet ve gönderim onayının konu/metin/ek sürümüne bağlanması. |
+| P-13 | Tanınmayan kolonlar için AI önerisi, maskeli örnek ve kullanıcı seçimi var. | Sürümlü gerçek Logo/Mikro dosyaları ve bunlarla kontrol toplamı kabulü. |
+| P-14 | Ekran bağlamı ve asistan temeli var. | Yerel model yetenek/kalite ölçümü ve ekran eylemleri kabulü. |
+| P-15 | [17 Kasım değerlendirmesi](docs/ai-degerlendirme/2026-11-17-ai104.md) 52/56, kritik 18/19. | Kalan kritik senaryo ve paket bazında yayın kanıtı. |
+| P-16 | Hafızada sürüm, son doğrulama ve geçerlilik alanları var. | Saklama ve silme politikasının kabulü. |
+| P-17 | Kullanım raporu özellik/model ayrımı ve p50 içeriyor. | p95, belirsiz işlem sayısı ve uçtan uca işlem izi. |
+| P-18 | Paket kapsamı ve pilot işletim araçları var. | Ortak firma/özellik/kanal bayrakları ve paket bazında yayın kararı. |
+| P-19 | Beş hazırlık türü, onay kutusu ve brifing özeti var. Onay durum geçişi ve iş kaydı aynı işlemde. Hatırlatma konusu ve metni düzenlenebiliyor. PostgreSQL kabulünde iki eşzamanlı onay tek CRM kaydı üretti ve başarısız işlem yeniden denenebildi. | Hazırlık türü bazında pilot ölçümü ve tüm türler için güncellik/yetki kabulü. [PostgreSQL kabul senaryosu](apps/api/test/sabah-onay.kabul.test.ts). |
+| Panel widget | Firma ve kullanıcı bazında sürümlü tercihler, dönem filtreleri, şablonlar ve trend var. Rapor yetkisinin kaldırılması HTTP kabulünde doğrulandı. TekirExtra Demo Şirketi yerel pilotunda dönem değerleri kaynakla eşleşti. | Demo pilotunda sıfırdan farklı dönem tutarlarının gözlemlenmesi. [Widget planı](docs/PANEL-WIDGET-IS-PLANI.md). |
 
 ## 3. Değişmez uygulama kuralları
 
@@ -250,17 +251,17 @@ Kabul/test: Model beklerken, araçlar arasında ve onay açıldıktan sonra ipta
 
 Kaynaklar: `pos/pos.service.ts`, `pos/pos.controller.ts`, sağlayıcı adaptörleri, `PosTahsilat`, `PosIade`, fatura kapama servisleri.
 
-- [ ] Mevcut ödeme başlatma, bağlantı, taksit, bildirim, makbuz ve iade davranışını koru. İmza/tutar/döviz/üye işyeri doğrulaması, geç ödeme, kısmi iade, sağlayıcı sorgusu ve kayıtsız iade izi mevcuttur; yeniden yazılmaz, eksikleri tamamlanır.
-- [ ] Callback rotasındaki `tenantId` yol parametresini yalnız arama ipucu say; firma, kayıt ve sağlayıcı doğrulamasıyla sunucuda çözülür. Mevcut sağlayıcı panel adresleri kırılmadan geçiş planlanır.
-- [ ] `makbuzAnahtari` için özet saklamaya geçişi mevcut bağlantıların geçerliliğini bozmadan planla.
-- [ ] Firma markalı ortak ödeme sayfası ve fatura içi paylaşma eylemini ekle; alan adı/rota P-00'da kesinleşsin.
-- [ ] Bağlantı, ödeme denemesi ve gerçekleşmiş tahsilatı ayır; gerekli ek alanları mevcut modele göre tasarla.
-- [ ] Opaque rastgele tokenı kimlik bilgisi gibi ele al; yeni tokenlarda özet saklama, süre, iptal, yenileme ve log/referrer politikası tanımla.
-- [ ] Public uçta firmayı istemci verisinden güvenilir sayma; sunucu kayıtlarıyla çöz, yalnız gerekli bilgiyi göster.
-- [ ] Her adaptörde doğru imza/sonuç doğrulaması, üye işyeri, sipariş, tutar ve döviz kontrolü uygula.
-- [ ] Kalıcı sağlayıcı olay kaydı, iş anahtarı ve koşullu durum geçişi tasarla; yanıtı sağlayıcı protokolüne göre dön.
-- [ ] Ödeme gerçekleşip kayıt yazılamazsa sorgulama/uzlaştırma ile tamamla; yeni tahsilat başlatma.
-- [ ] Kısmi ödeme, fazla ödeme avansı, iptal sonrası geç başarı, kısmi iade ve dönem kilidi davranışını tanımla.
+- [x] Mevcut ödeme başlatma, bağlantı, taksit, bildirim, makbuz ve iade davranışını koru. İmza/tutar/döviz/üye işyeri doğrulaması, geç ödeme, kısmi iade, sağlayıcı sorgusu ve kayıtsız iade izi mevcuttur; yeniden yazılmaz, eksikleri tamamlanır.
+- [x] Callback rotasındaki `tenantId` yol parametresini yalnız arama ipucu say; firma, kayıt ve sağlayıcı doğrulamasıyla sunucuda çözülür. Mevcut sağlayıcı panel adresleri kırılmadan geçiş planlanır.
+- [x] `makbuzAnahtari` için özet saklamaya geçişi mevcut bağlantıların geçerliliğini bozmadan planla.
+- [x] Firma markalı ortak ödeme sayfası ve fatura içi paylaşma eylemini ekle; alan adı/rota P-00'da kesinleşsin.
+- [x] Bağlantı, ödeme denemesi ve gerçekleşmiş tahsilatı ayır; gerekli ek alanları mevcut modele göre tasarla.
+- [x] Opaque rastgele tokenı kimlik bilgisi gibi ele al; yeni tokenlarda özet saklama, süre, iptal, yenileme ve log/referrer politikası tanımla.
+- [x] Public uçta firmayı istemci verisinden güvenilir sayma; sunucu kayıtlarıyla çöz, yalnız gerekli bilgiyi göster.
+- [x] Her adaptörde doğru imza/sonuç doğrulaması, üye işyeri, sipariş, tutar ve döviz kontrolü uygula.
+- [x] Kalıcı sağlayıcı olay kaydı, iş anahtarı ve koşullu durum geçişi tasarla; yanıtı sağlayıcı protokolüne göre dön.
+- [x] Ödeme gerçekleşip kayıt yazılamazsa sorgulama/uzlaştırma ile tamamla; yeni tahsilat başlatma.
+- [x] Kısmi ödeme, fazla ödeme avansı, iptal sonrası geç başarı, kısmi iade ve dönem kilidi davranışını tanımla.
 
 Kabul/test: Fatura durumuna `KAPANDI` yazılmaz; mevcut mahsup sonucu kullanılır. En az 10 eşzamanlı aynı olay tek finansal etki üretir. Farklı denemelerin meşru ayrı ödemeleri yanlışlıkla yutulmaz. Tutar/döviz/hesap uyuşmazlığı reddedilir. Sandbox ve gerçek HTTP kabulü olmadan pilot açılmaz.
 
@@ -344,13 +345,13 @@ Kabul/test: Aynı ileti tekrar teklif/gönderim üretmez. Alıcı/ek değişirse
 
 **Sürüm 3.2 (D4):** P-00 ölçümünde tanınmayan başlık oranı düşükse paket açılmaz.
 
-- [ ] Mevcut önizleme, başlık eşleme, hata dosyası, parti kaydı ve geri almayı koru.
-- [ ] AI önerisini yalnız mevcut başlık eşanlamlı tablosunun (`tablo.ts`) tanımadığı kolonlar için çağır; P-00 ölçümü kaçırma oranını düşük bulursa paket kapsamı daraltılır.
-- [ ] Kolon başlıklarıyla başla; gerekirse çeşitli satırlardan sınırlı/maskelenmiş örnek al, dış aktarım onayını uygula.
-- [ ] İlk beş satırı bütün dosyanın temsili sayma; öneriyi kullanıcıya doğrulat.
-- [ ] Tarih/ondalık/döviz/borç-alacak yönünü deterministik doğrula.
-- [ ] Cari/stok/ilişkili kayıt sırası, tekrar yükleme ve kısmi başarısızlık politikasını tanımla.
-- [ ] Açılış bakiye ve açık faturanın birlikte aktarımında çift borcu engelle; kontrol toplamlarını göster.
+- [x] Mevcut önizleme, başlık eşleme, hata dosyası, parti kaydı ve geri almayı koru.
+- [x] AI önerisini yalnız mevcut başlık eşanlamlı tablosunun (`tablo.ts`) tanımadığı kolonlar için çağır; P-00 ölçümü kaçırma oranını düşük bulursa paket kapsamı daraltılır.
+- [x] Kolon başlıklarıyla başla; gerekirse çeşitli satırlardan sınırlı/maskelenmiş örnek al, dış aktarım onayını uygula.
+- [x] İlk beş satırı bütün dosyanın temsili sayma; öneriyi kullanıcıya doğrulat.
+- [x] Tarih/ondalık/döviz/borç-alacak yönünü deterministik doğrula.
+- [x] Cari/stok/ilişkili kayıt sırası, tekrar yükleme ve kısmi başarısızlık politikasını tanımla.
+- [x] Açılış bakiye ve açık faturanın birlikte aktarımında çift borcu engelle; kontrol toplamlarını göster.
 - [ ] Logo/Mikro gibi kaynakları sürümlü gerçek örneklerle doğrula; yalnız kolon benzerliğini tam ürün desteği sayma.
 
 Kabul/test: AI doğrudan kayıt yazmaz. Aynı parti tekrar uygulanmaz; kullanıcı hatalı satırları görebilir. Geri alma sonradan bağlı kayıt varsa güvenli biçimde reddedilir. Ölçümsüz yüzde 99/hatasız aktarım vaadi yoktur.
@@ -425,9 +426,9 @@ Amaç: yapay zekâ işleri kendiliğinden kesinleştirmez; zamanlanmış görevl
 
 - [x] Hazırlık işi sözleşmesi: girdi kapsamı, kullanıcı adına yürütme kimliği (P-01), sahiplik (P-02), çıktı olarak yalnız taslak/öneri; kesin kayıt, gönderim, ödeme yok.
 - [x] İlk hazırlık türleri: (1) gelen faturaların stok kartlarıyla eşleştirme önerisi, (2) banka ekstresi eşleştirme önerileri (P-05 motoru), (3) vadesi geçenler için hatırlatma e-postası taslakları, (4) kritik stok için satın alma talebi taslağı, (5) ay sonu kapanış kontrol listesi.
-- [x] Sabah onay kutusu: hazırlanan her öğe kanıtı, alternatifi ve oluşacak kayıtla gösterilir; tekli/toplu onay, ret ve düzenleme; onayda hedef ve yetki yeniden denetlenir (P-11'in gerekli kısmı).
+- [x] Sabah onay kutusu: hazırlanan her öğe kanıtı, alternatifi ve oluşacak kayıtla gösterilir; tekli/toplu onay, ret ve hatırlatma metni düzenleme. Onay sırasında işlem yetkisi ve kaynak durumu denetlenir. Tüm hazırlık türleri için hedef güncelliği kabulü açık.
 - [x] Hazırlıkların günlük brifinge özet satırı ve bildirimi; aynı öğe tekrar hazırlanmaz (kalıcı iş anahtarı).
-- [x] Firma/özellik bazında açma-kapama (P-18) ve bütçe tavanı; hazırlık maliyeti P-17 raporunda görünür.
+- [ ] Firma/özellik bazında açma-kapama (P-18) ve bütçe tavanı; hazırlık maliyeti P-17 raporunda görünür.
 
 Kabul/test: Hazırlık hiçbir kesin işlem yapmaz. Onaylanmayan öğe süresi dolunca düşer, kayıt bırakmaz. Yetkisi değişen kullanıcının bekleyen hazırlığı onaylanamaz. İki worker aynı öğeyi iki kez hazırlamaz. P-15'te her hazırlık türü için doğruluk ve kullanıcı kabul oranı ölçülür.
 
@@ -640,3 +641,9 @@ Açık kusur / sonraki adım:
 ```
 
 Başlangıç iş sırası (sürüm 3.2): **D1 isterlerinin `docs/ISTERLER.md`'ye yazılıp onaylanması → P-00 ölçüm sorgusu → P-01/P-02 göç gerektirmeyen adımlar → P-03, P-08, P-15, P-17 → G1**. Hızlı güvenlik düzeltmeleri (P-04 callback/makbuz, P-05 fatura no kalıbı) ayrı ister maddesi olarak paralel yürür. D1 sonunda D2 sırası P-00 ölçümüyle teyit edilir. Bu belge programı kaydeder; kod geliştirmesi, migration, dış gönderim veya yayın işlemi başlatmaz.
+
+### 19 Kasım yerel pilot yayını
+
+Sabah Onay’ın tek işlemde karar yazımı ve hatırlatma düzenlemesi, Sözleşmeler ekranı ve veri aktarımında AI kolon önerisi `panel-widget-demo-20261119` paketiyle yayınlandı. Panel widget’ları tüm firmalara açık kaldı. Bu geçişte bekleyen veritabanı göçü yoktu.
+
+60 ilgili birim testi ve yayın sonrası servis sağlık kontrolleri geçti. TekirExtra Demo Şirketi oturumuyla üç ekran ve veri uçları ile widget tercih ucu HTTP 200 döndü. Canlı doğrulama listeleme ve ekran açılışıyla sınırlıydı. [Yayın manifesti](.release-candidates/panel-widget-demo-20261119/manifest.json)

@@ -281,6 +281,8 @@ async function veriDoluAnaPanelMockla(page: Page) {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
+    } else if (pathname.endsWith("/panel-widgetlar")) {
+      await route.fulfill({ json: { surum: 0, widgetlar: [] } });
     } else if (pathname.endsWith("/bildirimler/ozet")) {
       await route.fulfill({ json: { okunmamis: 5, acik: 22, kritik: 2 } });
     } else if (pathname.endsWith("/bildirimler")) {
@@ -482,6 +484,106 @@ for (const gorunum of [
       await expect(page).toHaveScreenshot(`kasa-banka-tahsilat-formu-${gorunum.ad}.png`, {
         animations: "disabled", caret: "hide", fullPage: true,
       });
+    });
+
+    test("kişisel widget önizlenir ve yeniden yüklenir", async ({ page }) => {
+      await apiMockla(page);
+      await veriDoluAnaPanelMockla(page);
+      let tercih = { surum: 0, widgetlar: [] };
+      await page.route("**/api/v1/panel-widgetlar", async (route) => {
+        if (route.request().method() === "PUT") {
+          const girdi = route.request().postDataJSON();
+          tercih = { surum: girdi.surum + 1, widgetlar: girdi.widgetlar };
+        }
+        await route.fulfill({ json: tercih });
+      });
+      await page.route("**/api/v1/rapor/vadesi-gecenler", (route) => route.fulfill({
+        json: { toplamAlacak: "1234567.89", toplamBorc: "12.00", alacakSayisi: 31, borcSayisi: 1, alacaklar: [], borclar: [] },
+      }));
+
+      await page.route("**/api/v1/rapor/tahsilat-donemi?*", (route) => {
+        const donem = new URL(route.request().url()).searchParams.get("donem");
+        return route.fulfill({
+          json: {
+            donem, baslangic: donem === "bu_hafta" ? "2026-11-16" : "2026-11-01", bitis: "2026-11-19",
+            toplam: donem === "bu_hafta" ? "123.45" : "678.90", adet: 2,
+            gunler: donem === "bu_hafta" ? [
+              { tarih: "2026-11-16", tutar: "10.00" },
+              { tarih: "2026-11-17", tutar: "0.00" },
+              { tarih: "2026-11-18", tutar: "113.45" },
+              { tarih: "2026-11-19", tutar: "0.00" },
+            ] : Array.from({ length: 19 }, (_, sira) => ({
+              tarih: `2026-11-${String(sira + 1).padStart(2, "0")}`,
+              tutar: sira === 18 ? "678.90" : "0.00",
+            })),
+          },
+        });
+      });
+
+      await page.goto("/panel");
+      const bolum = page.getByRole("region", { name: "Widget’larım" });
+      await bolum.getByRole("button", { name: "Widget ekle" }).click();
+      await bolum.getByRole("textbox", { name: "Başlık" }).fill("Gecikmiş alacaklarım");
+      await bolum.getByRole("button", { name: "Önizle" }).click();
+      await expect(bolum.getByText("₺1.234.567,89")).toBeVisible();
+      await bolum.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await expect(bolum.getByRole("heading", { name: "Gecikmiş alacaklarım", exact: true })).toBeVisible();
+
+      await page.reload();
+      await expect(bolum.getByText("₺1.234.567,89")).toBeVisible();
+      await bolum.getByRole("button", { name: "Paneli düzenle" }).click();
+      await bolum.getByRole("button", { name: "Gecikmiş alacaklarım düzenle" }).click();
+      await bolum.getByRole("combobox", { name: "Görünüm" }).selectOption("sayi");
+      await bolum.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await expect(bolum.getByText("31", { exact: true })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(gorunum.width);
+      await bolum.getByRole("button", { name: "Gecikmiş alacaklarım kaldır" }).click();
+      await expect(bolum.getByRole("heading", { name: "Gecikmiş alacaklarım" })).toHaveCount(0);
+
+      await bolum.getByRole("button", { name: "Widget ekle" }).click();
+      await bolum.getByRole("group", { name: "Hazır şablonlar" }).getByRole("button", { name: "Bu ayın tahsilatı" }).click();
+      await expect(bolum.getByRole("textbox", { name: "Başlık" })).toHaveValue("Bu ayın tahsilatı");
+      await expect(bolum.getByText("₺678,90")).toBeVisible();
+      await bolum.getByRole("textbox", { name: "Başlık" }).fill("Dönem tahsilatı");
+      await bolum.getByRole("combobox", { name: "Filtre" }).selectOption("bu_hafta");
+      await bolum.getByRole("button", { name: "Önizle" }).click();
+      await expect(bolum.getByText("₺123,45")).toBeVisible();
+      await expect(bolum.getByText(/16.11.2026 – 19.11.2026/)).toBeVisible();
+      await bolum.getByRole("combobox", { name: "Görünüm" }).selectOption("trend");
+      await bolum.getByRole("button", { name: "Önizle" }).click();
+      await bolum.getByText("Günlük tahsilat tutarları", { exact: true }).click();
+      await expect(bolum.getByText("₺113,45", { exact: true })).toBeVisible();
+      await bolum.getByRole("combobox", { name: "Filtre" }).selectOption("bugun");
+      await expect(bolum.getByRole("combobox", { name: "Görünüm" })).toHaveValue("tutar");
+      await bolum.getByRole("combobox", { name: "Filtre" }).selectOption("bu_ay");
+      await bolum.getByRole("combobox", { name: "Görünüm" }).selectOption("trend");
+      await bolum.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await expect(bolum.getByRole("strong").filter({ hasText: "₺678,90" })).toBeVisible();
+      await expect(bolum.getByText(/01.11.2026 – 19.11.2026/)).toBeVisible();
+      await page.reload();
+      await expect(bolum.getByRole("heading", { name: "Dönem tahsilatı" })).toBeVisible();
+      await expect(bolum.getByText("Günlük tahsilat tutarları", { exact: true })).toBeVisible();
+
+      let kaynakDurumu = 403;
+      await page.route("**/api/v1/rapor/tahsilat-donemi?*", (route) => route.fulfill({
+        status: kaynakDurumu,
+        json: kaynakDurumu === 200
+          ? { donem: "bu_ay", baslangic: "2026-11-01", bitis: "2026-11-19", toplam: "0.00", adet: 0, gunler: Array.from({ length: 19 }, (_, sira) => ({ tarih: `2026-11-${String(sira + 1).padStart(2, "0")}`, tutar: "0.00" })) }
+          : { message: "Kaynak isteği işlenemedi" },
+      }));
+      await page.reload();
+      await expect(bolum.getByText("Bu veri kaynağına erişiminiz yok.")).toBeVisible();
+      await expect(bolum.getByText("₺678,90", { exact: true })).toBeHidden();
+      await expect(bolum.getByText("₺0,00", { exact: true })).toBeHidden();
+
+      kaynakDurumu = 503;
+      await bolum.getByRole("button", { name: "Tekrar dene" }).click();
+      await expect(bolum.getByText("Bu veri yüklenemedi.")).toBeVisible();
+      await expect(bolum.getByText("₺0,00", { exact: true })).toBeHidden();
+
+      kaynakDurumu = 200;
+      await bolum.getByRole("button", { name: "Tekrar dene" }).click();
+      await expect(bolum.getByRole("strong").filter({ hasText: "₺0,00" })).toBeVisible();
     });
 
     test("yönetici ana paneli ve bildirim merkezi görsel olarak korunur", async ({ page }) => {

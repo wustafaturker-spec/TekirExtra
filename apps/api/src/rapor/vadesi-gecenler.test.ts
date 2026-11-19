@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { bugunTR } from "@tekirextra/shared";
 import { Prisma } from "@prisma/client";
 import { istekBaglami } from "../core/istek-baglami";
-import { RaporService } from "./rapor.service";
+import { vadeDonemAraligi } from "./vade-donemi";
+import { RaporService, vadesiGecenleriHesapla } from "./rapor.service";
 
 const D = (v: number) => new Prisma.Decimal(v);
 const GUN = 86_400_000;
-const bugun = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+const bugun = new Date(`${bugunTR()}T00:00:00Z`);
 const gunOnce = (n: number) => new Date(bugun.getTime() - n * GUN);
 const fatura = (id: string, tip: string, tarihGunOnce: number, vadeGunOnce: number | null, toplam: number) => ({
   id, no: id, tip, durum: "kesin", tarih: gunOnce(tarihGunOnce), vadeTarihi: vadeGunOnce === null ? null : gunOnce(vadeGunOnce),
@@ -21,5 +23,28 @@ describe("vadesi geçenler (RPR-17) — vadesiz fatura", () => {
     expect(r.alacaklar.map((x) => [x.faturaId, x.gecikmeGun])).toEqual([["vadesiz", 20], ["vadeli", 5]]);
     expect(r).toMatchObject({ toplamAlacak: "400.00", alacakSayisi: 2, toplamBorc: "50.00", borcSayisi: 1 });
     expect(r.borclar[0]).toMatchObject({ faturaId: "alis", vadeTarihi: gunOnce(10).toISOString().slice(0, 10) });
+  });
+});
+
+describe("vade dönemi", () => {
+  it("Türkiye takviminde haftanın ve ayın tamamını kapsar", () => {
+    const an = new Date("2026-12-31T21:01:00Z");
+    expect(vadeDonemAraligi("bu_hafta", an)).toMatchObject({ baslangic: "2026-12-28", bitis: "2027-01-03" });
+    expect(vadeDonemAraligi("bu_ay", an)).toMatchObject({ baslangic: "2027-01-01", bitis: "2027-01-31" });
+  });
+
+  it("kalanı kapama ve iadelerden sonra fatura kuruyla TL’ye çevirir", async () => {
+    const { aralik, bugunBaslangic } = vadeDonemAraligi("bu_hafta", new Date("2026-11-19T12:00:00Z"));
+    const findMany = vi.fn().mockResolvedValue([
+      { ...fatura("kismi", "satis", 10, 1, 100), kur: D(2.5), vadeTarihi: new Date("2026-11-21"), kapamalar: [{ tutar: D(25) }], iadeKapamalari: [{ tutar: D(10) }] },
+      { ...fatura("kapali", "satis", 10, 1, 100), vadeTarihi: new Date("2026-11-20"), kapamalar: [{ tutar: D(100) }] },
+      { ...fatura("vadesiz", "alis", 10, null, 12.34), tarih: new Date("2026-11-22") },
+    ]);
+    const tx = { fatura: { findMany }, kasaBankaHareket: { findMany: async () => [] }, cariHareket: { findMany: async () => [] } };
+    const sonuc = await vadesiGecenleriHesapla(tx as never, "t", { aralik, bugunBaslangic });
+    const sinir = { gte: new Date("2026-11-16"), lt: new Date("2026-11-23") };
+    expect(findMany.mock.calls[0][0].where.OR).toEqual([{ vadeTarihi: sinir }, { vadeTarihi: null, tarih: sinir }]);
+    expect(sonuc).toMatchObject({ toplamAlacak: "162.50", alacakSayisi: 1, toplamBorc: "12.34", borcSayisi: 1 });
+    expect(sonuc.alacaklar[0]).toMatchObject({ faturaId: "kismi", gecikmeGun: 0, vadeTarihi: "2026-11-21" });
   });
 });

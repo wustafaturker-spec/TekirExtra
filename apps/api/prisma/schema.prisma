@@ -337,6 +337,8 @@ model Tenant {
   sozlesmeBelgeleri       SozlesmeBelge[]
   sozlesmeParcalari       SozlesmeBelgeParca[]
 
+  panelWidgetTercihleri PanelWidgetTercihi[]
+
   @@map("tenants")
 }
 
@@ -712,6 +714,8 @@ model User {
   @@index([tenantId])
   @@index([tenantId, bayiCariId])
   @@index([ozelRolId])
+  panelWidgetTercihleri PanelWidgetTercihi[]
+
   @@map("users")
 }
 
@@ -1736,6 +1740,18 @@ model CariMahsup {
 
   @@index([tenantId, cariId, tarih])
   @@map("cari_mahsuplari")
+}
+
+model PanelWidgetTercihi {
+  tenantId   String @map("tenant_id") @db.Uuid
+  userId     String @map("user_id") @db.Uuid
+  surum      Int
+  widgetlar  Json
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, userId])
+  @@map("panel_widget_tercihleri")
 }
 
 model RaporTercihi {

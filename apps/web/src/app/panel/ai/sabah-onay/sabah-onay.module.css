@@ -1,0 +1,172 @@
+.page {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(115deg, var(--accent-soft), var(--surface) 60%);
+}
+
+.header > :global(.page-head) {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  margin: 0;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.actions, .badges, .decision, .recordActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.filters { min-width: 0; }
+
+.filterHeader, .recordHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.filterHeader { padding: 1rem 1.25rem .75rem; }
+
+.filterHeader h2, .empty h2, .recordHeader h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.filterHeader p, .empty p {
+  margin: .25rem 0 0;
+  color: var(--text-muted);
+  font-size: .875rem;
+}
+
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+  padding: 0 1.25rem 1rem;
+}
+
+.field {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: .35rem;
+  font-size: .825rem;
+  font-weight: 600;
+}
+
+.field > :global(.select) { min-width: 0; }
+
+.empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: .5rem;
+  min-height: 10rem;
+  text-align: center;
+}
+
+.records, .details {
+  display: grid;
+  min-width: 0;
+  gap: .75rem;
+}
+
+.record {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.selected { border-color: var(--accent); }
+
+.checkbox {
+  flex: none;
+  margin-top: .3rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.details {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.recordHeader h3 { margin-top: .45rem; }
+
+.recordHeader time, .note, .decision, .warning {
+  font-size: .825rem;
+}
+
+.recordHeader time, .note, .summary { color: var(--text-muted); }
+.summary, .warning { margin: 0; }
+
+.proposal {
+  display: grid;
+  gap: .35rem;
+  padding: .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: .875rem;
+}
+
+.proposal h4 { margin: 0; font-size: inherit; }
+
+.draft {
+  margin: .5rem 0 0;
+  padding: .65rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.decision { color: var(--success); }
+.warning { color: var(--danger); }
+
+.recordActions {
+  justify-content: flex-end;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border);
+}
+
+@container (max-width: 620px) {
+  .filterGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container (max-width: 420px) {
+  .header > .icon { display: none; }
+}
+
+.editor {
+  display: grid;
+  gap: .75rem;
+  margin-top: .75rem;
+}

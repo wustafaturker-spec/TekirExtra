@@ -7,6 +7,7 @@ import { SaltOkumadaAcik } from "../auth/public.decorator";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import { ADIMLAR, type Adim } from "./adim";
 import { VeriAktarimiService } from "./veri-aktarimi.service";
+import { VeriAktarimiAiService } from "./veri-aktarimi-ai.service";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const dosyaSiniri = { limits: { fileSize: 10 * 1024 * 1024, files: 1 } };
@@ -47,7 +48,10 @@ function gonder(res: Response, ad: string, buffer: Buffer) {
 @Controller("veri-aktarimi")
 @Roller("muhasebe")
 export class VeriAktarimiController {
-  constructor(private readonly servis: VeriAktarimiService) {}
+  constructor(
+    private readonly servis: VeriAktarimiService,
+    private readonly aiServis: VeriAktarimiAiService,
+  ) {}
 
   @Get()
   durum() {
@@ -83,6 +87,14 @@ export class VeriAktarimiController {
   @UseInterceptors(FileInterceptor("file", dosyaSiniri))
   async onizle(@Param("adim") adim: string, @UploadedFile() file: YuklemeDosyasi | undefined, @Body() govde: { eslemeler?: unknown }) {
     return this.servis.onizle(adimCoz(adim), (await excel(file)).buffer, eslemeleriCoz(govde));
+  }
+
+  @SaltOkumadaAcik()
+  @Post(":adim/ai-kolon-onerisi")
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor("file", dosyaSiniri))
+  async aiKolonOnerisi(@Param("adim") adim: string, @UploadedFile() file: YuklemeDosyasi | undefined, @Body() govde: { eslemeler?: unknown }) {
+    return this.aiServis.kolonOnerisiUret(adimCoz(adim), (await excel(file)).buffer, eslemeleriCoz(govde));
   }
 
   @SaltOkumadaAcik()

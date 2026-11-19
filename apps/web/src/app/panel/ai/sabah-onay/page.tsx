@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ClipboardCheck, Inbox, RefreshCw, ScanSearch } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import {
@@ -12,6 +12,7 @@ import {
   PageHeader,
   Select,
 } from "@/components/ui";
+import styles from "./sabah-onay.module.css";
 
 type HazirlikTuru =
   | "fatura_stok_esleme"
@@ -80,6 +81,7 @@ export default function SabahOnayKutusuSayfasi() {
   const [mesaj, setMesaj] = useState("");
   const [islem, setIslem] = useState<string | null>(null);
   const [calisiyor, setCalisiyor] = useState(false);
+  const [duzenlenen, setDuzenlenen] = useState<{ id: string; konu: string; metin: string } | null>(null);
 
   const yukle = useCallback(async () => {
     setHata("");
@@ -121,7 +123,9 @@ export default function SabahOnayKutusuSayfasi() {
     setHata("");
     setMesaj("");
     try {
-      await api(`/ai/hazirlik/${id}/onayla`, { method: "POST" });
+      const oneri = duzenlenen?.id === id ? { konu: duzenlenen.konu, metin: duzenlenen.metin } : undefined;
+      await api(`/ai/hazirlik/${id}/onayla`, { method: "POST", body: oneri ? JSON.stringify({ oneri }) : undefined });
+      if (oneri) setDuzenlenen(null);
       setMesaj("Hazırlık onaylandı ve ilgili işlem gerçekleştirildi.");
       await yukle();
     } catch (e) {
@@ -199,61 +203,82 @@ export default function SabahOnayKutusuSayfasi() {
     }
   };
 
+  const bekleyenSayisi = kayitlar?.filter((kayit) => kayit.durum === "hazir").length ?? 0;
+
   return (
-    <>
-      <PageHeader
-        title="Sabah Onay Kutusu"
-        subtitle="Yapay zekânın gece hazırladığı taslak ve öneriler. Hiçbir işlem kendiliğinden kesinleşmez; tek ekrandan kanıtları ve alternatifleri inceleyip tekli veya toplu onaylayabilirsiniz."
-        actions={
-          <div className="row-tight">
-            <Button size="sm" onClick={() => void yukle()} disabled={islem !== null}>
-              Yenile
-            </Button>
-            <Button size="sm" variant="primary" onClick={() => void hazirlaManuel()} disabled={calisiyor || islem !== null}>
-              {calisiyor ? "Taranıyor…" : "Şimdi Tara ve Hazırla"}
-            </Button>
-          </div>
-        }
-      />
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div className={styles.icon}><ClipboardCheck size={24} aria-hidden /></div>
+        <PageHeader
+          title="Sabah Onay Kutusu"
+          subtitle="Yapay zekânın hazırladığı taslakları, gerekçeleri ve alternatifleri inceleyin. Uygun önerileri tek tek veya toplu onaylayın."
+          actions={
+            <div className={styles.actions}>
+              <Button size="sm" onClick={() => void yukle()} disabled={islem !== null}>
+                <RefreshCw size={15} aria-hidden /> Yenile
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => void hazirlaManuel()} disabled={calisiyor || islem !== null}>
+                <ScanSearch size={16} aria-hidden /> {calisiyor ? "Taranıyor…" : "Şimdi Tara ve Hazırla"}
+              </Button>
+            </div>
+          }
+        />
+      </header>
 
       {hata && <Alert tone="error">{hata}</Alert>}
       {mesaj && <Alert tone="success">{mesaj}</Alert>}
 
-      <div className="row-tight" style={{ marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-        <Select value={kapsam} onChange={(e) => setKapsam(e.target.value as "bana" | "firma")} aria-label="Kapsam">
-          <option value="bana">Bana Atananlar</option>
-          <option value="firma">Tüm Firma (Yönetici)</option>
-        </Select>
+      <Card pad={false} className={styles.filters}>
+        <div className={styles.filterHeader}>
+          <div>
+            <h2>Hazırlıklar</h2>
+            {kayitlar && <p role="status">{kayitlar.length} kayıt · {bekleyenSayisi} onay bekliyor</p>}
+          </div>
+          {bekleyenSayisi > 0 && (
+            <Button size="sm" onClick={tumunuSec} disabled={islem !== null}>
+              {secilenler.size === bekleyenSayisi ? "Seçimi kaldır" : "Tüm bekleyenleri seç"}
+            </Button>
+          )}
+        </div>
+        <div className={styles.filterGrid}>
+          <label className={styles.field}>
+            Kapsam
+            <Select value={kapsam} onChange={(e) => setKapsam(e.target.value as "bana" | "firma")}>
+              <option value="bana">Bana Atananlar</option>
+              <option value="firma">Tüm Firma (Yönetici)</option>
+            </Select>
+          </label>
 
-        <Select value={durum} onChange={(e) => setDurum(e.target.value as HazirlikDurumu | "")} aria-label="Durum">
-          <option value="hazir">Onay Bekleyenler (Hazır)</option>
-          <option value="onaylandi">Onaylananlar</option>
-          <option value="reddedildi">Reddedilenler</option>
-          <option value="hedef_degisti">Kaynak Değişenler</option>
-          <option value="suresi_doldu">Süresi Dolanlar</option>
-          <option value="">Tüm Durumlar</option>
-        </Select>
+          <label className={styles.field}>
+            Durum
+            <Select value={durum} onChange={(e) => setDurum(e.target.value as HazirlikDurumu | "")}>
+              <option value="hazir">Onay Bekleyenler (Hazır)</option>
+              <option value="onaylandi">Onaylananlar</option>
+              <option value="reddedildi">Reddedilenler</option>
+              <option value="hedef_degisti">Kaynak Değişenler</option>
+              <option value="suresi_doldu">Süresi Dolanlar</option>
+              <option value="">Tüm Durumlar</option>
+            </Select>
+          </label>
 
-        <Select value={tur} onChange={(e) => setTur(e.target.value as HazirlikTuru | "")} aria-label="Tür">
-          <option value="">Tüm Türler</option>
-          <option value="fatura_stok_esleme">Gelen Fatura Stok Eşleme</option>
-          <option value="banka_ekstre_esleme">Banka Ekstresi Eşleme</option>
-          <option value="vadesi_gecen_hatirlatma">Vadesi Geçen Alacak Hatırlatma</option>
-          <option value="kritik_stok_talep">Kritik Stok Satın Alma Talebi</option>
-          <option value="ay_sonu_kapanis">Ay Sonu Kapanış Kontrolü</option>
-        </Select>
-
-        {kayitlar && kayitlar.some((k) => k.durum === "hazir") && (
-          <Button size="sm" onClick={tumunuSec}>
-            {secilenler.size ? "Seçimi Kaldır" : "Tüm Bekleyenleri Seç"}
-          </Button>
-        )}
-      </div>
+          <label className={styles.field}>
+            Hazırlık türü
+            <Select value={tur} onChange={(e) => setTur(e.target.value as HazirlikTuru | "")}>
+              <option value="">Tüm Türler</option>
+              <option value="fatura_stok_esleme">Gelen Fatura Stok Eşleme</option>
+              <option value="banka_ekstre_esleme">Banka Ekstresi Eşleme</option>
+              <option value="vadesi_gecen_hatirlatma">Vadesi Geçen Alacak Hatırlatma</option>
+              <option value="kritik_stok_talep">Kritik Stok Satın Alma Talebi</option>
+              <option value="ay_sonu_kapanis">Ay Sonu Kapanış Kontrolü</option>
+            </Select>
+          </label>
+        </div>
+      </Card>
 
       {secilenler.size > 0 && (
         <BulkActionsBar selectedCount={secilenler.size} onClear={() => setSecilenler(new Set())}>
-          <div className="row-tight">
-            <Button size="sm" variant="primary" disabled={islem !== null} onClick={() => void topluOnayla()}>
+          <div className={styles.actions}>
+            <Button size="sm" variant="primary" disabled={islem !== null || Boolean(duzenlenen && secilenler.has(duzenlenen.id))} onClick={() => void topluOnayla()}>
               Seçilenleri Onayla ({secilenler.size})
             </Button>
             <Button size="sm" variant="danger" disabled={islem !== null} onClick={() => void topluReddet()}>
@@ -263,53 +288,53 @@ export default function SabahOnayKutusuSayfasi() {
         </BulkActionsBar>
       )}
 
+      {!kayitlar && !hata && <Card className={styles.empty}><p role="status">Hazırlıklar yükleniyor…</p></Card>}
+
       {kayitlar && !kayitlar.length && (
-        <Card>
-          <p className="muted">
-            {durum === "hazir"
-              ? "Şu an onay bekleyen bir hazırlık bulunmuyor. Gece zamanlanmış görevle veya 'Şimdi Tara ve Hazırla' butonuyla yeni öneriler üretebilirsiniz."
-              : "Bu süzgeç kriterlerine uygun hazırlık kaydı bulunamadı."}
-          </p>
+        <Card className={styles.empty}>
+          <div className={styles.icon}><Inbox size={22} aria-hidden /></div>
+          <h2>{durum === "hazir" && !tur ? "Onay bekleyen hazırlık yok" : "Filtrelere uyan hazırlık yok"}</h2>
+          <p>{durum === "hazir" && !tur ? "Yeni öneriler için hazırlık taraması başlatabilirsiniz." : "Sonuçları görmek için durum veya hazırlık türü seçimini değiştirin."}</p>
         </Card>
       )}
 
       {kayitlar && kayitlar.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div className={styles.records}>
           {kayitlar.map((k) => {
             const turCfg = TUR_BADGE[k.tur] ?? { ad: k.tur, variant: "neutral" };
             const durumCfg = DURUM_ROZET[k.durum] ?? { ad: k.durum, variant: "neutral" };
             const secili = secilenler.has(k.id);
+            const taslak = duzenlenen?.id === k.id ? duzenlenen : null;
 
             return (
-              <Card key={k.id}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+              <Card key={k.id} className={secili ? styles.selected : undefined}>
+                <div className={styles.record}>
                   {k.durum === "hazir" && (
                     <input
                       type="checkbox"
                       checked={secili}
                       onChange={() => secimDegistir(k.id)}
-                      style={{ marginTop: "0.25rem", cursor: "pointer" }}
-                      aria-label="Seç"
+                      className={styles.checkbox}
+                      aria-label={`${k.baslik} hazırlığını seç`}
                     />
                   )}
 
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                      <div className="row-tight" style={{ gap: "0.5rem" }}>
-                        <Badge variant={turCfg.variant}>{turCfg.ad}</Badge>
-                        <Badge variant={durumCfg.variant}>{durumCfg.ad}</Badge>
-                        <span style={{ fontWeight: 600 }}>{k.baslik}</span>
+                  <div className={styles.details}>
+                    <div className={styles.recordHeader}>
+                      <div>
+                        <div className={styles.badges}>
+                          <Badge variant={turCfg.variant}>{turCfg.ad}</Badge>
+                          <Badge variant={durumCfg.variant}>{durumCfg.ad}</Badge>
+                        </div>
+                        <h3>{k.baslik}</h3>
                       </div>
-                      <span className="muted" style={{ fontSize: "0.85em" }}>
-                        Oluşturulma: {zaman(k.createdAt)}
-                      </span>
+                      <time dateTime={k.createdAt}>Oluşturulma · {zaman(k.createdAt)}</time>
                     </div>
 
-                    <p style={{ margin: "0.25rem 0 0.5rem 0", color: "var(--fg)" }}>{k.ozet}</p>
+                    <p className={styles.summary}>{k.ozet}</p>
 
-                    {/* Öneri Ayrıntısı */}
-                    <div style={{ background: "var(--bg-muted, #f8f9fa)", padding: "0.75rem", borderRadius: "6px", marginBottom: "0.5rem", fontSize: "0.9em" }}>
-                      <strong>Önerilen Eylem / Taslak:</strong>
+                    <div className={styles.proposal}>
+                      <h4>Önerilen işlem</h4>
                       {k.tur === "fatura_stok_esleme" && (
                         <div>
                           Stok: <code>[{k.oneri.stokKod}] {k.oneri.stokAd}</code> · Miktar: {k.oneri.miktar} · Birim Fiyat: {k.oneri.birimFiyat} TL
@@ -322,10 +347,24 @@ export default function SabahOnayKutusuSayfasi() {
                       )}
                       {k.tur === "vadesi_gecen_hatirlatma" && (
                         <div>
-                          Alıcı: <code>{k.oneri.alici || "E-posta yok"}</code> · Konu: {k.oneri.konu}
-                          <pre style={{ margin: "0.5rem 0 0 0", whiteSpace: "pre-wrap", background: "white", padding: "0.5rem", borderRadius: "4px" }}>
-                            {k.oneri.metin}
-                          </pre>
+                          Alıcı: <code>{k.oneri.alici || "E-posta yok"}</code>
+                          {taslak ? (
+                            <div className={styles.editor}>
+                              <label className={styles.field}>
+                                Konu
+                                <input className="input" value={taslak.konu} maxLength={250} onChange={(e) => setDuzenlenen({ ...taslak, konu: e.target.value })} />
+                              </label>
+                              <label className={styles.field}>
+                                Metin
+                                <textarea className="input" value={taslak.metin} maxLength={10000} rows={5} onChange={(e) => setDuzenlenen({ ...taslak, metin: e.target.value })} />
+                              </label>
+                            </div>
+                          ) : (
+                            <>
+                              {" · "}Konu: {k.oneri.konu}
+                              <pre className={styles.draft}>{k.oneri.metin}</pre>
+                            </>
+                          )}
                         </div>
                       )}
                       {k.tur === "kritik_stok_talep" && (
@@ -343,14 +382,14 @@ export default function SabahOnayKutusuSayfasi() {
 
                     {/* Kanıt ve Alternatifler */}
                     {k.kanit && (
-                      <div style={{ fontSize: "0.85em", color: "var(--fg-muted, #6c757d)", marginBottom: "0.5rem" }}>
-                        💡 <strong>Kanıt & Gerekçe:</strong> {k.kanit.neden ?? (k.kanit.skor ? `Eşleşme güven skoru: %${k.kanit.skor}` : JSON.stringify(k.kanit))}
+                      <div className={styles.note}>
+                        <strong>Kanıt ve gerekçe</strong> {k.kanit.neden ?? (k.kanit.skor ? `Eşleşme güven skoru: %${k.kanit.skor}` : JSON.stringify(k.kanit))}
                       </div>
                     )}
 
                     {k.alternatifler && k.alternatifler.length > 0 && (
-                      <div style={{ fontSize: "0.85em", color: "var(--fg-muted, #6c757d)", marginBottom: "0.5rem" }}>
-                        🔄 <strong>Alternatif Seçenekler:</strong>{" "}
+                      <div className={styles.note}>
+                        <strong>Alternatifler</strong>{" "}
                         {k.alternatifler.map((a: any, i: number) => (
                           <span key={i} style={{ marginRight: "0.5rem" }}>
                             • {a.ad ?? a.unvan ?? a.kod} {a.skor ? `(%${a.skor})` : ""}
@@ -361,29 +400,36 @@ export default function SabahOnayKutusuSayfasi() {
 
                     {/* Karar ve Sonuç Bilgisi */}
                     {k.durum === "onaylandi" && (
-                      <div className="row-tight" style={{ fontSize: "0.85em", color: "var(--color-success, #28a745)" }}>
+                      <div className={styles.decision}>
                         <span>✓ {k.onaylayan} tarafından onaylandı ({k.kararAt ? zaman(k.kararAt) : ""})</span>
                         {k.olusanKayitId && <span>· Oluşan Kayıt: {k.olusanKayitTur} (#{k.olusanKayitId})</span>}
                       </div>
                     )}
 
                     {k.durum === "hedef_degisti" && (
-                      <p style={{ color: "var(--color-danger, #dc3545)", fontSize: "0.85em", margin: "0.25rem 0" }}>
-                        ⚠️ Kaynak kayıt hazırlık üretildikten sonra güncellendi veya onaylandı; bu hazırlık artık uygulanamaz.
+                      <p className={styles.warning}>
+                        Kaynak kayıt hazırlık üretildikten sonra güncellendi veya onaylandı; bu hazırlık artık uygulanamaz.
                       </p>
                     )}
 
                     {/* Eylemler */}
                     {k.durum === "hazir" && (
-                      <div className="row-tight" style={{ marginTop: "0.75rem", gap: "0.5rem" }}>
+                      <div className={styles.recordActions}>
                         <Button
                           size="sm"
                           variant="primary"
-                          disabled={islem !== null}
+                          disabled={islem !== null || Boolean(taslak && (!taslak.konu.trim() || !taslak.metin.trim()))}
                           onClick={() => void onayla(k.id)}
                         >
                           {islem === k.id ? "Onaylanıyor…" : "Onayla ve Oluştur"}
                         </Button>
+                        {k.tur === "vadesi_gecen_hatirlatma" && (
+                          <Button size="sm" disabled={islem !== null} onClick={() => setDuzenlenen(taslak ? null : {
+                            id: k.id, konu: String(k.oneri.konu ?? ""), metin: String(k.oneri.metin ?? ""),
+                          })}>
+                            {taslak ? "Düzenlemeyi iptal et" : "Taslağı düzenle"}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="danger"
@@ -401,6 +447,6 @@ export default function SabahOnayKutusuSayfasi() {
           })}
         </div>
       )}
-    </>
+    </div>
   );
 }
