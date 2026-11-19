@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, it, expect } from "vitest";
+import { trSimdi } from "../src/ai/ai-zaman";
+import { hedefOzetiHesapla } from "../src/ai/hazirlik/hazirlik.kurallari";
 import { HazirlikService } from "../src/ai/hazirlik/hazirlik.service";
 import { HafizaService } from "../src/ai/hafiza/hafiza.service";
 import { baglamlaCalistir } from "../src/core/istek-baglami";
@@ -16,6 +18,7 @@ afterAll(async () => {
   await admin.$transaction(async (tx) => {
     await tx.crmEtkilesim.deleteMany({ where: { tenantId } });
     await tx.aiHazirlik.deleteMany({ where: { tenantId } });
+    await tx.fatura.deleteMany({ where: { tenantId } });
     await tx.user.deleteMany({ where: { tenantId } });
     await tx.tenant.deleteMany({ where: { id: tenantId } });
   }, { timeout: 60_000 });
@@ -57,5 +60,23 @@ it("eşzamanlı Sabah Onay kararları tek iş kaydı üretir ve reddedilen yazı
     expect(await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.findUnique({ where: { id: hazirlik.id } }))).toMatchObject({
       durum: "onaylandi", olusanKayitId: kayitlar[0].id,
     });
+
+    const donem = trSimdi().gun.slice(0, 7);
+    const kapanis = await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.create({ data: {
+      tenantId, tur: "ay_sonu_kapanis", tekilAnahtar: randomUUID(), baslik: "Kapanış", ozet: "Test",
+      kaynakTur: "donem", kaynakId: donem, olusturanUserId: user.id, oneri: { donem },
+      hedefOzeti: hedefOzetiHesapla({ donem, bekleyenEkstre: 0, taslakFatura: 0, bekleyenOnay: 0 }),
+      gecerlilikBitisAt: new Date(Date.now() + 60_000),
+    } }));
+    await expect(baglamlaCalistir({ ...baglam, ozelRol: { id: randomUUID(), kapali: ["raporlar.goruntule"] } },
+      () => service.onayla(kapanis.id))).rejects.toBeInstanceOf(ForbiddenException);
+    await db.tenantIslem(tenantId, (tx) => tx.fatura.create({ data: {
+      tenantId, cariId: cari.id, tip: "satis", durum: "taslak", tarih: new Date(),
+      toplamBrut: 0, toplamSatirIskontosu: 0, genelIskontoToplam: 0, toplamMatrah: 0,
+      toplamKdv: 0, toplamTevkifat: 0, toplamNetKdv: 0, genelToplam: 0,
+    } }));
+    await expect(service.onayla(kapanis.id)).rejects.toBeInstanceOf(ConflictException);
+    expect(await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.findUnique({ where: { id: kapanis.id } })))
+      .toMatchObject({ durum: "hedef_degisti", olusanKayitId: null });
   });
 });

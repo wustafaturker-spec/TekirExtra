@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../../core/istek-baglami";
+import { trSimdi } from "../ai-zaman";
 import { hedefOzetiHesapla } from "./hazirlik.kurallari";
 import { HazirlikService } from "./hazirlik.service";
 
@@ -177,6 +178,27 @@ describe("HazirlikService", () => {
           data: { durum: "hedef_degisti" },
         }),
       );
+    });
+
+    it("ay sonu hazırlığında rapor yetkisini ve güncel kontrol toplamlarını arar", async () => {
+      const donem = trSimdi().gun.slice(0, 7);
+      mockPrisma.tx.aiHazirlik.findUnique.mockResolvedValue({
+        id: "h-1", tenantId, olusturanUserId: userId, durum: "hazir", tur: "ay_sonu_kapanis",
+        kaynakTur: "donem", kaynakId: donem, oneri: { donem },
+        hedefOzeti: hedefOzetiHesapla({ donem, bekleyenEkstre: 0, taslakFatura: 0, bekleyenOnay: 0 }),
+        gecerlilikBitisAt: new Date(Date.now() + 60_000),
+      });
+      const baglam = { tenantId, userId, rol: "muhasebe" as const };
+      await expect(baglamlaCalistir({ ...baglam, ozelRol: { id: "ozel", kapali: ["raporlar.goruntule"] } },
+        () => service.onayla("h-1"))).rejects.toThrow(ForbiddenException);
+
+      mockPrisma.tx.fatura.count.mockResolvedValueOnce(1);
+      await expect(baglamlaCalistir(baglam, () => service.onayla("h-1"))).rejects.toThrow(ConflictException);
+      expect(mockPrisma.tx.aiHazirlik.update).toHaveBeenCalledWith({ where: { id: "h-1" }, data: { durum: "hedef_degisti" } });
+
+      await expect(baglamlaCalistir(baglam, () => service.onayla("h-1"))).resolves.toMatchObject({
+        durum: "onaylandi", olusanKayitId: donem,
+      });
     });
 
     it("geçerli fatura_stok_esleme onaylandığında stok kartını günceller ve hafızaya yazar", async () => {

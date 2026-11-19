@@ -95,7 +95,7 @@ Dayanak: `ilt-merkezi-ileti` dalı, `5cfbc3d1` ve çalışma ağacındaki 19 Kas
 | P-16 | Hafızada sürüm, son doğrulama ve geçerlilik alanları var. | Saklama ve silme politikasının kabulü. |
 | P-17 | Kullanım raporu özellik/model ayrımı ve p50 içeriyor. | p95, belirsiz işlem sayısı ve uçtan uca işlem izi. |
 | P-18 | Paket kapsamı ve pilot işletim araçları var. | Ortak firma/özellik/kanal bayrakları ve paket bazında yayın kararı. |
-| P-19 | Beş hazırlık türü, onay kutusu ve brifing özeti var. Onay durum geçişi ve iş kaydı aynı işlemde. Hatırlatma konusu ve metni düzenlenebiliyor. PostgreSQL kabulünde iki eşzamanlı onay tek CRM kaydı üretti ve başarısız işlem yeniden denenebildi. | Hazırlık türü bazında pilot ölçümü ve tüm türler için güncellik/yetki kabulü. [PostgreSQL kabul senaryosu](apps/api/test/sabah-onay.kabul.test.ts). |
+| P-19 | Beş hazırlık türü, onay kutusu ve brifing özeti var. Onay durum geçişi ve iş kaydı aynı işlemde. Hatırlatma konusu ve metni düzenlenebiliyor. PostgreSQL kabulünde iki eşzamanlı onay tek CRM kaydı üretti ve başarısız işlem yeniden denenebildi. | Ay sonu kapanışında rapor yetkisi ve taslak fatura sonrası güncellik PostgreSQL kabulünde geçti. Diğer türlerin uçtan uca kabulü ve tür bazında pilot ölçümü açık. [PostgreSQL kabul senaryosu](apps/api/test/sabah-onay.kabul.test.ts). |
 | Panel widget | Firma ve kullanıcı bazında sürümlü tercihler, dönem filtreleri, şablonlar ve trend var. Rapor yetkisinin kaldırılması HTTP kabulünde doğrulandı. TekirExtra Demo Şirketi yerel pilotunda dönem değerleri kaynakla eşleşti. | Demo pilotunda sıfırdan farklı dönem tutarlarının gözlemlenmesi. [Widget planı](docs/PANEL-WIDGET-IS-PLANI.md). |
 
 ## 3. Değişmez uygulama kuralları

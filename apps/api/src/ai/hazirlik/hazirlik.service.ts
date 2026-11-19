@@ -518,12 +518,7 @@ export class HazirlikService {
       const simdiTr = trSimdi();
       const donem = simdiTr.gun.slice(0, 7); // "YYYY-MM"
 
-      // Kontrol metrikleri
-      const [bekleyenEkstre, taslakFatura, bekleyenOnay] = await Promise.all([
-        tx.bankaEkstreSatir.count({ where: { tenantId, durum: "beklemede" } }),
-        tx.fatura.count({ where: { tenantId, durum: "taslak" } }),
-        tx.aiOnayTalebi.count({ where: { tenantId, durum: "bekliyor", gecerlilikSonu: { gt: new Date() } } }),
-      ]);
+      const { bekleyenEkstre, taslakFatura, bekleyenOnay } = await this.kapanisMetrikleri(tx, tenantId);
 
       const tekilAnahtar = `ay_sonu_kapanis:${donem}`;
       const hedefOzeti = hedefOzetiHesapla({ donem, bekleyenEkstre, taslakFatura, bekleyenOnay });
@@ -689,6 +684,7 @@ export class HazirlikService {
         banka_ekstre_esleme: { yontem: "POST", yol: `/kasa-banka/ekstre/satirlar/${oneri.satirId}/eslestir`, muhasebe: true },
         vadesi_gecen_hatirlatma: { yontem: "POST", yol: `/cari/${oneri.cariId}/crm/etkilesimler` },
         kritik_stok_talep: { yontem: "POST", yol: "/belgeler" },
+        ay_sonu_kapanis: { yontem: "GET", yol: "/rapor/ozet", muhasebe: true },
       };
       const hedef = hedefler[hazirlik.tur as HazirlikTuru];
       if (hedef && ((hedef.muhasebe && rol !== "yonetici" && rol !== "muhasebe")
@@ -835,9 +831,18 @@ export class HazirlikService {
   /**
    * Kaynak kaydın onay anındaki durumu ile hazırlık zamanındaki durumunu kıyaslar.
    */
+  private async kapanisMetrikleri(tx: Prisma.TransactionClient, tenantId: string) {
+    const [bekleyenEkstre, taslakFatura, bekleyenOnay] = await Promise.all([
+      tx.bankaEkstreSatir.count({ where: { tenantId, durum: "beklemede" } }),
+      tx.fatura.count({ where: { tenantId, durum: "taslak" } }),
+      tx.aiOnayTalebi.count({ where: { tenantId, durum: "bekliyor", gecerlilikSonu: { gt: new Date() } } }),
+    ]);
+    return { bekleyenEkstre, taslakFatura, bekleyenOnay };
+  }
+
   private async hedefGuncelMi(
     tx: Prisma.TransactionClient,
-    hazirlik: { kaynakTur: string | null; kaynakId: string | null; hedefOzeti: string | null; oneri: Prisma.JsonValue },
+    hazirlik: { tenantId: string; kaynakTur: string | null; kaynakId: string | null; hedefOzeti: string | null; oneri: Prisma.JsonValue },
   ): Promise<boolean> {
     const { kaynakTur, kaynakId, hedefOzeti } = hazirlik;
     if (!hedefOzeti || !kaynakTur || !kaynakId) return true;
@@ -867,6 +872,11 @@ export class HazirlikService {
         return !!stok?.kritikSeviye && hedefOzetiHesapla({
           stokId: stok.id, bakiye: stok.mevcutMiktar.toString(), kritik: stok.kritikSeviye.toString(),
         }) === hedefOzeti;
+      }
+      case "donem": {
+        if (kaynakId !== trSimdi().gun.slice(0, 7)) return false;
+        const metrikler = await this.kapanisMetrikleri(tx, hazirlik.tenantId);
+        return hedefOzetiHesapla({ donem: kaynakId, ...metrikler }) === hedefOzeti;
       }
       default:
         return true;
