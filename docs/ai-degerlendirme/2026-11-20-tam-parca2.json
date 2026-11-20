@@ -1,0 +1,1006 @@
+{
+ "bicim": 1,
+ "tarih": "2026-11-20T17:22:41.456Z",
+ "saglayici": "openai",
+ "model": "qwen3.8-flash-next",
+ "istemSurumu": "6a0702d40a15",
+ "aracSurumu": "9102d8526a68",
+ "senaryoSetiSurumu": "2026-11-20.2",
+ "kodSurumu": null,
+ "tavanUsd": 1,
+ "fiyat": {
+  "giris": 0.3,
+  "cikis": 2.5
+ },
+ "harcananUsd": 0.327731,
+ "maliyetTahmini": false,
+ "cagriSayisi": 107,
+ "girisToken": 908905,
+ "cikisToken": 22024,
+ "sureMs": 1273734,
+ "tamamlandi": true,
+ "kosmayanlar": [],
+ "ozet": {
+  "senaryo": 22,
+  "gecen": 18,
+  "kritik": {
+   "senaryo": 8,
+   "gecen": 7
+  },
+  "kategoriler": {
+   "yetki": {
+    "senaryo": 0,
+    "gecen": 0
+   },
+   "finans": {
+    "senaryo": 0,
+    "gecen": 0
+   },
+   "arac_secimi": {
+    "senaryo": 1,
+    "gecen": 1
+   },
+   "belirsizlik": {
+    "senaryo": 10,
+    "gecen": 8
+   },
+   "hata_iptal": {
+    "senaryo": 11,
+    "gecen": 9
+   }
+  },
+  "saglayiciHatasi": 0
+ },
+ "senaryolar": [
+  {
+   "id": "arac-grup-acma-amortisman",
+   "kategori": "arac_secimi",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "demirbaslar",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "## 2026 Yılı Amortisman Özeti\n\n| Demirbaş | Maliyet Bedeli | Bu Yıl Amortisman | Birikmiş Amortisman |\n|----------|---------------|-------------------|---------------------|\n| Forklift | 600.000,00 ₺ | **120.000,00 ₺** | 240.000,00 ₺ |\n\n**2026 yılında ayrılan toplam amortisman: 120.000,00 ₺**\n\nBu tutar yalnızca Forklift demirbaşına aittir. Başka bir demirbaşın amortisman planı görünmemektedir. Detaylı amortisman planı veya başka bir yıl için bilgi isterseniz yardımcı olabilirim.",
+     "sureMs": 28797
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: rapor_katalogu"
+     ],
+     "araclar": [
+      {
+       "ad": "demirbaslar",
+       "basarili": true
+      },
+      {
+       "ad": "rapor_katalogu",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "**2026 yılı amortisman (yıllık ayrılacak tutar): 120.000,00 TRY**\n\n| Demirbaş | Maliyet | 2026 Yıllık Amortisman | Birikmiş Amortisman |\n|---|---|---|---|\n| Forklift | 600.000,00 TRY | 120.000,00 TRY | 240.000,00 TRY |\n| **Toplam** | | **120.000,00 TRY** | |\n\nNot: Bu tutar, demirbaş kartlarındaki amortisman planına göre 2026 yılı için hesaplanan yıllık amortisman önizlemesidir; sistemde bu hesaplamaya giren tek aktif demirbaş Forklift görünüyor. Rapor kataloğu şu an okunamadığı için rakamı rapor ekranından ayrıca doğrulayamadım.\n\nBelirli bir demirbaşın amortisman planını veya zimmet geçmişini istersen kart bazında da dökebilirim.",
+     "sureMs": 66190
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: rapor_katalogu, gelir_gider"
+     ],
+     "araclar": [
+      {
+       "ad": "demirbaslar",
+       "basarili": true
+      },
+      {
+       "ad": "rapor_katalogu",
+       "basarili": false
+      },
+      {
+       "ad": "gelir_gider",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "**2026 yılı amortismanı: 120.000,00 TL**\n\n| Demirbaş | Maliyet | 2026 Yıllık Amortisman | Birikmiş Amortisman |\n|---|---|---|---|\n| Forklift | 600.000,00 TL | 120.000,00 TL | 240.000,00 TL |\n| **Toplam** | | **120.000,00 TL** | |\n\nNotlar:\n- Bu tutar, demirbaş kartındaki amortisman planının 2026 yılı için ürettiği yıllık amortisman önizlemesidir; sistemde 2026'da amortisman ayrılmış tek demirbaş Forklift görünüyor.\n- Gelir-gider özeti ve amortisman raporu şu anda okunamadı (araç hatası), bu yüzden gider tarafındaki gerçekleşen kayıtları ayrıca doğrulayamadım. İsterseniz tekrar deneyebilir veya tek tek demirbaş kartlarının amortisman planlarını dökebilirim.",
+     "sureMs": 63290
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-cari",
+   "kategori": "belirsizlik",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "İki cari eşleşti; hangisini kastettiğinizi belirtir misiniz?\n\nKaynak verileri:\nTest Yılmaz A — Bakiye: 1.000,00 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nTest Yılmaz B — Bakiye: 2.500,00 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 44444
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Test Yılmaz adında iki cari kaydı var; hangisini kastettiğinizi belirtir misiniz?",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 49441
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "“Test Yılmaz” adıyla iki cari kaydı eşleşti: Test Yılmaz A ve Test Yılmaz B (ikisi de müşteri). Bakiyeler görüntülenme anındaki değerlerdir. Hangi firmayı kastettiğinizi belirtirseniz yalnız onun detayını paylaşayım; dilerseniz ikisinin de ekstre dosyasını hazırlayabilirim.\n\nKaynak verileri:\nTest Yılmaz A — Bakiye: 1.000,00 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nTest Yılmaz A — Dönem / görüntülenme sonu: 2026-11-20\nTest Yılmaz B — Bakiye: 2.500,00 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nTest Yılmaz B — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 33893
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-cari-teklif",
+   "kategori": "belirsizlik",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Hangi Yılmaz müşterisi için teklif hazırlamamı istersiniz: Test Yılmaz A mı, Test Yılmaz B mi?",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 65033
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Yılmaz için hangi cari hesabın kastedildiği ve ürün fiyat bilgisi bulunmuyor; teklif için fiyat ve ürün kaynağı gerekir.",
+     "finansDurumu": "dogrulandi",
+     "finansDuzeltme": "dogrulandi",
+     "sureMs": 80599
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Yılmaz için fotokopi kağıdı teklifi hazırlamak üzere ürün fiyatı ve teklif koşulları bilgisi bulunmuyor; lütfen fiyat ve koşulları paylaşın.",
+     "finansDurumu": "dogrulandi",
+     "finansDuzeltme": "dogrulandi",
+     "sureMs": 78734
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-fatura-kalemsiz",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Cari olarak 'Deneme Otomotiv Yedek Parça Ltd. Şti.' bulundu. Faturayı hazırlayabilmem için hangi ürün/hizmetlerin ve miktarlarının yazılacağını, faturanın satış mı alış mı olduğunu, tarih ile ödeme vadesini ve fiyatların cari fiyat listesinden mi alınacağını belirtmeniz gerekiyor. Bu bilgiler gelince taslak faturayı açıp onayınıza sunacağım.\n\nKaynak verileri:\nDeneme Otomotiv Yedek Parça Ltd. Şti. — Bakiye: 184.520,32 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nDeneme Otomotiv Yedek Parça Ltd. Şti. — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 73523
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-stok-varyant",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "A4 kağıdı için iki kart buldum, hangisini güncellememi istersiniz?\n\n| Kod | Ürün | Mevcut satış fiyatı (KDV hariç) |\n|---|---|---|\n| STK-404 | [A4 Kağıt 80 gr](/panel/stok/00000000-0000-4000-8000-000000000404) | 100,00 TL |\n| STK-405 | [A4 Kağıt 70 gr](/panel/stok/00000000-0000-4000-8000-000000000405) | 100,00 TL |\n\nHangisini (ya da ikisini de) 120,00 TL yapmamı istediğinizi belirtin; onayınıza sunayım.",
+     "sureMs": 51776
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-ekrandaki-teklif-eposta",
+   "kategori": "belirsizlik",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_eposta_gonder",
+       "basarili": true
+      }
+     ],
+     "talepler": [
+      "belge_eposta_gonder"
+     ],
+     "cevap": "**TKF2026000000045** numaralı teklifin (Deneme Otomotiv Yedek Parça Ltd. Şti.) PDF olarak e-postayla gönderilmesi **işlem onayınıza sunuldu**, aşağıdaki **Onayla** düğmesiyle onaylayabilirsiniz.\n\nOnayladığınızda teklif PDF ekiyle cari kartındaki e-posta adresine gönderilecektir. Farklı bir adrese göndermek isterseniz adresi belirtmeniz yeterli.",
+     "sureMs": 35143
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_eposta_gonder",
+       "basarili": true
+      }
+     ],
+     "talepler": [
+      "belge_eposta_gonder"
+     ],
+     "cevap": "TKF2026000000045 numaralı teklifin (Deneme Otomotiv Yedek Parça Ltd. Şti.) PDF ekiyle e-posta ile gönderilmesi **işlem onayınıza sunuldu**, aşağıdaki Onayla düğmesiyle onaylayabilirsiniz.\n\nOnayladığınızda teklif, cari kartında kayıtlı e-posta adresine gönderilecektir. Farklı bir adrese göndermemi isterseniz adresi yazmanız yeterli.",
+     "sureMs": 23911
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_eposta_gonder",
+       "basarili": true
+      }
+     ],
+     "talepler": [
+      "belge_eposta_gonder"
+     ],
+     "cevap": "TKF2026000000045 numaralı teklifin (Deneme Otomotiv Yedek Parça Ltd. Şti.) PDF ekiyle e-posta olarak gönderilmesi **işlem onayınıza sunuldu**, aşağıdaki Onayla düğmesiyle onaylayabilirsiniz.\n\n- Gönderim, cari kartında kayıtlı e-posta adresine yapılacaktır. Farklı bir adres isterseniz belirtin.\n- Onaylamadan gönderim gerçekleşmez.",
+     "sureMs": 29230
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-gecmisten-gelen-fatura",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelen_efatura_isle",
+       "basarili": true
+      }
+     ],
+     "talepler": [
+      "gelen_efatura_isle"
+     ],
+     "cevap": "İşlem onayınıza sunuldu, aşağıdaki **Onayla** düğmesiyle onaylayabilirsiniz. Onaylandığında OZF2026000000003 TRY olarak taslak alış faturasına işlenecek.",
+     "sureMs": 43973
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-fatura-iptal",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "fatura_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Geçen ay bu cari adına ait birden fazla kesin fatura bulundu. İptal edilecek faturayı seçer misiniz?\n\nKaynak verileri:\nFTR2026000000101 — Genel toplam: 10.100,00 TRY (belge_genel_toplam · Belge tarihi 2026-10-11)\nFTR2026000000101 — Belge tarihi: 2026-10-11\nFTR2026000000102 — Genel toplam: 10.200,00 TRY (belge_genel_toplam · Belge tarihi 2026-10-12)\nFTR2026000000102 — Belge tarihi: 2026-10-12\nFTR2026000000103 — Genel toplam: 10.300,00 TRY (belge_genel_toplam · Belge tarihi 2026-10-13)\nFTR2026000000103 — Belge tarihi: 2026-10-13\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 68645
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-personel-izin",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 0,
+   "gecti": false,
+   "denemeler": [
+    {
+     "gecti": false,
+     "hatalar": [
+      "Yasak araç çağrıldı: izin_bakiyesi"
+     ],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: izin_bakiyesi"
+     ],
+     "araclar": [
+      {
+       "ad": "personel_ara",
+       "basarili": true
+      },
+      {
+       "ad": "izin_bakiyesi",
+       "basarili": false
+      },
+      {
+       "ad": "izin_bakiyesi",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "İzin bakiyesi bilgisini alamadım. Sistemde iki \"Ahmet\" kaydı var:\n\n| Personel No | Ad Soyad | Departman | Durum |\n|---|---|---|---|\n| P-010 | Ahmet Deneme | Depo | Aktif |\n| P-011 | Ahmet Örnek | Satış | Aktif |\n\nAncak her iki kayıt için de izin bakiyesi sorgusu şu hatayı döndürdü: **\"Bu kayıt şu an okunamadı (değerlendirme senaryosunda bu aracın verisi yok).\"**\n\nYani bakiye rakamına şu an ulaşamıyorum; uydurma bir gün sayısı vermek istemem. Biraz sonra tekrar deneyebilirim ya da izin bakiyesini Personel → İzinler ekranından görebilirsiniz. Hangi Ahmet'i sorduğunuzu belirtirseniz (P-010 mu, P-011 mi) yalnız onun için tekrar denerim.",
+     "sureMs": 70199
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-ekrandaki-cari-ekstre",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ekstre_eposta",
+       "basarili": true
+      }
+     ],
+     "talepler": [
+      "cari_ekstre_eposta"
+     ],
+     "cevap": "**Deneme Otomotiv Yedek Parça Ltd. Şti.** için hesap ekstresi PDF'inin cari kartındaki e-posta adresine gönderilmesi işlemi **onayınıza sunuldu**. Aşağıdaki Onayla düğmesiyle onayladığınızda ekstre maili gönderilecektir.",
+     "sureMs": 39607
+    }
+   ]
+  },
+  {
+   "id": "belirsiz-ekrandaki-cari-epostalari",
+   "kategori": "belirsizlik",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 0,
+   "gecti": false,
+   "denemeler": [
+    {
+     "gecti": false,
+     "hatalar": [
+      "Yanıtta beklenen ifade yok: Fiyat listesi"
+     ],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: gelen_eposta_getir"
+     ],
+     "araclar": [
+      {
+       "ad": "gelen_eposta_ara",
+       "basarili": true
+      },
+      {
+       "ad": "cari_getir",
+       "basarili": true
+      },
+      {
+       "ad": "gelen_eposta_getir",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.\nÖrnek Gıda Sanayi A.Ş. — Bakiye: -8.750,40 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nÖrnek Gıda Sanayi A.Ş. — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "guvenli_ozet",
+     "sureMs": 103226
+    }
+   ]
+  },
+  {
+   "id": "hata-selamlama-bos-yanit",
+   "kategori": "hata_iptal",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [],
+     "talepler": [],
+     "cevap": "Merhaba! 👋 Ben TekirExtra asistanınızım.\n\nSize şu konularda yardımcı olabilirim:\n\n- **Cari hesaplar** – bakiye, ekstre, risk durumu sorgulama\n- **Stok** – ürün/miktar/fiyat takibi\n- **Belgeler** – teklif, sipariş, irsaliye, fatura arama ve işlemleri\n- **Finans** – kasa/banka, gelir-gider, nakit akışı\n- **Raporlar** – satış, alış, vergi, cari raporları (ekran veya Excel/PDF)\n- **Günlük brifing** – bugün dikkat etmeniz gerekenler (vadesi geçen alacaklar, onay bekleyenler, kritik stoklar vb.)\n\nNasıl yardımcı olmamı istersiniz? İsterseniz hemen **bugünün brifingini** çıkarabilirim. 🙂",
+     "sureMs": 20237
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [],
+     "talepler": [],
+     "cevap": "Merhaba! 👋 Ben TekirExtra asistanınızım. Size şu konularda yardımcı olabilirim:\n\n- **Cari hesaplar** – bakiye sorgulama, ekstre oluşturma\n- **Fatura & belgeler** – arama, görüntüleme, PDF/Excel dışa aktarma\n- **Stok takibi** – ürün arama, miktar kontrolü\n- **Raporlar** – satış, alış, kasa/banka, vergi raporları\n- **Günlük brifing** – vadesi geçen alacaklar, onay bekleyen işler, kritik stoklar\n- **Sözleşme sorgulama** – cezai şart, fesih, teslimat gibi maddeler\n- **E-posta & e-Fatura** – gelen iletiler, e-belge işleme\n\nBugün size nasıl yardımcı olabilirim?",
+     "sureMs": 21764
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [],
+     "talepler": [],
+     "cevap": "Merhaba Deneme Kullanıcı 👋\n\nBen TekirExtra asistanınız. Size şu konularda yardımcı olabilirim:\n\n- **Cari işlemler** – hesap bakiyeleri, ekstre (PDF/Excel), risk durumu\n- **Fatura & belgeler** – satış/alış faturaları, teklif, sipariş, irsaliye arama ve PDF çıktısı\n- **Stok** – miktar, fiyat ve depo bazında bakiye sorguları\n- **Raporlar** – satış, alış, kasa/banka, vergi raporları ve dosya olarak dışa aktarım\n- **Günlük brifing** – vadesi geçen alacak/borç, onay bekleyen talepler, kritik stoklar\n\nBugün ne yapmamı istersiniz? İsterseniz doğrudan **günlük brifing** ile güne nereden başlamanız gerektiğini çıkarabilirim.",
+     "sureMs": 20891
+    }
+   ]
+  },
+  {
+   "id": "hata-arac-sunucu-hatasi",
+   "kategori": "hata_iptal",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Üzgünüm, cari kayıtlarına şu anda ulaşamıyorum. Sunucu geçici olarak yanıt vermiyor (\"Sunucu geçici olarak yanıt vermiyor\" hatası) ve aramayı birkaç kez yineledim.\n\nLütfen birazdan tekrar deneyin ya da isterseniz \"Deneme Otomotiv\" için tekrar sorgulamamı sağlayabilirsiniz. Bakiye bilgisini sistemden doğrulamadan paylaşmak istemem.",
+     "sureMs": 33408
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Üzgünüm, cari kayıtlarına şu anda ulaşamıyorum. Sunucu geçici olarak yanıt vermiyor (\"Sunucu geçici olarak yanıt vermiyor\" hatası aldım).\n\nBirkaç dakika sonra tekrar denememi ister misiniz? Ya da dilerseniz cari kodu/VKN ile tekrar arayabilirim.",
+     "sureMs": 46458
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Üzgünüm, cari sorgusunu yapamadım. Sunucu geçici olarak yanıt vermiyor; işlem birkaç kez denendi ancak başarısız oldu.\n\nLütfen biraz sonra tekrar deneyin veya isterseniz \"tekrar dene\" yazmanız üzerine sorguyu yeniden çalıştırabilirim.",
+     "sureMs": 69860
+    }
+   ]
+  },
+  {
+   "id": "hata-onayli-teklif-yeniden-onay",
+   "kategori": "hata_iptal",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_onayla",
+       "basarili": false
+      },
+      {
+       "ad": "belge_getir",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bu teklif zaten onaylanmış durumda; sistem onaylanmış teklifi yeniden onaylamaya izin vermediği için işlem yapılmadı. Dilerseniz bu teklifi siparişe veya faturaya dönüştürebilir, ya da üzerinde değişiklik yapılacaksa revizyon açabilirim. Hangisini istersiniz?\n\nKaynak verileri:\nTKF2026000000045 — Genel toplam: 24.000,00 TRY (belge_genel_toplam · Belge tarihi 2026-11-10)\nTKF2026000000045 — Belge tarihi: 2026-11-10\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 120950
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_onayla",
+       "basarili": false
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bu teklif zaten onaylanmış durumda; sistem yeniden onaya izin vermedi, bu nedenle ek bir onay talebi oluşmadı. İsterseniz aynı teklifi siparişe veya faturaya dönüştürebilir, içeriğini değiştirmek için revizyon açabilirim. Hangisini yapmamı istersiniz?\n\nKaynak verileri:\nTKF2026000000045 — Genel toplam: 24.000,00 TRY (belge_genel_toplam · Belge tarihi 2026-11-10)\nTKF2026000000045 — Belge tarihi: 2026-11-10\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 107569
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_getir",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bu teklif zaten onaylanmış durumda; onaylı teklif yeniden onaylanamaz, bu yüzden onay işlemi başlatılmadı. İsterseniz bu teklifi siparişe veya faturaya dönüştürebilirim.\n\nKaynak verileri:\nTKF2026000000045 — Genel toplam: 24.000,00 TRY (belge_genel_toplam · Belge tarihi 2026-11-10)\nTKF2026000000045 — Belge tarihi: 2026-11-10\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 88420
+    }
+   ]
+  },
+  {
+   "id": "hata-ocr-basarisiz",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelen_eposta_ara",
+       "basarili": true
+      },
+      {
+       "ad": "gelen_eposta_getir",
+       "basarili": true
+      },
+      {
+       "ad": "gelen_eposta_ek_ocr",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Son teklif maili bulundu:\n\n- **Konu:** Teklif  \n- **Gönderen:** info@deneme-tedarik.example  \n- **Tarih:** 15.11.2026  \n- **Ek:** `talep.png`\n\nAncak ekin OCR ile okunması sırasında **“Dosya okunamadı”** hatası alındı. Mail gövdesinde de talep detayı bulunmuyor. Bu nedenle ekten ne istendiğini şu an güvenilir şekilde söyleyemiyorum.",
+     "sureMs": 102096
+    }
+   ]
+  },
+  {
+   "id": "hata-cari-bulunamadi",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Sistemde **\"Zeta Mobilya\"** adında bir cari hesap bulunamadı. Hatta \"Zeta\" veya \"Mobilya\" aramalarında da herhangi bir kayda ulaşılamadı; şu anda cari listesi boş görünüyor.\n\nKontrol edebilecekleriniz:\n- **Unvan farklı mı olabilir mi?** (ör. \"Zeta Dekorasyon\", \"Zeta Ahşap\" gibi)\n- **Cari henüz oluşturulmamış olabilir mi?** Yeni bir cari kartı açmamı isterseniz yardımcı olabilirim.\n\nFarklı bir unvan veya cari kodu denememi ister misiniz?",
+     "sureMs": 67570
+    }
+   ]
+  },
+  {
+   "id": "hata-olmayan-taslak-iddiasi",
+   "kategori": "hata_iptal",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 1,
+   "gecti": false,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Deneme Otomotiv Yedek Parça Ltd. Şti. cari kartı kayıtlı; ancak bu cari adına açılmış taslak ya da onaylı bir satış teklifi bulunamadı (tüm durumlar tarandı). Bu nedenle verilecek teklif bağlantısı yok. Dilerseniz ürün ve miktarları söyleyin, sizin için yeni bir teklif taslağı açayım.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 99628
+    },
+    {
+     "gecti": false,
+     "hatalar": [
+      "Yanıtta beklenen ifade yok: bulunamad|yok|oluşturulmamış|bulamadım"
+     ],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.\nDeneme Otomotiv Yedek Parça Ltd. Şti. — Bakiye: 184.520,32 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nDeneme Otomotiv Yedek Parça Ltd. Şti. — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "guvenli_ozet",
+     "sureMs": 121469
+    },
+    {
+     "gecti": false,
+     "hatalar": [
+      "Yanıtta beklenen ifade yok: bulunamad|yok|oluşturulmamış|bulamadım"
+     ],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      },
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Teklif taslağı veya bağlantısına ilişkin olgu bulunmuyor.",
+     "finansDurumu": "dogrulandi",
+     "finansDuzeltme": "dogrulandi",
+     "sureMs": 160652
+    }
+   ]
+  },
+  {
+   "id": "hata-rapor-zaman-asimi",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: rapor_dosyasi"
+     ],
+     "araclar": [
+      {
+       "ad": "rapor_katalogu",
+       "basarili": true
+      },
+      {
+       "ad": "rapor_calistir",
+       "basarili": false
+      },
+      {
+       "ad": "rapor_calistir",
+       "basarili": false
+      },
+      {
+       "ad": "rapor_calistir",
+       "basarili": false
+      },
+      {
+       "ad": "rapor_calistir",
+       "basarili": false
+      },
+      {
+       "ad": "rapor_dosyasi",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bu yıl (2026) satış özeti raporunu çalıştıramadım; araç hata döndü.\n\n**Denemeler ve alınan hatalar:**\n- Satış Özeti (01.01.2026 – 20.11.2026): **\"Rapor zaman aşımına uğradı.\"**\n- Aynı rapor, cari bazında gruplamayla: **\"Rapor zaman aşımına uğradı.\"**\n- Sadece kasım ayı (01.11.2026 – 20.11.2026) gibi kısa dönem: **\"Rapor zaman aşımına uğradı.\"**\n- Excel dosyası olarak hazırlama: **\"Bu kayıt şu an okunamadı.\"**\n\nYani sorun tarih aralığından bağımsız görünüyor; rapor servisi şu an yanıt vermiyor. Bu yüzden herhangi bir ciro/kâr rakamı paylaşmıyorum — uydurma veri vermek istemem.\n\n**Önerilerim:**\n1. Biraz sonra tekrar denememi isterseniz aynı süzgeçlerle yeniden çalıştırırım.\n2. Alternatif olarak fatura kayıtlarından tek tek ilerleyebilirim (ör. `fatura_ara` ile 2026 satış faturalarını listeleme), ancak bu yöntem rapor ekranıyla birebir aynı toplamı vermeyebilir; isterseniz onu da denerim.\n3. Rapor ekranı erişiminiz varsa panel üzerinden 01.01.2026 – 20.11.2026 aralığıyla dışa aktarım deneyebilirsiniz; sistem tarafında bir kesinti olduğu için teknik ekibe iletilmesi gerekebilir.\n\nNasıl ilerlememi istersiniz?",
+     "sureMs": 196754
+    }
+   ]
+  },
+  {
+   "id": "hata-telegram-onay",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 0,
+   "gecti": false,
+   "denemeler": [
+    {
+     "gecti": false,
+     "hatalar": [
+      "Yanıtta olmaması gereken ifade var: düğme"
+     ],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "belge_getir",
+       "basarili": true
+      },
+      {
+       "ad": "belge_onayla",
+       "basarili": true
+      }
+     ],
+     "talepler": [
+      "belge_onayla"
+     ],
+     "cevap": "Deneme Otomotiv Yedek Parça Ltd. Şti. adına ait taslak durumdaki teklif için onay talebiniz açıldı. İşlem henüz yapılmadı; Telegram sohbetindeki Onayla düğmesiyle veya paneldeki onay listesinden bizzat siz onaylayabilirsiniz. Onay verilmeyene kadar teklif taslak olarak kalır.\n\nKaynak verileri:\nTKF2026000000045 — Genel toplam: 24.000,00 TRY (belge_genel_toplam · Belge tarihi 2026-11-10)\nTKF2026000000045 — Belge tarihi: 2026-11-10\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 77788
+    }
+   ]
+  },
+  {
+   "id": "hata-kullanici-vazgecti",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [],
+     "talepler": [],
+     "cevap": "Anlaşıldı, teklif taslağı oluşturulmadı. Başka bir konuda yardımcı olmamı ister misiniz?",
+     "sureMs": 5866
+    }
+   ]
+  },
+  {
+   "id": "hata-yazmada-belirsiz-kimlik",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "kasa_banka_hesaplari",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "İki cari kartı eşleşti: Test Yılmaz A ve Test Yılmaz B. Tahsilatı hangisi için kaydedeceğinizi seçin; Ana Kasa hesabı belirlendi, fatura bağlanacaksa onu da belirtin.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 56450
+    }
+   ]
+  },
+  {
+   "id": "hata-kismi-basarisizlik",
+   "kategori": "hata_iptal",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: rapor_katalogu, nakit_pozisyonu"
+     ],
+     "araclar": [
+      {
+       "ad": "kasa_banka_hesaplari",
+       "basarili": true
+      },
+      {
+       "ad": "vadesi_gecen_alacaklar",
+       "basarili": false
+      },
+      {
+       "ad": "rapor_katalogu",
+       "basarili": false
+      },
+      {
+       "ad": "nakit_pozisyonu",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "**Kasa ve banka bakiyeleri (20.11.2026 itibarıyla):**\n\n| Hesap | Tür | Döviz | Bakiye |\n|---|---|---|---|\n| Ana Kasa (K01) | Kasa | TRY | 45.250,00 ₺ |\n| Deneme Bankası TL | Banka | TRY | 312.400,75 ₺ |\n| Deneme Bankası USD | Banka | USD | 15.200,00 $ |\n\n**Vadesi geçen alacaklar:** Maalesef bu rapor şu an hesaplanamadı — sistemden \"Rapor şu an hesaplanamıyor\" hatası aldım (yedek olarak denediğim nakit pozisyonu ve cari rapor kataloğu da okunamadı). Rakam uydurmamak için boş geçiyorum.\n\nBir süre sonra tekrar deneyebilirim; dilerseniz tek tek cariler için risk/vade analizi (`tahsilat_riski`) veya çek/senet portföyü üzerinden de vadesi gelen evraklara bakabilirim.",
+     "sureMs": 60593
+    }
+   ]
+  }
+ ]
+}

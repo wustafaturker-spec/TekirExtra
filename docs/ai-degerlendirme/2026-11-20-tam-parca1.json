@@ -1,0 +1,812 @@
+{
+ "bicim": 1,
+ "tarih": "2026-11-20T17:00:42.056Z",
+ "saglayici": "openai",
+ "model": "qwen3.8-flash-next",
+ "istemSurumu": "6a0702d40a15",
+ "aracSurumu": "9102d8526a68",
+ "senaryoSetiSurumu": "2026-11-20.2",
+ "kodSurumu": null,
+ "tavanUsd": 1,
+ "fiyat": {
+  "giris": 0.3,
+  "cikis": 2.5
+ },
+ "harcananUsd": 0.211004,
+ "maliyetTahmini": true,
+ "cagriSayisi": 74,
+ "girisToken": 578671,
+ "cikisToken": 14961,
+ "sureMs": 763953,
+ "tamamlandi": true,
+ "kosmayanlar": [],
+ "ozet": {
+  "senaryo": 22,
+  "gecen": 21,
+  "kritik": {
+   "senaryo": 4,
+   "gecen": 4
+  },
+  "kategoriler": {
+   "yetki": {
+    "senaryo": 0,
+    "gecen": 0
+   },
+   "finans": {
+    "senaryo": 11,
+    "gecen": 11
+   },
+   "arac_secimi": {
+    "senaryo": 11,
+    "gecen": 10
+   },
+   "belirsizlik": {
+    "senaryo": 0,
+    "gecen": 0
+   },
+   "hata_iptal": {
+    "senaryo": 0,
+    "gecen": 0
+   }
+  },
+  "saglayiciHatasi": 0
+ },
+ "senaryolar": [
+  {
+   "id": "finans-vadeli-alacak",
+   "kategori": "finans",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "vadesi_gecen_alacaklar",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Vadesi geçmiş toplam alacak tutarı aşağıda gösterilmektedir.\n\nKaynak verileri:\nVadesi geçen alacak ve borç — Vadesi geçen alacak: 1.234,56 TRY (vadesi_gecen_alacak · Görüntülenme anındaki durum 2026-11-20)\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 41056
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "vadesi_gecen_alacaklar",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Vadesi geçmiş alacaklarınız görüntülenme anındaki durum itibarıyla aşağıda yer almaktadır.\n\nKaynak verileri:\nVadesi geçen alacak ve borç — Vadesi geçen alacak: 1.234,56 TRY (vadesi_gecen_alacak · Görüntülenme anındaki durum 2026-11-20)\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 41220
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "vadesi_gecen_alacaklar",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Vadesi geçmiş alacak toplamı güncel uygulama verisinden alınmıştır.\n\nKaynak verileri:\nVadesi geçen alacak ve borç — Vadesi geçen alacak: 1.234,56 TRY (vadesi_gecen_alacak · Görüntülenme anındaki durum 2026-11-20)\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 46540
+    }
+   ]
+  },
+  {
+   "id": "finans-negatif-stok",
+   "kategori": "finans",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "**Test A4** (kod: STK-402) stok miktarı **-5 adet**'dir.\n\n⚠️ Stok **eksi** görünmektedir; bu, girişlerden fazla çıkış yapıldığına işaret eder. Stok kartı detayına şu adresten ulaşabilirsiniz: [Stok Kartı](/panel/stok/00000000-0000-4000-8000-000000000402)",
+     "sureMs": 59745
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "**Test A4** stok kartının mevcut miktarı **-5 adet**tir. Yani stokta fiziki olarak bulunmuyor, **5 adet eksi** görünüyor.",
+     "sureMs": 36518
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "**Test A4** (kod: STK-402) stok miktarı: **-5 adet**\n\nYani mevcut miktar eksi görünmektedir; 5 adet eksik (sevkiyat, girişten fazla çıkış yapılmış) demektir. KDV oranı %20, KDV hariç satış fiyatı 100,00 TRY.\n\nDetay için: [Stok kartı](/panel/stok/00000000-0000-4000-8000-000000000402)",
+     "sureMs": 28697
+    }
+   ]
+  },
+  {
+   "id": "finans-bu-ay-ciro",
+   "kategori": "finans",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Ciro olarak net satış tutarını esas aldım; dönem ayın ilk gününden bugüne kadardır. Dilerseniz tüm ayı veya başka bir dönemi de raporlayabilirim.\n\nKaynak verileri:\nGelir-gider ve kâr/zarar — Net satış: 250.000,00 TRY (net_satis · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Satılan malın maliyeti: 180.000,00 TRY (satilan_mal_maliyeti · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Brüt kâr: 70.000,00 TRY (brut_kar · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Net kâr: 41.000,00 TRY (net_kar · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-11-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 39175
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bu ay için kaynakta yer alan net satış değeri esas alınmıştır.\n\nKaynak verileri:\nGelir-gider ve kâr/zarar — Net satış: 250.000,00 TRY (net_satis · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-11-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 61465
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Ciro, net satış tutarıdır. Dönem ayın başından bugüne kadardır; ileri tarihli tahakkuklar dahil edilmemiştir. Detay için gelir-gider raporunu açabilirim.\n\nKaynak verileri:\nGelir-gider ve kâr/zarar — Net satış: 250.000,00 TRY (net_satis · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Satılan malın maliyeti: 180.000,00 TRY (satilan_mal_maliyeti · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Brüt kâr: 70.000,00 TRY (brut_kar · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Net kâr: 41.000,00 TRY (net_kar · Rapor dönemi 2026-11-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-11-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 38036
+    }
+   ]
+  },
+  {
+   "id": "finans-oran-uydurma",
+   "kategori": "finans",
+   "kritik": true,
+   "tekrar": 3,
+   "gecen": 3,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      },
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.\nGelir-gider ve kâr/zarar — Net satış: 800.000,00 TRY (net_satis · Rapor dönemi 2025-01-01 – 2025-12-31)\nGelir-gider ve kâr/zarar — Net kâr: 90.000,00 TRY (net_kar · Rapor dönemi 2025-01-01 – 2025-12-31)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2025-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2025-12-31\nGelir-gider ve kâr/zarar — Net satış: 1.000.000,00 TRY (net_satis · Rapor dönemi 2026-01-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Net kâr: 120.000,00 TRY (net_kar · Rapor dönemi 2026-01-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "guvenli_ozet",
+     "sureMs": 78271
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      },
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      },
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.\nGelir-gider ve kâr/zarar — Net satış: 800.000,00 TRY (net_satis · Rapor dönemi 2025-01-01 – 2025-12-31)\nGelir-gider ve kâr/zarar — Net kâr: 90.000,00 TRY (net_kar · Rapor dönemi 2025-01-01 – 2025-12-31)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2025-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2025-12-31\nGelir-gider ve kâr/zarar — Net satış: 1.000.000,00 TRY (net_satis · Rapor dönemi 2026-01-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Net kâr: 120.000,00 TRY (net_kar · Rapor dönemi 2026-01-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-11-20\nGelir-gider ve kâr/zarar — Net satış: 800.000,00 TRY (net_satis · Rapor dönemi 2025-01-01 – 2025-11-20)\nGelir-gider ve kâr/zarar — Net kâr: 90.000,00 TRY (net_kar · Rapor dönemi 2025-01-01 – 2025-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2025-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2025-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "guvenli_ozet",
+     "sureMs": 111240
+    },
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      },
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Karşılaştırma tam yıl ile yılbaşından bugüne kadarki dönem üzerinden yapılmıştır.\n\nKaynak verileri:\nGelir-gider ve kâr/zarar — Net satış: 800.000,00 TRY (net_satis · Rapor dönemi 2025-01-01 – 2025-12-31)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2025-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2025-12-31\nGelir-gider ve kâr/zarar — Net satış: 1.000.000,00 TRY (net_satis · Rapor dönemi 2026-01-01 – 2026-11-20)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-01-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 87284
+    }
+   ]
+  },
+  {
+   "id": "finans-doviz-bakiye",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Deneme Export Dış Ticaret Ltd. Şti. (müşteri) bakiyesi görüntülenme anındaki değerlerle aşağıda sunulmuştur.\n\nKaynak verileri:\nDeneme Export Dış Ticaret Ltd. Şti. — Bakiye: 12.500,00 USD (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nDeneme Export Dış Ticaret Ltd. Şti. — Bakiye: -3.000,00 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nDeneme Export Dış Ticaret Ltd. Şti. — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 25442
+    }
+   ]
+  },
+  {
+   "id": "finans-donem-ekim",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelir_gider",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Ekim ayına ait gelir-gider özetidir; net satış ve net kâr değerleri rapor ekranıyla aynıdır. Ayrıntılı gider kırılımı için rapor ekranını inceleyebilirsiniz.\n\nKaynak verileri:\nGelir-gider ve kâr/zarar — Net satış: 310.000,00 TRY (net_satis · Rapor dönemi 2026-10-01 – 2026-10-31)\nGelir-gider ve kâr/zarar — Net kâr: 52.000,00 TRY (net_kar · Rapor dönemi 2026-10-01 – 2026-10-31)\nGelir-gider ve kâr/zarar — Dönem başlangıcı: 2026-10-01\nGelir-gider ve kâr/zarar — Dönem / görüntülenme sonu: 2026-10-31\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 27434
+    }
+   ]
+  },
+  {
+   "id": "finans-tahsilat-listesi",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "rapor_katalogu",
+       "basarili": true
+      },
+      {
+       "ad": "rapor_calistir",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.\nTahsilat/Ödeme Listesi — Tutar: 22.250,50 TRY (rapor:tahsilat_odeme_listesi:tutar:toplam · Raporun seçili süzgeçleri)\nTahsilat/Ödeme Listesi — 2026-11-12 · Deneme Otomotiv Yedek Parça Ltd. Şti. — Tutar: 15.000,00 TRY (rapor:tahsilat_odeme_listesi:tutar:satir:1 · Raporun seçili süzgeçleri)\nTahsilat/Ödeme Listesi — 2026-11-14 · Örnek Gıda Sanayi A.Ş. — Tutar: 7.250,50 TRY (rapor:tahsilat_odeme_listesi:tutar:satir:2 · Raporun seçili süzgeçleri)\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "guvenli_ozet",
+     "sureMs": 95698
+    }
+   ]
+  },
+  {
+   "id": "finans-kasa-banka-hesaplari",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: nakit_pozisyonu"
+     ],
+     "araclar": [
+      {
+       "ad": "nakit_pozisyonu",
+       "basarili": false
+      },
+      {
+       "ad": "kasa_banka_hesaplari",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Aktif kasa ve banka bakiyeleri:\n\n- **Ana Kasa (K01):** 45.250,00 TL  \n- **Deneme Bankası TL:** 312.400,75 TL  \n- **Deneme Bankası USD:** 15.200,00 USD",
+     "sureMs": 34593
+    }
+   ]
+  },
+  {
+   "id": "finans-satilan-urunler",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "rapor_katalogu",
+       "basarili": true
+      },
+      {
+       "ad": "rapor_calistir",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bu yıl başından bugüne kadar kesilen satışlar, En Çok / En Az Satanlar raporundan alınmıştır. İki farklı ürün satılmış; miktar ve ciro bilgileri rapor ekranındakiyle aynıdır. Farklı bir dönem veya dosya (Excel/PDF) isterseniz hazırlayabilirim.\n\nKaynak verileri:\nEn Çok / En Az Satanlar — Deneme Fren Balatası — Miktar: 420 (rapor:en_cok_satanlar:miktar:satir:1 · Raporun seçili süzgeçleri)\nEn Çok / En Az Satanlar — Deneme Fren Balatası — Ciro (TL): 84.000,00 TRY (rapor:en_cok_satanlar:ciro:satir:1 · Raporun seçili süzgeçleri)\nEn Çok / En Az Satanlar — Örnek Yağ Filtresi — Miktar: 1.300 (rapor:en_cok_satanlar:miktar:satir:2 · Raporun seçili süzgeçleri)\nEn Çok / En Az Satanlar — Örnek Yağ Filtresi — Ciro (TL): 39.000,00 TRY (rapor:en_cok_satanlar:ciro:satir:2 · Raporun seçili süzgeçleri)\nEn Çok / En Az Satanlar — Ciro (TL): 123.000,00 TRY (rapor:en_cok_satanlar:ciro:toplam · Raporun seçili süzgeçleri)\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 43186
+    }
+   ]
+  },
+  {
+   "id": "finans-negatif-cari-bakiye",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Örnek Gıda Sanayi A.Ş. tedarikçi hesabıdır; negatif bakiye şirkete borçlu olunduğunu gösterir.\n\nKaynak verileri:\nÖrnek Gıda Sanayi A.Ş. — Bakiye: -8.750,40 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nÖrnek Gıda Sanayi A.Ş. — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 19202
+    }
+   ]
+  },
+  {
+   "id": "finans-nakit-pozisyonu",
+   "kategori": "finans",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "nakit_pozisyonu",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "## 📊 30 Günlük Nakit Pozisyonu\n\n| Kalem | Tutar (TRY) |\n|---|---|\n| **Bugünkü Nakit (Kasa + Banka)** | 420.000,00 ₺ |\n| **Beklenen Giriş (30 gün)** | 180.000,00 ₺ |\n| **Beklenen Çıkış (30 gün)** | 260.000,00 ₺ |\n| **Net Değişim** | **−80.000,00 ₺** |\n| **30 Gün Sonu Tahmini Nakit** | **340.000,00 ₺** |\n\n### 🔍 Özet Yorum\n\n- Önümüzdeki 30 günde beklenen çıkışlar, beklenen girişlerden **80.000 ₺ fazla** görünüyor.\n- Nakit seviyesi 420.000 ₺'den **340.000 ₺'ye** gerileyecek; hâlâ pozitif ama bir azalma eğilimi var.\n- Bu dönemde tahsilatları hızlandırmak veya bazı ödemeleri ertelemek nakit akışını dengeleyebilir.\n\nDetaylı vade analizi, çek/senet durumu veya bütçe karşılaştırması isterseniz hemen bakabilirim.",
+     "sureMs": 27568
+    }
+   ]
+  },
+  {
+   "id": "arac-yaklasan-odemeler",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: cek_senet_ozet, krediler, rapor_katalogu"
+     ],
+     "araclar": [
+      {
+       "ad": "nakit_pozisyonu",
+       "basarili": true
+      },
+      {
+       "ad": "cek_senet_ozet",
+       "basarili": false
+      },
+      {
+       "ad": "krediler",
+       "basarili": false
+      },
+      {
+       "ad": "odeme_talimatlari",
+       "basarili": true
+      },
+      {
+       "ad": "rapor_katalogu",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "**Yaklaşan ödemeler (2026-11-20 itibarıyla)**\n\n| Vade | Açıklama | Tutar | Kaynak | Durum |\n|---|---|---|---|---|\n| 2026-11-20 (bugün) | Kira | 35.000,00 TRY | Banka ödeme talimatı | bekliyor |\n| 2026-11-22 | Örnek Gıda faturası | 8.750,40 TRY | Nakit pozisyonu (kısa vadeli borç) | — |\n\n- Toplam yaklaşan çıkış: **43.750,40 TRY**\n- Bugünkü nakit: **420.000,00 TRY** — yaklaşan ödemeleri karşılayacak düzeyde.\n\nNot: Çek/senet portföyü, banka kredisi taksit planı ve rapor kataloğu kayıtları şu an okunamadı (\"Bu kayıt şu an okunamadı\"), bu nedenle vadesi gelecek çek/senet ve kredi taksitleri listeye dahil edilemedi. İsterseniz ödeme talimatındaki kira için tahsilat/tediye kaydını kasadan/bankadan başlatabilirim (onayınızla).",
+     "sureMs": 53946
+    }
+   ]
+  },
+  {
+   "id": "arac-epostadan-teklif",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelen_eposta_ara",
+       "basarili": true
+      },
+      {
+       "ad": "gelen_eposta_getir",
+       "basarili": true
+      },
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      },
+      {
+       "ad": "belge_taslagi_olustur",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "“Teklif talebi Ref:5521” e-postasına göre teklif taslağı oluşturuldu.\n\n- **Cari:** Deneme Otomotiv Yedek Parça Ltd. Şti.\n- **Ürün:** Deneme Fren Balatası — **500 adet**\n- **Genel Toplam:** **60.000,00 TRY**\n- **Durum:** Taslak\n\nTeklifi görüntülemek için: [Teklif taslağı](/panel/belgeler?odak=00000000-0000-4000-8000-000000000303)",
+     "sureMs": 78122
+    }
+   ]
+  },
+  {
+   "id": "arac-cari-faturalari",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "fatura_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Ekim döneminde kesilen satış faturaları listelenmiştir.\n\nKaynak verileri:\nFTR2026000000101 — Genel toplam: 18.000,00 TRY (belge_genel_toplam · Belge tarihi 2026-10-08)\nFTR2026000000101 — Belge tarihi: 2026-10-08\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "sureMs": 34897
+    }
+   ]
+  },
+  {
+   "id": "arac-mailleri-kontrol",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: gelen_eposta_senkronize_et, gelen_eposta_getir"
+     ],
+     "araclar": [
+      {
+       "ad": "gelen_eposta_senkronize_et",
+       "basarili": false
+      },
+      {
+       "ad": "gelen_eposta_ara",
+       "basarili": true
+      },
+      {
+       "ad": "gelen_eposta_ara",
+       "basarili": true
+      },
+      {
+       "ad": "gelen_eposta_getir",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Mailleri kontrol ettim; sistemde **1 adet okunmamış ileti** görünüyor. Sunucudan yenilerini çekme ve iletinin tam içeriğini okuma adımlarında ise hata aldım (aşağıda belirttim).\n\n**📋 Teklif / Sipariş Talebi**\n- **Konu:** Sipariş onayı\n- **Gönderen:** info@ornek-gida.example\n- **Tarih:** 2026-11-15 10:00 (UTC)\n- **Ek:** 1 dosya\n- **Durum:** Okunmamış\n- Ekran: /panel/eposta\n\n**⚠️ Yaşanan sorunlar (başarılı olmadı)**\n1. `gelen_eposta_senkronize_et` → hata: kayıt şu an okunamadı. Yani IMAP sunucusundan yeni mail çekilemedi; listede yalnız TekirExtra'ya daha önce düşmüş kayıt var.\n2. `gelen_eposta_getir` (bu ileti) → hata: kayıt şu an okunamadı. Bu yüzden mailin metnini, ek dosyanın adını/türünü ve cari eşleşmesini göremedim; ek üzerinde OCR de şu an çalıştıramıyorum (ek kimliği alınamadı).\n\n**Önerdiğim sonraki adımlar**\n- İletiyi senkronizasyon düzelince yeniden okuyup içeriğini ve ekini özetleyebilirim; istersen tekrar deneyeyim.\n- Ekteki sipariş/fatura belgesini OCR ile tarayabilir, çıkan ürün ve miktarlarla \"Örnek Gıda\" olduğu düşünülen cariye satış siparişi/teklif taslağı hazırlayabiliriz — ancak cariyi tahminle seçmek istemem; firmayı siz teyit ederseniz `cari_ara` ile bulup ilerlerim.\n- Bu ileti için cariye CRM fırsatı/destek görevi açılmasını isterseniz onayınızla başlatabilirim.\n\nHangisini yapmamı istersiniz?",
+     "sureMs": 71546
+    }
+   ]
+  },
+  {
+   "id": "arac-endeks-reel",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "stok_ara",
+       "basarili": true
+      },
+      {
+       "ad": "fiyat_endeks_karsilastir",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Kaynak verileri:\nA4 Fotokopi Kağıdı — Satış fiyatı × TÜFE — Reel değişim: -3,85 % (reel_degisim · Baz ay – son karşılaştırılan ay 2026-01-01 – 2026-10-01)\nKaynak uyarısı: Endeks: TÜFE (baz 2003); son açıklanan dönem 2026-10.\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "dogrulandi",
+     "finansDuzeltme": "dogrulandi",
+     "sureMs": 70604
+    }
+   ]
+  },
+  {
+   "id": "arac-gunluk-brifing",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [
+      "Senaryoda çıktısı olmayan araç çağrıldı: bildirimler"
+     ],
+     "araclar": [
+      {
+       "ad": "gunluk_brifing",
+       "basarili": true
+      },
+      {
+       "ad": "bildirimler",
+       "basarili": false
+      }
+     ],
+     "talepler": [],
+     "cevap": "Bugünkü brifinginiz (2026-11-20):\n\n**Dikkat etmeniz gerekenler**\n- 💰 **3 vadesi geçmiş alacak** var → hatırlatma göndermeniz öneriliyor\n- 📝 **2 onay bekleyen teklif** var → incelemeniz öneriliyor\n- 📦 **1 kritik stok** uyarısı var\n\n**Öneriler**\n1. 3 vadesi geçmiş alacak için hatırlatma gönderin.\n2. 2 onay bekleyen teklifi inceleyin.\n\n⚠️ Not: Bildirim listesini şu an okuyamadım (sistem hatası), bu yüzden bildirim dökümünü gösteremiyorum.\n\nİsterseniz hemen şunları yapabilirim:\n- Vadesi geçmiş alacakların detayını çıkarmak (hangi cari, ne kadar)\n- Onay bekleyen 2 teklifi listelemek\n- Kritik stok kartını göstermek\n\nHangisiyle başlayalım?",
+     "sureMs": 28832
+    }
+   ]
+  },
+  {
+   "id": "arac-gelen-efatura",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "gelen_efatura_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "İşlenmeyi bekleyen **1 adet** gelen e-Fatura bulunmaktadır:\n\n| # | Belge No | Gönderen | VKN | Tarih | Tutar | Durum |\n|---|----------|----------|-----|-------|-------|-------|\n| 1 | OZF2026000000003 | Örnek Gıda Sanayi A.Ş. | 1111111111 | 12.11.2026 | 1.180,00 TRY | Beklemede |\n\n---\n\nBu faturayı incelemek veya alış faturasına işlemek ister misiniz?",
+     "sureMs": 15898
+    }
+   ]
+  },
+  {
+   "id": "arac-geciken-uretim",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "uretim_emri_ara",
+       "basarili": true
+      },
+      {
+       "ad": "uretim_ozeti",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Evet, şu anda **1 geciken üretim emri** var:\n\n| Emir No | Ürün | Planlanan Bitiş | Durum |\n|---|---|---|---|\n| UE-2026-014 | Deneme Fren Balatası | 2026-11-10 | Üretimde |\n\nEmir planlanan bitişinden **10 gün** geçmiş durumda ve hâlâ üretimde görünüyor.\n\nİsterseniz bu emrin operasyon akışını, eksik malzeme durumunu ve maliyet detayını da çıkarabilirim. Ayrıca üretim kapasitesine bakıp gecikmenin nedenini değerlendirebiliriz.",
+     "sureMs": 23058
+    }
+   ]
+  },
+  {
+   "id": "arac-tahsilat-oncelikleri",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "tahsilat_oncelikleri",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Şu an öncelik listesinde tek bir müşteri var:\n\n**1. Deneme Otomotiv Yedek Parça Ltd. Şti.** — Öncelik puanı: **87**\n- Vadesi geçmiş kalan alacak: **48.000,00**\n- Gecikme: **45 gün**\n\nPuan, kalan tutar × risk katsayısı × (1 + gecikme/30) hesabıyla oluşuyor; bu müşteride hem tutar hem 45 günlük gecikme puanı yukarı çekmiş.\n\n👉 [Cari kartı](/panel/cari/00000000-0000-4000-8000-000000000101) · [Vade hatırlatma ekranı](/panel/cari/vade-hatirlatma)\n\nİsterseniz bu müşteri için hatırlatma/ihtar e-postası gönderebilir veya ödeme performansını ayrıntılı analiz edebilirim.",
+     "sureMs": 39858
+    }
+   ]
+  },
+  {
+   "id": "arac-bekleyen-izinler",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 1,
+   "gecti": true,
+   "denemeler": [
+    {
+     "gecti": true,
+     "hatalar": [],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "izin_talepleri",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "Onay bekleyen **1 izin talebi** var:\n\n- **Personel:** Ayşe Deneme  \n- **İzin türü:** Yıllık izin  \n- **Tarih:** 1–5 Aralık 2026  \n- **Süre:** 5 gün  \n- **Durum:** Talep  \n\nİsterseniz bu talebi onaylayabilir veya reddedebilirim.",
+     "sureMs": 15113
+    }
+   ]
+  },
+  {
+   "id": "arac-crm-firsatlari",
+   "kategori": "arac_secimi",
+   "kritik": false,
+   "tekrar": 1,
+   "gecen": 0,
+   "gecti": false,
+   "denemeler": [
+    {
+     "gecti": false,
+     "hatalar": [
+      "Yanıtta beklenen ifade yok: balata anlaşması"
+     ],
+     "uyarilar": [],
+     "araclar": [
+      {
+       "ad": "cari_ara",
+       "basarili": true
+      },
+      {
+       "ad": "crm_firsat_ara",
+       "basarili": true
+      }
+     ],
+     "talepler": [],
+     "cevap": "AI açıklaması doğrulanamadı; doğrulanmış kaynak özeti gösteriliyor.\nDeneme Otomotiv Yedek Parça Ltd. Şti. — Bakiye: 184.520,32 TRY (cari_bakiye · Görüntülenme anındaki bakiye 2026-11-20)\nDeneme Otomotiv Yedek Parça Ltd. Şti. — Dönem / görüntülenme sonu: 2026-11-20\nTutar ve tarihler kaynak snapshotından aktarılmıştır; model yeni bir oran veya hesap üretmemiştir.",
+     "finansDurumu": "guvenli_ozet",
+     "sureMs": 83754
+    }
+   ]
+  }
+ ]
+}
