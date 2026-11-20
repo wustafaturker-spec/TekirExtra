@@ -1,6 +1,6 @@
 "use client";
 
-import { asistaniAc, suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
+import { asistaniAc, suzgecler, useArayuzIsleyicisi, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
@@ -473,7 +473,27 @@ export default function BelgelerSayfasi() {
   const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
 
   // AI-113: liste süzgeçleri ve seçili belgeler asistanın ekran durumudur.
-  useEkranDurumu({ ekran: "belgeler", suzgecler: suzgecler({ tur: turFiltre, yon: yonBaglami, arama: aramaSorgusu }), secili: [...secili] });
+  // AI-114: yeni ya da taslak belge formu asistanca doldurulabilir.
+  const belgeFormuDuzenlenebilir = formAcik && (!duzenlenenId || detay?.durum === "taslak");
+  useEkranDurumu({ ekran: "belgeler", ...(belgeFormuDuzenlenebilir ? { form: "belge" as const } : {}), suzgecler: suzgecler({ tur: turFiltre, yon: yonBaglami, arama: aramaSorgusu }), secili: [...secili] });
+  useArayuzIsleyicisi("belgeler", {
+    suzgec: (s) => {
+      const onceki = { tur: turFiltre, yon: yonBaglami, arama, aramaSorgusu };
+      if ("tur" in s) { if (s.tur && !["teklif", "siparis", "irsaliye"].includes(s.tur)) return "alan_yok"; setTurFiltre((s.tur || "tumu") as TurFiltre); }
+      if ("yon" in s) { if (s.yon && s.yon !== "satis" && s.yon !== "alis") return "alan_yok"; setYonBaglami((s.yon || null) as Yon | null); }
+      if ("arama" in s) { setArama(s.arama ?? ""); setAramaSorgusu(s.arama ?? ""); }
+      return () => { setTurFiltre(onceki.tur); setYonBaglami(onceki.yon); setArama(onceki.arama); setAramaSorgusu(onceki.aramaSorgusu); };
+    },
+    formDoldur: (form, alanlar, yeniSatirlar) => {
+      if (form !== "belge" || !belgeFormuDuzenlenebilir) return "alan_yok";
+      const onceki = { cariId, tarih, aciklama, satirlar };
+      if (typeof alanlar.cariId === "string") setCariId(alanlar.cariId);
+      if (typeof alanlar.tarih === "string") setTarih(alanlar.tarih);
+      if (typeof alanlar.aciklama === "string") setAciklama(alanlar.aciklama);
+      if (yeniSatirlar?.length) setSatirlar(yeniSatirlar.map((x) => ({ stokId: x.stokId, miktar: x.miktar, birimFiyat: x.birimFiyat ?? 0, iskontoOrani: x.iskontoOrani ?? 0, kdvOrani: x.kdvOrani ?? 20 })));
+      return () => { setCariId(onceki.cariId); setTarih(onceki.tarih); setAciklama(onceki.aciklama); setSatirlar(onceki.satirlar); };
+    },
+  });
 
   // AI-78/P-14a: açık belge asistan bağlamı olur; form düzenleniyorsa taslak verisi güvenilmeyen taslak olarak taşınır.
   useEkranKaydi(detay ? {
@@ -2263,6 +2283,7 @@ export default function BelgelerSayfasi() {
               gorunen.map((b) => (
                 <tr
                   key={b.id}
+                  data-kayit-id={b.id}
                   className="row-link"
                   tabIndex={0}
                   aria-label={`${TUR_ADI[b.tur]} ${b.no || "Taslak"} belgesini aç`}

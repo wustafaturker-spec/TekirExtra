@@ -3,10 +3,10 @@ import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { YuklenenDosya } from "../../ekler/ekler.service";
 import { AiAjanService, type AkisOlayi, type EkranBaglami, type EkranTuru } from "./ai-ajan.service";
-import { ekranDurumunuAyristir } from "@tekirextra/shared";
+import { arayuzSonuclariniAyristir, ekranDurumunuAyristir } from "@tekirextra/shared";
 import { SAYFA_YOLU } from "./araclar/gruplar";
 
-type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown }; sayfa?: unknown; taslak?: unknown; eylem?: unknown; durum?: unknown }; ekler?: unknown; derin?: unknown };
+type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown }; sayfa?: unknown; taslak?: unknown; eylem?: unknown; durum?: unknown; arayuzSonuclari?: unknown }; ekler?: unknown; derin?: unknown };
 
 /**
  * AI-05: panel asistanı. Kimlik ve rol yalnız oturumdan gelir. Dış kanal
@@ -55,6 +55,7 @@ export class AiAjanController {
     const taslak = body?.baglam?.taslak;
     const eylem = body?.baglam?.eylem;
     const durum = ekranDurumunuAyristir(body?.baglam?.durum) ?? undefined;
+    const arayuzSonuclari = arayuzSonuclariniAyristir(body?.baglam?.arayuzSonuclari);
     const ekran: EkranBaglami = {
       // CARI-48/AI-78: panelden açılan asistan; kayıt sunucuda ekran ucundan doğrulanır.
       ...(kayit && typeof kayit.tur === "string" && typeof kayit.id === "string"
@@ -67,6 +68,8 @@ export class AiAjanController {
       ...(typeof eylem === "string" && eylem.trim() ? { eylem } : {}),
       // AI-113: liste ekranı durumu; sözleşmeye uymayan alanlar düşer.
       ...(durum ? { durum } : {}),
+      // AI-114: önceki turun arayüz eylemi sonuçları (yalnız tür ve sonuç kodu).
+      ...(arayuzSonuclari.length ? { arayuzSonuclari } : {}),
     };
     return this.ajanService.mesajiIsle(
       typeof body?.mesaj === "string" ? body.mesaj : "",

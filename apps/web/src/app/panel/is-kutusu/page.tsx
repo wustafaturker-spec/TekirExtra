@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, tokenAl } from "@/lib/api";
-import { useEkranDurumu } from "@/lib/asistan-baglami";
+import { useArayuzIsleyicisi, useEkranDurumu } from "@/lib/asistan-baglami";
 import { IsKutusuKaldir, type KaldirHedefi } from "@/components/is-kutusu-kaldir";
 import { Alert, Badge, Button, Card, PageHeader, Segmented } from "@/components/ui";
 
@@ -54,6 +54,21 @@ export default function IsKutusuSayfasi() {
   const [gorunum, setGorunum] = useState<"acik" | "kapatilanlar">("acik");
   // AI-113: iş kutusu kapsamı ve görünümü asistanın ekran durumudur.
   useEkranDurumu({ ekran: "is_kutusu", sekme: gorunum, suzgecler: { kutu: kapsam } });
+  // AI-114: asistan kapsamı ve görünümü değiştirebilir.
+  useArayuzIsleyicisi("is_kutusu", {
+    suzgec: (s) => {
+      if (s.kutu !== "bana" && s.kutu !== "firma") return "alan_yok";
+      const onceki = kapsam;
+      setKapsam(s.kutu as Kapsam);
+      return () => setKapsam(onceki);
+    },
+    sekme: (sekme) => {
+      if (sekme !== "acik" && sekme !== "kapatilanlar") return "alan_yok";
+      const onceki = gorunum;
+      setGorunum(sekme);
+      return () => setGorunum(onceki);
+    },
+  });
   const [kapatilanlar, setKapatilanlar] = useState<Kapanis[] | null>(null);
   const [kaldir, setKaldir] = useState<KaldirHedefi | null>(null);
 

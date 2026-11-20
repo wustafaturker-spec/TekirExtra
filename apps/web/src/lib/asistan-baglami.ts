@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { EKRAN_DURUMLARI, ekranDurumunuAyristir, type EkranDurumu } from "@tekirextra/shared";
 
 /** AI-78: asistanın açıldığı ekranın kayıt türleri (sunucudaki EKRAN_TURLERI ile aynı). */
@@ -180,4 +180,46 @@ export function ekranDurumuOzeti(d: EkranDurumu): string {
 /** Boş/"tümü" değerleri süzgeçten çıkarır (sayfalar ham state'i verebilsin). */
 export function suzgecler(degerler: Record<string, string | null | undefined | false>): Record<string, string> {
   return Object.fromEntries(Object.entries(degerler).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "" && e[1] !== "tumu"));
+}
+
+/*
+ * AI-114: arayüz eylemleri. Ekranlar uygulayabildikleri eylemleri kaydeder; asistan yanıtla
+ * gelen doğrulanmış eylemi ilgili işleyiciye verir. İşleyici geri alma işlevi döner; alanı
+ * yoksa "alan_yok". Kayıt kaydetmek işleyicinin işi değildir (form yalnız doldurulur).
+ */
+export type GeriAl = () => void;
+export interface ArayuzIsleyicisi {
+  suzgec?: (suzgecler: Record<string, string>) => GeriAl | "alan_yok";
+  sekme?: (sekme: string) => GeriAl | "alan_yok";
+  formDoldur?: (form: string, alanlar: Record<string, string | number>, satirlar?: Array<{ stokId: string; miktar: number; birimFiyat?: number; kdvOrani?: number; iskontoOrani?: number }>) => GeriAl | "alan_yok";
+}
+
+const isleyiciler = new Map<string, ArayuzIsleyicisi>();
+
+export function arayuzIsleyicisi(ekran: string): ArayuzIsleyicisi | undefined {
+  return isleyiciler.get(ekran);
+}
+
+/** Ekran, eylem işleyicilerini kaydeder; işleyici her çizimde güncel state'i görür. */
+export function useArayuzIsleyicisi(ekran: string, isleyici: ArayuzIsleyicisi) {
+  const ref = useRef(isleyici);
+  ref.current = isleyici;
+  useEffect(() => {
+    const vekil: ArayuzIsleyicisi = {
+      suzgec: (s) => ref.current.suzgec?.(s) ?? "alan_yok",
+      sekme: (s) => ref.current.sekme?.(s) ?? "alan_yok",
+      formDoldur: (f, a, st) => ref.current.formDoldur?.(f, a, st) ?? "alan_yok",
+    };
+    isleyiciler.set(ekran, vekil);
+    return () => { if (isleyiciler.get(ekran) === vekil) isleyiciler.delete(ekran); };
+  }, [ekran]);
+}
+
+/** Listede `data-kayit-id` taşıyan satırları vurgular ve ilkine kaydırır. */
+export function kayitlariVurgula(idler: string[]): GeriAl | "alan_yok" {
+  const ogeler = idler.flatMap((id) => Array.from(document.querySelectorAll<HTMLElement>(`[data-kayit-id="${CSS.escape(id)}"]`)));
+  if (!ogeler.length) return "alan_yok";
+  ogeler.forEach((o) => o.classList.add("asistan-vurgu"));
+  ogeler[0]!.scrollIntoView({ behavior: "smooth", block: "center" });
+  return () => ogeler.forEach((o) => o.classList.remove("asistan-vurgu"));
 }

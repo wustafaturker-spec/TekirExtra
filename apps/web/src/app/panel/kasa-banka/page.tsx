@@ -1,7 +1,7 @@
 "use client";
 import { csvHucresi } from "@tekirextra/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
+import { suzgecler, useArayuzIsleyicisi, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { OdemeFisi, type FisBaslangici, type FisTipi } from "./odeme-fisi";
 import { FisAyrintisi, type DefterHareketi } from "./fis-ayrintisi";
@@ -211,6 +211,19 @@ export default function KasaBankaSayfasi() {
   // AI-113: hareket süzgeçleri ekran durumu; tek hesap seçiliyse o hesap ekran kaydıdır ("bu hesap").
   useEkranDurumu({ ekran: "kasa_banka_hareketleri", suzgecler: suzgecler({ tur: turFiltre, hesap: hesapFiltre, baslangic, bitis, arama }) });
   const seciliHesap = tumHesaplar.find((x) => `${x.tur}:${x.id}` === hesapFiltre);
+  // AI-114: asistanın süzgeç eylemi; listede olmayan hesap uygulanmaz.
+  useArayuzIsleyicisi("kasa_banka_hareketleri", {
+    suzgec: (s) => {
+      const onceki = { turFiltre, hesapFiltre, baslangic, bitis, arama };
+      if ("hesap" in s && s.hesap && !tumHesaplar.some((x) => `${x.tur}:${x.id}` === s.hesap)) return "alan_yok";
+      if ("tur" in s) setTurFiltre(s.tur ?? "");
+      if ("hesap" in s) setHesapFiltre(s.hesap ?? "");
+      if ("baslangic" in s) setBaslangic(s.baslangic ?? "");
+      if ("bitis" in s) setBitis(s.bitis ?? "");
+      if ("arama" in s) setArama(s.arama ?? "");
+      return () => { setTurFiltre(onceki.turFiltre); setHesapFiltre(onceki.hesapFiltre); setBaslangic(onceki.baslangic); setBitis(onceki.bitis); setArama(onceki.arama); };
+    },
+  });
   useEkranKaydi(seciliHesap ? { tur: "kasa_banka_hesabi", id: `${seciliHesap.tur}:${seciliHesap.id}`, etiket: seciliHesap.ad } : null);
   const kaynakHesap = tumHesaplar.find((x) => `${x.tur}:${x.id}` === kaynak);
   const hedefler = tumHesaplar.filter(

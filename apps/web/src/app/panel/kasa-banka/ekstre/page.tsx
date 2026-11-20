@@ -8,7 +8,7 @@
  * bakiye ve farkın ne kadarının bekleyen/yoksayılan satırlardan geldiği.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
+import { suzgecler, useArayuzIsleyicisi, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { paraBicimle } from "@tekirextra/shared";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
@@ -197,6 +197,22 @@ export default function EkstreSayfasi() {
   // AI-113: ekstre süzgeçleri ekran durumu; tek banka hesabı seçiliyse o hesap ekran kaydıdır.
   useEkranDurumu({ ekran: "banka_ekstresi", suzgecler: suzgecler({ durum: suzgec, bankaHesabi: bankaFiltresi, yon: yonFiltresi, baslangic, bitis, arama }) });
   useEkranKaydi(seciliHesap ? { tur: "kasa_banka_hesabi", id: `banka:${seciliHesap.id}`, etiket: seciliHesap.ad } : null);
+  // AI-114: asistanın süzgeç eylemi.
+  useArayuzIsleyicisi("banka_ekstresi", {
+    suzgec: (s) => {
+      const onceki = { suzgec, bankaFiltresi, yonFiltresi, baslangic, bitis, arama };
+      if ("durum" in s && s.durum && !["beklemede", "eslesti", "yoksayildi", "hepsi"].includes(s.durum)) return "alan_yok";
+      if ("yon" in s && s.yon && s.yon !== "tahsilat" && s.yon !== "tediye") return "alan_yok";
+      if ("bankaHesabi" in s && s.bankaHesabi && !hesaplar.some((h) => h.id === s.bankaHesabi)) return "alan_yok";
+      if ("durum" in s) setSuzgec((s.durum || "beklemede") as Suzgec);
+      if ("bankaHesabi" in s) setBankaFiltresi(s.bankaHesabi ?? "");
+      if ("yon" in s) setYonFiltresi((s.yon ?? "") as "" | "tahsilat" | "tediye");
+      if ("baslangic" in s) setBaslangic(s.baslangic ?? "");
+      if ("bitis" in s) setBitis(s.bitis ?? "");
+      if ("arama" in s) setArama(s.arama ?? "");
+      return () => { setSuzgec(onceki.suzgec); setBankaFiltresi(onceki.bankaFiltresi); setYonFiltresi(onceki.yonFiltresi); setBaslangic(onceki.baslangic); setBitis(onceki.bitis); setArama(onceki.arama); };
+    },
+  });
   const fark = mutabakat?.son ? Number(mutabakat.son.fark) : 0;
 
   async function onerileriTara() {

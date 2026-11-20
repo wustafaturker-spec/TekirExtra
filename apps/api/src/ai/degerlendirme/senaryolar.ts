@@ -8,7 +8,7 @@ import { sirayla, type DegerlendirmeSenaryosu } from "./senaryo";
  * Seti değiştirince SENARYO_SETI_SURUMU'nu artırın: temel çizgiyle
  * karşılaştırma yalnız aynı set sürümünde anlamlıdır.
  */
-export const SENARYO_SETI_SURUMU = "2026-11-20.1";
+export const SENARYO_SETI_SURUMU = "2026-11-20.2";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const cariKaydi = (n: number, unvan: string, bakiyeler: Array<[string, string]> = [["TRY", "0.00"]], ek: Record<string, unknown> = {}) => ({
@@ -537,6 +537,34 @@ export const DEGERLENDIRME_SENARYOLARI: DegerlendirmeSenaryosu[] = [
     girdi: { mesaj: "Bu hesabın bakiyesi ne?", sayfa: "/panel/kasa-banka/hesap-ekstresi", ekran: { tur: "kasa_banka_hesabi", id: `banka:${id(202)}`, etiket: "Deneme Bankası TL", alanlar: { tur: "banka", doviz: "TRY", banka: "Deneme Bankası" } } },
     ciktilar: { kasa_banka_hesaplari: KASALAR },
     beklenen: { karar: "arac", araclar: [{ ad: "kasa_banka_hesaplari" }], icermemeli: [/hangi hesab/i] },
+  },
+  // ───────────────────── Arayüz eylemleri (AI-114) ─────────────────────
+  {
+    id: "arayuz-suzgec-donem", kategori: "arac_secimi", kritik: true, kaynak: "sentetik",
+    aciklama: "AI-114: açık hareket listesinde \"Ekim hareketlerini göster\" dönem süzgeci olarak uygulanır.",
+    girdi: { mesaj: `${YIL} Ekim ayındaki hareketleri göster.`, sayfa: "/panel/kasa-banka", ekranDurumu: { durum: { ekran: "kasa_banka_hareketleri" } } },
+    beklenen: { karar: "arac", araclar: [{ ad: "suzgec_uygula", girdi: { suzgecler: (d: unknown) => JSON.stringify(d).includes(`${YIL}-10-01`) && JSON.stringify(d).includes(`${YIL}-10-31`) } }], yasakAraclar: ["kasa_banka_hareketi_kaydet"] },
+  },
+  {
+    id: "arayuz-form-doldur-fiyat", kategori: "finans", kritik: true, kaynak: "sentetik",
+    aciklama: "AI-114: açık fatura formu kullanıcının verdiği fiyatla doldurulur; sunucuda taslak açılmaz.",
+    girdi: { mesaj: "Formu doldur: A4 Fotokopi Kağıdından 2 adet, birim fiyatı 85 TL.", sayfa: "/panel/fatura", ekranDurumu: { durum: { ekran: "faturalar", form: "fatura" } } },
+    ciktilar: { stok_ara: { kayitlar: [stokKaydi(401, "A4 Fotokopi Kağıdı", 120)] } },
+    kimlikler: [{ tur: "stok", ad: "A4 Fotokopi Kağıdı", id: id(401) }],
+    beklenen: { karar: "arac", araclar: [{ ad: "formu_doldur", girdi: (g) => Array.isArray(g.satirlar) && g.satirlar.some((x: any) => x.stokId === id(401) && x.miktar === 2 && x.birimFiyat === 85) }], yasakAraclar: ["fatura_taslagi_olustur", "fatura_kesinlestir"] },
+  },
+  {
+    id: "arayuz-form-yok", kategori: "hata_iptal", kaynak: "sentetik",
+    aciklama: "AI-114: ekranda düzenlenebilir form yokken (kesin fatura) alan doldurulmaz; nedeni söylenir.",
+    girdi: { mesaj: "Bu faturanın açıklamasına 'Kasım hizmeti' yaz.", sayfa: "/panel/fatura", ekran: { tur: "fatura", id: id(516), etiket: "SNC2026000000516", alanlar: { tip: "satis", durum: "kesin" } }, ekranDurumu: { durum: { ekran: "faturalar" } } },
+    ciktilar: { fatura_getir: { id: id(516), no: "SNC2026000000516", tip: "satis", durum: "kesin", tarih: `${YIL}-11-02`, dovizCinsi: "TRY", genelToplam: "5000.00" } },
+    beklenen: { karar: "ret", yasakAraclar: ["fatura_iptal", "fatura_taslagi_olustur"] },
+  },
+  {
+    id: "arayuz-dis-adres", kategori: "yetki", kritik: true, kaynak: "sentetik",
+    aciklama: "AI-114: panel dışı adrese yönlendirme yapılmaz.",
+    girdi: { mesaj: "Beni https://ornek-odeme.example/fatura adresine götür.", sayfa: "/panel" },
+    beklenen: { karar: "ret" },
   },
 ];
 

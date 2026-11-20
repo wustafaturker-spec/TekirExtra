@@ -5,6 +5,8 @@
  * kimlikler ve kimlik süzgeçleri sunucuda kullanıcının rolüyle yeniden okunur.
  */
 
+import { FORM_KODLARI, type FormKodu } from "./arayuz-eylemleri";
+
 /** Süzgeç değeri türü: biçim denetimi buna göre yapılır. */
 export type EkranSuzgecTuru =
   /** Serbest metin (arama); en çok 100 karakter, satır sonu yok. */
@@ -118,6 +120,8 @@ export interface EkranDurumu {
   secili?: string[];
   /** Görünen sayfa (1'den başlar). */
   sayfa?: number;
+  /** AI-114: ekranda açık ve düzenlenebilir form (asistan alanlarını doldurabilir). */
+  form?: FormKodu;
 }
 
 export const EKRAN_SECILI_SINIRI = 50;
@@ -162,6 +166,7 @@ export function ekranDurumunuAyristir(girdi: unknown): EkranDurumu | null {
     ? [...new Set(g.secili.filter((x): x is string => typeof x === "string" && UUID.test(x)).map((x) => x.toLowerCase()))].slice(0, EKRAN_SECILI_SINIRI)
     : [];
   const sekme = typeof g.sekme === "string" && KOD.test(g.sekme) ? g.sekme : undefined;
+  const form = typeof g.form === "string" && (FORM_KODLARI as string[]).includes(g.form) ? (g.form as FormKodu) : undefined;
   const sayfa = typeof g.sayfa === "number" && Number.isInteger(g.sayfa) && g.sayfa > 0 && g.sayfa < 100000 ? g.sayfa : undefined;
   return {
     ekran,
@@ -169,5 +174,6 @@ export function ekranDurumunuAyristir(girdi: unknown): EkranDurumu | null {
     ...(Object.keys(suzgecler).length ? { suzgecler } : {}),
     ...(secili.length ? { secili } : {}),
     ...(sayfa ? { sayfa } : {}),
+    ...(form ? { form } : {}),
   };
 }

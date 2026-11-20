@@ -9,7 +9,8 @@ import type { UcCagirici, UcTanimi } from "../uc-cagirici";
  * - onay: işlem yapmaz, onay talebi açar; işlem kullanıcı onaylayınca çalışır
  * Silme aracı yoktur.
  */
-export type AracSinifi = "okuma" | "taslak" | "onay";
+/** AI-114: `arayuz` tarayıcıda çalışan eylem; yalnız web asistanında sunulur. */
+export type AracSinifi = "okuma" | "taslak" | "onay" | "arayuz";
 
 export interface AracBaglami {
   uc: UcCagirici;

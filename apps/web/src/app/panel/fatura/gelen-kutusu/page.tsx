@@ -1,6 +1,6 @@
 "use client";
 
-import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
+import { suzgecler, useArayuzIsleyicisi, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
@@ -226,6 +226,15 @@ export default function GelenKutusuSayfasi() {
   const [listeYukleniyor, setListeYukleniyor] = useState(false);
   // AI-113: gelen kutusu araması asistanın ekran durumudur.
   useEkranDurumu({ ekran: "gelen_efatura", suzgecler: suzgecler({ arama: aranan || arama }) });
+  // AI-114: asistanın arama eylemi.
+  useArayuzIsleyicisi("gelen_efatura", {
+    suzgec: (s) => {
+      if (!("arama" in s)) return "alan_yok";
+      const onceki = arama;
+      setArama(s.arama ?? "");
+      return () => setArama(onceki);
+    },
+  });
   // Arama sunucuda yapılır; her tuşta istek gitmesin.
   useEffect(() => { const z = setTimeout(() => setAranan(arama.trim()), 300); return () => clearTimeout(z); }, [arama]);
 
@@ -760,6 +769,7 @@ export default function GelenKutusuSayfasi() {
                 gorunenListe.map((g) => (
                   <tr
                     key={g.id}
+                    data-kayit-id={g.id}
                     className="row-link"
                     tabIndex={0}
                     aria-label={`${g.belgeNo} belgesini aç`}

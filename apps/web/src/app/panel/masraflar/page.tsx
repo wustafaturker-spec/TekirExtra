@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
+import { suzgecler, useArayuzIsleyicisi, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { usePathname, useRouter } from "next/navigation";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
@@ -63,8 +63,30 @@ export default function MasraflarSayfasi() {
   const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null); const [filtreAdet, setFiltreAdet] = useState(0); const [dahaYukleniyor, setDahaYukleniyor] = useState(false);
   const filtreliMasraflar = masraflar;
   // AI-113: masraf süzgeçleri ekran durumu; düzenlenen masraf ekran kaydıdır.
-  useEkranDurumu({ ekran: "masraflar", suzgecler: suzgecler({ durum: durumFiltresi, kategori: kategoriFiltresi, arama }) });
   const duzenlenenMasraf = duzenlenenId ? masraflar.find((m) => m.id === duzenlenenId) : undefined;
+  // AI-114: yeni ya da taslak masraf formu asistanca doldurulabilir; onaylı masraf doldurulmaz.
+  const masrafFormuDuzenlenebilir = formAcik && (!duzenlenenId || duzenlenenMasraf?.durum === "taslak");
+  useEkranDurumu({ ekran: "masraflar", ...(masrafFormuDuzenlenebilir ? { form: "masraf" as const } : {}), suzgecler: suzgecler({ durum: durumFiltresi, kategori: kategoriFiltresi, arama }) });
+  useArayuzIsleyicisi("masraflar", {
+    suzgec: (s) => {
+      const onceki = { durumFiltresi, kategoriFiltresi, arama };
+      if ("durum" in s) setDurumFiltresi(s.durum || "aktif");
+      if ("kategori" in s) setKategoriFiltresi(s.kategori ?? "");
+      if ("arama" in s) setArama(s.arama ?? "");
+      return () => { setDurumFiltresi(onceki.durumFiltresi); setKategoriFiltresi(onceki.kategoriFiltresi); setArama(onceki.arama); };
+    },
+    formDoldur: (form, alanlar) => {
+      if (form !== "masraf" || !masrafFormuDuzenlenebilir) return "alan_yok";
+      const onceki = { belgeNo, tarih, saticiUnvan, aciklama, toplamBedel, kdvOrani };
+      if (typeof alanlar.belgeNo === "string") setBelgeNo(alanlar.belgeNo);
+      if (typeof alanlar.tarih === "string") setTarih(alanlar.tarih);
+      if (typeof alanlar.saticiUnvan === "string") setSaticiUnvan(alanlar.saticiUnvan);
+      if (typeof alanlar.aciklama === "string") setAciklama(alanlar.aciklama);
+      if (typeof alanlar.toplam === "number") setToplamBedel(String(alanlar.toplam));
+      if (typeof alanlar.kdvOrani === "number") setKdvOrani(String(alanlar.kdvOrani));
+      return () => { setBelgeNo(onceki.belgeNo); setTarih(onceki.tarih); setSaticiUnvan(onceki.saticiUnvan); setAciklama(onceki.aciklama); setToplamBedel(onceki.toplamBedel); setKdvOrani(onceki.kdvOrani); };
+    },
+  });
   useEkranKaydi(duzenlenenId ? { tur: "masraf", id: duzenlenenId, etiket: duzenlenenMasraf?.belgeNo || duzenlenenMasraf?.aciklama || "Masraf" } : null);
 
   // V-2: masraf defteri sunucuda sayfalanır; arama ve süzgeçler sunucuya gider.

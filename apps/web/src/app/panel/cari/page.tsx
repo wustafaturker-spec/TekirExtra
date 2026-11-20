@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { suzgecler, useEkranDurumu } from "@/lib/asistan-baglami";
+import { suzgecler, useArayuzIsleyicisi, useEkranDurumu } from "@/lib/asistan-baglami";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BaglanmamisOdemeler } from "@/components/fatura-baglama";
@@ -447,6 +447,17 @@ export default function CariSayfasi() {
   useEffect(() => { setTopluSecim(new Set()); }, [listeParametreleri, filtreBekliyor]);
   // AI-113: cari listesi süzgeçleri ve toplu seçim asistanın ekran durumudur.
   useEkranDurumu({ ekran: "cariler", suzgecler: suzgecler({ tip: filtreTip, bakiye: bakiyeFiltre, grup: grupFiltre, arama: aramaSorgusu }), secili: [...topluSecim] });
+  // AI-114: asistanın süzgeç eylemi; geçersiz seçenek uygulanmaz.
+  useArayuzIsleyicisi("cariler", {
+    suzgec: (s) => {
+      const onceki = { tip: filtreTip, bakiye: bakiyeFiltre, grup: grupFiltre, arama };
+      if ("tip" in s) { if (s.tip && !["musteri", "tedarikci", "bloke"].includes(s.tip)) return "alan_yok"; setFiltreTip((s.tip || "tumu") as FiltreTip); }
+      if ("bakiye" in s) { if (s.bakiye && !["gecikmis", "alacakli", "borclu", "sifir"].includes(s.bakiye)) return "alan_yok"; setBakiyeFiltre((s.bakiye ?? "") as BakiyeFiltre); }
+      if ("grup" in s) setGrupFiltre(s.grup ?? "");
+      if ("arama" in s) setArama(s.arama ?? "");
+      return () => { setFiltreTip(onceki.tip); setBakiyeFiltre(onceki.bakiye); setGrupFiltre(onceki.grup); setArama(onceki.arama); };
+    },
+  });
 
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++cariYuklemeSirasi.current;
@@ -1812,6 +1823,7 @@ export default function CariSayfasi() {
                 return (
                   <tr
                     key={c.id}
+                    data-kayit-id={c.id}
                     className="row-link"
                     tabIndex={0}
                     aria-label={`${c.unvan} carisini aç`}

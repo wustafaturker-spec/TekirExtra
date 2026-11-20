@@ -8,12 +8,13 @@ import { TASLAK_ARACLARI } from "./taslak";
 import { MODUL_ARACLARI } from "./moduller";
 import { FIYAT_ENDEKS_ARACLARI } from "./fiyat-endeks";
 import { DOSYA_ARACLARI } from "./dosya";
+import { ARAYUZ_ARACLARI } from "../arayuz-eylemleri";
 import { CRM_ARACLARI, PERSONEL_ARACLARI, URETIM_ARACLARI } from "./uretim-personel-crm";
 
 export type { AjanAraci, AracBaglami, AracSinifi } from "./arac";
 
 /** AI-06: ilk araç seti. Silme aracı bilerek yoktur (AI-03). */
-export const AJAN_ARACLARI: AjanAraci[] = [...OKUMA_ARACLARI, ...TASLAK_ARACLARI, ...ONAYLI_ARACLAR, ...MODUL_ARACLARI, ...CRM_ARACLARI, ...URETIM_ARACLARI, ...PERSONEL_ARACLARI, ...FIYAT_ENDEKS_ARACLARI, ...DOSYA_ARACLARI];
+export const AJAN_ARACLARI: AjanAraci[] = [...OKUMA_ARACLARI, ...TASLAK_ARACLARI, ...ONAYLI_ARACLAR, ...MODUL_ARACLARI, ...CRM_ARACLARI, ...URETIM_ARACLARI, ...PERSONEL_ARACLARI, ...FIYAT_ENDEKS_ARACLARI, ...DOSYA_ARACLARI, ...ARAYUZ_ARACLARI];
 
 const ARAC_HARITASI = new Map(AJAN_ARACLARI.map((a) => [a.ad, a]));
 

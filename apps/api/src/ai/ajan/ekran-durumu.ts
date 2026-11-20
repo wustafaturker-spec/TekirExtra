@@ -1,4 +1,4 @@
-import { EKRAN_DURUMLARI, type EkranDurumTanimi, type EkranDurumu, type EkranSeciliTuru } from "@tekirextra/shared";
+import { EKRAN_DURUMLARI, FORM_TANIMLARI, type EkranDurumTanimi, type EkranDurumu, type EkranSeciliTuru } from "@tekirextra/shared";
 import { UC } from "./araclar/uclar";
 import type { UcCagirici, UcTanimi } from "./uc-cagirici";
 
@@ -42,7 +42,7 @@ export interface DogrulanmisEkranDurumu {
 }
 
 /** Kimlik süzgecinin görünen adı; okunamazsa null (süzgeç düşer). */
-async function kimlikSuzgeci(uc: UcCagirici, tur: string, deger: string): Promise<string | null> {
+export async function kimlikSuzgeci(uc: UcCagirici, tur: string, deger: string): Promise<string | null> {
   try {
     if (tur === "cari") return temiz((await uc.cagir<any>(UC.cariGetir, [deger]))?.unvan) || null;
     if (tur === "banka") return temiz((await uc.cagir<any>(UC.bankaGetir, [deger]))?.ad) || null;
@@ -55,6 +55,13 @@ async function kimlikSuzgeci(uc: UcCagirici, tur: string, deger: string): Promis
     return null;
   }
   return deger;
+}
+
+/** AI-113/114: seçili türdeki kimlikleri ekran ucundan okur; okunamayanlar düşer (sıra korunur). */
+export async function seciliKayitlariOku(uc: UcCagirici, tur: EkranSeciliTuru, idler: string[]): Promise<Array<{ id: string; etiket: string }>> {
+  const okuyucu = SECILI_UC[tur];
+  const okunan = await sinirliTopla(idler, (id) => uc.cagir<any>(okuyucu.uc, [id]));
+  return okunan.filter((k): k is any => !!k?.id).map((k) => ({ id: String(k.id), etiket: temiz(okuyucu.etiket(k)) || okuyucu.ad }));
 }
 
 export async function ekranDurumuDogrula(uc: UcCagirici, durum: EkranDurumu | undefined): Promise<DogrulanmisEkranDurumu> {
@@ -80,12 +87,11 @@ export async function ekranDurumuDogrula(uc: UcCagirici, durum: EkranDurumu | un
   const seciliSatirlari: string[] = [];
   const seciliTur = tanim.seciliTur;
   if (seciliTur && durum.secili?.length) {
-    const okuyucu = SECILI_UC[seciliTur];
-    const okunan = await sinirliTopla(durum.secili, (id) => uc.cagir<any>(okuyucu.uc, [id]));
+    const okunan = await seciliKayitlariOku(uc, seciliTur, durum.secili);
+    yetkiDisi += durum.secili.length - okunan.length;
     for (const k of okunan) {
-      if (!k?.id) { yetkiDisi++; continue; }
-      kimlikler.push(String(k.id));
-      seciliSatirlari.push(`  - ${temiz(okuyucu.etiket(k)) || okuyucu.ad} | id=${k.id}`);
+      kimlikler.push(k.id);
+      seciliSatirlari.push(`  - ${k.etiket} | id=${k.id}`);
     }
   }
 
@@ -96,6 +102,7 @@ export async function ekranDurumuDogrula(uc: UcCagirici, durum: EkranDurumu | un
     seciliSatirlari.length
       ? "\"Seçtiklerim\", \"seçili\", \"işaretlediklerim\" yalnız aşağıdaki seçili kayıtlardır; ayrıntı için okuma aracını bu kimliklerle çağır."
       : "Ekranda seçili kayıt yok; kullanıcı \"seçtiklerim\" derse hangi kayıtları kastettiğini sor.",
+    ...(durum.form ? [`- açık form: ${FORM_TANIMLARI[durum.form].ad} (düzenlenebilir; formu_doldur ile alanları doldurabilirsin, kaydı kullanıcı yapar)`] : []),
     `- ekran: ${tanim.ad}${durum.sekme ? ` | sekme=${durum.sekme}` : ""}${durum.sayfa && durum.sayfa > 1 ? ` | sayfa=${durum.sayfa}` : ""}`,
     `- süzgeçler: ${suzgecSatirlari.length ? suzgecSatirlari.join("; ") : "yok (tüm kayıtlar)"}`,
     ...(seciliSatirlari.length ? [`- seçili ${SECILI_UC[seciliTur!].ad} (${seciliSatirlari.length}):`, ...seciliSatirlari] : []),

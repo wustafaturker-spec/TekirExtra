@@ -1,6 +1,6 @@
 "use client";
 
-import { asistaniAc, suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
+import { asistaniAc, suzgecler, useArayuzIsleyicisi, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BelgeCercevesi } from "@/components/belge-cercevesi";
@@ -716,11 +716,39 @@ export default function FaturaSayfasi() {
     || satirlar.some((satir) => satir.stokId !== "" || satir.miktar !== 1 || satir.birimFiyat !== 0 || satir.iskontoOrani !== 0 || satir.kdvOrani !== 20 || Boolean(satir.gibIstisnaKodu))
   );
 
+  // AI-114: açık ve düzenlenebilir (yeni ya da taslak) form asistanca doldurulabilir; kesin fatura doldurulmaz.
+  const faturaFormuDuzenlenebilir = formAcik && (!acikFatura || acikFatura.durum === "taslak");
   // AI-113: liste süzgeçleri ve toplu seçim asistanın ekran durumudur.
   useEkranDurumu({
     ekran: "faturalar",
+    ...(faturaFormuDuzenlenebilir ? { form: "fatura" as const } : {}),
     suzgecler: suzgecler({ yon: yonBaglami, durum: durumFiltresi, ebelge: ebelgeFiltresi, odeme: odemeFiltresi, ihracKayitli: ihracKayitliFiltresi, arama: aramaFiltresi }),
     secili: [...topluSecim],
+  });
+
+  // AI-114: asistanın süzgeç ve form eylemleri; her biri önceki hâle dönen bir geri alma işlevi verir.
+  useArayuzIsleyicisi("faturalar", {
+    suzgec: (s) => {
+      const onceki = { yon: yonBaglami, durum: durumFiltresi, ebelge: ebelgeFiltresi, odeme: odemeFiltresi, ihracKayitli: ihracKayitliFiltresi };
+      const oncekiArama = aramaFiltresi;
+      const al = (a: keyof typeof onceki) => (a in s ? s[a] || null : onceki[a]);
+      const yon = al("yon");
+      if (yon !== null && yon !== "satis" && yon !== "alis") return "alan_yok";
+      filtreleriUygula({ yon, durum: al("durum"), ebelge: al("ebelge"), odeme: al("odeme"), ihracKayitli: al("ihracKayitli") });
+      if ("arama" in s) setAramaFiltresi(s.arama || null);
+      return () => { filtreleriUygula(onceki); setAramaFiltresi(oncekiArama); };
+    },
+    formDoldur: (form, alanlar, yeniSatirlar) => {
+      if (form !== "fatura" || !faturaFormuDuzenlenebilir) return "alan_yok";
+      const onceki = { cariId, tarih, vadeTarihi, aciklama, notlar, satirlar };
+      if (typeof alanlar.cariId === "string") setCariId(alanlar.cariId);
+      if (typeof alanlar.tarih === "string") setTarih(alanlar.tarih);
+      if (typeof alanlar.vadeTarihi === "string") setVadeTarihi(alanlar.vadeTarihi);
+      if (typeof alanlar.aciklama === "string") setAciklama(alanlar.aciklama);
+      if (typeof alanlar.notlar === "string") setNotlar(alanlar.notlar);
+      if (yeniSatirlar?.length) setSatirlar(yeniSatirlar.map((x) => ({ stokId: x.stokId, miktar: x.miktar, birimFiyat: x.birimFiyat ?? 0, iskontoOrani: x.iskontoOrani ?? 0, kdvOrani: x.kdvOrani ?? 20, gibIstisnaKodu: "" })));
+      return () => { setCariId(onceki.cariId); setTarih(onceki.tarih); setVadeTarihi(onceki.vadeTarihi); setAciklama(onceki.aciklama); setNotlar(onceki.notlar); setSatirlar(onceki.satirlar); };
+    },
   });
 
   // AI-78/P-14a: açık fatura asistan bağlamı olur; form düzenleniyorsa taslak verisi güvenilmeyen taslak olarak taşınır.
@@ -4001,6 +4029,7 @@ export default function FaturaSayfasi() {
               gorunenFaturalar.map((f) => (
                 <tr
                   key={f.id}
+                  data-kayit-id={f.id}
                   className="row-link"
                   tabIndex={0}
                   aria-label={`${faturaNoMetni(f.no, f.durum, false, f.tip)} faturasını aç`}

@@ -75,7 +75,8 @@ export function izinliAraclar(rol: Rol, ozelRolKapali: string[] = [], kanal: "WE
   const uc = new UcCagirici(null as never, new Reflector(), null as never);
   const baglam = { tenantId: "00000000-0000-4000-8000-000000000001", userId: "00000000-0000-4000-8000-000000000002", rol, paketModulleri: null, ...(ozelRolKapali.length ? { ozelRol: { id: "00000000-0000-4000-8000-000000000003", kapali: ozelRolKapali } } : {}) };
   const izinli = istekBaglami.run({ deger: baglam }, () => AJAN_ARACLARI.filter((a) => uc.yetkiliMi(a.uc, rol)));
-  return kanal === "TELEGRAM" ? telegramAraclari(izinli) : izinli;
+  // AI-114: arayüz eylemleri yalnız web asistanında sunulur (üretimde izinliAraclar ile aynı).
+  return kanal === "TELEGRAM" ? telegramAraclari(izinli.filter((a) => a.sinif !== "arayuz")) : izinli;
 }
 
 export interface CagriKaydi {
@@ -235,7 +236,8 @@ export function puanla(s: DegerlendirmeSenaryosu, g: { cevap: string; cagrilar: 
   if (yazanlar.length) hatalar.push(`Beklenmeyen yazma/onay talebi: ${[...new Set(yazanlar.map((c) => c.ad))].join(", ")}`);
 
   if (b.karar === "soru" || b.karar === "ret") {
-    const yazan = g.cagrilar.find((c) => c.basarili && c.sinif !== "okuma");
+    // AI-114: arayüz eylemi (sayfa açma, süzgeç) iş yapmaz; soru/ret ile birlikte olabilir.
+    const yazan = g.cagrilar.find((c) => c.basarili && c.sinif !== "okuma" && c.sinif !== "arayuz");
     if (yazan && !yazanlar.includes(yazan)) hatalar.push(`${b.karar === "soru" ? "Soru sorulması" : "Reddedilmesi"} gerekirken ${yazan.ad} çalıştı`);
     if (g.talepler.length) hatalar.push("Onay talebi açılmamalıydı");
   }
@@ -289,6 +291,9 @@ export async function senaryoyuKos(saglayici: IAiProvider, s: DegerlendirmeSenar
     gruplar: gruplariSec({ mesaj: s.girdi.mesaj, ekranTuru: ekran?.tur, ekranDurumu: s.girdi.ekranDurumu?.durum.ekran, sayfa: s.girdi.sayfa, gecmisAraclar: gecmis.flatMap((m) => (m.rol === "asistan" ? (m.aracCagrilari ?? []).map((c) => c.ad) : [])) }),
     baglamMetni,
     kullaniciTalebi: s.girdi.mesaj,
+    ekranDurumu: s.girdi.ekranDurumu?.durum,
+    arayuzUcu: ekranUcu({ ...(s.girdi.ekranDurumu?.kayitlar ?? {}), ...Object.fromEntries((s.kimlikler ?? []).map((k) => [k.id, k.ad])) }) as never,
+    arayuzIzi: (c, basarili) => yurutucu.cagrilar.push({ ad: c.ad, girdi: c.girdi, sinif: "arayuz", basarili }),
   });
   // Kullanıcının gördüğü yanıt: mesajiIsle ile aynı onay notu eklenir.
   const cevap = talepNotuEkle(sonuc.cevap, sonuc.talepler.length, kanal === "TELEGRAM");

@@ -7,8 +7,9 @@ import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
 import { YzDosyalar, type AsistanDosyasi } from "./yz-dosyalar";
-import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, ekranDurumuOzeti, type AsistanBaglami } from "@/lib/asistan-baglami";
-import type { EkranDurumu } from "@tekirextra/shared";
+import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, arayuzIsleyicisi, ekranDurumuOzeti, kayitlariVurgula, type AsistanBaglami, type GeriAl } from "@/lib/asistan-baglami";
+import type { ArayuzEylemi, ArayuzEylemSonucu, ArayuzSonucu, EkranDurumu } from "@tekirextra/shared";
+import { useRouter } from "next/navigation";
 
 /** AI-04: kullanıcının onayını bekleyen (ya da karara bağlanmış) yapay zekâ işlemi. */
 export interface OnayTalebi {
@@ -40,7 +41,13 @@ interface Mesaj {
   secimler: Secim[];
   /** AI-81: derin analizle üretildiyse model etiketi ya da not. */
   modelNotu?: string;
+  /** AI-114: bu yanıtla uygulanan arayüz eylemleri (yalnız canlı oturumda; geçmişten yeniden uygulanmaz). */
+  eylemler?: EylemSatiri[];
 }
+
+interface EylemSatiri { tur: ArayuzEylemi["tur"]; ozet: string; sonuc: ArayuzSonucu; geriAl?: GeriAl }
+
+const SONUC_METNI: Record<ArayuzSonucu, string> = { basarili: "uygulandı", ekran_bulunamadi: "ekran bulunamadı", alan_yok: "bu ekranda uygulanamadı", geri_alindi: "geri alındı", hata: "uygulanamadı" };
 
 interface Secim {
   tur: string;
@@ -51,6 +58,7 @@ interface Secim {
 interface SohbetOzeti { id: string; baslik: string | null; kanal?: string; sonEtkilesim: string; createdAt: string }
 
 interface AjanYaniti {
+  arayuzEylemleri?: Array<ArayuzEylemi & { ozet: string }>;
   kaynaklar?: FinansKaynagi[];
   dosyalar?: AsistanDosyasi[];
   kaynaklarKisaltildi?: boolean;
@@ -196,6 +204,34 @@ export function TalepKarti({ talep, onDegisti }: { talep: OnayTalebi; onDegisti:
 export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBaglamKaldir }: { yukseklik?: string; onTalepDegisti?: () => void; baglam?: AsistanBaglami | null; durum?: EkranDurumu | null; onBaglamKaldir?: () => void }) {
   const [mesajlar, setMesajlar] = useState<Mesaj[]>([]);
   const [talepler, setTalepler] = useState<Record<string, OnayTalebi>>({});
+  const router = useRouter();
+  // AI-114: uygulanan eylemlerin sonucu sonraki mesajla modele bildirilir.
+  const bekleyenSonuclar = useRef<ArayuzEylemSonucu[]>([]);
+  function eylemiUygula(e: ArayuzEylemi): { sonuc: ArayuzSonucu; geriAl?: GeriAl } {
+    try {
+      if (e.tur === "sayfaya_git") {
+        const onceki = `${window.location.pathname}${window.location.search}`;
+        router.push(e.yol);
+        return { sonuc: "basarili", geriAl: () => router.push(onceki) };
+      }
+      const sonucu = (r: GeriAl | "alan_yok" | undefined) => (r === undefined ? { sonuc: "ekran_bulunamadi" as const } : r === "alan_yok" ? { sonuc: "alan_yok" as const } : { sonuc: "basarili" as const, geriAl: r });
+      if (e.tur === "kayit_vurgula") return sonucu(kayitlariVurgula(e.idler));
+      if (e.tur === "formu_doldur") return sonucu(durum ? arayuzIsleyicisi(durum.ekran)?.formDoldur?.(e.form, e.alanlar, e.satirlar) : undefined);
+      const isleyici = arayuzIsleyicisi(e.ekran);
+      if (!isleyici) return { sonuc: "ekran_bulunamadi" };
+      return sonucu(e.tur === "suzgec_uygula" ? isleyici.suzgec?.(e.suzgecler) : isleyici.sekme?.(e.sekme));
+    } catch {
+      return { sonuc: "hata" };
+    }
+  }
+  function eylemiGeriAl(anahtar: string, sira: number) {
+    // Yan etki güncelleyicinin dışında: StrictMode'da güncelleyici iki kez çalışabilir.
+    const satir = mesajlar.find((m) => m.anahtar === anahtar)?.eylemler?.[sira];
+    if (!satir?.geriAl) return;
+    satir.geriAl();
+    bekleyenSonuclar.current.push({ tur: satir.tur, sonuc: "geri_alindi" });
+    setMesajlar((liste) => liste.map((m) => (m.anahtar !== anahtar || !m.eylemler ? m : { ...m, eylemler: m.eylemler.map((e, i) => (i === sira ? { ...e, sonuc: "geri_alindi" as const, geriAl: undefined } : e)) })));
+  }
   const [girdi, setGirdi] = useState("");
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [kapali, setKapali] = useState<string | null>(null);
@@ -333,6 +369,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
               : {}),
             // AI-113: liste ekranının süzgeçleri ve seçili kimlikleri (sunucu yetkiyle doğrular).
             ...(durum ? { durum } : {}),
+            ...(bekleyenSonuclar.current.length ? { arayuzSonuclari: bekleyenSonuclar.current.splice(0, 5) } : {}),
             sayfa: window.location.pathname,
           },
           ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}),
@@ -352,9 +389,15 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
         setSohbetler(await api<SohbetOzeti[]>("/ai/ajan/sohbetler"));
       }
       setTalepler((t) => ({ ...t, ...Object.fromEntries(y.onayTalepleri.map((x) => [x.id, x])) }));
+      // AI-114: doğrulanmış eylemler sırayla uygulanır; sonuçları sonraki mesajla modele gider.
+      const eylemler: EylemSatiri[] = (y.arayuzEylemleri ?? []).map((e) => {
+        const r = eylemiUygula(e);
+        bekleyenSonuclar.current.push({ tur: e.tur, sonuc: r.sonuc });
+        return { tur: e.tur, ozet: e.ozet, ...r };
+      });
       setMesajlar((m) => [
         ...m,
-        { anahtar: yeniAnahtar(), id: y.mesajId, rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi, dosyalar: y.dosyalar,
+        { anahtar: yeniAnahtar(), id: y.mesajId, ...(eylemler.length ? { eylemler } : {}), rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi, dosyalar: y.dosyalar,
           ...(y.model?.not ? { modelNotu: y.model.not } : y.model?.derin ? { modelNotu: `Derin analiz · ${y.model.model ?? y.model.saglayici}` } : {}) },
       ]);
       if (y.onayTalepleri.length) onTalepDegisti?.();
@@ -615,6 +658,16 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
             <div className="asistan__balon">
               {baglantili(m.icerik)}
               {m.rol === "assistant" && <YzDosyalar dosyalar={m.dosyalar} />}
+              {m.rol === "assistant" && m.eylemler?.length ? (
+                <div className="asistan__eylemler" aria-label="Ekranda yapılanlar">
+                  {m.eylemler.map((e, i) => (
+                    <div key={i} className={`asistan__eylem${e.sonuc === "basarili" || e.sonuc === "geri_alindi" ? "" : " asistan__eylem--hata"}`}>
+                      <span>{e.sonuc === "basarili" ? "✓" : e.sonuc === "geri_alindi" ? "↺" : "⚠"} {e.ozet} · {SONUC_METNI[e.sonuc]}</span>
+                      {e.geriAl && <button type="button" className="btn-link" onClick={() => eylemiGeriAl(m.anahtar, i)}>Geri al</button>}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {m.rol === "assistant" && <YzFinansKaynaklari kaynaklar={m.kaynaklar} kisaltildi={m.kaynaklarKisaltildi} />}
               {m.rol === "assistant" && m.modelNotu && <div className="asistan__model-notu">{m.modelNotu}</div>}
               {m.rol === "assistant" && <YzGeriBildirim mesajId={m.id} deger={m.geriBildirim} not={m.geriBildirimNotu} />}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { useEkranDurumu } from "@/lib/asistan-baglami";
+import { useArayuzIsleyicisi, useEkranDurumu } from "@/lib/asistan-baglami";
 import { ROL_ADI } from "@/lib/rol-adlari";
 import { Alert, Badge, Button, Card, Field, Modal, PageHeader } from "@/components/ui";
 
@@ -56,6 +56,15 @@ function OnayKutusu() {
   const [kutu, setKutu] = useState<Kutu>("bekleyen");
   // AI-113: açık onay kutusu asistanın ekran durumudur.
   useEkranDurumu({ ekran: "onaylar", suzgecler: { kutu } });
+  // AI-114: asistan onay kutusunu değiştirebilir (onay/ret yapamaz).
+  useArayuzIsleyicisi("onaylar", {
+    suzgec: (s) => {
+      if (!s.kutu || !["bekleyen", "taleplerim", "gecmis"].includes(s.kutu)) return "alan_yok";
+      const onceki = kutu;
+      setKutu(s.kutu as Kutu);
+      return () => setKutu(onceki);
+    },
+  });
   const [liste, setListe] = useState<{ kutu: Kutu; talepler: Talep[]; digerOnaylar: DigerOnay[] } | null>(null);
   const [listeHatasi, setListeHatasi] = useState<{ kutu: Kutu; mesaj: string } | null>(null);
   const [hata, setHata] = useState("");

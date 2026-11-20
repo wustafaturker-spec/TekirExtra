@@ -70,8 +70,9 @@ export class AracYurutucu {
   ) {}
 
   /** Rolün ekranda girebildiği uçların araçları (AI-02). */
-  izinliAraclar(rol: Rol): AjanAraci[] {
-    return AJAN_ARACLARI.filter((a) => this.uc.yetkiliMi(a.uc, rol));
+  /** AI-114: arayüz eylemleri yalnız web asistanında istenir (Telegram, MCP ve otomasyonda yok). */
+  izinliAraclar(rol: Rol, secenek: { arayuz?: boolean } = {}): AjanAraci[] {
+    return AJAN_ARACLARI.filter((a) => (secenek.arayuz || a.sinif !== "arayuz") && this.uc.yetkiliMi(a.uc, rol));
   }
 
   /**

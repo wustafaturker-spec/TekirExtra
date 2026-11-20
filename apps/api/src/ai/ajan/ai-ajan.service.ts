@@ -2,7 +2,8 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { EkranDurumu, Rol } from "@tekirextra/shared";
+import type { ArayuzEylemi, ArayuzEylemSonucu, EkranDurumu, Rol } from "@tekirextra/shared";
+import { ARAYUZ_ARAC_ADLARI, TUR_EYLEM_SINIRI, arayuzEylemiHazirla, arayuzSonucMetni } from "./arayuz-eylemleri";
 import { ekranDurumuDogrula } from "./ekran-durumu";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
@@ -127,7 +128,12 @@ export interface AjanYaniti {
    * kaydına ve HTTP yanıtına girmez.
    */
   dosyaTamponlari?: UretilenDosya[];
+  /** AI-114: tarayıcıda uygulanacak doğrulanmış arayüz eylemleri (yalnız web). */
+  arayuzEylemleri?: AsistanArayuzEylemi[];
 }
+
+/** AI-114: arayüz eylemi + kullanıcıya gösterilecek tek satır. */
+export type AsistanArayuzEylemi = ArayuzEylemi & { ozet: string };
 
 /** Aracın ürettiği dosya (araç sonucunun `_dosya` alanı). */
 export interface UretilenDosya { tampon: Buffer; dosyaAdi: string; mimeType: string; aciklama?: string }
@@ -236,6 +242,8 @@ export interface EkranBaglami {
   sayfa?: string;
   /** AI-113: liste ekranının süzgeçleri ve seçili kayıtları (sözleşmeye indirgenmiş). */
   durum?: EkranDurumu;
+  /** AI-114: önceki turun arayüz eylemlerinin tarayıcıdaki sonucu. */
+  arayuzSonuclari?: ArayuzEylemSonucu[];
 }
 
 /** P-14a: Kaydedilmemiş form taslağı metni. Güvenilmeyen istemci verisi olarak açıkça etiketlenir ve temizlenir. */
@@ -533,14 +541,16 @@ export class AiAjanService {
 
     try {
       // CNL-05: Telegram'da araçlar veri kapısından geçer (bordro/kişiye ödeme dışarı çıkmaz).
-      const izinli = telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : this.yurutucu.izinliAraclar(rol);
-      const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenler } = await this.dongu({
+      // AI-114: arayüz eylemleri yalnız web asistanında sunulur.
+      const izinli = telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : this.yurutucu.izinliAraclar(rol, { arayuz: true });
+      const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenler, arayuzEylemleri } = await this.dongu({
         saglayici,
         sistemRol:
           asistanIstemi({ adSoyad: kullanici.adSoyad, rol, ozelTalimatlar, telegram }) +
           durumBaglami(gecmis.durumlar) +
           ekranMetni +
           ekranDurumu.metin +
+          arayuzSonucMetni(ekran?.arayuzSonuclari ?? []) +
           taslakMetni(ekran?.taslak) +
           eylemMetni(ekran?.eylem) +
           ekler.metin,
@@ -559,18 +569,19 @@ export class AiAjanService {
         baglamMetni: [metin, ekranKaydi, ...ekranDurumu.kimlikler, ekler.kimlikler, ...gecmis.mesajlar.map((m) => ("metin" in m ? m.metin : ""))].join(" "),
         kullaniciTalebi: metin,
         oturumId: oturum.id,
+        ekranDurumu: ekran?.durum,
         olay: secenek.olay,
         sinyal: secenek.sinyal,
       });
       const cevap = talepNotuEkle(hamCevap, talepler.length, telegram);
       // AI-118: web'de dosya sohbet ekine yazılır (indirme yalnız sohbetin sahibine); Telegram doğrudan gönderir.
       const dosyalar = telegram ? [] : await this.dosyalariKaydet(oturum.id, uretilenler);
-      const yanit: AjanYaniti = { model: modelBilgisi, oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}), ...(dosyalar.length ? { dosyalar } : {}) };
+      const yanit: AjanYaniti = { model: modelBilgisi, oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}), ...(dosyalar.length ? { dosyalar } : {}), ...(arayuzEylemleri.length ? { arayuzEylemleri } : {}) };
 
       await this.prisma.tenantIslem(tenantId, async (tx) => {
         if (!ayrilanId) await tx.ajanMesajGecmisi.create({ data: { oturumId: oturum.id, rol: "user", icerik: metin, kanal } });
         const kayit = await tx.ajanMesajGecmisi.create({
-          data: { oturumId: oturum.id, kanal, rol: "assistant", icerik: cevap, saglayici: saglayici.saglayiciAdi, model: saglayici.modelAdi ?? null, aracCagrisi: { araclar: calisanlar, talepler: talepler.map((t) => t.id), secimler, durumlar, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(dosyalar.length ? { dosyalar } : {}) } as object },
+          data: { oturumId: oturum.id, kanal, rol: "assistant", icerik: cevap, saglayici: saglayici.saglayiciAdi, model: saglayici.modelAdi ?? null, aracCagrisi: { araclar: calisanlar, talepler: talepler.map((t) => t.id), secimler, durumlar, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(dosyalar.length ? { dosyalar } : {}), ...(arayuzEylemleri.length ? { arayuzEylemleri: arayuzEylemleri.map((e) => ({ tur: e.tur, ozet: e.ozet })) } : {}) } as object },
         });
         yanit.mesajId = kayit.id;
         if (ayrilanId) await tx.ajanMesajGecmisi.update({ where: { id: ayrilanId }, data: { yanit: JSON.parse(JSON.stringify(yanit)) as Prisma.InputJsonValue } });
@@ -668,7 +679,13 @@ export class AiAjanService {
     /** AI-82: canlı adım olayları ve kullanıcının durdurması. */
     olay?: (e: AkisOlayi) => void;
     sinyal?: AbortSignal;
-  }): Promise<{ cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama; dosyalar: UretilenDosya[] }> {
+    /** AI-114: arayüz eylemlerinin doğrulandığı ekran durumu. */
+    ekranDurumu?: EkranDurumu;
+    /** AI-114: arayüz eylemi kayıt okuyucusunun ucu; yoksa servisin ucu (değerlendirme sahte uç verir). */
+    arayuzUcu?: UcCagirici;
+    /** AI-114: değerlendirme arayüz çağrılarını kaydeder (yürütücüden geçmezler). */
+    arayuzIzi?: (cagri: { ad: string; girdi: Record<string, unknown> }, basarili: boolean) => void;
+  }): Promise<{ arayuzEylemleri: AsistanArayuzEylemi[]; cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama; dosyalar: UretilenDosya[] }> {
     const aracHaritasi = new Map(g.izinli.map((a) => [a.ad, a]));
     // AI-84: süzgeç yalnız modele sunulan listeyi daraltır; yürütme rolün izinli araçlarıyla sınırlı kalır.
     const gruplar = g.gruplar;
@@ -690,6 +707,7 @@ export class AiAjanService {
     let cevap: string | null = null;
     let finansAciklama: FinansAciklama | undefined;
     const uretilenDosyalar: UretilenDosya[] = [];
+    const arayuzEylemleri: AsistanArayuzEylemi[] = [];
     let duzeltmeIstendi = false;
     let hariciIcerikOkundu = false;
     const acikYazmaIstegi = acikYazmaIstegiVar(g.kullaniciTalebi);
@@ -700,7 +718,7 @@ export class AiAjanService {
     if (!g.sinyal?.aborted && teklifTaslagiIstegi && !aracHaritasi.has("belge_taslagi_olustur")) {
       return {
         cevap: "Bu oturumda teklif taslağı oluşturma yetkiniz yok. Teklif taslağı açılmadı.",
-        calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, dosyalar: [],
+        calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, dosyalar: [], arayuzEylemleri: [],
       };
     }
 
@@ -800,6 +818,26 @@ export class AiAjanService {
           });
           continue;
         }
+        // AI-114: arayüz eylemi sunucuda doğrulanır, tarayıcıda uygulanır; kayıt oluşturmaz.
+        const arayuzUcu = g.arayuzUcu ?? this.uc;
+        if (ARAYUZ_ARAC_ADLARI.has(cagri.ad) && secilenArac && arayuzUcu) {
+          const h = arayuzEylemleri.length >= TUR_EYLEM_SINIRI
+            ? { hata: `Bir yanıtta en çok ${TUR_EYLEM_SINIRI} arayüz eylemi yapılır.` }
+            : await arayuzEylemiHazirla(cagri.ad, cagri.girdi ?? {}, {
+              uc: arayuzUcu,
+              durum: g.ekranDurumu,
+              kayitOku: (tur, id) => ekranKaydiOku(arayuzUcu, tur as EkranTuru, id),
+              kaynakMetni: [g.kullaniciTalebi, ...aracCiktilari].join(" "),
+            });
+          calisanlar.push({ ad: cagri.ad, sinif: "arayuz", basarili: !("hata" in h) });
+          g.arayuzIzi?.({ ad: cagri.ad, girdi: cagri.girdi ?? {} }, !("hata" in h));
+          const icerik = "hata" in h
+            ? `Hata: ${h.hata} Hiçbir şey uygulanmadı.`
+            : JSON.stringify({ basarili: true, eylem: h.eylem.tur, ozet: h.ozet, ...(h.eylem.tur === "sayfaya_git" ? { adres: h.eylem.yol } : {}), not: "Eylem yanıtla birlikte kullanıcının ekranında uygulanacak; kullanıcı geri alabilir. Kayıt oluşturulmadı, form kaydedilmedi." });
+          if (!("hata" in h)) { arayuzEylemleri.push({ ...h.eylem, ozet: h.ozet }); aracCiktilari.push(icerik); }
+          mesajlar.push({ rol: "arac_sonucu", cagriId: cagri.id, ad: cagri.ad, hata: "hata" in h, icerik });
+          continue;
+        }
         g.olay?.({ tur: "arac", ad: cagri.ad, etiket: aracEtiketi(cagri.ad), durum: "basladi" });
         const sonuc = await this.yurutucu.yurut(cagri, aracHaritasi, { kaynak: "asistan", oturumId: g.oturumId });
         g.olay?.({ tur: "arac", ad: cagri.ad, etiket: aracEtiketi(cagri.ad), durum: sonuc.hata ? "hata" : "bitti" });
@@ -843,7 +881,7 @@ export class AiAjanService {
     }
     const benzersizDurumlar = [...new Map(durumlar.map((x) => [`${x.tur}:${x.id}`, x])).values()].slice(-12);
     if (cevap === null && kaynaklar.length) ({ cevap, finansAciklama } = finansAciklamasiniDogrula(null, kaynaklar));
-    return { cevap: cevap ?? "İşlem çok adım gerektirdi ve tamamlanamadı; talimatı daha küçük parçalara bölün.", calisanlar, talepler, secimler, durumlar: benzersizDurumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenDosyalar };
+    return { cevap: cevap ?? "İşlem çok adım gerektirdi ve tamamlanamadı; talimatı daha küçük parçalara bölün.", calisanlar, talepler, secimler, durumlar: benzersizDurumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenDosyalar, arayuzEylemleri };
   }
 
   /** Kullanıcının asistan geçmişi (son mesajlar) ve bekleyen talepleri; sohbet penceresi açılırken. */

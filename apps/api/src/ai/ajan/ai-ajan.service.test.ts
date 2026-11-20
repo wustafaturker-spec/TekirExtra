@@ -473,7 +473,7 @@ describe("araç kaydı (AI-03/AI-06)", () => {
     for (const a of AJAN_ARACLARI) {
       expect(a.ad).not.toMatch(/(^|_)sil(_|$)/);
       expect(a.uc.yol).not.toMatch(/^DELETE /);
-      expect(["okuma", "taslak", "onay"]).toContain(a.sinif);
+      expect(["okuma", "taslak", "onay", "arayuz"]).toContain(a.sinif);
       if (a.sinif === "onay") expect(a.ozetle).toBeTypeOf("function");
     }
   });

@@ -8,7 +8,7 @@ import type { AiAracTanimi } from "../../saglayici/ai-provider.interface";
  * kendisi açar. MCP bu süzgeçten geçmez; bütün araçları görür.
  */
 export const ARAC_GRUPLARI = {
-  cekirdek: "Cari, stok, teklif/sipariş/irsaliye ve fatura arama/okuma; raporlar; rapor/belge/ekstre dosyası (Excel, PDF); bildirimler; günlük brifing.",
+  cekirdek: "Cari, stok, teklif/sipariş/irsaliye ve fatura arama/okuma; raporlar; rapor/belge/ekstre dosyası (Excel, PDF); ekranda sayfa açma, süzgeç, vurgulama, form doldurma; bildirimler; günlük brifing.",
   satis: "Teklif, sipariş, irsaliye ve fatura taslağı, onay, dönüştürme, iptal, e-posta ve e-Belge gönderimi; fiyat önerisi.",
   kart: "Cari ve stok kartı oluşturma ve güncelleme.",
   tahsilat: "Vadesi geçen alacaklar, tahsilat öncelik ve riski, ödeme hatırlatması, cari ekstre e-postası, CRM görevi.",
@@ -26,7 +26,7 @@ export const ARAC_GRUPLARI = {
 export type AracGrubu = keyof typeof ARAC_GRUPLARI;
 
 export const GRUP_ARACLARI: Record<AracGrubu, string[]> = {
-  cekirdek: ["cari_ara", "cari_getir", "cari_ekstre_dosyasi", "stok_ara", "stok_getir", "belge_ara", "belge_getir", "fatura_ara", "fatura_getir", "rapor_katalogu", "rapor_calistir", "rapor_dosyasi", "belge_pdf", "bildirimler", "gunluk_brifing", "sozlesme_ara_ve_sor"],
+  cekirdek: ["cari_ara", "cari_getir", "cari_ekstre_dosyasi", "stok_ara", "stok_getir", "belge_ara", "belge_getir", "fatura_ara", "fatura_getir", "rapor_katalogu", "rapor_calistir", "rapor_dosyasi", "belge_pdf", "sayfaya_git", "suzgec_uygula", "sekme_ac", "kayit_vurgula", "formu_doldur", "bildirimler", "gunluk_brifing", "sozlesme_ara_ve_sor"],
   satis: ["fiyat_onerisi", "belge_taslagi_olustur", "fatura_taslagi_olustur", "belge_onayla", "belge_iptal", "belge_donustur", "teklif_revize_et", "fatura_kesinlestir", "fatura_iptal", "fatura_fiyat_sapmasi", "belge_eposta_gonder", "fatura_eposta_gonder", "ebelge_gonder"],
   kart: ["cari_olustur", "cari_guncelle", "stok_karti_olustur", "stok_karti_guncelle"],
   tahsilat: ["vadesi_gecen_alacaklar", "tahsilat_oncelikleri", "tahsilat_riski", "cari_durumu", "odeme_hatirlatmasi_gonder", "cari_ekstre_eposta", "crm_gorevi_olustur"],
