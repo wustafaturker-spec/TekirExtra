@@ -29,6 +29,8 @@ function kur(kayit: ReturnType<typeof talep>, secenek: { alinan?: number; ucHata
     },
     // AI-106: bildirim yerine aynı işlemde olay yazılır.
     aiOlay: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => data) },
+    // AI-107: talep başına tek karar kaydı.
+    aiOnayKarari: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => data) },
   };
   const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
   const uc = {
@@ -78,9 +80,9 @@ describe("onay talepleri (AI-04)", () => {
     expect(k.uc.cagir).not.toHaveBeenCalled();
   });
 
-  it("süresi dolmuş talep çalışmaz", async () => {
+  it("süresi dolmuş talep çalışmaz (409 SURESI_DOLDU)", async () => {
     const k = kur(talep({ gecerlilikSonu: new Date(Date.now() - 1000) }));
-    await expect(k.olarak(() => k.service.onayla("talep-1"))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(k.olarak(() => k.service.onayla("talep-1"))).rejects.toMatchObject({ response: { kod: "SURESI_DOLDU" } });
     expect(k.uc.cagir).not.toHaveBeenCalled();
   });
 

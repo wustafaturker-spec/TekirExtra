@@ -130,8 +130,8 @@ describe("CNL-23 görsel yönlendirmesi", () => {
       metin: "Cari kartı taslağı",
       klavye: [
         [
-          { text: "✅ Onayla ve Kartı Aç", callback_data: "onay:talep-123" },
-          { text: "❌ Reddet", callback_data: "red:talep-123" },
+          { text: "✅ Onayla ve Kartı Aç", callback_data: "onay:talep-123:1" },
+          { text: "❌ Reddet", callback_data: "red:talep-123:1" },
         ],
       ],
     });
@@ -189,7 +189,8 @@ describe("CNL-27 Hızlı onay ve dosya gönderimi", () => {
       bot as never,
     );
 
-    expect(aiOnay.onayla).toHaveBeenCalledWith("talep-123");
+    // AI-107: sürümsüz eski düğme ilk sürümü, Telegram kanalıyla onaylar.
+    expect(aiOnay.onayla).toHaveBeenCalledWith("talep-123", { surum: 1, kanal: "TELEGRAM" });
     expect(bot.istemci.klavyeKaldir).toHaveBeenCalledWith(100, 50);
     expect(bot.istemci.dugmeYanitla).toHaveBeenCalledWith("cb-1", "Onaylandı");
   });

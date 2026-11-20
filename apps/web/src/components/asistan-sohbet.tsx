@@ -24,6 +24,10 @@ export interface OnayTalebi {
   kararAt: string | null;
   sonuc: unknown;
   hata: string | null;
+  /** AI-107: kart onay/düzenleme isteğinde bu sürümü gönderir. */
+  surum?: number;
+  /** AI-107: karttan düzenlenebilir alanlar ve güncel değerleri. */
+  duzenlenebilir?: Record<string, unknown> | null;
 }
 
 interface Mesaj {
@@ -147,13 +151,45 @@ export function TalepKarti({ talep, onDegisti }: { talep: OnayTalebi; onDegisti:
   const durum = DURUM[talep.durum];
   const sonucAdresi = (talep.sonuc as { adres?: unknown } | null)?.adres;
 
+  // AI-107: düzenleme; metin alanları düz, nesne/dizi alanları JSON olarak düzenlenir.
+  const [duzenleniyor, setDuzenleniyor] = useState(false);
+  const [taslak, setTaslak] = useState<Record<string, string>>({});
+  const metne = (v: unknown) => (typeof v === "string" ? v : v === null || v === undefined ? "" : JSON.stringify(v, null, 2));
+  function duzenlemeyiAc() {
+    setTaslak(Object.fromEntries(Object.entries(talep.duzenlenebilir ?? {}).map(([a, v]) => [a, metne(v)])));
+    setDuzenleniyor(true);
+  }
+
   async function karar(eylem: "onayla" | "reddet") {
     setIsleniyor(true);
     setHata(null);
     try {
-      onDegisti(await api<OnayTalebi>(`/ai/onay-talepleri/${talep.id}/${eylem}`, { method: "POST" }));
+      onDegisti(await api<OnayTalebi>(`/ai/onay-talepleri/${talep.id}/${eylem}`, { method: "POST", body: JSON.stringify({ surum: talep.surum }) }));
     } catch (e) {
       setHata(hataMesaji(e));
+    } finally {
+      setIsleniyor(false);
+    }
+  }
+
+  async function duzenlemeyiKaydet() {
+    setIsleniyor(true);
+    setHata(null);
+    try {
+      const degerler: Record<string, unknown> = {};
+      for (const [alan, metin] of Object.entries(taslak)) {
+        const eski = talep.duzenlenebilir?.[alan];
+        if (metin === metne(eski)) continue;
+        if (typeof eski === "string" || eski === null || eski === undefined) degerler[alan] = metin.trim() === "" ? undefined : metin;
+        else {
+          try { degerler[alan] = JSON.parse(metin); } catch { throw new Error(`${alanAdi(alan)}: geçerli bir yapı değil.`); }
+        }
+      }
+      if (!Object.keys(degerler).length) { setDuzenleniyor(false); return; }
+      onDegisti(await api<OnayTalebi>(`/ai/onay-talepleri/${talep.id}/duzenle`, { method: "POST", body: JSON.stringify({ surum: talep.surum, degerler }) }));
+      setDuzenleniyor(false);
+    } catch (e) {
+      setHata(e instanceof Error && !("durum" in e) ? e.message : hataMesaji(e));
     } finally {
       setIsleniyor(false);
     }
@@ -187,7 +223,27 @@ export function TalepKarti({ talep, onDegisti }: { talep: OnayTalebi; onDegisti:
       {talep.hata && <Alert tone="error">{talep.hata}</Alert>}
       {hata && <Alert tone="error">{hata}</Alert>}
       {typeof sonucAdresi === "string" && talep.durum === "onaylandi" && <a href={sonucAdresi}>Kaydı aç</a>}
-      {talep.durum === "bekliyor" && (
+      {talep.durum === "bekliyor" && duzenleniyor && (
+        <div className="stack" style={{ gap: ".4rem" }} aria-label="Talebi düzenle">
+          {Object.entries(taslak).map(([alan, metin]) => {
+            const eski = talep.duzenlenebilir?.[alan];
+            const cokSatir = !(typeof eski === "string" || eski === null || eski === undefined);
+            return (
+              <label key={alan} className="stack" style={{ gap: ".15rem", fontSize: ".82rem" }}>
+                <span>{alanAdi(alan)}</span>
+                {cokSatir
+                  ? <textarea className="input" rows={4} value={metin} onChange={(e) => setTaslak((t) => ({ ...t, [alan]: e.target.value }))} />
+                  : <Input value={metin} onChange={(e) => setTaslak((t) => ({ ...t, [alan]: e.target.value }))} />}
+              </label>
+            );
+          })}
+          <div className="row-tight">
+            <Button size="sm" variant="primary" disabled={isleniyor} onClick={() => void duzenlemeyiKaydet()}>Kaydet</Button>
+            <Button size="sm" disabled={isleniyor} onClick={() => setDuzenleniyor(false)}>Vazgeç</Button>
+          </div>
+        </div>
+      )}
+      {talep.durum === "bekliyor" && !duzenleniyor && (
         <div className="row-tight">
           <Button size="sm" variant="primary" disabled={isleniyor} onClick={() => void karar("onayla")}>
             {isleniyor ? "İşleniyor…" : "Onayla"}
@@ -195,6 +251,7 @@ export function TalepKarti({ talep, onDegisti }: { talep: OnayTalebi; onDegisti:
           <Button size="sm" disabled={isleniyor} onClick={() => void karar("reddet")}>
             Reddet
           </Button>
+          {talep.duzenlenebilir && <Button size="sm" variant="ghost" disabled={isleniyor} onClick={duzenlemeyiAc}>Düzenle</Button>}
         </div>
       )}
     </div>

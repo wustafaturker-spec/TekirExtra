@@ -8,6 +8,19 @@ import { PrismaService } from "../../core/prisma.service";
 import { aracBul } from "../ajan/araclar";
 import { UcCagirici } from "../ajan/uc-cagirici";
 import { icerikOzeti, type OnayOnizlemesi } from "../ajan/araclar/arac";
+import { DUZENLENEBILIR_ALANLAR } from "../ajan/araclar/duzenlenebilir";
+
+/** AI-107: kararın verildiği kanal. */
+export type KararKanali = "WEB" | "TELEGRAM" | "MCP";
+
+/** AI-107: karar çakışmaları; istemci ve Telegram `kod` ile ayırt eder. */
+export type CakismaKodu = "ESKI_SURUM" | "ZATEN_SONUCLANDI" | "SURESI_DOLDU";
+const CAKISMA_METNI: Record<CakismaKodu, string> = {
+  ESKI_SURUM: "Talep siz görüntüledikten sonra düzenlendi; güncel hâlini inceleyip yeniden onaylayın.",
+  ZATEN_SONUCLANDI: "Bu talep zaten karara bağlandı.",
+  SURESI_DOLDU: "Talebin süresi doldu; işlemi yeniden isteyin.",
+};
+export const cakisma = (kod: CakismaKodu) => new ConflictException({ message: CAKISMA_METNI[kod], kod });
 
 /** AI-04: talep 24 saat geçerlidir. */
 export const ONAY_TALEBI_SURESI_MS = 24 * 60 * 60 * 1000;
@@ -34,9 +47,15 @@ export interface OnayTalebiGorunumu {
   kararAt: string | null;
   sonuc: unknown;
   hata: string | null;
+  /** AI-107: kartın onay/düzenleme isteğinde geri göndereceği sürüm. */
+  surum: number;
+  /** AI-107: karttan düzenlenebilir alanlar ve güncel değerleri (yalnız bekleyen talepte). */
+  duzenlenebilir: Record<string, unknown> | null;
 }
 
 function gorunum(t: AiOnayTalebi): OnayTalebiGorunumu {
+  const alanlar = DUZENLENEBILIR_ALANLAR[t.arac] ?? [];
+  const parametreler = (t.parametreler ?? {}) as Record<string, unknown>;
   return {
     id: t.id,
     arac: t.arac,
@@ -49,6 +68,8 @@ function gorunum(t: AiOnayTalebi): OnayTalebiGorunumu {
     kararAt: t.kararAt?.toISOString() ?? null,
     sonuc: t.sonuc,
     hata: t.hata,
+    surum: t.surum,
+    duzenlenebilir: t.durum === "bekliyor" && alanlar.length ? Object.fromEntries(alanlar.map((a) => [a, parametreler[a] ?? null])) : null,
   };
 }
 
@@ -96,6 +117,7 @@ export class AiOnayService {
           onizleme: girdi.onizleme ? JSON.parse(JSON.stringify(girdi.onizleme)) as Prisma.InputJsonValue : undefined,
           gecerlilikSonu: new Date(Date.now() + ONAY_TALEBI_SURESI_MS),
           hedefOzeti: girdi.hedefOzeti ?? null,
+          parametreOzeti: icerikOzeti(girdi.parametreler ?? {}),
         },
       });
       await olayYaz(tx, { tenantId, topluTur: "ai_onay", topluId: t.id, tur: "ai_onay.acildi", yuk: { userId, kaynak: girdi.kaynak, ozet: girdi.ozet.slice(0, 500) } });
@@ -118,21 +140,25 @@ export class AiOnayService {
     return talepler.map(gorunum);
   }
 
-  async onayla(id: string): Promise<OnayTalebiGorunumu> {
-    const { tenantId } = aktifBaglam();
+  /**
+   * AI-107: `surum` kartın gördüğü sürümdür; verilmezse yüklenen sürüm kullanılır. Talep yalnız
+   * bekliyor + aynı sürümdeyken işlenmeye alınır ve karar kaydı aynı işlemde yazılır (tekil):
+   * eşzamanlı istekler ve kanallar arası yarışta tek karar, tek yan etki.
+   */
+  async onayla(id: string, secenek: { surum?: number; kanal?: KararKanali } = {}): Promise<OnayTalebiGorunumu> {
+    const { tenantId, userId } = aktifBaglam();
     const talep = await this.kendiTalebi(id);
-    if (talep.gecerlilikSonu < new Date()) {
-      await this.sureleriKapat();
-      throw new BadRequestException("Talebin süresi doldu; işlemi yeniden isteyin.");
-    }
+    await this.kararaUygunMu(talep, secenek.surum);
     const arac = aracBul(talep.arac);
     if (!arac || arac.sinif !== "onay") throw new BadRequestException("Talepteki işlem artık tanımlı değil.");
 
-    // Aynı talep iki kez çalışmasın: yalnız bekleyen talep işlenmeye alınır.
-    const alinan = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor" }, data: { durum: "isleniyor", kararAt: new Date() } }),
-    );
-    if (alinan.count === 0) throw new ConflictException("Talep zaten karara bağlanmış.");
+    // Aynı talep iki kez çalışmasın: yalnız bekleyen ve aynı sürümdeki talep işlenmeye alınır.
+    const alinan = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const r = await tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor", surum: talep.surum }, data: { durum: "isleniyor", kararAt: new Date() } });
+      if (r.count) await this.kararYaz(tx, talep, "onaylandi", userId, secenek.kanal ?? "WEB");
+      return r.count;
+    });
+    if (alinan === 0) throw await this.cakismaNedeni(id);
 
     let sonuc: unknown = null;
     let hata: string | null = null;
@@ -164,16 +190,72 @@ export class AiOnayService {
     return gorunum(guncel);
   }
 
-  async reddet(id: string): Promise<OnayTalebiGorunumu> {
-    const { tenantId } = aktifBaglam();
-    await this.kendiTalebi(id);
+  async reddet(id: string, secenek: { surum?: number; kanal?: KararKanali } = {}): Promise<OnayTalebiGorunumu> {
+    const { tenantId, userId } = aktifBaglam();
+    const talep = await this.kendiTalebi(id);
+    if (talep.durum !== "bekliyor") throw cakisma("ZATEN_SONUCLANDI");
+    if (secenek.surum !== undefined && secenek.surum !== talep.surum) throw cakisma("ESKI_SURUM");
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const r = await tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor" }, data: { durum: "reddedildi", kararAt: new Date() } });
-      if (r.count) await this.sonuclandi(tx, id, aktifBaglam().userId, "reddedildi");
+      const r = await tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor", surum: talep.surum }, data: { durum: "reddedildi", kararAt: new Date() } });
+      if (r.count) {
+        await this.kararYaz(tx, talep, "reddedildi", userId, secenek.kanal ?? "WEB");
+        await this.sonuclandi(tx, id, userId, "reddedildi");
+      }
       return r;
     });
-    if (sonuc.count === 0) throw new ConflictException("Talep zaten karara bağlanmış.");
+    if (sonuc.count === 0) throw await this.cakismaNedeni(id);
     return gorunum(await this.kendiTalebi(id));
+  }
+
+  /**
+   * AI-107: bekleyen talebin karttan izinli alanlarını düzenler. Değerler aracın şemasıyla
+   * doğrulanır; özet, önizleme ve hedef özeti yeniden hesaplanır, sürüm artar. Eski sürümle
+   * gelen düzenleme ve onay reddedilir.
+   */
+  async duzenle(id: string, girdi: { surum?: unknown; degerler?: unknown }): Promise<OnayTalebiGorunumu> {
+    const { tenantId } = aktifBaglam();
+    const talep = await this.kendiTalebi(id);
+    if (typeof girdi.surum !== "number" || !Number.isInteger(girdi.surum)) throw new BadRequestException("Düzenleme sürüm bilgisi taşımalı.");
+    await this.kararaUygunMu(talep, girdi.surum);
+    const arac = aracBul(talep.arac);
+    const alanlar = DUZENLENEBILIR_ALANLAR[talep.arac] ?? [];
+    if (!arac || arac.sinif !== "onay" || !alanlar.length) throw new BadRequestException("Bu işlemin alanları düzenlenemez.");
+    const degerler = girdi.degerler && typeof girdi.degerler === "object" && !Array.isArray(girdi.degerler) ? (girdi.degerler as Record<string, unknown>) : null;
+    if (!degerler || !Object.keys(degerler).length) throw new BadRequestException("Düzenlenecek alan verilmedi.");
+    const yasak = Object.keys(degerler).filter((a) => !alanlar.includes(a));
+    if (yasak.length) throw new BadRequestException(`Bu alanlar düzenlenemez: ${yasak.join(", ")}`);
+    const yeni = { ...((talep.parametreler ?? {}) as Record<string, unknown>), ...degerler };
+    const ayristirma = arac.girdi.safeParse(yeni);
+    if (!ayristirma.success) throw new BadRequestException(`Geçersiz değer: ${ayristirma.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    const baglam = { uc: this.uc, kaynak: talep.kaynak, arac: arac.ad };
+    const ozet = arac.ozetle ? await arac.ozetle(baglam, ayristirma.data) : talep.ozet;
+    const onizleme = arac.onizle ? await arac.onizle(baglam, ayristirma.data) : (talep.onizleme as unknown as OnayOnizlemesi | null);
+    const hedefOzeti = arac.hedefDurumu ? icerikOzeti(await arac.hedefDurumu(baglam, ayristirma.data)) : talep.hedefOzeti;
+    const parametreler = JSON.parse(JSON.stringify(ayristirma.data)) as Prisma.InputJsonValue;
+    const r = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiOnayTalebi.updateMany({
+      where: { id, durum: "bekliyor", surum: talep.surum },
+      data: { parametreler, parametreOzeti: icerikOzeti(ayristirma.data), ozet, onizleme: onizleme ? (JSON.parse(JSON.stringify(onizleme)) as Prisma.InputJsonValue) : undefined, hedefOzeti, surum: { increment: 1 } },
+    }));
+    if (r.count === 0) throw await this.cakismaNedeni(id);
+    return gorunum(await this.kendiTalebi(id));
+  }
+
+  /** Bekleyen, süresi dolmamış ve (verildiyse) aynı sürümde olmalı. */
+  private async kararaUygunMu(talep: AiOnayTalebi, surum: number | undefined): Promise<void> {
+    if (talep.durum !== "bekliyor") throw cakisma("ZATEN_SONUCLANDI");
+    if (talep.gecerlilikSonu < new Date()) { await this.sureleriKapat(); throw cakisma("SURESI_DOLDU"); }
+    if (surum !== undefined && surum !== talep.surum) throw cakisma("ESKI_SURUM");
+  }
+
+  /** Atomik güncelleme tutmadıysa nedeni: sonuçlandı mı, sürüm mü değişti. */
+  private async cakismaNedeni(id: string) {
+    const guncel = await this.kendiTalebi(id);
+    return cakisma(guncel.durum !== "bekliyor" ? "ZATEN_SONUCLANDI" : "ESKI_SURUM");
+  }
+
+  /** AI-107: talep başına tek karar kaydı (tekil); içerik değil sürüm ve özet yazılır. */
+  private async kararYaz(tx: Prisma.TransactionClient, talep: AiOnayTalebi, karar: "onaylandi" | "reddedildi", kararVerenId: string, kanal: KararKanali): Promise<void> {
+    await tx.aiOnayKarari.create({ data: { tenantId: talep.tenantId, talepId: talep.id, karar, kararVerenId, kanal, surum: talep.surum, parametreOzeti: talep.parametreOzeti ?? icerikOzeti(talep.parametreler ?? {}) } });
   }
 
   private async kendiTalebi(id: string): Promise<AiOnayTalebi> {

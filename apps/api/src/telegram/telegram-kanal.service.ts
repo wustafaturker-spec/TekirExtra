@@ -531,8 +531,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     if (talepId) {
       const klavye: Klavye = [
         [
-          { text: "✅ Onayla ve Kartı Aç", callback_data: `onay:${talepId}` },
-          { text: "❌ Reddet", callback_data: `red:${talepId}` },
+          // AI-107: düğme talebin sürümünü taşır; panelde düzenlenen talep eski düğmeyle onaylanmaz.
+          { text: "✅ Onayla ve Kartı Aç", callback_data: `onay:${talepId}:1` },
+          { text: "❌ Reddet", callback_data: `red:${talepId}:1` },
         ],
       ];
       await baglamlaCalistir(baglam, () => this.firmayaKlavyeliGonder(tenantId, userId, "belge_sonuc", metin, klavye));
@@ -557,7 +558,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
 
     // CNL-27: Satır içi hızlı onay/red düğmesi (cari kartı açma vb.)
     if (d.data?.startsWith("onay:") || d.data?.startsWith("red:")) {
-      const [eylem, talepId] = d.data.split(":");
+      const [eylem, talepId, surumMetni] = d.data.split(":");
+      // Sürümsüz eski düğme ilk sürümü onaylar; talep düzenlendiyse ESKI_SURUM döner.
+      const surum = Number(surumMetni ?? "1") || 1;
       if (!this.aiOnay) {
         await bot.istemci.dugmeYanitla(d.id, "Onay servisi şu anda kullanılamıyor.");
         return;
@@ -565,10 +568,10 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       let metin: string;
       try {
         if (eylem === "onay") {
-          const sonuc = await baglamlaCalistir(baglam, () => this.aiOnay!.onayla(talepId));
+          const sonuc = await baglamlaCalistir(baglam, () => this.aiOnay!.onayla(talepId, { surum, kanal: "TELEGRAM" }));
           metin = `✅ ${sonuc.ozet} onaylandı ve tamamlandı.`;
         } else {
-          await baglamlaCalistir(baglam, () => this.aiOnay!.reddet(talepId));
+          await baglamlaCalistir(baglam, () => this.aiOnay!.reddet(talepId, { surum, kanal: "TELEGRAM" }));
           metin = "❌ İşlem talebi iptal edildi.";
         }
         await bot.istemci.klavyeKaldir(m.chat.id, m.message_id).catch(() => undefined);

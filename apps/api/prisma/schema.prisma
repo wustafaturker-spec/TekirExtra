@@ -341,6 +341,7 @@ model Tenant {
 
   aiAsistanGorevleri AiAsistanGorevi[]
   aiOlaylari AiOlay[]
+  aiOnayKararlari AiOnayKarari[]
   @@map("tenants")
 }
 
@@ -712,6 +713,7 @@ model User {
 
   onayTalepleri                OnayTalebi[]          @relation("OnayTalebiTalepEden")
   aiAsistanGorevleri AiAsistanGorevi[]
+  aiOnayKararlari AiOnayKarari[] @relation("AiOnayKarariVeren")
   @@unique([tenantId, eposta])
   @@unique([tenantId, id], map: "users_tenant_id_id_duyuru_key")
   @@index([tenantId])
@@ -7457,6 +7459,10 @@ model AiOnayTalebi {
   gecerlilikSonu DateTime          @map("gecerlilik_sonu")
   /// AI-27: talep açılırken hedef kaydın içerik özeti (SHA-256); onayda yeniden hesaplanır, farklıysa işlem yapılmaz.
   hedefOzeti     String?           @map("hedef_ozeti") @db.VarChar(64)
+  /// AI-107: düzenlemede artar; onay gördüğü sürümü taşır, farklıysa reddedilir.
+  surum          Int               @default(1)
+  /// AI-107: parametrelerin SHA-256 özeti (düzenlemede yenilenir).
+  parametreOzeti String?           @map("parametre_ozeti") @db.VarChar(64)
   kararAt        DateTime?         @map("karar_at")
   sonuc          Json?
   hata           String?           @db.Text
@@ -7465,9 +7471,34 @@ model AiOnayTalebi {
   tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   oturum AjanOturumu? @relation(fields: [oturumId], references: [id], onDelete: SetNull)
+  karar  AiOnayKarari?
 
   @@index([tenantId, userId, durum])
   @@map("ai_onay_talepleri")
+}
+
+/// AI-107: talep başına tek karar (tekil); karar veren, kanal, sürüm ve parametre özeti.
+model AiOnayKarari {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  talepId        String   @unique @map("talep_id") @db.Uuid
+  /// onaylandi | reddedildi
+  karar          String   @db.VarChar(20)
+  kararVerenId   String   @map("karar_veren_id") @db.Uuid
+  /// WEB | TELEGRAM | MCP
+  kanal          String   @db.VarChar(12)
+  surum          Int
+  parametreOzeti String?  @map("parametre_ozeti") @db.VarChar(64)
+  /// AI-108: ek doğrulama (TOTP) yapıldı mı.
+  ekDogrulama    Boolean  @default(false) @map("ek_dogrulama")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talep      AiOnayTalebi @relation(fields: [talepId], references: [id], onDelete: Cascade)
+  kararVeren User         @relation("AiOnayKarariVeren", fields: [kararVerenId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt], map: "ai_onay_kararlari_tenant_created_idx")
+  @@map("ai_onay_kararlari")
 }
 
 /// AI-15: günlük model çağrısı sayacı (kullanıcı ve özellik bazında).
