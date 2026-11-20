@@ -4,6 +4,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { YuklenenDosya } from "../../ekler/ekler.service";
 import { AiAjanService, type AkisOlayi, type EkranBaglami, type EkranTuru } from "./ai-ajan.service";
 import { AsistanGorevService } from "./asistan-gorev.service";
+import { AiOlayService } from "../olay/ai-olay.service";
 import { arayuzSonuclariniAyristir, ekranDurumunuAyristir } from "@tekirextra/shared";
 import { SAYFA_YOLU } from "./araclar/gruplar";
 
@@ -15,7 +16,7 @@ type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: 
  */
 @Controller("ai/ajan")
 export class AiAjanController {
-  constructor(private readonly ajanService: AiAjanService, @Optional() private readonly gorevler?: AsistanGorevService) {}
+  constructor(private readonly ajanService: AiAjanService, @Optional() private readonly gorevler?: AsistanGorevService, @Optional() private readonly olaylar?: AiOlayService) {}
 
   /** AI-105: arka planda süren analiz; tarayıcı kapansa da çalışır, sonuç sohbete ve bildirime düşer. */
   @Post("gorevler")
@@ -31,6 +32,14 @@ export class AiAjanController {
   @Get("gorevler/:id")
   gorevGetir(@Param("id") id: string) {
     return this.gorevServisi().getir(id);
+  }
+
+  /** AI-106: görev olayları `sonra` imlecinden sonra, sırayla; kopan bağlantı kaldığı yerden okur. */
+  @Get("gorevler/:id/olaylar")
+  async gorevOlaylari(@Param("id") id: string, @Query("sonra") sonra?: string) {
+    await this.gorevServisi().getir(id);
+    if (!this.olaylar) throw new BadRequestException("Olay geçmişi kullanılamıyor.");
+    return this.olaylar.gorevOlaylari(id, sonra);
   }
 
   @Post("gorevler/:id/iptal")

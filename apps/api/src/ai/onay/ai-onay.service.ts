@@ -2,6 +2,7 @@ import { OnayGerekliHatasi } from "../../onay/onay-kurallari";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import type { AiIslemKaynagi, AiOnayTalebi, Prisma } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
+import { olayYaz } from "../olay/ai-olay.service";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { aracBul } from "../ajan/araclar";
@@ -20,7 +21,6 @@ export const ASKIDA_KALMA_SURESI_MS = 15 * 60 * 1000;
 export const ASKIDA_KALAN_TALEP_HATASI =
   "İşlem yarıda kesildi; sonucu belirsiz. Kaydın oluşup oluşmadığını ilgili ekrandan kontrol edin, gerekirse işlemi yeniden isteyin.";
 
-const bildirimAnahtari = (id: string) => `yapay_zeka:talep:${id}`;
 
 export interface OnayTalebiGorunumu {
   id: string;
@@ -75,14 +75,16 @@ export class AiOnayService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly uc: UcCagirici,
+    // AI-106: bildirimler artık olay teslimatçısından gelir; bağımlılık eski kurucu imzası için durur.
     @Inject(forwardRef(() => BildirimService))
-    private readonly bildirimler: BildirimService,
+    private readonly _bildirimler: BildirimService,
   ) {}
 
   async olustur(girdi: { arac: string; parametreler: unknown; ozet: string; onizleme?: OnayOnizlemesi | null; hedefOzeti?: string | null; kaynak: AiIslemKaynagi; oturumId?: string | null }): Promise<OnayTalebiGorunumu> {
     const { tenantId, userId } = aktifBaglam();
-    const talep = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiOnayTalebi.create({
+    // AI-106: talep ve "açıldı" olayı aynı işlemde; bildirimi worker'daki teslimatçı üretir.
+    const talep = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const t = await tx.aiOnayTalebi.create({
         data: {
           tenantId,
           userId,
@@ -95,22 +97,10 @@ export class AiOnayService {
           gecerlilikSonu: new Date(Date.now() + ONAY_TALEBI_SURESI_MS),
           hedefOzeti: girdi.hedefOzeti ?? null,
         },
-      }),
-    );
-    await this.bildirimler
-      .uret({
-        tur: "yapay_zeka",
-        onem: "uyari",
-        baslik: girdi.kaynak === "mcp" ? "MCP işlemi onayınızı bekliyor" : girdi.kaynak === "otomasyon" ? "E-posta teklif talebi onayınızı bekliyor" : "Asistan işlemi onayınızı bekliyor",
-        aciklama: girdi.ozet.slice(0, 500),
-        birlesimAnahtari: bildirimAnahtari(talep.id),
-        kaynakTur: "ai_onay_talebi",
-        kaynakRef: talep.id,
-        hedefYol: `/panel/ai?talep=${talep.id}`,
-        roller: [],
-        kullaniciIdler: [userId],
-      })
-      .catch((hata: unknown) => this.logger.warn(`Onay talebi bildirimi üretilemedi: ${String(hata)}`));
+      });
+      await olayYaz(tx, { tenantId, topluTur: "ai_onay", topluId: t.id, tur: "ai_onay.acildi", yuk: { userId, kaynak: girdi.kaynak, ozet: girdi.ozet.slice(0, 500) } });
+      return t;
+    });
     return gorunum(talep);
   }
 
@@ -163,24 +153,26 @@ export class AiOnayService {
       else hata = hataMetni(e);
     }
     const durum = hedefDegisti ? "hedef_degisti" : hata ? "hata" : "onaylandi";
-    const guncel = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiOnayTalebi.update({
+    const guncel = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const g = await tx.aiOnayTalebi.update({
         where: { id },
         data: { durum, sonuc: sonuc == null ? undefined : (JSON.parse(JSON.stringify(sonuc)) as Prisma.InputJsonValue), hata },
-      }),
-    );
-    await this.bildirimiKapat(id);
+      });
+      await this.sonuclandi(tx, g.id, g.userId, durum);
+      return g;
+    });
     return gorunum(guncel);
   }
 
   async reddet(id: string): Promise<OnayTalebiGorunumu> {
     const { tenantId } = aktifBaglam();
     await this.kendiTalebi(id);
-    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor" }, data: { durum: "reddedildi", kararAt: new Date() } }),
-    );
+    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const r = await tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor" }, data: { durum: "reddedildi", kararAt: new Date() } });
+      if (r.count) await this.sonuclandi(tx, id, aktifBaglam().userId, "reddedildi");
+      return r;
+    });
     if (sonuc.count === 0) throw new ConflictException("Talep zaten karara bağlanmış.");
-    await this.bildirimiKapat(id);
     return gorunum(await this.kendiTalebi(id));
   }
 
@@ -194,13 +186,14 @@ export class AiOnayService {
 
   private async sureleriKapat(): Promise<void> {
     const { tenantId, userId } = aktifBaglam();
-    const dolanlar = await this.prisma.tenantIslem(tenantId, async (tx) => {
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayitlar = await tx.aiOnayTalebi.findMany({
         where: { userId, durum: "bekliyor", gecerlilikSonu: { lt: new Date() } },
         select: { id: true },
       });
       if (kayitlar.length) {
         await tx.aiOnayTalebi.updateMany({ where: { id: { in: kayitlar.map((k) => k.id) } }, data: { durum: "suresi_doldu" } });
+        for (const k of kayitlar) await this.sonuclandi(tx, k.id, userId, "suresi_doldu");
       }
       const askidakiler = await tx.aiOnayTalebi.findMany({
         where: { userId, durum: "isleniyor", kararAt: { lt: new Date(Date.now() - ASKIDA_KALMA_SURESI_MS) } },
@@ -212,15 +205,13 @@ export class AiOnayService {
           where: { id: { in: askidakiler.map((k) => k.id) }, durum: "isleniyor" },
           data: { durum: "hata", hata: ASKIDA_KALAN_TALEP_HATASI },
         });
+        for (const k of askidakiler) await this.sonuclandi(tx, k.id, userId, "hata");
       }
-      return [...kayitlar, ...askidakiler];
     });
-    for (const k of dolanlar) await this.bildirimiKapat(k.id);
   }
 
-  private async bildirimiKapat(id: string): Promise<void> {
-    await this.bildirimler
-      .kapatEksikleri("yapay_zeka", [], [bildirimAnahtari(id)])
-      .catch((hata: unknown) => this.logger.warn(`Onay talebi bildirimi kapatılamadı: ${String(hata)}`));
+  /** AI-106: "sonuçlandı" olayı karar işleminin içinde yazılır; teslimatçı bildirimi kapatır. */
+  private async sonuclandi(tx: Prisma.TransactionClient, id: string, userId: string, durum: string): Promise<void> {
+    await olayYaz(tx, { tenantId: aktifBaglam().tenantId, topluTur: "ai_onay", topluId: id, tur: "ai_onay.sonuclandi", yuk: { userId, durum } });
   }
 }

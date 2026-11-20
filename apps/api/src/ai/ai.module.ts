@@ -18,6 +18,7 @@ import { TenantAiController } from "./ayarlar/tenant-ai.controller";
 import { TenantAiService } from "./ayarlar/tenant-ai.service";
 import { AiGorevYurutucu } from "./ayarlar/ai-gorev-yurutucu";
 import { AsistanGorevService } from "./ajan/asistan-gorev.service";
+import { AiOlayService } from "./olay/ai-olay.service";
 import { CariDurumOzetController } from "./cari-ozet/cari-durum-ozet.controller";
 import { CariDurumOzetService } from "./cari-ozet/cari-durum-ozet.service";
 import { AiIcgoruController } from "./icgoru/ai-icgoru.controller";
@@ -44,7 +45,7 @@ import { SozlesmeService } from "./sozlesme/sozlesme.service";
 @Module({
   imports: [forwardRef(() => BildirimlerModule), EklerModule],
   controllers: [AiController, AiAjanController, SohbetEkController, AiOnayOzetiController, AiOnayController, AiRaporController, TenantAiController, McpController, McpAnahtarController, AiIcgoruController, CariDurumOzetController, TeklifTalebiController, HafizaController, BelgeKuyrukController, HazirlikController, SozlesmeController],
-  providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AsistanGorevService, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService, BelgeKuyrukService, HazirlikService, SozlesmeService],
+  providers: [AiService, AiAjanService, AiOnayService, UcCagirici, AracYurutucu, AiRaporService, TenantAiService, McpAnahtarService, AiGorevYurutucu, AsistanGorevService, AiOlayService, AiTelemetriBakimService, AiIcgoruService, CariDurumOzetService, TeklifTalebiService, HafizaService, BelgeKuyrukService, HazirlikService, SozlesmeService],
   exports: [AiService, AiAjanService, AiOnayService, AiRaporService, TenantAiService, HafizaService, UcCagirici, AracYurutucu, BelgeKuyrukService, HazirlikService, SozlesmeService],
 })
 export class AiModule {}

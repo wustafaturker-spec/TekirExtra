@@ -27,6 +27,8 @@ function kur(kayit: ReturnType<typeof talep>, secenek: { alinan?: number; ucHata
       updateMany: vi.fn().mockResolvedValue({ count: secenek.alinan ?? 1 }),
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...kayit, ...data })),
     },
+    // AI-106: bildirim yerine aynı işlemde olay yazılır.
+    aiOlay: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => data) },
   };
   const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
   const uc = {
@@ -43,13 +45,14 @@ function kur(kayit: ReturnType<typeof talep>, secenek: { alinan?: number; ucHata
 }
 
 describe("onay talepleri (AI-04)", () => {
-  it("talep 24 saat geçerli açılır ve yalnız isteyen kullanıcıya bildirilir", async () => {
+  it("talep 24 saat geçerli açılır; yalnız isteyen kullanıcıya bildirilecek olay aynı işlemde yazılır", async () => {
     const k = kur(talep());
     await k.olarak(() => k.service.olustur({ arac: "belge_onayla", parametreler: { belgeId: BELGE_ID }, ozet: "Onaylanacak", kaynak: "mcp" }));
     const data = k.tx.aiOnayTalebi.create.mock.calls[0][0].data;
     expect(data.userId).toBe(KULLANICI);
     expect((data.gecerlilikSonu as Date).getTime() - Date.now()).toBeGreaterThan(23.9 * 3_600_000);
-    expect(k.bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "yapay_zeka", kullaniciIdler: [KULLANICI], roller: [] }));
+    expect(k.tx.aiOlay.create).toHaveBeenCalledWith({ data: expect.objectContaining({ topluTur: "ai_onay", tur: "ai_onay.acildi", teslimDurumu: "bekliyor", yuk: expect.objectContaining({ userId: KULLANICI, kaynak: "mcp" }) }) });
+    expect(k.bildirimler.uret).not.toHaveBeenCalled();
   });
 
   it("yapılandırılmış işlem önizlemesini talep anında sabitler", async () => {
@@ -66,7 +69,7 @@ describe("onay talepleri (AI-04)", () => {
     expect(k.uc.cagir).toHaveBeenCalledWith(expect.objectContaining({ yol: "POST /belgeler/:id/onayla" }), [BELGE_ID, { riskOnayGerekcesi: null }], expect.objectContaining({ talepId: "talep-1", arac: "belge_onayla" }));
     expect(sonuc.durum).toBe("onaylandi");
     expect(k.tx.aiOnayTalebi.updateMany).toHaveBeenCalledWith({ where: { id: "talep-1", durum: "bekliyor" }, data: expect.objectContaining({ durum: "isleniyor" }) });
-    expect(k.bildirimler.kapatEksikleri).toHaveBeenCalledWith("yapay_zeka", [], ["yapay_zeka:talep:talep-1"]);
+    expect(k.tx.aiOlay.create).toHaveBeenCalledWith({ data: expect.objectContaining({ topluId: "talep-1", tur: "ai_onay.sonuclandi", yuk: expect.objectContaining({ durum: "onaylandi" }) }) });
   });
 
   it("başka kullanıcı (yönetici dahil) talebi onaylayamaz", async () => {
@@ -135,7 +138,7 @@ describe("onay talepleri (AI-04)", () => {
       where: { id: { in: ["askida-1"] }, durum: "isleniyor" },
       data: { durum: "hata", hata: ASKIDA_KALAN_TALEP_HATASI },
     });
-    expect(k.bildirimler.kapatEksikleri).toHaveBeenCalledWith("yapay_zeka", [], ["yapay_zeka:talep:askida-1"]);
+    expect(k.tx.aiOlay.create).toHaveBeenCalledWith({ data: expect.objectContaining({ topluId: "askida-1", tur: "ai_onay.sonuclandi", yuk: expect.objectContaining({ durum: "hata" }) }) });
     expect(k.uc.cagir).not.toHaveBeenCalled();
   });
 

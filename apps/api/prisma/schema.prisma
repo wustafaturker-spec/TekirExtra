@@ -340,6 +340,7 @@ model Tenant {
   panelWidgetTercihleri PanelWidgetTercihi[]
 
   aiAsistanGorevleri AiAsistanGorevi[]
+  aiOlaylari AiOlay[]
   @@map("tenants")
 }
 
@@ -7374,6 +7375,36 @@ model AjanMesajGecmisi {
   @@unique([oturumId, requestId])
   @@index([oturumId, createdAt])
   @@map("ajan_mesaj_gecmisi")
+}
+
+/// AI-106: yapay zekâ olay kaydı ve giden kutusu. İş kaydıyla aynı işlemde yazılır; worker
+/// teslimatçısı bildirime çevirir. `sira` görev olaylarının imlecidir. 30 gün saklanır.
+model AiOlay {
+  id               String    @id @default(uuid()) @db.Uuid
+  sira             BigInt    @unique @default(autoincrement())
+  tenantId         String    @map("tenant_id") @db.Uuid
+  /// asistan_gorevi | ai_onay
+  topluTur         String    @map("toplu_tur") @db.VarChar(30)
+  topluId          String    @map("toplu_id") @db.Uuid
+  tur              String    @db.VarChar(60)
+  surum            Int       @default(1) @db.SmallInt
+  yuk              Json      @default("{}")
+  /// bekliyor | teslim_edildi | teslim_edilemedi | teslim_gerekmez
+  teslimDurumu     String    @default("bekliyor") @map("teslim_durumu") @db.VarChar(20)
+  deneme           Int       @default(0) @db.SmallInt
+  sonrakiDenemeAt  DateTime? @map("sonraki_deneme_at")
+  sahiplikAnahtari String?   @map("sahiplik_anahtari") @db.Uuid
+  kiraBitisAt      DateTime? @map("kira_bitis_at")
+  hata             String?   @db.Text
+  teslimAt         DateTime? @map("teslim_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([teslimDurumu, sonrakiDenemeAt], map: "ai_olaylari_teslim_idx")
+  @@index([tenantId, topluTur, topluId, sira], map: "ai_olaylari_toplu_idx")
+  @@index([createdAt], map: "ai_olaylari_created_at_idx")
+  @@map("ai_olaylari")
 }
 
 /// AI-105: arka planda süren asistan analizi. Kuyruğun kaynağı bu tablodur; worker işi

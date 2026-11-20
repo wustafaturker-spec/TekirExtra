@@ -35,7 +35,7 @@ function sahteAjan(beklet?: Promise<void>) {
 afterAll(async () => {
   await admin.$transaction(async (tx) => {
     for (const t of [tenantId, baskaTenantId]) {
-      await tx.bildirim.deleteMany({ where: { tenantId: t } }).catch(() => undefined);
+      await tx.aiOlay.deleteMany({ where: { tenantId: t } });
       await tx.aiAsistanGorevi.deleteMany({ where: { tenantId: t } });
       await tx.ajanMesajGecmisi.deleteMany({ where: { oturum: { tenantId: t } } });
       await tx.ajanOturumu.deleteMany({ where: { tenantId: t } });
@@ -53,12 +53,13 @@ it("arka plan görevi: tek sahiplenme, kira devri, iptal ve yalıtım", async ()
   const baskaKullanici = await admin.user.create({ data: { tenantId, eposta: `b-${tenantId}@kabul.invalid`, adSoyad: "Diğer", parolaHash: "test", rol: "yonetici" } });
   const yabanci = await admin.user.create({ data: { tenantId: baskaTenantId, eposta: `${baskaTenantId}@kabul.invalid`, adSoyad: "Yabancı", parolaHash: "test", rol: "yonetici" } });
   const oturum = await db.tenantIslem(tenantId, (tx) => tx.ajanOturumu.create({ data: { tenantId, userId: user.id, kanal: "WEB", kanalKimlik: `web:${user.id}:${randomUUID()}` } }));
-  const bildirimler = { uret: vi.fn(async () => ({ bildirimId: "b", yeniTeslimat: 1 })) };
+  // AI-106: bildirim olay teslimatçısından gelir; burada bildirime dönüşecek olaylar sayılır.
+  const teslimEdilecek = (gorevId: string) => admin.aiOlay.findMany({ where: { topluId: gorevId, teslimDurumu: "bekliyor" }, orderBy: { sira: "asc" } });
   const baglam = { tenantId, userId: user.id, rol: "yonetici" as const };
 
   const ajan = sahteAjan();
   ajan.webOturumu.mockResolvedValue(oturum);
-  const servis = new AsistanGorevService(db, ajan as never, bildirimler as never);
+  const servis = new AsistanGorevService(db, ajan as never);
 
   // Oluşturma: istek mesajı sohbete yazılır; aynı requestId ikinci görev açmaz.
   const requestId = randomUUID();
@@ -87,15 +88,17 @@ it("arka plan görevi: tek sahiplenme, kira devri, iptal ve yalıtım", async ()
   const biten = await admin.aiAsistanGorevi.findUniqueOrThrow({ where: { id: g.id } });
   expect(biten).toMatchObject({ durum: "tamamlandi", sahiplikAnahtari: null });
   expect(await db.tenantIslem(tenantId, (tx) => tx.ajanMesajGecmisi.count({ where: { oturumId: oturum.id, rol: "assistant" } }))).toBe(1);
-  expect(bildirimler.uret).toHaveBeenCalledTimes(1);
-  expect(bildirimler.uret.mock.calls[0]![0]).toMatchObject({ baslik: "Arka plan analizi hazır", kullaniciIdler: [user.id] });
+  expect((await teslimEdilecek(g.id)).map((o) => (o.yuk as { durum: string }).durum)).toEqual(["tamamlandi"]);
+  // Olay geçmişi sırasıyla: kuyrukta → calisiyor (ilk) → calisiyor (devralan) → tamamlandi; geç gelen sonuç olay yazmadı.
+  const gecmis = await admin.aiOlay.findMany({ where: { topluId: g.id }, orderBy: { sira: "asc" } });
+  expect(gecmis.map((o) => (o.yuk as { durum: string }).durum)).toEqual(["kuyrukta", "calisiyor", "calisiyor", "tamamlandi"]);
 
   // İptal: çalışırken iptal edilen görev sonuç yazmaz.
   let birak!: () => void;
   const bekleyen = new Promise<void>((r) => { birak = r; });
   const yavas = sahteAjan(bekleyen);
   yavas.webOturumu.mockResolvedValue(oturum);
-  const servis2 = new AsistanGorevService(db, yavas as never, bildirimler as never);
+  const servis2 = new AsistanGorevService(db, yavas as never);
   const g2 = await baglamlaCalistir(baglam, () => servis2.olustur({ mesaj: "Stok devir analizi", requestId: randomUUID() }));
   const alinan = (await servis2.sahiplen(admin, await admin.aiAsistanGorevi.findUniqueOrThrow({ where: { id: g2.id } })))!;
   const calisma = servis2.calistir(admin, alinan);
@@ -111,5 +114,6 @@ it("arka plan görevi: tek sahiplenme, kira devri, iptal ve yalıtım", async ()
   await admin.aiAsistanGorevi.update({ where: { id: g3.id }, data: { durum: "calisiyor", deneme: GOREV_AZAMI_DENEME, kiraBitisAt: new Date(Date.now() - 1000), sahiplikAnahtari: randomUUID() } });
   expect(await servis.sahiplen(admin, await admin.aiAsistanGorevi.findUniqueOrThrow({ where: { id: g3.id } }))).toBeNull();
   expect(await admin.aiAsistanGorevi.findUniqueOrThrow({ where: { id: g3.id } })).toMatchObject({ durum: "hata" });
-  expect(bildirimler.uret).toHaveBeenCalledTimes(2);
+  expect((await teslimEdilecek(g3.id)).map((o) => (o.yuk as { durum: string }).durum)).toEqual(["hata"]);
+  expect(await teslimEdilecek(g2.id)).toEqual([]);
 });

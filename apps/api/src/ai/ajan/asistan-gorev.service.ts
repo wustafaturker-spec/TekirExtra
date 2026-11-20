@@ -2,7 +2,7 @@ import { BadRequestException, HttpException, Injectable, Logger, NotFoundExcepti
 import { PrismaClient, type AiAsistanGorevi } from "@prisma/client";
 import { ekranDurumunuAyristir } from "@tekirextra/shared";
 import { randomUUID } from "node:crypto";
-import { BildirimService } from "../../bildirimler/bildirim.service";
+import { olayYaz } from "../olay/ai-olay.service";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { kullaniciAdinaCalistir } from "../../core/kullanici-baglami";
 import { PrismaService } from "../../core/prisma.service";
@@ -23,6 +23,8 @@ import { AiAjanService, ArkaPlanSahiplikHatasi, EKRAN_TURLERI, type EkranBaglami
  *   yan etki üretmediği için yeniden çalışma çift kayıt oluşturmaz.
  * - Yeniden deneme yalnız sağlayıcı/model hatasında ya da çökmede, en çok 3; bütçe/sınır,
  *   yetki ve girdi hataları denenmez.
+ * - AI-106: her durum değişikliği aynı işlemde `asistan_gorevi.durum` olayı yazar; "tamamlandi"
+ *   ve "hata" olayları teslimatçıda bildirime dönüşür, diğerleri yalnız olay geçmişidir.
  */
 export const GOREV_AZAMI_DENEME = 3;
 const KIRA_MS = 3 * 60 * 1000;
@@ -49,6 +51,15 @@ const gorunum = (g: AiAsistanGorevi): AsistanGoreviGorunumu => ({
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** AI-106: görev durum olayı; yalnız "tamamlandi" ve "hata" bildirime dönüşür. */
+function durumOlayi(g: Pick<AiAsistanGorevi, "id" | "tenantId" | "userId" | "mesaj">, durum: string, hata?: string) {
+  return {
+    tenantId: g.tenantId, topluTur: "asistan_gorevi" as const, topluId: g.id, tur: "asistan_gorevi.durum" as const,
+    yuk: { userId: g.userId, durum, konu: g.mesaj.replace(/\s+/g, " ").slice(0, 80), ...(hata ? { hata } : {}) },
+    teslimGerekmez: durum !== "tamamlandi" && durum !== "hata",
+  };
+}
 
 /** Yeniden denenebilir mi: sağlayıcı/model hatası ya da beklenmeyen çökme. */
 export function yenidenDenenir(hata: unknown): boolean {
@@ -78,7 +89,6 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ajan: AiAjanService,
-    private readonly bildirimler: BildirimService,
   ) {}
 
   // ─── API: kullanıcının isteğiyle ────────────────────────────────────────
@@ -99,7 +109,9 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
     const gorev = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const istek = await tx.ajanMesajGecmisi.create({ data: { oturumId: oturum.id, requestId: istekId, rol: "user", icerik: mesaj, kanal: "WEB" } });
       await tx.ajanOturumu.update({ where: { id: oturum.id }, data: { sonEtkilesim: new Date(), baslik: oturum.baslik ?? mesaj.slice(0, 120) } });
-      return tx.aiAsistanGorevi.create({ data: { tenantId, userId, oturumId: oturum.id, istekId, istekMesajId: istek.id, mesaj, ...(baglam ? { baglam: baglam as object } : {}) } });
+      const yeni = await tx.aiAsistanGorevi.create({ data: { tenantId, userId, oturumId: oturum.id, istekId, istekMesajId: istek.id, mesaj, ...(baglam ? { baglam: baglam as object } : {}) } });
+      await olayYaz(tx, durumOlayi(yeni, "kuyrukta"));
+      return yeni;
     });
     return gorunum(gorev);
   }
@@ -126,10 +138,13 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
   async iptal(id: string): Promise<AsistanGoreviGorunumu> {
     const { tenantId, userId } = aktifBaglam();
     await this.getir(id);
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.aiAsistanGorevi.updateMany({
-      where: { id, userId, durum: { in: ACIK } },
-      data: { durum: "iptal", sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: new Date() },
-    }));
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const r = await tx.aiAsistanGorevi.updateMany({
+        where: { id, userId, durum: { in: ACIK } },
+        data: { durum: "iptal", sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: new Date() },
+      });
+      if (r.count) await olayYaz(tx, durumOlayi({ id, tenantId, userId, mesaj: "" }, "iptal"));
+    });
     return this.getir(id);
   }
 
@@ -169,16 +184,22 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
   async sahiplen(db: PrismaClient, g: AiAsistanGorevi, simdi = new Date()): Promise<(AiAsistanGorevi & { anahtar: string }) | null> {
     const kosul = { id: g.id, OR: [{ durum: "kuyrukta" }, { durum: "calisiyor", kiraBitisAt: { lt: simdi } }] };
     if (g.deneme >= GOREV_AZAMI_DENEME) {
-      const r = await db.aiAsistanGorevi.updateMany({ where: kosul, data: { durum: "hata", hata: "Analiz üç denemede tamamlanamadı.", sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: simdi } });
-      if (r.count) await this.bildir(g, "hata", "Analiz üç denemede tamamlanamadı.");
+      await db.$transaction(async (tx) => {
+        const r = await tx.aiAsistanGorevi.updateMany({ where: kosul, data: { durum: "hata", hata: "Analiz üç denemede tamamlanamadı.", sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: simdi } });
+        if (r.count) await olayYaz(tx, durumOlayi(g, "hata", "Analiz üç denemede tamamlanamadı."));
+      });
       return null;
     }
     const anahtar = randomUUID();
-    const r = await db.aiAsistanGorevi.updateMany({
-      where: kosul,
-      data: { durum: "calisiyor", sahiplikAnahtari: anahtar, kiraBitisAt: new Date(simdi.getTime() + KIRA_MS), deneme: { increment: 1 }, basladiAt: simdi },
+    const alindi = await db.$transaction(async (tx) => {
+      const r = await tx.aiAsistanGorevi.updateMany({
+        where: kosul,
+        data: { durum: "calisiyor", sahiplikAnahtari: anahtar, kiraBitisAt: new Date(simdi.getTime() + KIRA_MS), deneme: { increment: 1 }, basladiAt: simdi },
+      });
+      if (r.count) await olayYaz(tx, durumOlayi(g, "calisiyor"));
+      return r.count === 1;
     });
-    return r.count === 1 ? { ...g, deneme: g.deneme + 1, anahtar } : null;
+    return alindi ? { ...g, deneme: g.deneme + 1, anahtar } : null;
   }
 
   async calistir(db: PrismaClient, g: AiAsistanGorevi & { anahtar: string }): Promise<void> {
@@ -193,36 +214,30 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
         arkaPlan: {
           oturumId: g.oturumId,
           istekMesajId: g.istekMesajId,
-          sonucYaz: async (tx, sonucMesajId) => (await tx.aiAsistanGorevi.updateMany({
-            where: { id: g.id, sahiplikAnahtari: g.anahtar, durum: "calisiyor" },
-            data: { durum: "tamamlandi", sonucMesajId, sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: new Date(), hata: null },
-          })).count === 1,
+          sonucYaz: async (tx, sonucMesajId) => {
+            const r = await tx.aiAsistanGorevi.updateMany({
+              where: { id: g.id, sahiplikAnahtari: g.anahtar, durum: "calisiyor" },
+              data: { durum: "tamamlandi", sonucMesajId, sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: new Date(), hata: null },
+            });
+            if (r.count === 1) await olayYaz(tx, durumOlayi(g, "tamamlandi"));
+            return r.count === 1;
+          },
         },
       }));
-      await this.bildir(g, "tamamlandi");
     } catch (hata) {
       if (hata instanceof ArkaPlanSahiplikHatasi || durdur.signal.aborted) return;
       const mesaj = hata instanceof Error ? hata.message.slice(0, 500) : String(hata);
       const tekrar = yenidenDenenir(hata) && g.deneme < GOREV_AZAMI_DENEME;
-      const r = await db.aiAsistanGorevi.updateMany({
-        where: { id: g.id, sahiplikAnahtari: g.anahtar, durum: "calisiyor" },
-        data: tekrar ? { durum: "kuyrukta", sahiplikAnahtari: null, kiraBitisAt: null, hata: mesaj } : { durum: "hata", hata: mesaj, sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: new Date() },
+      await db.$transaction(async (tx) => {
+        const r = await tx.aiAsistanGorevi.updateMany({
+          where: { id: g.id, sahiplikAnahtari: g.anahtar, durum: "calisiyor" },
+          data: tekrar ? { durum: "kuyrukta", sahiplikAnahtari: null, kiraBitisAt: null, hata: mesaj } : { durum: "hata", hata: mesaj, sahiplikAnahtari: null, kiraBitisAt: null, bittiAt: new Date() },
+        });
+        if (r.count) await olayYaz(tx, durumOlayi(g, tekrar ? "kuyrukta" : "hata", tekrar ? undefined : mesaj));
       });
       this.logger.warn(`Asistan görevi ${g.id} hata verdi (deneme ${g.deneme}${tekrar ? ", yeniden denenecek" : ""}): ${mesaj}`);
-      if (r.count && !tekrar) await this.bildir(g, "hata", mesaj);
     } finally {
       clearInterval(nabiz);
     }
-  }
-
-  private async bildir(g: AiAsistanGorevi, durum: "tamamlandi" | "hata", hata?: string): Promise<void> {
-    const konu = g.mesaj.replace(/\s+/g, " ").slice(0, 80);
-    await kullaniciAdinaCalistir(this.prisma, g.tenantId, g.userId, () => this.bildirimler.uret({
-      tur: "yapay_zeka", onem: durum === "hata" ? "uyari" : "bilgi",
-      baslik: durum === "hata" ? "Arka plan analizi tamamlanamadı" : "Arka plan analizi hazır",
-      aciklama: durum === "hata" ? `"${konu}": ${hata ?? "hata"}`.slice(0, 1500) : `"${konu}" sonucu asistan sohbetinizde.`,
-      birlesimAnahtari: `yapay_zeka:asistan_gorevi:${g.id}`, kaynakTur: "ai_asistan_gorevi", kaynakRef: g.id,
-      hedefYol: "/panel/ai", roller: [], kullaniciIdler: [g.userId],
-    })).catch((h: unknown) => this.logger.warn(`Asistan görevi bildirimi üretilemedi: ${String(h)}`));
   }
 }
