@@ -106,6 +106,13 @@ function sar(a: AjanAraci): AjanAraci {
         if (!telegramdaAcikRapor((g as { kod?: unknown })?.kod)) throw new BadRequestException("Bu rapor Telegram'da çalıştırılmaz; panelde Raporlar ekranından görüntüleyin.");
         return a.calistir(b, g);
       } };
+    // AI-118: hareket listesi maaş havalelerini, cari listesi personel carilerini içerebilir (rapor kararlarıyla aynı gerekçe).
+    case "liste_dosyasi":
+      return { ...a, async calistir(b, g) {
+        const ekran = (g as { ekran?: unknown })?.ekran;
+        if (ekran === "kasa_banka_hareketleri" || ekran === "cariler") throw new BadRequestException("Bu liste Telegram'da dosya olarak verilmez; panelden indirin.");
+        return a.calistir(b, g);
+      } };
     case "nakit_pozisyonu":
       return { ...a, async calistir(b, g) { return nakitPozisyonunuSuz(await a.calistir(b, g)); } };
     case "cari_ara":
