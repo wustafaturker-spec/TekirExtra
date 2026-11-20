@@ -6,6 +6,7 @@ import { AJAN_ARACLARI, type AjanAraci } from "../ajan/araclar";
 import { gruplariSec } from "../ajan/araclar/gruplar";
 import { AiAjanService, asistanIstemi, ekranBaglamiMetni, talepNotuEkle } from "../ajan/ai-ajan.service";
 import { ekranDurumuDogrula } from "../ajan/ekran-durumu";
+import { arayuzAraclariniSec } from "../ajan/arayuz-eylemleri";
 import type { AracSonucu } from "../ajan/arac-yurutucu";
 import { telegramAraclari } from "../ajan/telegram-veri-kapisi";
 import { UcCagirici } from "../ajan/uc-cagirici";
@@ -276,7 +277,8 @@ export async function senaryoyuKos(saglayici: IAiProvider, s: DegerlendirmeSenar
   const baslangic = Date.now();
   const rol = s.girdi.rol ?? "yonetici";
   const kanal = s.girdi.kanal ?? "WEB";
-  const izinli = izinliAraclar(rol, s.girdi.ozelRolKapali, kanal);
+  // AI-114: üretimdeki gibi arayüz araçları yalnız işe yarayacakları durumda sunulur.
+  const izinli = arayuzAraclariniSec(izinliAraclar(rol, s.girdi.ozelRolKapali, kanal), { durum: s.girdi.ekranDurumu?.durum, mesaj: s.girdi.mesaj });
   const yurutucu = new SahteYurutucu(s);
   const servis = new AiAjanService(null as never, yurutucu as never);
   const ekran = s.girdi.ekran;

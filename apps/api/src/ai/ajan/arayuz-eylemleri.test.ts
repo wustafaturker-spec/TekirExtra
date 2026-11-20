@@ -4,7 +4,7 @@ import { istekBaglami } from "../../core/istek-baglami";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
 import { AiAjanService } from "./ai-ajan.service";
 import { AracYurutucu } from "./arac-yurutucu";
-import { arayuzEylemiHazirla, arayuzSonucMetni, type ArayuzBaglami } from "./arayuz-eylemleri";
+import { arayuzAraclariniSec, arayuzEylemiHazirla, arayuzSonucMetni, type ArayuzBaglami } from "./arayuz-eylemleri";
 import { telegramAraclari } from "./telegram-veri-kapisi";
 
 const KIMLIK = { tenantId: "11111111-1111-1111-1111-111111111111", userId: "22222222-2222-2222-2222-222222222222" };
@@ -76,7 +76,7 @@ describe("arayüz eylemleri asistan döngüsünde (AI-114)", () => {
     service.saglayiciBul = async () => ({ saglayici, ozelTalimatlar: null });
     service.duzeltmeSaglayicisiBul = async () => saglayici;
     const calistir = (ekran?: Record<string, unknown>, kanal: "WEB" | "TELEGRAM" = "WEB") =>
-      istekBaglami.run({ deger: { ...KIMLIK, rol: "yonetici" as never } }, () => service.mesajiIsle("Geçen ayın kesin satış faturalarını göster", undefined, ekran as never, [], { kanal }));
+      istekBaglami.run({ deger: { ...KIMLIK, rol: "yonetici" as never } }, () => service.mesajiIsle("Kesin satış faturaları sayfasını aç", undefined, ekran as never, [], { kanal }));
     return { tx, saglayici, calistir };
   }
 
@@ -104,5 +104,20 @@ describe("arayüz eylemleri asistan döngüsünde (AI-114)", () => {
     const k = kur([{ metin: "Tamam.", aracCagrilari: [] }]);
     await k.calistir({ arayuzSonuclari: [{ tur: "formu_doldur", sonuc: "alan_yok" }] });
     expect(k.saglayici.girdiler[0]!.sistemRol).toContain("formu_doldur: alan bulunamadı, uygulanmadı");
+  });
+});
+
+describe("arayüz araçlarının sunulması (AI-114 düzeltmesi)", () => {
+  const araclar = ["sayfaya_git", "suzgec_uygula", "sekme_ac", "kayit_vurgula", "formu_doldur", "fatura_ara"].map((ad) => ({ ad, sinif: ad === "fatura_ara" ? "okuma" : "arayuz" }));
+  const adlar = (g: Parameters<typeof arayuzAraclariniSec>[1]) => arayuzAraclariniSec(araclar, g).map((a) => a.ad);
+  it("bağlam ve yönlendirme isteği yoksa yalnız iş araçları sunulur (yetkisiz istekte yönlendirmeye kaçmasın)", () => {
+    expect(adlar({ mesaj: "Kasa ve banka bakiyelerini göster." })).toEqual(["fatura_ara"]);
+    expect(adlar({ mesaj: "FTR2026000000123 numaralı faturayı sil." })).toEqual(["fatura_ara"]);
+  });
+  it("açık yönlendirme isteğinde sayfaya_git, liste ekranında süzgeç/sekme/vurgu, açık formda form doldurma", () => {
+    expect(adlar({ mesaj: "Beni faturalar sayfasına götür" })).toEqual(["sayfaya_git", "fatura_ara"]);
+    expect(adlar({ mesaj: "Bu faturayı aç" })).toContain("sayfaya_git");
+    expect(adlar({ mesaj: "Ekim hareketlerini göster", durum: { ekran: "kasa_banka_hareketleri" } })).toEqual(["suzgec_uygula", "sekme_ac", "kayit_vurgula", "fatura_ara"]);
+    expect(adlar({ mesaj: "Formu doldur", durum: { ekran: "faturalar", form: "fatura" } })).toContain("formu_doldur");
   });
 });

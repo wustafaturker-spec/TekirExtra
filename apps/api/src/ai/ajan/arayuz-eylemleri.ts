@@ -77,6 +77,26 @@ export const ARAYUZ_ARACLARI: AjanAraci[] = [
 
 export const ARAYUZ_ARAC_ADLARI = new Set(ARAYUZ_ARACLARI.map((a) => a.ad));
 
+/** Kullanıcı açıkça bir ekran açılmasını istiyor mu ("…sayfasını aç", "beni … götür", "ekrana git"). */
+const YONLENDIRME_NIYETI = /(sayfa|ekran|menü|menu)(s[ıi]n[ıi]|y[ıi]|ya|ye|da|de)?\s*(aç|ac|git|götür|gotur|getir)|götür|gotur|yönlendir|yonlendir|(^|\s)(git|aç|ac)([\s.!?,]|$)|gidelim|açar m[ıi]s[ıi]n|açabilir misin/iu;
+
+/**
+ * AI-114: arayüz araçları yalnız işe yarayacakları durumda modele sunulur. Her mesajda
+ * sunulduklarında model yetkisiz istekte reddetmek yerine ilgili sayfaya yönlendirmeye
+ * kaydı (2026-11-20 değerlendirmesi, yetki senaryoları). Kural: süzgeç/sekme/vurgulama
+ * yalnız liste ekranı durumu varken, form doldurma yalnız açık form varken, sayfaya_git
+ * yalnız kullanıcı açıkça ekran açılmasını istediğinde.
+ */
+export function arayuzAraclariniSec<T extends { ad: string; sinif: string }>(izinli: T[], g: { durum?: EkranDurumu; mesaj: string }): T[] {
+  const yonlendirme = YONLENDIRME_NIYETI.test(g.mesaj);
+  return izinli.filter((a) => {
+    if (a.sinif !== "arayuz") return true;
+    if (a.ad === "sayfaya_git") return yonlendirme;
+    if (a.ad === "formu_doldur") return !!g.durum?.form;
+    return !!g.durum;
+  });
+}
+
 export interface ArayuzBaglami {
   uc: UcCagirici;
   durum?: EkranDurumu;
