@@ -81,6 +81,18 @@ const EKRAN_GRUPLARI: Record<string, AracGrubu[]> = {
   gelen_eirsaliye: ["gelen_ebelge"],
   satin_alma_talebi: ["satin_alma"],
   rapor: ["finans"],
+  // AI-113: yeni kayıt türleri ve liste ekranları.
+  kasa_banka_hesabi: ["finans"],
+  masraf: ["finans"],
+  personel: ["personel"],
+  uretim_emri: ["uretim"],
+  crm_firsati: ["crm", "satis"],
+  faturalar: ["satis", "tahsilat"],
+  belgeler: ["satis"],
+  cariler: ["tahsilat", "kart"],
+  kasa_banka_hareketleri: ["finans"],
+  banka_ekstresi: ["finans"],
+  masraflar: ["finans"],
 };
 
 /** Panel sayfası yolu → grup; ilk eşleşen önek kullanılır. */
@@ -111,12 +123,13 @@ const SAYFA_GRUPLARI: Array<[string, AracGrubu[]]> = [
 
 export const SAYFA_YOLU = /^\/panel(\/[a-z0-9-]+){0,4}\/?$/;
 
-export function gruplariSec(g: { mesaj: string; ekranTuru?: string; sayfa?: string; gecmisAraclar?: string[] }): Set<AracGrubu> {
+export function gruplariSec(g: { mesaj: string; ekranTuru?: string; ekranDurumu?: string; sayfa?: string; gecmisAraclar?: string[] }): Set<AracGrubu> {
   const secilen = new Set<AracGrubu>(["cekirdek"]);
   const ekle = (gruplar: readonly AracGrubu[] | undefined) => gruplar?.forEach((x) => secilen.add(x));
   const metin = sadelestir(g.mesaj);
   for (const [desen, gruplar] of SOZCUK_GRUPLARI) if (desen.test(metin)) ekle(gruplar);
   if (g.ekranTuru) ekle(EKRAN_GRUPLARI[g.ekranTuru]);
+  if (g.ekranDurumu) ekle(EKRAN_GRUPLARI[g.ekranDurumu]);
   if (g.sayfa) ekle(SAYFA_GRUPLARI.find(([onek]) => g.sayfa === onek || g.sayfa!.startsWith(`${onek}/`))?.[1]);
   for (const ad of g.gecmisAraclar ?? []) { const grup = aracGrubu(ad); if (grup) secilen.add(grup); }
   return secilen;

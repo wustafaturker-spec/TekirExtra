@@ -2,7 +2,8 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Rol } from "@tekirextra/shared";
+import type { EkranDurumu, Rol } from "@tekirextra/shared";
+import { ekranDurumuDogrula } from "./ekran-durumu";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import type { AiAracliYanit, AiSohbetMesaji, IAiProvider } from "../saglayici/ai-provider.interface";
@@ -219,7 +220,7 @@ function durumlariCikar(arac: string, icerik: string): DogrulanmisDurum[] {
 }
 
 /** AI-78: asistanın açıldığı ekranın kayıt türleri. */
-export const EKRAN_TURLERI = ["cari", "stok", "fatura", "belge", "gelen_efatura", "gelen_eirsaliye", "satin_alma_talebi", "rapor"] as const;
+export const EKRAN_TURLERI = ["cari", "stok", "fatura", "belge", "gelen_efatura", "gelen_eirsaliye", "satin_alma_talebi", "rapor", "kasa_banka_hesabi", "masraf", "personel", "uretim_emri", "crm_firsati"] as const;
 export type EkranTuru = (typeof EKRAN_TURLERI)[number];
 
 /** CARI-48/AI-78: asistanın açıldığı ekranın kaydı; sunucu o kaydın ekran ucundan rol kontrolüyle okur. */
@@ -233,6 +234,8 @@ export interface EkranBaglami {
   eylem?: string;
   /** AI-84: asistanın açıldığı panel sayfası; yalnız araç grubu seçimine girer. */
   sayfa?: string;
+  /** AI-113: liste ekranının süzgeçleri ve seçili kayıtları (sözleşmeye indirgenmiş). */
+  durum?: EkranDurumu;
 }
 
 /** P-14a: Kaydedilmemiş form taslağı metni. Güvenilmeyen istemci verisi olarak açıkça etiketlenir ve temizlenir. */
@@ -291,6 +294,7 @@ export interface EkranKaydi {
 const TUR_ADI: Record<EkranTuru, string> = {
   cari: "cari kartı", stok: "stok kartı", fatura: "fatura", belge: "teklif/sipariş/irsaliye", gelen_efatura: "gelen e-Fatura",
   gelen_eirsaliye: "gelen e-İrsaliye", satin_alma_talebi: "satın alma talebi", rapor: "rapor",
+  kasa_banka_hesabi: "kasa/banka hesabı", masraf: "masraf", personel: "personel kartı", uretim_emri: "üretim emri", crm_firsati: "CRM fırsatı",
 };
 
 /** Ekran bağlamı sistem talimatına doğrulanmış kayıt olarak eklenir; ad ve alanlar yalnız veridir. */
@@ -346,6 +350,30 @@ async function ekranKaydiOku(uc: UcCagirici, tur: EkranTuru, id: string): Promis
       const r = (Array.isArray(katalog) ? katalog : katalog?.raporlar ?? []).find((x: any) => x.kod === id);
       if (!r) throw new BadRequestException("Rapor bulunamadı");
       return { tur, id, etiket: r.ad ?? id, alanlar: { kod: id } };
+    }
+    // AI-113: kimlik `kasa:<uuid>` ya da `banka:<uuid>`; hesap kendi ekran ucundan okunur.
+    case "kasa_banka_hesabi": {
+      const [hesapTuru, hesapId] = id.split(":");
+      if ((hesapTuru !== "kasa" && hesapTuru !== "banka") || !hesapId || !UUID.test(hesapId)) throw new BadRequestException("Hesap kimliği geçerli değil.");
+      const h = await uc.cagir<any>(hesapTuru === "kasa" ? UC.kasaGetir : UC.bankaGetir, [hesapId]);
+      return { tur, id: `${hesapTuru}:${h.id}`, etiket: yaz(h.ad ?? h.hesapAdi ?? h.bankaAdi) || hesapTuru, alanlar: { tur: hesapTuru, doviz: yaz(h.dovizCinsi ?? h.paraBirimi), banka: hesapTuru === "banka" ? yaz(h.bankaAdi) : "" } };
+    }
+    case "masraf": {
+      const m = await uc.cagir<any>(UC.masrafGetir, [id]);
+      return { tur, id: m.id, etiket: yaz(m.belgeNo ?? m.aciklama) || "masraf", alanlar: { kategori: yaz(m.kategori?.ad), durum: yaz(m.durum), tarih: yaz(m.tarih).slice(0, 10) } };
+    }
+    // Personel: yalnız ad ve görev; ücret ve kimlik bilgisi bağlama girmez (AI-85…91).
+    case "personel": {
+      const p = await uc.cagir<any>(UC.personelGetir, [id]);
+      return { tur, id: p.id, etiket: yaz(p.adSoyad ?? [p.ad, p.soyad].filter(Boolean).join(" ")) || "personel", alanlar: { gorev: yaz(p.gorev ?? p.unvan), departman: yaz(p.departman?.ad ?? p.departman), durum: yaz(p.durum) } };
+    }
+    case "uretim_emri": {
+      const e = await uc.cagir<any>(UC.uretimEmirGetir, [id]);
+      return { tur, id: e.id, etiket: yaz(e.no ?? e.emirNo) || "üretim emri", alanlar: { urun: yaz(e.urun?.ad ?? e.stok?.ad), durum: yaz(e.durum) } };
+    }
+    case "crm_firsati": {
+      const f = await uc.cagir<any>(UC.crmFirsatGetir, [id]);
+      return { tur, id: f.id, etiket: yaz(f.baslik ?? f.ad) || "fırsat", alanlar: { asama: yaz(f.asama), cari: yaz(f.cari?.unvan) } };
     }
   }
 }
@@ -453,8 +481,11 @@ export class AiAjanService {
     const ekranKaydiIstegi = ekran?.kayit ?? (ekran?.cariId ? { tur: "cari" as const, id: ekran.cariId } : undefined);
     if (ekranKaydiIstegi) {
       if (!EKRAN_TURLERI.includes(ekranKaydiIstegi.tur)) throw new BadRequestException("Ekran kaydı türü tanınmıyor.");
-      const gecerli = ekranKaydiIstegi.tur === "rapor" ? /^[a-z0-9_-]{1,80}$/i.test(ekranKaydiIstegi.id) : UUID.test(ekranKaydiIstegi.id);
-      if (!gecerli) throw new BadRequestException("Ekran kaydı kimliği geçerli bir UUID olmalıdır.");
+      const gecerli = ekranKaydiIstegi.tur === "rapor" ? /^[a-z0-9_-]{1,80}$/i.test(ekranKaydiIstegi.id)
+        // AI-113: hesap kimliği `kasa:<uuid>` / `banka:<uuid>`.
+        : ekranKaydiIstegi.tur === "kasa_banka_hesabi" ? /^(kasa|banka):/.test(ekranKaydiIstegi.id) && UUID.test(ekranKaydiIstegi.id.split(":")[1] ?? "")
+        : UUID.test(ekranKaydiIstegi.id);
+      if (!gecerli) throw new BadRequestException(ekranKaydiIstegi.tur === "kasa_banka_hesabi" ? "Hesap kimliği geçerli değil." : "Ekran kaydı kimliği geçerli bir UUID olmalıdır.");
     }
 
     // AI-81: "Derin analiz" mesajı güçlü sağlayıcıya; tanımlı değilse ana modelle yanıtlanır ve söylenir.
@@ -484,6 +515,9 @@ export class AiAjanService {
       ekranKaydi = `${k.id} ${k.etiket}`;
       ekranOzeti = { tur: k.tur, id: k.id, etiket: k.etiket };
     }
+    // AI-113: liste ekranının süzgeçleri ve seçili kayıtları kullanıcının rolüyle doğrulanır.
+    if (ekran?.durum && !this.uc) throw new Error("Ekran durumu için uç çağırıcı yok");
+    const ekranDurumu = ekran?.durum && this.uc ? await ekranDurumuDogrula(this.uc, ekran.durum) : { metin: "", kimlikler: [] };
     const ekler = await this.ekMetni(ekIdleri);
     const oturum = await this.oturumGetir(tenantId, userId, kanal);
     const gecmis = await this.gecmisOku(tenantId, oturum.id, telegram ? "TELEGRAM" : undefined);
@@ -506,6 +540,7 @@ export class AiAjanService {
           asistanIstemi({ adSoyad: kullanici.adSoyad, rol, ozelTalimatlar, telegram }) +
           durumBaglami(gecmis.durumlar) +
           ekranMetni +
+          ekranDurumu.metin +
           taslakMetni(ekran?.taslak) +
           eylemMetni(ekran?.eylem) +
           ekler.metin,
@@ -514,13 +549,14 @@ export class AiAjanService {
         gruplar: gruplariSec({
           mesaj: [metin, ekran?.eylem].filter(Boolean).join(" "),
           ekranTuru: ekranKaydiIstegi?.tur,
+          ekranDurumu: ekran?.durum?.ekran,
           sayfa: ekran?.sayfa,
           gecmisAraclar: gecmis.araclar,
         }),
         // "Derin analiz"de sağlayıcı zaten güçlü/ana modeldir.
         duzeltmeSaglayicisi: secenek.derin ? undefined : () => this.duzeltmeSaglayicisiBul(tenantId),
         // Ekran kaydının kimliği yanıtta geçebilir; uydurma denetimi onu bilinen kaynak sayar.
-        baglamMetni: [metin, ekranKaydi, ekler.kimlikler, ...gecmis.mesajlar.map((m) => ("metin" in m ? m.metin : ""))].join(" "),
+        baglamMetni: [metin, ekranKaydi, ...ekranDurumu.kimlikler, ekler.kimlikler, ...gecmis.mesajlar.map((m) => ("metin" in m ? m.metin : ""))].join(" "),
         kullaniciTalebi: metin,
         oturumId: oturum.id,
         olay: secenek.olay,

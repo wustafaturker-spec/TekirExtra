@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { api, ApiHata } from "@/lib/api";
 import { bugunTR } from "@tekirextra/shared";
 import { PersonelBelgeleri } from "@/components/personel-belgeleri";
@@ -74,6 +75,8 @@ const bugun = () => bugunTR();
 export default function PersonelDetaySayfasi() {
   const { id } = useParams<{ id: string }>();
   const [personel, setPersonel] = useState<PersonelDetay | null>(null);
+  // AI-113: açık personel kartı asistanın ekran kaydıdır (sunucu ücret ve kimlik bilgisini bağlama almaz).
+  useEkranKaydi(personel ? { tur: "personel", id: personel.id, etiket: `${personel.ad} ${personel.soyad}` } : null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [isleniyor, setIsleniyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);

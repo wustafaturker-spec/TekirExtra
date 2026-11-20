@@ -1,6 +1,6 @@
 "use client";
 
-import { asistaniAc, useEkranKaydi } from "@/lib/asistan-baglami";
+import { asistaniAc, suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
@@ -471,6 +471,9 @@ export default function BelgelerSayfasi() {
   const varyantlariAl = (stokId: string): StokVaryant[] => stoklar.find((x) => x.id === stokId)?.varyantlar ?? stokVaryantlari[stokId] ?? [];
   /** FTR-28: belge dövizi değişti, kalem fiyatları hâlâ eski dövizde; kullanıcı onayı bekleniyor. */
   const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
+
+  // AI-113: liste süzgeçleri ve seçili belgeler asistanın ekran durumudur.
+  useEkranDurumu({ ekran: "belgeler", suzgecler: suzgecler({ tur: turFiltre, yon: yonBaglami, arama: aramaSorgusu }), secili: [...secili] });
 
   // AI-78/P-14a: açık belge asistan bağlamı olur; form düzenleniyorsa taslak verisi güvenilmeyen taslak olarak taşınır.
   useEkranKaydi(detay ? {

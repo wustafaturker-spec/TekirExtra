@@ -5,6 +5,7 @@ import { istekBaglami } from "../../core/istek-baglami";
 import { AJAN_ARACLARI, type AjanAraci } from "../ajan/araclar";
 import { gruplariSec } from "../ajan/araclar/gruplar";
 import { AiAjanService, asistanIstemi, ekranBaglamiMetni, talepNotuEkle } from "../ajan/ai-ajan.service";
+import { ekranDurumuDogrula } from "../ajan/ekran-durumu";
 import type { AracSonucu } from "../ajan/arac-yurutucu";
 import { telegramAraclari } from "../ajan/telegram-veri-kapisi";
 import { UcCagirici } from "../ajan/uc-cagirici";
@@ -257,6 +258,17 @@ export function puanla(s: DegerlendirmeSenaryosu, g: { cevap: string; cagrilar: 
   return { hatalar: [...new Set(hatalar)], uyarilar };
 }
 
+/** AI-113: ekran durumu doğrulaması için sahte ekran ucu; listede olmayan kimlik okunamaz. */
+function ekranUcu(kayitlar: Record<string, string>) {
+  return {
+    cagir: async (_uc: unknown, arg: unknown[]) => {
+      const ad = kayitlar[String(arg[0])];
+      if (!ad) throw new Error("Kayıt bulunamadı");
+      return { id: arg[0], no: ad, unvan: ad, belgeNo: ad, ad };
+    },
+  };
+}
+
 /** Bir senaryoyu üretim döngüsüyle bir kez koşar. */
 export async function senaryoyuKos(saglayici: IAiProvider, s: DegerlendirmeSenaryosu): Promise<DenemeSonucu> {
   const baslangic = Date.now();
@@ -267,13 +279,14 @@ export async function senaryoyuKos(saglayici: IAiProvider, s: DegerlendirmeSenar
   const servis = new AiAjanService(null as never, yurutucu as never);
   const ekran = s.girdi.ekran;
   const gecmis = s.girdi.gecmis ?? [];
-  const baglamMetni = [s.girdi.mesaj, ekran ? `${ekran.id} ${ekran.etiket}` : "", ...gecmis.map((m) => ("metin" in m ? m.metin : ""))].join(" ");
+  const durum = await ekranDurumuDogrula(ekranUcu(s.girdi.ekranDurumu?.kayitlar ?? {}) as never, s.girdi.ekranDurumu?.durum);
+  const baglamMetni = [s.girdi.mesaj, ekran ? `${ekran.id} ${ekran.etiket}` : "", ...durum.kimlikler, ...gecmis.map((m) => ("metin" in m ? m.metin : ""))].join(" ");
   const sonuc = await servis.degerlendirmeDongusu({
     saglayici,
-    sistemRol: asistanIstemi({ adSoyad: DEGERLENDIRME_KULLANICISI, rol, ozelTalimatlar: s.girdi.ozelTalimatlar ?? null, telegram: kanal === "TELEGRAM" }) + (ekran ? ekranBaglamiMetni(ekran) : ""),
+    sistemRol: asistanIstemi({ adSoyad: DEGERLENDIRME_KULLANICISI, rol, ozelTalimatlar: s.girdi.ozelTalimatlar ?? null, telegram: kanal === "TELEGRAM" }) + (ekran ? ekranBaglamiMetni(ekran) : "") + durum.metin,
     mesajlar: [...gecmis, { rol: "kullanici", metin: s.girdi.mesaj }],
     izinli,
-    gruplar: gruplariSec({ mesaj: s.girdi.mesaj, ekranTuru: ekran?.tur, sayfa: s.girdi.sayfa, gecmisAraclar: gecmis.flatMap((m) => (m.rol === "asistan" ? (m.aracCagrilari ?? []).map((c) => c.ad) : [])) }),
+    gruplar: gruplariSec({ mesaj: s.girdi.mesaj, ekranTuru: ekran?.tur, ekranDurumu: s.girdi.ekranDurumu?.durum.ekran, sayfa: s.girdi.sayfa, gecmisAraclar: gecmis.flatMap((m) => (m.rol === "asistan" ? (m.aracCagrilari ?? []).map((c) => c.ad) : [])) }),
     baglamMetni,
     kullaniciTalebi: s.girdi.mesaj,
   });

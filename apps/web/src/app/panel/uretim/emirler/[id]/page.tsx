@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
 import { bugunTR } from "@tekirextra/shared";
@@ -190,6 +191,8 @@ export default function UretimEmriDetaySayfasi() {
     };
   }, []);
   const [emir, setEmir] = useState<Emir | null>(null);
+  // AI-113: açık üretim emri asistanın ekran kaydıdır.
+  useEkranKaydi(emir ? { tur: "uretim_emri", id: emir.id, etiket: emir.no } : null);
   const [uygunluk, setUygunluk] = useState<Uygunluk | null>(null);
   const [maliyet, setMaliyet] = useState<MaliyetOzeti | null>(null);
   const [vardiyalar, setVardiyalar] = useState<Vardiya[]>([]);

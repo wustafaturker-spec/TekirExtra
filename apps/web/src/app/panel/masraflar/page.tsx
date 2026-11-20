@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { usePathname, useRouter } from "next/navigation";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
@@ -61,6 +62,10 @@ export default function MasraflarSayfasi() {
   const [ozet, setOzet] = useState({ toplam: 0, odenmemis: 0, kira: 0, taslak: 0 });
   const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null); const [filtreAdet, setFiltreAdet] = useState(0); const [dahaYukleniyor, setDahaYukleniyor] = useState(false);
   const filtreliMasraflar = masraflar;
+  // AI-113: masraf süzgeçleri ekran durumu; düzenlenen masraf ekran kaydıdır.
+  useEkranDurumu({ ekran: "masraflar", suzgecler: suzgecler({ durum: durumFiltresi, kategori: kategoriFiltresi, arama }) });
+  const duzenlenenMasraf = duzenlenenId ? masraflar.find((m) => m.id === duzenlenenId) : undefined;
+  useEkranKaydi(duzenlenenId ? { tur: "masraf", id: duzenlenenId, etiket: duzenlenenMasraf?.belgeNo || duzenlenenMasraf?.aciklama || "Masraf" } : null);
 
   // V-2: masraf defteri sunucuda sayfalanır; arama ve süzgeçler sunucuya gider.
   const sayfaAdresi = useCallback((imlec?: string) => {

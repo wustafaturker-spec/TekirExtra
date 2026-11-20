@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { useEkranDurumu } from "@/lib/asistan-baglami";
 import { IsKutusuKaldir, type KaldirHedefi } from "@/components/is-kutusu-kaldir";
 import { Alert, Badge, Button, Card, PageHeader, Segmented } from "@/components/ui";
 
@@ -51,6 +52,8 @@ export default function IsKutusuSayfasi() {
   const [basari, setBasari] = useState("");
   const [islem, setIslem] = useState<string | null>(null);
   const [gorunum, setGorunum] = useState<"acik" | "kapatilanlar">("acik");
+  // AI-113: iş kutusu kapsamı ve görünümü asistanın ekran durumudur.
+  useEkranDurumu({ ekran: "is_kutusu", sekme: gorunum, suzgecler: { kutu: kapsam } });
   const [kapatilanlar, setKapatilanlar] = useState<Kapanis[] | null>(null);
   const [kaldir, setKaldir] = useState<KaldirHedefi | null>(null);
 

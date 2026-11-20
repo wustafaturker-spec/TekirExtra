@@ -1,6 +1,6 @@
 "use client";
 
-import { asistaniAc, useEkranKaydi } from "@/lib/asistan-baglami";
+import { asistaniAc, suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BelgeCercevesi } from "@/components/belge-cercevesi";
@@ -715,6 +715,13 @@ export default function FaturaSayfasi() {
     || dovizCinsi !== "TRY" || kur !== "1" || aciklama.trim() !== "" || notlar.trim() !== "" || dosyalar.length > 0 || satirlar.length !== 1
     || satirlar.some((satir) => satir.stokId !== "" || satir.miktar !== 1 || satir.birimFiyat !== 0 || satir.iskontoOrani !== 0 || satir.kdvOrani !== 20 || Boolean(satir.gibIstisnaKodu))
   );
+
+  // AI-113: liste süzgeçleri ve toplu seçim asistanın ekran durumudur.
+  useEkranDurumu({
+    ekran: "faturalar",
+    suzgecler: suzgecler({ yon: yonBaglami, durum: durumFiltresi, ebelge: ebelgeFiltresi, odeme: odemeFiltresi, ihracKayitli: ihracKayitliFiltresi, arama: aramaFiltresi }),
+    secili: [...topluSecim],
+  });
 
   // AI-78/P-14a: açık fatura asistan bağlamı olur; form düzenleniyorsa taslak verisi güvenilmeyen taslak olarak taşınır.
   useEkranKaydi(acikFatura ? {

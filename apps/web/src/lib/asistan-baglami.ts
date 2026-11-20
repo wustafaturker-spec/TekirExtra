@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { EKRAN_DURUMLARI, ekranDurumunuAyristir, type EkranDurumu } from "@tekirextra/shared";
 
 /** AI-78: asistanın açıldığı ekranın kayıt türleri (sunucudaki EKRAN_TURLERI ile aynı). */
-export type EkranTuru = "cari" | "stok" | "fatura" | "belge" | "gelen_efatura" | "gelen_eirsaliye" | "satin_alma_talebi" | "rapor";
+export type EkranTuru = "cari" | "stok" | "fatura" | "belge" | "gelen_efatura" | "gelen_eirsaliye" | "satin_alma_talebi" | "rapor"
+  /** AI-113; hesap kimliği `kasa:<uuid>` ya da `banka:<uuid>`. */
+  | "kasa_banka_hesabi" | "masraf" | "personel" | "uretim_emri" | "crm_firsati";
 
 /** CARI-48/AI-78/P-14a: asistanın açıldığı ekranın kaydı; sunucu kimliği o kaydın ekran ucundan rol kontrolüyle doğrular. */
 export interface AsistanBaglami {
@@ -57,6 +60,21 @@ export const EKRAN_EYLEMLERI: Record<EkranTuru, EkranEylemi[]> = {
   satin_alma_talebi: [
     { kod: "talep_karsilastir", etiket: "Teklifleri karşılaştır", mesaj: "Bu satın alma talebine bağlı tedarikçi tekliflerini fiyat ve teslimat açısından karşılaştır.", simge: "⚖️" },
   ],
+  kasa_banka_hesabi: [
+    { kod: "hesap_ozet", etiket: "Hesap hareketlerini özetle", mesaj: "Bu hesabın bu ayki giriş-çıkışlarını ve bakiyesini özetle; olağandışı hareket varsa belirt.", simge: "🏦" },
+  ],
+  masraf: [
+    { kod: "masraf_kontrol", etiket: "Bu masrafı kontrol et", mesaj: "Bu masrafın kategori, KDV ve ödeme durumunu kontrol et; eksik ya da tutarsız alan var mı?", simge: "🔍" },
+  ],
+  personel: [
+    { kod: "personel_izin", etiket: "İzin durumu", mesaj: "Bu personelin izin bakiyesini ve bekleyen izin taleplerini özetle.", simge: "🗓️" },
+  ],
+  uretim_emri: [
+    { kod: "uretim_durum", etiket: "Emrin durumu", mesaj: "Bu üretim emrinin malzeme uygunluğunu, operasyon durumunu ve gecikme riskini özetle.", simge: "🏭" },
+  ],
+  crm_firsati: [
+    { kod: "firsat_sonraki_adim", etiket: "Sonraki adımı öner", mesaj: "Bu fırsatın aşamasına ve carinin geçmişine bakarak sonraki satış adımını öner.", simge: "🎯" },
+  ],
   rapor: [
     { kod: "rapor_yorumla", etiket: "Bu raporu yorumla", mesaj: "Bu raporun sonuçlarını yönetici özeti şeklinde yorumla ve kritik sapmaları belirt.", simge: "💡" },
   ],
@@ -65,6 +83,7 @@ export const EKRAN_EYLEMLERI: Record<EkranTuru, EkranEylemi[]> = {
 export const EKRAN_TURU_ADI: Record<EkranTuru, string> = {
   cari: "cari", stok: "stok kartı", fatura: "fatura", belge: "belge", gelen_efatura: "gelen e-Fatura",
   gelen_eirsaliye: "gelen e-İrsaliye", satin_alma_talebi: "satın alma talebi", rapor: "rapor",
+  kasa_banka_hesabi: "hesap", masraf: "masraf", personel: "personel", uretim_emri: "üretim emri", crm_firsati: "fırsat",
 };
 
 /** AI-80: ekrana göre hazır öneriler; tıklanınca metin mesaj kutusuna gelir. */
@@ -78,6 +97,11 @@ export const EKRAN_ONERILERI: Record<EkranTuru | "genel", string[]> = {
   gelen_eirsaliye: ["Bu irsaliyeyi özetle", "Yanıt süresi ne zaman doluyor?"],
   satin_alma_talebi: ["Bu talebi özetle", "Teklifleri karşılaştır", "Bütçe durumu ne?"],
   rapor: ["Bu raporu yorumla", "En çok değişen kalemler hangileri?"],
+  kasa_banka_hesabi: ["Bu hesabın son hareketleri", "Bu ay giriş-çıkış toplamı", "Eşleşmemiş ekstre satırı var mı?"],
+  masraf: ["Bu masrafı kontrol et", "Bu kategoride bu ayki toplam"],
+  personel: ["İzin bakiyesi", "Bekleyen talepleri var mı?"],
+  uretim_emri: ["Malzeme yeterli mi?", "Emrin maliyeti ne durumda?"],
+  crm_firsati: ["Sonraki adımı öner", "Bu carinin açık teklifleri"],
 };
 
 export const ASISTAN_AC_OLAYI = "tekir-asistan-ac";
@@ -120,4 +144,40 @@ export function useEkranKaydi(kayit: AsistanBaglami | null | undefined) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- kayıt içeriği anahtarla izlenir
   }, [anahtar]);
+}
+
+/*
+ * AI-113: liste ekranları süzgeç ve seçimlerini bildirir. Ekran kapanınca durum silinir;
+ * asistan açıldığında ve her mesajda en son bildirilen durum gönderilir. İçerik değil yalnız
+ * süzgeç değerleri ve kimlikler taşınır (sözleşme `@tekirextra/shared` ekran-durumu).
+ */
+let sonDurum: EkranDurumu | null = null;
+
+export function ekranDurumu(): EkranDurumu | null {
+  return sonDurum;
+}
+
+export function useEkranDurumu(durum: EkranDurumu | null | undefined) {
+  const temiz = durum ? ekranDurumunuAyristir(durum) : null;
+  const anahtar = temiz ? JSON.stringify(temiz) : "";
+  useEffect(() => {
+    if (!temiz) return;
+    sonDurum = temiz;
+    return () => {
+      if (sonDurum && JSON.stringify(sonDurum) === anahtar) sonDurum = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- durum içeriği anahtarla izlenir
+  }, [anahtar]);
+}
+
+/** Rozet metni: "Fatura listesi · 2 süzgeç · 3 seçili". */
+export function ekranDurumuOzeti(d: EkranDurumu): string {
+  const suzgec = Object.keys(d.suzgecler ?? {}).length;
+  const secili = d.secili?.length ?? 0;
+  return [EKRAN_DURUMLARI[d.ekran].ad, suzgec ? `${suzgec} süzgeç` : "", secili ? `${secili} seçili` : ""].filter(Boolean).join(" · ");
+}
+
+/** Boş/"tümü" değerleri süzgeçten çıkarır (sayfalar ham state'i verebilsin). */
+export function suzgecler(degerler: Record<string, string | null | undefined | false>): Record<string, string> {
+  return Object.fromEntries(Object.entries(degerler).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "" && e[1] !== "tumu"));
 }

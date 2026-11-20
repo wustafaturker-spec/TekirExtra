@@ -15,7 +15,8 @@ import { TenantDuyuruPopupYoneticisi } from "@/components/tenant-duyuru-popup-yo
 import { TenantDuyuruModulKartlari } from "@/components/tenant-duyuru-modul-kartlari";
 import { HareketsizlikIzleyici } from "@/components/hareketsizlik-izleyici";
 import { HataDinleyici } from "@/components/hata-dinleyici";
-import { ASISTAN_AC_OLAYI, ekranKaydi, type AsistanBaglami } from "@/lib/asistan-baglami";
+import { ASISTAN_AC_OLAYI, ekranDurumu, ekranKaydi, type AsistanBaglami } from "@/lib/asistan-baglami";
+import type { EkranDurumu } from "@tekirextra/shared";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings, Sparkles } from "lucide-react";
 
@@ -104,9 +105,11 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [aiAsistanAcik, setAiAsistanAcik] = useState(false);
   // CARI-48/AI-78: ekrandan açılınca o ekranın açık kaydı (cari, fatura, gelen belge…) sohbete bağlanır.
   const [aiBaglam, setAiBaglam] = useState<AsistanBaglami | null>(null);
-  const asistaniGenelAc = () => { setAiBaglam(ekranKaydi()); setAiAsistanAcik(true); };
+  // AI-113: liste ekranının süzgeçleri ve seçimleri; asistan her açılışta güncel durumu alır.
+  const [aiDurum, setAiDurum] = useState<EkranDurumu | null>(null);
+  const asistaniGenelAc = () => { setAiBaglam(ekranKaydi()); setAiDurum(ekranDurumu()); setAiAsistanAcik(true); };
   useEffect(() => {
-    const asistaniAc = (e: Event) => { setAiBaglam((e as CustomEvent<AsistanBaglami | undefined>).detail ?? ekranKaydi()); setAiAsistanAcik(true); };
+    const asistaniAc = (e: Event) => { setAiBaglam((e as CustomEvent<AsistanBaglami | undefined>).detail ?? ekranKaydi()); setAiDurum(ekranDurumu()); setAiAsistanAcik(true); };
     window.addEventListener(ASISTAN_AC_OLAYI, asistaniAc);
     return () => window.removeEventListener(ASISTAN_AC_OLAYI, asistaniAc);
   }, []);
@@ -506,7 +509,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       <HareketsizlikIzleyici dakika={hareketsizlikDk} />
       <HataDinleyici />
       <KomutPaleti acik={paletAcik} ebelgeUygulamalari={ebelgeUygulamalari} rol={rol} setAcik={setPaletAcik} />
-      <AsistanPenceresi acik={aiAsistanAcik} baglam={aiBaglam} onBaglamKaldir={() => setAiBaglam(null)} onKapat={() => setAiAsistanAcik(false)} />
+      <AsistanPenceresi acik={aiAsistanAcik} baglam={aiBaglam} durum={aiDurum} onBaglamKaldir={() => { setAiBaglam(null); setAiDurum(null); }} onKapat={() => setAiAsistanAcik(false)} />
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">

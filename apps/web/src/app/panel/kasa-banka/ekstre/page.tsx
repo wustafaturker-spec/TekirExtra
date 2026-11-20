@@ -8,6 +8,7 @@
  * bakiye ve farkın ne kadarının bekleyen/yoksayılan satırlardan geldiği.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { paraBicimle } from "@tekirextra/shared";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
@@ -193,6 +194,9 @@ export default function EkstreSayfasi() {
   }
 
   const seciliHesap = hesaplar.find((h) => h.id === bankaFiltresi);
+  // AI-113: ekstre süzgeçleri ekran durumu; tek banka hesabı seçiliyse o hesap ekran kaydıdır.
+  useEkranDurumu({ ekran: "banka_ekstresi", suzgecler: suzgecler({ durum: suzgec, bankaHesabi: bankaFiltresi, yon: yonFiltresi, baslangic, bitis, arama }) });
+  useEkranKaydi(seciliHesap ? { tur: "kasa_banka_hesabi", id: `banka:${seciliHesap.id}`, etiket: seciliHesap.ad } : null);
   const fark = mutabakat?.son ? Number(mutabakat.son.fark) : 0;
 
   async function onerileriTara() {

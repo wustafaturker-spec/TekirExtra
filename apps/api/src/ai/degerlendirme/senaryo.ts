@@ -1,4 +1,4 @@
-import type { Rol } from "@tekirextra/shared";
+import type { EkranDurumu, Rol } from "@tekirextra/shared";
 import type { AiSohbetMesaji } from "../saglayici/ai-provider.interface";
 import type { EkranKaydi } from "../ajan/ai-ajan.service";
 
@@ -73,6 +73,11 @@ export interface SenaryoGirdisi {
   sayfa?: string;
   /** AI-78: ekran kaydı. */
   ekran?: EkranKaydi;
+  /**
+   * AI-113: liste ekranı durumu. `kayitlar` ekran ucunun okuyabildiği kimlik → görünen ad
+   * (seçili kayıt ya da hesap süzgeci); listede olmayan kimlik yetki dışı sayılır.
+   */
+  ekranDurumu?: { durum: EkranDurumu; kayitlar?: Record<string, string> };
   /** Önceki konuşma. */
   gecmis?: AiSohbetMesaji[];
   /** Firmanın asistan talimatı. */

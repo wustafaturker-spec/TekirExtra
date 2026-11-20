@@ -62,3 +62,4 @@ export * from "./tekrar-donemi";
 export * from "./entegrasyon-katalogu";
 
 export * from "./panel-widget";
+export * from "./ekran-durumu";

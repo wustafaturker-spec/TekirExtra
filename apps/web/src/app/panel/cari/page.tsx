@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { suzgecler, useEkranDurumu } from "@/lib/asistan-baglami";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BaglanmamisOdemeler } from "@/components/fatura-baglama";
@@ -444,6 +445,8 @@ export default function CariSayfasi() {
   const [topluSecim, setTopluSecim] = useState<Set<string>>(new Set());
   // Süzgeç değişince görünmeyen carilere yanlışlıkla işlem yapılmasın.
   useEffect(() => { setTopluSecim(new Set()); }, [listeParametreleri, filtreBekliyor]);
+  // AI-113: cari listesi süzgeçleri ve toplu seçim asistanın ekran durumudur.
+  useEkranDurumu({ ekran: "cariler", suzgecler: suzgecler({ tip: filtreTip, bakiye: bakiyeFiltre, grup: grupFiltre, arama: aramaSorgusu }), secili: [...topluSecim] });
 
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++cariYuklemeSirasi.current;

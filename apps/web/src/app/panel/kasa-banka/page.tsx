@@ -1,6 +1,7 @@
 "use client";
 import { csvHucresi } from "@tekirextra/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { suzgecler, useEkranDurumu, useEkranKaydi } from "@/lib/asistan-baglami";
 import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { OdemeFisi, type FisBaslangici, type FisTipi } from "./odeme-fisi";
 import { FisAyrintisi, type DefterHareketi } from "./fis-ayrintisi";
@@ -207,6 +208,10 @@ export default function KasaBankaSayfasi() {
     setTurFiltre(p.get("tur") || "");
   }, []);
   const tumHesaplar = [...kasalar.map((x) => ({ ...x, tur: "kasa" as const })), ...bankalar.map((x) => ({ ...x, tur: "banka" as const }))];
+  // AI-113: hareket süzgeçleri ekran durumu; tek hesap seçiliyse o hesap ekran kaydıdır ("bu hesap").
+  useEkranDurumu({ ekran: "kasa_banka_hareketleri", suzgecler: suzgecler({ tur: turFiltre, hesap: hesapFiltre, baslangic, bitis, arama }) });
+  const seciliHesap = tumHesaplar.find((x) => `${x.tur}:${x.id}` === hesapFiltre);
+  useEkranKaydi(seciliHesap ? { tur: "kasa_banka_hesabi", id: `${seciliHesap.tur}:${seciliHesap.id}`, etiket: seciliHesap.ad } : null);
   const kaynakHesap = tumHesaplar.find((x) => `${x.tur}:${x.id}` === kaynak);
   const hedefler = tumHesaplar.filter(
     (x) => x.aktif && (!kaynakHesap || x.dovizCinsi === kaynakHesap.dovizCinsi) && `${x.tur}:${x.id}` !== kaynak,

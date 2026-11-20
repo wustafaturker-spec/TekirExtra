@@ -7,7 +7,8 @@ import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
 import { YzDosyalar, type AsistanDosyasi } from "./yz-dosyalar";
-import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, type AsistanBaglami } from "@/lib/asistan-baglami";
+import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, ekranDurumuOzeti, type AsistanBaglami } from "@/lib/asistan-baglami";
+import type { EkranDurumu } from "@tekirextra/shared";
 
 /** AI-04: kullanıcının onayını bekleyen (ya da karara bağlanmış) yapay zekâ işlemi. */
 export interface OnayTalebi {
@@ -192,7 +193,7 @@ export function TalepKarti({ talep, onDegisti }: { talep: OnayTalebi; onDegisti:
  * AI-05: panel asistanı. Kullanıcı yazar, konuşur veya fotoğraf yükler;
  * asistan araçları çalıştırır; onaya tabi işlem talep kartı olarak döner.
  */
-export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldir }: { yukseklik?: string; onTalepDegisti?: () => void; baglam?: AsistanBaglami | null; onBaglamKaldir?: () => void }) {
+export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBaglamKaldir }: { yukseklik?: string; onTalepDegisti?: () => void; baglam?: AsistanBaglami | null; durum?: EkranDurumu | null; onBaglamKaldir?: () => void }) {
   const [mesajlar, setMesajlar] = useState<Mesaj[]>([]);
   const [talepler, setTalepler] = useState<Record<string, OnayTalebi>>({});
   const [girdi, setGirdi] = useState("");
@@ -330,6 +331,8 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
                   ...(baglam.eylem ? { eylem: baglam.eylem } : {}),
                 }
               : {}),
+            // AI-113: liste ekranının süzgeçleri ve seçili kimlikleri (sunucu yetkiyle doğrular).
+            ...(durum ? { durum } : {}),
             sayfa: window.location.pathname,
           },
           ...(gonderilenEkler.length ? { ekler: gonderilenEkler } : {}),
@@ -709,12 +712,14 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
         onChange={dosyaSecildi}
       />
 
-      {baglam && (
+      {(baglam || durum) && (
         <div className="asistan__baglam">
           <span>
-            Bu sohbette {EKRAN_TURU_ADI[baglam.tur]}: <strong>{baglam.etiket}</strong>
-            {baglam.taslak && <span className="badge badge--warning" style={{ marginLeft: "0.5rem", fontSize: "0.75rem" }}>📝 Taslak veri bağlı</span>}
-            {!baglamBagli && mesajlar.length > 0 && " · ilk mesajınız yeni sohbette başlar"}
+            {baglam && <>Bu sohbette {EKRAN_TURU_ADI[baglam.tur]}: <strong>{baglam.etiket}</strong></>}
+            {baglam && durum && " · "}
+            {durum && <>Ekran: <strong>{ekranDurumuOzeti(durum)}</strong></>}
+            {baglam?.taslak && <span className="badge badge--warning" style={{ marginLeft: "0.5rem", fontSize: "0.75rem" }}>📝 Taslak veri bağlı</span>}
+            {baglam && !baglamBagli && mesajlar.length > 0 && " · ilk mesajınız yeni sohbette başlar"}
           </span>
           {onBaglamKaldir && <button type="button" className="btn-link" onClick={onBaglamKaldir}>Bağlamı kaldır</button>}
         </div>

@@ -10,6 +10,7 @@
  * tahsilat/ödeme sayılmaz. Buradan girilir, değiştirilir ya da silinir.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEkranKaydi } from "@/lib/asistan-baglami";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { bugunTR } from "@tekirextra/shared";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, Segmented, Select, Stat, StatGrid, Table, TableSkeleton, Tarih } from "@/components/ui";
@@ -108,6 +109,8 @@ export default function HesapEkstresiSayfasi() {
   const [baslangic, setBaslangic] = useState(() => donemAraligi("bu_ay").baslangic);
   const [bitis, setBitis] = useState(() => donemAraligi("bu_ay").bitis);
   const [ekstre, setEkstre] = useState<Ekstre | null>(null);
+  // AI-113: ekstresi açık kasa/banka hesabı asistanın ekran kaydıdır (POS hesabı ekran kaydı değildir).
+  useEkranKaydi(ekstre && ekstre.hesap.tur !== "pos" ? { tur: "kasa_banka_hesabi", id: `${ekstre.hesap.tur}:${ekstre.hesap.id}`, etiket: ekstre.hesap.ad } : null);
   const [yukleniyor, setYukleniyor] = useState(false);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");

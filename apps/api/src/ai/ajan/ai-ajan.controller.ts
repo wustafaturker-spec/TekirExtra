@@ -3,9 +3,10 @@ import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { YuklenenDosya } from "../../ekler/ekler.service";
 import { AiAjanService, type AkisOlayi, type EkranBaglami, type EkranTuru } from "./ai-ajan.service";
+import { ekranDurumunuAyristir } from "@tekirextra/shared";
 import { SAYFA_YOLU } from "./araclar/gruplar";
 
-type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown }; sayfa?: unknown }; ekler?: unknown; derin?: unknown };
+type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown }; sayfa?: unknown; taslak?: unknown; eylem?: unknown; durum?: unknown }; ekler?: unknown; derin?: unknown };
 
 /**
  * AI-05: panel asistanı. Kimlik ve rol yalnız oturumdan gelir. Dış kanal
@@ -51,6 +52,9 @@ export class AiAjanController {
     const cariId = body?.baglam?.cariId;
     const kayit = body?.baglam?.kayit;
     const sayfa = body?.baglam?.sayfa;
+    const taslak = body?.baglam?.taslak;
+    const eylem = body?.baglam?.eylem;
+    const durum = ekranDurumunuAyristir(body?.baglam?.durum) ?? undefined;
     const ekran: EkranBaglami = {
       // CARI-48/AI-78: panelden açılan asistan; kayıt sunucuda ekran ucundan doğrulanır.
       ...(kayit && typeof kayit.tur === "string" && typeof kayit.id === "string"
@@ -58,6 +62,11 @@ export class AiAjanController {
         : typeof cariId === "string" ? { cariId } : {}),
       // AI-84: yalnız araç grubu seçimine girer; biçime uymayan yol yok sayılır.
       ...(typeof sayfa === "string" && SAYFA_YOLU.test(sayfa) ? { sayfa } : {}),
+      // P-14a: form taslağı ve ekran eylemi panelden gönderiliyordu ama bu uçta düşüyordu; servis ikisini de güvenilmeyen veri olarak temizler.
+      ...(taslak && typeof taslak === "object" && !Array.isArray(taslak) ? { taslak: taslak as Record<string, unknown> } : {}),
+      ...(typeof eylem === "string" && eylem.trim() ? { eylem } : {}),
+      // AI-113: liste ekranı durumu; sözleşmeye uymayan alanlar düşer.
+      ...(durum ? { durum } : {}),
     };
     return this.ajanService.mesajiIsle(
       typeof body?.mesaj === "string" ? body.mesaj : "",

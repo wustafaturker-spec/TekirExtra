@@ -787,7 +787,7 @@ describe("ekran bağlamı (CARI-48)", () => {
 
   it("AI-78: bilinmeyen tür ve geçersiz kimlik modele gitmeden reddedilir", async () => {
     const k = kurKayitli({});
-    await expect(k.calistir({ tur: "personel", id: CARI_ID })).rejects.toThrow("tanınmıyor");
+    await expect(k.calistir({ tur: "bordro", id: CARI_ID })).rejects.toThrow("tanınmıyor");
     await expect(k.calistir({ tur: "fatura", id: "1" })).rejects.toThrow("UUID");
     expect(k.saglayici.girdiler).toHaveLength(0);
   });

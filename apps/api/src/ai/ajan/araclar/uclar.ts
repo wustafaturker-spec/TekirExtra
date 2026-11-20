@@ -89,6 +89,9 @@ export const UC = {
   kasaListe: uc(KasaBankaController, "kasaListele", "GET /kasa-banka/kasalar"),
   bankaListe: uc(KasaBankaController, "bankaListele", "GET /kasa-banka/bankalar"),
   kasaBankaHareket: uc(KasaBankaController, "hareketEkle", "POST /kasa-banka/hareketler"),
+  // AI-113: ekran kaydı/süzgeci olarak hesap doğrulaması.
+  kasaGetir: uc(KasaBankaController, "kasaGetir", "GET /kasa-banka/kasalar/:id"),
+  bankaGetir: uc(KasaBankaController, "bankaGetir", "GET /kasa-banka/bankalar/:id"),
   /** CNL-10: asistan sorusuna verilen yanıtla eşleşmeyen banka satırı cariye bağlanır (onaylı). */
   ekstreSatirEslestir: uc(KasaBankaController, "ekstreEslestir", "POST /kasa-banka/ekstre/satirlar/:id/eslestir"),
 
