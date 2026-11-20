@@ -43,6 +43,28 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
 }
 
 describe("asistan araç döngüsü (AI-05)", () => {
+  it("salt okunur teklif komutunda model çağırmadan yetkiyi açıklar", async () => {
+    const k = kur([], { yetkiliMi: (yol) => yol !== "POST /belgeler" });
+    const yanit = await k.calistir("Deneme Otomotiv'e 10 adet A4 kağıdı için teklif taslağı aç.", "salt_okunur");
+    expect(yanit.cevap).toContain("teklif taslağı oluşturma yetkiniz yok");
+    expect(k.saglayici.girdiler).toHaveLength(0);
+    expect(k.onay.olustur).not.toHaveBeenCalled();
+  });
+
+  it("salt okunur kullanıcıdaki teklif sorgusunu modele aktarır", async () => {
+    const k = kur([{ metin: "Teklifleri listeleyebilirim.", aracCagrilari: [] }]);
+    const yanit = await k.calistir("Teklif taslağı nasıl açılır?", "salt_okunur");
+    expect(yanit.cevap).toBe("Teklifleri listeleyebilirim.");
+    expect(k.saglayici.girdiler).toHaveLength(1);
+  });
+
+  it("teklif oluşturma yetkisi varsa açık teklif komutunu modele aktarır", async () => {
+    const k = kur([{ metin: "Hangi stok kartını kullanayım?", aracCagrilari: [] }]);
+    const yanit = await k.calistir("Deneme Otomotiv için teklif taslağı aç.", "muhasebe");
+    expect(yanit.cevap).toBe("Hangi stok kartını kullanayım?");
+    expect(k.saglayici.girdiler).toHaveLength(1);
+  });
+
   it('finans serbest metnini tek JSON üretimiyle düzeltir; ham yanıtı yeniden göndermez', async () => {
     const k = kur([
       { metin: '', aracCagrilari: [{ id: 'c1', ad: 'finansal_ozet', girdi: {} }] },

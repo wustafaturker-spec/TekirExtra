@@ -131,56 +131,38 @@ export class HazirlikService {
           const tekilAnahtar = `fatura_stok:${fatura.id}:${satir.id}`;
           const hedefOzeti = hedefOzetiHesapla({ faturaId: fatura.id, satirId: satir.id, miktar: satir.miktar.toString(), tutar: satir.toplamTutar.toString() });
 
-          const mevcut = await tx.aiHazirlik.findUnique({
-            where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-            select: { id: true, durum: true },
-          });
-
-          // Daha önce onaylanmış veya reddedilmişse ezme
-          if (mevcut && (mevcut.durum === "onaylandi" || mevcut.durum === "reddedildi")) continue;
-
-          await tx.aiHazirlik.upsert({
-            where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-            create: {
-              tenantId,
-              tur: "fatura_stok_esleme",
-              durum: "hazir",
-              tekilAnahtar,
-              kaynakTur: "fatura",
-              kaynakId: fatura.id,
-              baslik: `Alış Faturası Stok Eşleme: ${fatura.no || "Taslak"} (${fatura.cari.unvan})`,
-              ozet: `${satir.miktar} adet ürün için [${hedefStok.kod}] ${hedefStok.ad} stok kartı eşleştirme önerisi.`,
-              oneri: {
-                faturaId: fatura.id,
-                satirId: satir.id,
-                stokId: hedefStok.id,
-                stokKod: hedefStok.kod,
-                stokAd: hedefStok.ad,
-                birimFiyat: satir.birimFiyat.toString(),
-                miktar: satir.miktar.toString(),
-              },
-              kanit: {
-                cariId: fatura.cariId,
-                cariUnvan: fatura.cari.unvan,
-                faturaTarihi: fatura.tarih.toISOString(),
-                guvenSkoru: 85,
-                neden: "Cari geçmişi ve ürün kartı eşleşmesi",
-              },
-              alternatifler: stoklar.slice(0, 3).map((s) => ({ stokId: s.id, kod: s.kod, ad: s.ad })),
-              hedefOzeti,
-              gecerlilikBitisAt: gecerlilik,
-              hazirlayanGorevId: secenek.gorevId ?? null,
-              hazirlayanCalismaId: secenek.calismaId ?? null,
-              olusturanUserId: userId,
+          eklenen += await this.hazirligiKaydet(tx, {
+            tenantId,
+            tur: "fatura_stok_esleme",
+            durum: "hazir",
+            tekilAnahtar,
+            kaynakTur: "fatura",
+            kaynakId: fatura.id,
+            baslik: `Alış Faturası Stok Eşleme: ${fatura.no || "Taslak"} (${fatura.cari.unvan})`,
+            ozet: `${satir.miktar} adet ürün için [${hedefStok.kod}] ${hedefStok.ad} stok kartı eşleştirme önerisi.`,
+            oneri: {
+              faturaId: fatura.id,
+              satirId: satir.id,
+              stokId: hedefStok.id,
+              stokKod: hedefStok.kod,
+              stokAd: hedefStok.ad,
+              birimFiyat: satir.birimFiyat.toString(),
+              miktar: satir.miktar.toString(),
             },
-            update: {
-              baslik: `Alış Faturası Stok Eşleme: ${fatura.no || "Taslak"} (${fatura.cari.unvan})`,
-              ozet: `${satir.miktar} adet ürün için [${hedefStok.kod}] ${hedefStok.ad} stok kartı eşleştirme önerisi.`,
-              hedefOzeti,
-              gecerlilikBitisAt: gecerlilik,
+            kanit: {
+              cariId: fatura.cariId,
+              cariUnvan: fatura.cari.unvan,
+              faturaTarihi: fatura.tarih.toISOString(),
+              guvenSkoru: 85,
+              neden: "Cari geçmişi ve ürün kartı eşleşmesi",
             },
+            alternatifler: stoklar.slice(0, 3).map((s) => ({ stokId: s.id, kod: s.kod, ad: s.ad })),
+            hedefOzeti,
+            gecerlilikBitisAt: gecerlilik,
+            hazirlayanGorevId: secenek.gorevId ?? null,
+            hazirlayanCalismaId: secenek.calismaId ?? null,
+            olusturanUserId: userId,
           });
-          eklenen++;
         }
       }
       return eklenen;
@@ -259,54 +241,37 @@ export class HazirlikService {
         const tekilAnahtar = `banka_ekstre:${satir.id}`;
         const hedefOzeti = hedefOzetiHesapla({ satirId: satir.id, tutar: satir.tutar.toString(), tarih: satir.tarih.toISOString(), durum: satir.durum });
 
-        const mevcut = await tx.aiHazirlik.findUnique({
-          where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-          select: { id: true, durum: true },
-        });
-
-        if (mevcut && (mevcut.durum === "onaylandi" || mevcut.durum === "reddedildi")) continue;
-
         const baslik = `Banka Hareketi Eşleme: ${satir.tutar.toString()} TL (${oneri.onerilenCari?.unvan ?? "Cari/Masraf"})`;
 
-        await tx.aiHazirlik.upsert({
-          where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-          create: {
-            tenantId,
-            tur: "banka_ekstre_esleme",
-            durum: "hazir",
-            tekilAnahtar,
-            kaynakTur: "banka_ekstre_satir",
-            kaynakId: satir.id,
-            baslik,
-            ozet: `${satir.aciklama.slice(0, 100)}... açıklamalı işlem için ${oneri.aciklama}`,
-            oneri: {
-              satirId: satir.id,
-              tur: oneri.onerilenTur,
-              cariId: oneri.onerilenCari?.id ?? null,
-              cariUnvan: oneri.onerilenCari?.unvan ?? null,
-              tutar: satir.tutar.toString(),
-              dagitimPlani: oneri.dagitimPlani ?? null,
-            },
-            kanit: JSON.parse(JSON.stringify({
-              skor: oneri.skor,
-              oneriTuru: oneri.oneriTuru,
-              sinyaller: oneri.sinyaller,
-            })) as Prisma.InputJsonValue,
-            alternatifler: oneri.alternatifAdaylar ? (JSON.parse(JSON.stringify(oneri.alternatifAdaylar)) as Prisma.InputJsonValue) : undefined,
-            hedefOzeti,
-            gecerlilikBitisAt: gecerlilik,
-            hazirlayanGorevId: secenek.gorevId ?? null,
-            hazirlayanCalismaId: secenek.calismaId ?? null,
-            olusturanUserId: userId,
+        eklenen += await this.hazirligiKaydet(tx, {
+          tenantId,
+          tur: "banka_ekstre_esleme",
+          durum: "hazir",
+          tekilAnahtar,
+          kaynakTur: "banka_ekstre_satir",
+          kaynakId: satir.id,
+          baslik,
+          ozet: `${satir.aciklama.slice(0, 100)}... açıklamalı işlem için ${oneri.aciklama}`,
+          oneri: {
+            satirId: satir.id,
+            tur: oneri.onerilenTur,
+            cariId: oneri.onerilenCari?.id ?? null,
+            cariUnvan: oneri.onerilenCari?.unvan ?? null,
+            tutar: satir.tutar.toString(),
+            dagitimPlani: oneri.dagitimPlani ?? null,
           },
-          update: {
-            baslik,
-            ozet: `${satir.aciklama.slice(0, 100)}... açıklamalı işlem için ${oneri.aciklama}`,
-            hedefOzeti,
-            gecerlilikBitisAt: gecerlilik,
-          },
+          kanit: JSON.parse(JSON.stringify({
+            skor: oneri.skor,
+            oneriTuru: oneri.oneriTuru,
+            sinyaller: oneri.sinyaller,
+          })) as Prisma.InputJsonValue,
+          alternatifler: oneri.alternatifAdaylar ? (JSON.parse(JSON.stringify(oneri.alternatifAdaylar)) as Prisma.InputJsonValue) : undefined,
+          hedefOzeti,
+          gecerlilikBitisAt: gecerlilik,
+          hazirlayanGorevId: secenek.gorevId ?? null,
+          hazirlayanCalismaId: secenek.calismaId ?? null,
+          olusturanUserId: userId,
         });
-        eklenen++;
       }
       return eklenen;
     });
@@ -359,51 +324,34 @@ export class HazirlikService {
         const tekilAnahtar = `vadesi_gecen:${cariId}:${simdiTr.gun}`;
         const hedefOzeti = hedefOzetiHesapla({ cariId, toplamTutar: toplamTutar.toString(), adet: faturalar.length });
 
-        const mevcut = await tx.aiHazirlik.findUnique({
-          where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-          select: { id: true, durum: true },
-        });
-
-        if (mevcut && (mevcut.durum === "onaylandi" || mevcut.durum === "reddedildi")) continue;
-
-        await tx.aiHazirlik.upsert({
-          where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-          create: {
-            tenantId,
-            tur: "vadesi_gecen_hatirlatma",
-            durum: "hazir",
-            tekilAnahtar,
-            kaynakTur: "cari",
-            kaynakId: cariId,
-            baslik: `Vade Hatırlatma Taslağı: ${cari.unvan} (${toplamTutar.toString()} TL)`,
-            ozet: `${faturalar.length} adet vadesi geçmiş fatura için hatırlatma e-postası taslağı.`,
-            oneri: {
-              cariId,
-              cariUnvan: cari.unvan,
-              alici,
-              konu,
-              metin,
-              toplamTutar: toplamTutar.toString(),
-              faturaSayisi: faturalar.length,
-            },
-            kanit: {
-              enEskiVade: faturalar[0].vadeTarihi?.toISOString().slice(0, 10),
-              faturalar: faturalar.map((f) => ({ id: f.id, no: f.no, tutar: f.genelToplam.toString(), vade: f.vadeTarihi?.toISOString().slice(0, 10) })),
-            },
-            hedefOzeti,
-            gecerlilikBitisAt: gecerlilik,
-            hazirlayanGorevId: secenek.gorevId ?? null,
-            hazirlayanCalismaId: secenek.calismaId ?? null,
-            olusturanUserId: userId,
+        eklenen += await this.hazirligiKaydet(tx, {
+          tenantId,
+          tur: "vadesi_gecen_hatirlatma",
+          durum: "hazir",
+          tekilAnahtar,
+          kaynakTur: "cari",
+          kaynakId: cariId,
+          baslik: `Vade Hatırlatma Taslağı: ${cari.unvan} (${toplamTutar.toString()} TL)`,
+          ozet: `${faturalar.length} adet vadesi geçmiş fatura için hatırlatma e-postası taslağı.`,
+          oneri: {
+            cariId,
+            cariUnvan: cari.unvan,
+            alici,
+            konu,
+            metin,
+            toplamTutar: toplamTutar.toString(),
+            faturaSayisi: faturalar.length,
           },
-          update: {
-            baslik: `Vade Hatırlatma Taslağı: ${cari.unvan} (${toplamTutar.toString()} TL)`,
-            ozet: `${faturalar.length} adet vadesi geçmiş fatura için hatırlatma e-postası taslağı.`,
-            hedefOzeti,
-            gecerlilikBitisAt: gecerlilik,
+          kanit: {
+            enEskiVade: faturalar[0].vadeTarihi?.toISOString().slice(0, 10),
+            faturalar: faturalar.map((f) => ({ id: f.id, no: f.no, tutar: f.genelToplam.toString(), vade: f.vadeTarihi?.toISOString().slice(0, 10) })),
           },
+          hedefOzeti,
+          gecerlilikBitisAt: gecerlilik,
+          hazirlayanGorevId: secenek.gorevId ?? null,
+          hazirlayanCalismaId: secenek.calismaId ?? null,
+          olusturanUserId: userId,
         });
-        eklenen++;
       }
       return eklenen;
     });
@@ -450,56 +398,39 @@ export class HazirlikService {
           const tekilAnahtar = `kritik_stok:${stok.id}:${simdiTr.gun}`;
           const hedefOzeti = hedefOzetiHesapla({ stokId: stok.id, bakiye: mevcutBakiye.toString(), kritik: kritikSeviye.toString() });
 
-          const mevcut = await tx.aiHazirlik.findUnique({
-            where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-            select: { id: true, durum: true },
-          });
-
-          if (mevcut && (mevcut.durum === "onaylandi" || mevcut.durum === "reddedildi")) continue;
-
-          await tx.aiHazirlik.upsert({
-            where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-            create: {
-              tenantId,
-              tur: "kritik_stok_talep",
-              durum: "hazir",
-              tekilAnahtar,
-              kaynakTur: "stok",
-              kaynakId: stok.id,
-              baslik: `Kritik Stok İkmal Talebi: [${stok.kod}] ${stok.ad}`,
-              ozet: `Mevcut bakiye (${mevcutBakiye} ${stok.anaBirim}) kritik seviyenin (${kritikSeviye} ${stok.anaBirim}) altında. ${onerilenMiktar} ${stok.anaBirim} satın alma talebi taslağı.`,
-              oneri: {
-                stokId: stok.id,
-                stokKod: stok.kod,
-                stokAd: stok.ad,
-                anaBirim: stok.anaBirim,
-                mevcutBakiye: mevcutBakiye.toString(),
-                kritikSeviye: kritikSeviye.toString(),
-                onerilenMiktar: onerilenMiktar.toString(),
-                tahminiBirimFiyat: (stok.alisFiyati ?? new Prisma.Decimal(0)).toString(),
-                tedarikciId: tedarikci?.id ?? null,
-                tedarikciUnvan: tedarikci?.unvan ?? null,
-              },
-              kanit: {
-                mevcutBakiye: mevcutBakiye.toString(),
-                kritikSeviye: kritikSeviye.toString(),
-                alisFiyati: stok.alisFiyati?.toString() ?? null,
-                tedarikciUnvan: tedarikci?.unvan ?? null,
-              },
-              hedefOzeti,
-              gecerlilikBitisAt: gecerlilik,
-              hazirlayanGorevId: secenek.gorevId ?? null,
-              hazirlayanCalismaId: secenek.calismaId ?? null,
-              olusturanUserId: userId,
+          eklenen += await this.hazirligiKaydet(tx, {
+            tenantId,
+            tur: "kritik_stok_talep",
+            durum: "hazir",
+            tekilAnahtar,
+            kaynakTur: "stok",
+            kaynakId: stok.id,
+            baslik: `Kritik Stok İkmal Talebi: [${stok.kod}] ${stok.ad}`,
+            ozet: `Mevcut bakiye (${mevcutBakiye} ${stok.anaBirim}) kritik seviyenin (${kritikSeviye} ${stok.anaBirim}) altında. ${onerilenMiktar} ${stok.anaBirim} satın alma talebi taslağı.`,
+            oneri: {
+              stokId: stok.id,
+              stokKod: stok.kod,
+              stokAd: stok.ad,
+              anaBirim: stok.anaBirim,
+              mevcutBakiye: mevcutBakiye.toString(),
+              kritikSeviye: kritikSeviye.toString(),
+              onerilenMiktar: onerilenMiktar.toString(),
+              tahminiBirimFiyat: (stok.alisFiyati ?? new Prisma.Decimal(0)).toString(),
+              tedarikciId: tedarikci?.id ?? null,
+              tedarikciUnvan: tedarikci?.unvan ?? null,
             },
-            update: {
-              baslik: `Kritik Stok İkmal Talebi: [${stok.kod}] ${stok.ad}`,
-              ozet: `Mevcut bakiye (${mevcutBakiye} ${stok.anaBirim}) kritik seviyenin (${kritikSeviye} ${stok.anaBirim}) altında. ${onerilenMiktar} ${stok.anaBirim} satın alma talebi taslağı.`,
-              hedefOzeti,
-              gecerlilikBitisAt: gecerlilik,
+            kanit: {
+              mevcutBakiye: mevcutBakiye.toString(),
+              kritikSeviye: kritikSeviye.toString(),
+              alisFiyati: stok.alisFiyati?.toString() ?? null,
+              tedarikciUnvan: tedarikci?.unvan ?? null,
             },
+            hedefOzeti,
+            gecerlilikBitisAt: gecerlilik,
+            hazirlayanGorevId: secenek.gorevId ?? null,
+            hazirlayanCalismaId: secenek.calismaId ?? null,
+            olusturanUserId: userId,
           });
-          eklenen++;
         }
       }
       return eklenen;
@@ -523,68 +454,41 @@ export class HazirlikService {
       const tekilAnahtar = `ay_sonu_kapanis:${donem}`;
       const hedefOzeti = hedefOzetiHesapla({ donem, bekleyenEkstre, taslakFatura, bekleyenOnay });
 
-      const mevcut = await tx.aiHazirlik.findUnique({
-        where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-        select: { id: true, durum: true },
-      });
-
-      if (mevcut && (mevcut.durum === "onaylandi" || mevcut.durum === "reddedildi")) return 0;
-
       const gecerlilik = new Date(Date.now() + HAZIRLIK_GECERLILIK_SURESI_MS);
       const hazirMi = bekleyenEkstre === 0 && taslakFatura === 0 && bekleyenOnay === 0;
 
-      await tx.aiHazirlik.upsert({
-        where: { tenantId_tekilAnahtar: { tenantId, tekilAnahtar } },
-        create: {
-          tenantId,
-          tur: "ay_sonu_kapanis",
-          durum: "hazir",
-          tekilAnahtar,
-          kaynakTur: "donem",
-          kaynakId: donem,
-          baslik: `Ay Sonu Kapanış Ön Kontrolü: ${donem}`,
-          ozet: hazirMi
-            ? `${donem} dönemi kapanış için uygun: bekleyen ekstre veya taslak fatura yok.`
-            : `${donem} döneminde bekleyen ${bekleyenEkstre} ekstre, ${taslakFatura} taslak fatura, ${bekleyenOnay} AI onayı mevcut.`,
-          oneri: {
-            donem,
-            bekleyenEkstreSayisi: bekleyenEkstre,
-            taslakFaturaSayisi: taslakFatura,
-            bekleyenOnaySayisi: bekleyenOnay,
-            hazirMi,
-          },
-          kanit: {
-            kontrolTarihi: simdiTr.gun,
-            maddeler: [
-              { ad: "Banka Ekstre Eşleşmeleri", bekleyen: bekleyenEkstre, durum: bekleyenEkstre === 0 ? "tamam" : "bekliyor" },
-              { ad: "Taslak Faturalar", bekleyen: taslakFatura, durum: taslakFatura === 0 ? "tamam" : "bekliyor" },
-              { ad: "Yapay Zekâ Onayları", bekleyen: bekleyenOnay, durum: bekleyenOnay === 0 ? "tamam" : "bekliyor" },
-            ],
-          },
-          hedefOzeti,
-          gecerlilikBitisAt: gecerlilik,
-          hazirlayanGorevId: secenek.gorevId ?? null,
-          hazirlayanCalismaId: secenek.calismaId ?? null,
-          olusturanUserId: userId,
+      return this.hazirligiKaydet(tx, {
+        tenantId,
+        tur: "ay_sonu_kapanis",
+        durum: "hazir",
+        tekilAnahtar,
+        kaynakTur: "donem",
+        kaynakId: donem,
+        baslik: `Ay Sonu Kapanış Ön Kontrolü: ${donem}`,
+        ozet: hazirMi
+          ? `${donem} dönemi kapanış için uygun: bekleyen ekstre veya taslak fatura yok.`
+          : `${donem} döneminde bekleyen ${bekleyenEkstre} ekstre, ${taslakFatura} taslak fatura, ${bekleyenOnay} AI onayı mevcut.`,
+        oneri: {
+          donem,
+          bekleyenEkstreSayisi: bekleyenEkstre,
+          taslakFaturaSayisi: taslakFatura,
+          bekleyenOnaySayisi: bekleyenOnay,
+          hazirMi,
         },
-        update: {
-          baslik: `Ay Sonu Kapanış Ön Kontrolü: ${donem}`,
-          ozet: hazirMi
-            ? `${donem} dönemi kapanış için uygun: bekleyen ekstre veya taslak fatura yok.`
-            : `${donem} döneminde bekleyen ${bekleyenEkstre} ekstre, ${taslakFatura} taslak fatura, ${bekleyenOnay} AI onayı mevcut.`,
-          oneri: {
-            donem,
-            bekleyenEkstreSayisi: bekleyenEkstre,
-            taslakFaturaSayisi: taslakFatura,
-            bekleyenOnaySayisi: bekleyenOnay,
-            hazirMi,
-          },
-          hedefOzeti,
-          gecerlilikBitisAt: gecerlilik,
+        kanit: {
+          kontrolTarihi: simdiTr.gun,
+          maddeler: [
+            { ad: "Banka Ekstre Eşleşmeleri", bekleyen: bekleyenEkstre, durum: bekleyenEkstre === 0 ? "tamam" : "bekliyor" },
+            { ad: "Taslak Faturalar", bekleyen: taslakFatura, durum: taslakFatura === 0 ? "tamam" : "bekliyor" },
+            { ad: "Yapay Zekâ Onayları", bekleyen: bekleyenOnay, durum: bekleyenOnay === 0 ? "tamam" : "bekliyor" },
+          ],
         },
+        hedefOzeti,
+        gecerlilikBitisAt: gecerlilik,
+        hazirlayanGorevId: secenek.gorevId ?? null,
+        hazirlayanCalismaId: secenek.calismaId ?? null,
+        olusturanUserId: userId,
       });
-
-      return 1;
     });
   }
 
@@ -697,10 +601,10 @@ export class HazirlikService {
       const suresiDoldu = hazirlik.gecerlilikBitisAt <= an;
       // Rakip karar aynı satırı bekler; iş yazımı hata verirse bu geçiş de geri alınır.
       const sahiplenilen = await tx.aiHazirlik.updateMany({
-        where: { id, tenantId, durum: "hazir" },
+        where: { id, tenantId, durum: "hazir", updatedAt: hazirlik.updatedAt },
         data: { durum: suresiDoldu ? "suresi_doldu" : "onaylandi" },
       });
-      if (sahiplenilen.count !== 1) throw new ConflictException("Bu hazırlık zaten karara bağlanmış.");
+      if (sahiplenilen.count !== 1) throw new ConflictException("Hazırlık güncellendi veya karara bağlandı. Listeyi yenileyin.");
       if (suresiDoldu) return { hata: "sure" } as const;
 
       if (!(await this.hedefGuncelMi(tx, hazirlik))) {
@@ -768,7 +672,7 @@ export class HazirlikService {
 
     const guncel = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.aiHazirlik.updateMany({
-        where: { id, tenantId, durum: "hazir" },
+        where: { id, tenantId, durum: "hazir", updatedAt: hazirlik.updatedAt },
         data: {
           durum: "reddedildi",
           onaylayanUserId: userId,
@@ -831,6 +735,21 @@ export class HazirlikService {
   /**
    * Kaynak kaydın onay anındaki durumu ile hazırlık zamanındaki durumunu kıyaslar.
    */
+  private async hazirligiKaydet(tx: Prisma.TransactionClient, veri: Prisma.AiHazirlikCreateManyInput): Promise<number> {
+    const yeni = await tx.aiHazirlik.createMany({ data: veri, skipDuplicates: true });
+    if (yeni.count) return yeni.count;
+
+    const { tenantId, tekilAnahtar, baslik, ozet, oneri, kanit, alternatifler, hedefOzeti, gecerlilikBitisAt } = veri;
+    const guncel = await tx.aiHazirlik.updateMany({
+      where: { tenantId, tekilAnahtar, durum: { notIn: ["onaylandi", "reddedildi"] } },
+      data: {
+        durum: "hazir", baslik, ozet, oneri, kanit: kanit ?? Prisma.DbNull,
+        alternatifler: alternatifler ?? Prisma.DbNull, hedefOzeti, gecerlilikBitisAt,
+      },
+    });
+    return guncel.count;
+  }
+
   private async kapanisMetrikleri(tx: Prisma.TransactionClient, tenantId: string) {
     const [bekleyenEkstre, taslakFatura, bekleyenOnay] = await Promise.all([
       tx.bankaEkstreSatir.count({ where: { tenantId, durum: "beklemede" } }),

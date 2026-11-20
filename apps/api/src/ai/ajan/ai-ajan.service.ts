@@ -658,6 +658,16 @@ export class AiAjanService {
     let hariciIcerikOkundu = false;
     const acikYazmaIstegi = acikYazmaIstegiVar(g.kullaniciTalebi);
 
+    // Açık teklif taslağı komutunda yetkiyi modelin yorumuna bırakma.
+    const teklifTaslagiIstegi = /(?:^|\s)teklif\s+tasla[ğg][ıi]\s+(?:aç|ac|oluştur|olustur|hazırla|hazirla)(?:\s+lütfen)?[.!?]*$/u
+      .test(g.kullaniciTalebi.trim().toLocaleLowerCase("tr-TR"));
+    if (!g.sinyal?.aborted && teklifTaslagiIstegi && !aracHaritasi.has("belge_taslagi_olustur")) {
+      return {
+        cevap: "Bu oturumda teklif taslağı oluşturma yetkiniz yok. Teklif taslağı açılmadı.",
+        calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, dosyalar: [],
+      };
+    }
+
     for (let tur = 0; tur < EN_COK_TUR && cevap === null; tur++) {
       // AI-82/AI-99: durdurma turlar arasında da uygulanır; süren model isteği sağlayıcı katmanında kesilir.
       if (g.sinyal?.aborted) {

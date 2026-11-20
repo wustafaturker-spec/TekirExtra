@@ -54,7 +54,6 @@ describe("HazirlikService", () => {
         aiHazirlik: {
           findUnique: vi.fn().mockResolvedValue(null),
           findMany: vi.fn().mockResolvedValue([]),
-          upsert: vi.fn().mockResolvedValue({ id: "haz-1" }),
           update: vi.fn().mockImplementation(({ where, data }) => Promise.resolve({ id: where.id, ...data })),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           groupBy: vi.fn().mockResolvedValue([]),
@@ -180,6 +179,22 @@ describe("HazirlikService", () => {
       );
     });
 
+    it("onay sırasında hazırlık yenilenmişse eski öneriyi işleme almaz", async () => {
+      const updatedAt = new Date("2026-11-19T12:00:00Z");
+      mockPrisma.tx.aiHazirlik.findUnique.mockResolvedValue({
+        id: "h-1", tenantId, olusturanUserId: userId, durum: "hazir", tur: "vadesi_gecen_hatirlatma",
+        oneri: { cariId: "cari-1" }, updatedAt, gecerlilikBitisAt: new Date(Date.now() + 60_000),
+      });
+      mockPrisma.tx.aiHazirlik.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(baglamlaCalistir({ tenantId, userId, rol: "muhasebe" }, () => service.onayla("h-1")))
+        .rejects.toThrow(ConflictException);
+      expect(mockPrisma.tx.aiHazirlik.updateMany).toHaveBeenCalledWith({
+        where: { id: "h-1", tenantId, durum: "hazir", updatedAt },
+        data: { durum: "onaylandi" },
+      });
+      expect(mockPrisma.tx.crmEtkilesim.create).not.toHaveBeenCalled();
+    });
+
     it("ay sonu hazırlığında rapor yetkisini ve güncel kontrol toplamlarını arar", async () => {
       const donem = trSimdi().gun.slice(0, 7);
       mockPrisma.tx.aiHazirlik.findUnique.mockResolvedValue({
@@ -240,6 +255,7 @@ describe("HazirlikService", () => {
         tenantId,
         olusturanUserId: userId,
         durum: "hazir",
+        updatedAt: new Date("2026-11-19T12:00:00Z"),
       });
 
       const sonuc = await baglamlaCalistir({ tenantId, userId, rol: "yonetici" }, () =>
@@ -249,7 +265,7 @@ describe("HazirlikService", () => {
       expect(sonuc.durum).toBe("reddedildi");
       expect(mockPrisma.tx.aiHazirlik.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "h-1", tenantId, durum: "hazir" },
+          where: { id: "h-1", tenantId, durum: "hazir", updatedAt: new Date("2026-11-19T12:00:00Z") },
           data: expect.objectContaining({
             durum: "reddedildi",
             kararNotu: "Hatalı öneri",

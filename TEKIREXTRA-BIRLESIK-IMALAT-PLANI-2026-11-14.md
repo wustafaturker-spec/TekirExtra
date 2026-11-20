@@ -95,7 +95,7 @@ Dayanak: `ilt-merkezi-ileti` dalı, `5cfbc3d1` ve çalışma ağacındaki 19 Kas
 | P-16 | Hafızada sürüm, son doğrulama ve geçerlilik alanları var. | Saklama ve silme politikasının kabulü. |
 | P-17 | Kullanım raporu özellik/model ayrımı ve p50 içeriyor. | p95, belirsiz işlem sayısı ve uçtan uca işlem izi. |
 | P-18 | Paket kapsamı ve pilot işletim araçları var. | Ortak firma/özellik/kanal bayrakları ve paket bazında yayın kararı. |
-| P-19 | Beş hazırlık türü, onay kutusu ve brifing özeti var. Onay durum geçişi ve iş kaydı aynı işlemde. Hatırlatma konusu ve metni düzenlenebiliyor. PostgreSQL kabulünde iki eşzamanlı onay tek CRM kaydı üretti ve başarısız işlem yeniden denenebildi. | Ay sonu kapanışında rapor yetkisi ve taslak fatura sonrası güncellik PostgreSQL kabulünde geçti. Diğer türlerin uçtan uca kabulü ve tür bazında pilot ölçümü açık. [PostgreSQL kabul senaryosu](apps/api/test/sabah-onay.kabul.test.ts). |
+| P-19 | Beş hazırlık türü, onay kutusu ve brifing özeti var. Onay durum geçişi ve iş kaydı aynı işlemde. Hatırlatma konusu ve metni düzenlenebiliyor. PostgreSQL kabulünde iki eşzamanlı onay tek CRM kaydı üretti ve başarısız işlem yeniden denenebildi. | Ay sonu kapanışında rapor yetkisi ve taslak fatura sonrası güncellik PostgreSQL kabulünde geçti. Hazırlık yenilemesinde öneri, kanıt ve hedef özeti birlikte güncelleniyor. Dönem kapanışı için eşzamanlı üretim, güncel kanıt ve son kararın korunması PostgreSQL kabulünde geçti. Diğer türlerin uçtan uca kabulü ve tür bazında pilot ölçümü açık. [PostgreSQL kabul senaryosu](apps/api/test/sabah-onay.kabul.test.ts). |
 | Panel widget | Firma ve kullanıcı bazında sürümlü tercihler, dönem filtreleri, şablonlar ve trend var. Rapor yetkisinin kaldırılması HTTP kabulünde doğrulandı. TekirExtra Demo Şirketi yerel pilotunda dönem değerleri kaynakla eşleşti. | Demo pilotunda sıfırdan farklı dönem tutarlarının gözlemlenmesi. [Widget planı](docs/PANEL-WIDGET-IS-PLANI.md). |
 
 ## 3. Değişmez uygulama kuralları
@@ -647,3 +647,11 @@ Başlangıç iş sırası (sürüm 3.2): **D1 isterlerinin `docs/ISTERLER.md`'ye
 Sabah Onay’ın tek işlemde karar yazımı ve hatırlatma düzenlemesi, Sözleşmeler ekranı ve veri aktarımında AI kolon önerisi `panel-widget-demo-20261119` paketiyle yayınlandı. Panel widget’ları tüm firmalara açık kaldı. Bu geçişte bekleyen veritabanı göçü yoktu.
 
 60 ilgili birim testi ve yayın sonrası servis sağlık kontrolleri geçti. TekirExtra Demo Şirketi oturumuyla üç ekran ve veri uçları ile widget tercih ucu HTTP 200 döndü. Canlı doğrulama listeleme ve ekran açılışıyla sınırlıydı. [Yayın manifesti](.release-candidates/panel-widget-demo-20261119/manifest.json)
+
+### 19 Kasım Sabah Onay ve P-15 API yayını
+
+`sabah-onay-p15-20261119` paketi ay sonu kapanış hazırlığında onay anında rapor yetkisini ve kontrol sayaçlarını yeniden denetliyor. Açık teklif taslağı komutu için gerekli yetki bulunmadığında asistan model çağrısından önce gerekçeyi açıklıyor. API ve worker sağlık kontrolleri geçti. Demo oturumuyla Sabah Onay, Sözleşmeler, Veri Aktarımı ve widget erişimi HTTP 200 döndü. Yayındaki P-15 koşucusu kritik teklifi 3/3 geçirdi. [Kritik senaryo kaydı](docs/ai-degerlendirme/2026-11-19-kritik-teklif.md)
+
+### 19 Kasım Sabah Onay hazırlık yenilemesi
+
+22.57’de `sabah-onay-yenileme-20261119` API paketi yerel pilota geçti. Beş hazırlık türü ortak kayıt yolunda öneriyi, kanıtı ve hedef özetini birlikte yeniliyor. Eşzamanlı yenileme ve verilen kararın korunması, kapanış hazırlığı üzerinden ayrı PostgreSQL kabul ortamında doğrulandı. Bekleyen göç yoktu. Yayın sonrası servis sağlık denetimleri ile Demo oturumunda Sabah Onay ekranı ve liste isteği geçti. Canlı doğrulama sırasında onay işlemi yapılmadı.

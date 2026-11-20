@@ -3,7 +3,6 @@ import { BadRequestException, ConflictException, ForbiddenException } from "@nes
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, it, expect } from "vitest";
 import { trSimdi } from "../src/ai/ai-zaman";
-import { hedefOzetiHesapla } from "../src/ai/hazirlik/hazirlik.kurallari";
 import { HazirlikService } from "../src/ai/hazirlik/hazirlik.service";
 import { HafizaService } from "../src/ai/hafiza/hafiza.service";
 import { baglamlaCalistir } from "../src/core/istek-baglami";
@@ -62,12 +61,14 @@ it("eşzamanlı Sabah Onay kararları tek iş kaydı üretir ve reddedilen yazı
     });
 
     const donem = trSimdi().gun.slice(0, 7);
-    const kapanis = await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.create({ data: {
-      tenantId, tur: "ay_sonu_kapanis", tekilAnahtar: randomUUID(), baslik: "Kapanış", ozet: "Test",
-      kaynakTur: "donem", kaynakId: donem, olusturanUserId: user.id, oneri: { donem },
-      hedefOzeti: hedefOzetiHesapla({ donem, bekleyenEkstre: 0, taslakFatura: 0, bekleyenOnay: 0 }),
-      gecerlilikBitisAt: new Date(Date.now() + 60_000),
-    } }));
+    const kapanisHazirla = () => service.hazirla(tenantId, user.id, { turler: ["ay_sonu_kapanis"] });
+    await Promise.all([kapanisHazirla(), kapanisHazirla()]);
+    const kapanislar = await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.findMany({
+      where: { tenantId, tur: "ay_sonu_kapanis" },
+    }));
+    expect(kapanislar).toHaveLength(1);
+    const [kapanis] = kapanislar;
+    expect(kapanis.oneri).toMatchObject({ donem, taslakFaturaSayisi: 0 });
     await expect(baglamlaCalistir({ ...baglam, ozelRol: { id: randomUUID(), kapali: ["raporlar.goruntule"] } },
       () => service.onayla(kapanis.id))).rejects.toBeInstanceOf(ForbiddenException);
     await db.tenantIslem(tenantId, (tx) => tx.fatura.create({ data: {
@@ -78,5 +79,16 @@ it("eşzamanlı Sabah Onay kararları tek iş kaydı üretir ve reddedilen yazı
     await expect(service.onayla(kapanis.id)).rejects.toBeInstanceOf(ConflictException);
     expect(await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.findUnique({ where: { id: kapanis.id } })))
       .toMatchObject({ durum: "hedef_degisti", olusanKayitId: null });
+
+    expect(await kapanisHazirla()).toMatchObject({ uretilenSayisi: 1 });
+    const guncel = await db.tenantIslem(tenantId, (tx) => tx.aiHazirlik.findUniqueOrThrow({ where: { id: kapanis.id } }));
+    expect(guncel).toMatchObject({
+      durum: "hazir",
+      oneri: { taslakFaturaSayisi: 1 },
+      kanit: { maddeler: expect.arrayContaining([{ ad: "Taslak Faturalar", bekleyen: 1, durum: "bekliyor" }]) },
+    });
+    expect(guncel.hedefOzeti).not.toBe(kapanis.hedefOzeti);
+    await expect(service.onayla(kapanis.id)).resolves.toMatchObject({ durum: "onaylandi" });
+    expect(await kapanisHazirla()).toMatchObject({ uretilenSayisi: 0 });
   });
 });
