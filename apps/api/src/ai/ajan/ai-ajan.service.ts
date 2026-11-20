@@ -132,6 +132,18 @@ export interface AjanYaniti {
   arayuzEylemleri?: AsistanArayuzEylemi[];
 }
 
+/** AI-105: arka plan görevi seçeneği. `sonucYaz` sonuç işleminin içinde çağrılır; false dönerse sonuç yazılmaz. */
+export interface ArkaPlanSecenegi {
+  oturumId: string;
+  istekMesajId: string;
+  sonucYaz: (tx: Prisma.TransactionClient, sonucMesajId: string) => Promise<boolean>;
+}
+
+/** AI-105: görev iptal edildi ya da başka worker'a geçti; sonuç yazılmadı. */
+export class ArkaPlanSahiplikHatasi extends Error {
+  constructor() { super("Görevin sahipliği kaybedildi; sonuç yazılmadı."); }
+}
+
 /** AI-114: arayüz eylemi + kullanıcıya gösterilecek tek satır. */
 export type AsistanArayuzEylemi = ArayuzEylemi & { ozet: string };
 
@@ -476,7 +488,7 @@ export class AiAjanService {
     };
   }
 
-  async mesajiIsle(mesaj: string, requestId?: string, ekran?: EkranBaglami, ekIdleri: string[] = [], secenek: { derin?: boolean; olay?: (e: AkisOlayi) => void; sinyal?: AbortSignal; kanal?: AjanKanali } = {}): Promise<AjanYaniti> {
+  async mesajiIsle(mesaj: string, requestId?: string, ekran?: EkranBaglami, ekIdleri: string[] = [], secenek: { derin?: boolean; olay?: (e: AkisOlayi) => void; sinyal?: AbortSignal; kanal?: AjanKanali; arkaPlan?: ArkaPlanSecenegi } = {}): Promise<AjanYaniti> {
     const { tenantId, userId, rol } = aktifBaglam();
     const kanal: AjanKanali = secenek.kanal ?? "WEB";
     const telegram = kanal === "TELEGRAM";
@@ -528,10 +540,11 @@ export class AiAjanService {
     if (ekran?.durum && !this.uc) throw new Error("Ekran durumu için uç çağırıcı yok");
     const ekranDurumu = ekran?.durum && this.uc ? await ekranDurumuDogrula(this.uc, ekran.durum) : { metin: "", kimlikler: [] };
     const ekler = await this.ekMetni(ekIdleri);
-    const oturum = await this.oturumGetir(tenantId, userId, kanal);
+    // AI-105: arka plan görevi kendi sohbetinde çalışır; istek mesajı görev açılırken yazıldı.
+    const oturum = secenek.arkaPlan ? await this.gorevOturumu(tenantId, userId, secenek.arkaPlan.oturumId) : await this.oturumGetir(tenantId, userId, kanal);
     const gecmis = await this.gecmisOku(tenantId, oturum.id, telegram ? "TELEGRAM" : undefined);
-    let ayrilanId: string | null = null;
-    if (requestId) {
+    let ayrilanId: string | null = secenek.arkaPlan?.istekMesajId ?? null;
+    if (requestId && !secenek.arkaPlan) {
       try {
         ayrilanId = await this.istegiAyir(tenantId, oturum.id, requestId, metin, kanal);
       } catch (hata) {
@@ -543,7 +556,9 @@ export class AiAjanService {
     try {
       // CNL-05: Telegram'da araçlar veri kapısından geçer (bordro/kişiye ödeme dışarı çıkmaz).
       // AI-114: arayüz eylemleri yalnız web asistanında sunulur.
-      const izinli = telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : arayuzAraclariniSec(this.yurutucu.izinliAraclar(rol, { arayuz: true }), { durum: ekran?.durum, mesaj: metin });
+      // AI-105: arka planda yalnız okuma (dosya dahil) araçları; yeniden çalışma çift kayıt üretmesin.
+      const izinli = secenek.arkaPlan ? this.yurutucu.izinliAraclar(rol).filter((a) => a.sinif === "okuma")
+        : telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : arayuzAraclariniSec(this.yurutucu.izinliAraclar(rol, { arayuz: true }), { durum: ekran?.durum, mesaj: metin });
       const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenler, arayuzEylemleri } = await this.dongu({
         saglayici,
         sistemRol:
@@ -585,6 +600,8 @@ export class AiAjanService {
           data: { oturumId: oturum.id, kanal, rol: "assistant", icerik: cevap, saglayici: saglayici.saglayiciAdi, model: saglayici.modelAdi ?? null, aracCagrisi: { araclar: calisanlar, talepler: talepler.map((t) => t.id), secimler, durumlar, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(dosyalar.length ? { dosyalar } : {}), ...(arayuzEylemleri.length ? { arayuzEylemleri: arayuzEylemleri.map((e) => ({ tur: e.tur, ozet: e.ozet })) } : {}) } as object },
         });
         yanit.mesajId = kayit.id;
+        // AI-105: görevin sahipliği bu işte hâlâ bizdeyse sonuç yazılır; değilse işlem geri alınır (çift sonuç yok).
+        if (secenek.arkaPlan && !(await secenek.arkaPlan.sonucYaz(tx, kayit.id))) throw new ArkaPlanSahiplikHatasi();
         if (ayrilanId) await tx.ajanMesajGecmisi.update({ where: { id: ayrilanId }, data: { yanit: JSON.parse(JSON.stringify(yanit)) as Prisma.InputJsonValue } });
         await tx.ajanOturumu.update({ where: { id: oturum.id }, data: { sonEtkilesim: new Date(), baslik: oturum.baslik ?? metin.slice(0, 120) } });
       });
@@ -933,6 +950,19 @@ export class AiAjanService {
    * Panel en son etkileşilen sohbeti (Telegram'dakiler dahil) sürdürür; Telegram yalnız kendi
    * kanalındaki sohbeti kullanır, panelde açılan web sohbeti Telegram'a geçmez.
    */
+  /** AI-105: kullanıcının etkin panel sohbeti (arka plan görevi bu sohbete bağlanır). */
+  async webOturumu() {
+    const { tenantId, userId } = aktifBaglam();
+    return this.oturumGetir(tenantId, userId, "WEB");
+  }
+
+  /** AI-105: görevin açıldığı sohbet; arşivlenmiş ya da başkasınınsa görev çalışmaz. */
+  private async gorevOturumu(tenantId: string, userId: string, oturumId: string) {
+    const oturum = await this.prisma.tenantIslem(tenantId, (tx) => tx.ajanOturumu.findFirst({ where: { id: oturumId, userId, arsivlendiAt: null } }));
+    if (!oturum) throw new BadRequestException("Görevin sohbeti bulunamadı ya da arşivlendi.");
+    return oturum;
+  }
+
   private async oturumGetir(tenantId: string, userId: string, kanal: AjanKanali = "WEB") {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.ajanOturumu.findFirst({ where: { userId, kanal: kanal === "WEB" ? { in: PANEL_KANALLARI } : kanal, arsivlendiAt: null }, orderBy: { sonEtkilesim: "desc" } });

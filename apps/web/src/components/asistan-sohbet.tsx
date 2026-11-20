@@ -45,6 +45,10 @@ interface Mesaj {
   eylemler?: EylemSatiri[];
 }
 
+/** AI-105: arka planda süren analiz. */
+interface AsistanGorevi { id: string; oturumId: string; mesaj: string; durum: "kuyrukta" | "calisiyor" | "tamamlandi" | "hata" | "iptal"; hata: string | null }
+const GOREV_DURUMU: Record<AsistanGorevi["durum"], string> = { kuyrukta: "sırada", calisiyor: "çalışıyor", tamamlandi: "hazır", hata: "tamamlanamadı", iptal: "iptal edildi" };
+
 interface EylemSatiri { tur: ArayuzEylemi["tur"]; ozet: string; sonuc: ArayuzSonucu; geriAl?: GeriAl }
 
 const SONUC_METNI: Record<ArayuzSonucu, string> = { basarili: "uygulandı", ekran_bulunamadi: "ekran bulunamadı", alan_yok: "bu ekranda uygulanamadı", geri_alindi: "geri alındı", hata: "uygulanamadı" };
@@ -239,6 +243,8 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
   const [bilgi, setBilgi] = useState<string | null>(null);
   const [sohbetler, setSohbetler] = useState<SohbetOzeti[]>([]);
   const [aktifSohbetId, setAktifSohbetId] = useState<string | null>(null);
+  const aktifSohbetIdRef = useRef<string | null>(null);
+  aktifSohbetIdRef.current = aktifSohbetId;
 
   // Sesli Konuşma (Speech Recognition) ve Okuma (Speech Synthesis)
   const [dinleniyor, setDinleniyor] = useState(false);
@@ -253,6 +259,36 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
   const [bekleyenEkler, setBekleyenEkler] = useState<SohbetEki[]>([]);
   // AI-81: yalnız bir sonraki mesaj için güçlü sağlayıcı.
   const [derin, setDerin] = useState(false);
+  // AI-105: "Arka planda" seçiliyse mesaj kalıcı göreve dönüşür; tarayıcı kapansa da sürer.
+  const [arkaPlan, setArkaPlan] = useState(false);
+  const [gorevler, setGorevler] = useState<AsistanGorevi[]>([]);
+  const acikGorevVar = gorevler.some((g) => g.durum === "kuyrukta" || g.durum === "calisiyor");
+  useEffect(() => {
+    void api<AsistanGorevi[]>("/ai/ajan/gorevler").then((l) => setGorevler(l.filter((g) => g.durum === "kuyrukta" || g.durum === "calisiyor"))).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!acikGorevVar) return;
+    const z = window.setInterval(() => {
+      void api<AsistanGorevi[]>("/ai/ajan/gorevler").then((liste) => {
+        setGorevler((onceki) => {
+          for (const g of onceki) {
+            const yeni = liste.find((x) => x.id === g.id);
+            // Biten görevin sonucu sohbete yazıldı; açık sohbetse yeniden yüklenir.
+            if (yeni?.durum === "tamamlandi" && g.durum !== "tamamlandi" && yeni.oturumId === aktifSohbetIdRef.current) void sohbetAc(yeni.oturumId);
+          }
+          return onceki.map((g) => liste.find((x) => x.id === g.id) ?? g).filter((g) => g.durum !== "tamamlandi" && g.durum !== "iptal");
+        });
+      }).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(z);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnız açık görev varlığına bağlı
+  }, [acikGorevVar]);
+  async function goreviIptalEt(id: string) {
+    try {
+      await api(`/ai/ajan/gorevler/${id}/iptal`, { method: "POST" });
+      setGorevler((l) => l.filter((g) => g.id !== id));
+    } catch (e) { setHata(hataMesaji(e)); }
+  }
   // AI-82: yanıt hazırlanırken canlı araç adımları; Durdur bağlantıyı keser.
   const [adimlar, setAdimlar] = useState<{ ad: string; etiket: string; durum: "basladi" | "bitti" | "hata" }[]>([]);
   const durdurucu = useRef<AbortController | null>(null);
@@ -352,6 +388,20 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
       // Yanıt beklerken eklenen dosya bu mesaja girmez; yalnız gönderilenler kaldırılır.
       const gonderilenEkler = bekleyenEkler.map((e) => e.ekId);
       setAdimlar([]);
+      if (arkaPlan) {
+        // AI-105: mesaj kalıcı göreve dönüşür; sonuç bittiğinde sohbete ve bildirime düşer.
+        const gorev = await api<AsistanGorevi>("/ai/ajan/gorevler", {
+          method: "POST",
+          body: JSON.stringify({
+            mesaj: metin, requestId: crypto.randomUUID(),
+            baglam: { ...(baglam ? { kayit: { tur: baglam.tur, id: baglam.id } } : {}), ...(durum ? { durum } : {}), sayfa: window.location.pathname },
+          }),
+        });
+        setArkaPlan(false);
+        setGorevler((l) => [gorev, ...l.filter((g) => g.id !== gorev.id)]);
+        setAktifSohbetId(gorev.oturumId);
+        return;
+      }
       const durdur = new AbortController();
       durdurucu.current = durdur;
       const y = await apiAkis<AjanYaniti>(
@@ -777,6 +827,18 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
           {onBaglamKaldir && <button type="button" className="btn-link" onClick={onBaglamKaldir}>Bağlamı kaldır</button>}
         </div>
       )}
+      {gorevler.length > 0 && (
+        <div className="asistan__eylemler" aria-label="Arka planda süren analizler" aria-live="polite">
+          {gorevler.map((g) => (
+            <div key={g.id} className={`asistan__eylem${g.durum === "hata" ? " asistan__eylem--hata" : ""}`}>
+              <span>{g.durum === "hata" ? "⚠" : "⏳"} Arka planda: {g.mesaj} · {GOREV_DURUMU[g.durum]}{g.hata && g.durum === "hata" ? ` (${g.hata})` : ""}</span>
+              {g.durum === "kuyrukta" || g.durum === "calisiyor"
+                ? <button type="button" className="btn-link" onClick={() => void goreviIptalEt(g.id)}>İptal</button>
+                : <button type="button" className="btn-link" onClick={() => setGorevler((l) => l.filter((x) => x.id !== g.id))}>Kapat</button>}
+            </div>
+          ))}
+        </div>
+      )}
       {bekleyenEkler.length > 0 && (
         <div className="asistan__oneriler" aria-label="Mesaja eklenecek dosyalar">
           {bekleyenEkler.map((e) => (
@@ -858,6 +920,17 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
           placeholder={dinleniyor ? "Konuşun, dinleniyor…" : "Talimatınızı yazın veya mikrofona konuşun…"}
           value={girdi}
         />
+        <button
+          type="button"
+          className={`btn ${arkaPlan ? "btn--primary" : "btn--ghost"}`}
+          aria-pressed={arkaPlan}
+          disabled={gonderiliyor}
+          onClick={() => setArkaPlan((d) => !d)}
+          title="Uzun analizi arka planda çalıştır: tarayıcıyı kapatsanız da sürer, sonuç sohbete ve bildirimlere gelir. Yalnız okuma yapılır."
+          style={{ padding: "0 0.6rem", whiteSpace: "nowrap" }}
+        >
+          Arka planda
+        </button>
         <button
           type="button"
           className={`btn ${derin ? "btn--primary" : "btn--ghost"}`}

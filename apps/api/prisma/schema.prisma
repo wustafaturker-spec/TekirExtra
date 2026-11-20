@@ -339,6 +339,7 @@ model Tenant {
 
   panelWidgetTercihleri PanelWidgetTercihi[]
 
+  aiAsistanGorevleri AiAsistanGorevi[]
   @@map("tenants")
 }
 
@@ -709,6 +710,7 @@ model User {
   yuklenenSozlesmeler          SozlesmeBelge[]         @relation("SozlesmeYukleyen")
 
   onayTalepleri                OnayTalebi[]          @relation("OnayTalebiTalepEden")
+  aiAsistanGorevleri AiAsistanGorevi[]
   @@unique([tenantId, eposta])
   @@unique([tenantId, id], map: "users_tenant_id_id_duyuru_key")
   @@index([tenantId])
@@ -7343,6 +7345,7 @@ model AjanOturumu {
   mesajlar      AjanMesajGecmisi[]
   onayTalepleri AiOnayTalebi[]
 
+  asistanGorevleri AiAsistanGorevi[]
   @@unique([tenantId, kanal, kanalKimlik])
   @@index([tenantId, kanal])
   @@index([tenantId, userId, arsivlendiAt, sonEtkilesim])
@@ -7371,6 +7374,39 @@ model AjanMesajGecmisi {
   @@unique([oturumId, requestId])
   @@index([oturumId, createdAt])
   @@map("ajan_mesaj_gecmisi")
+}
+
+/// AI-105: arka planda süren asistan analizi. Kuyruğun kaynağı bu tablodur; worker işi
+/// sahiplik anahtarı + kira süresiyle alır. Sonuç mesajı ve "tamamlandi" aynı işlemde yazılır.
+model AiAsistanGorevi {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  oturumId         String    @map("oturum_id") @db.Uuid
+  istekId          String    @map("istek_id") @db.Uuid
+  istekMesajId     String    @map("istek_mesaj_id") @db.Uuid
+  mesaj            String    @db.Text
+  baglam           Json?
+  /// kuyrukta | calisiyor | tamamlandi | hata | iptal
+  durum            String    @default("kuyrukta") @db.VarChar(20)
+  deneme           Int       @default(0) @db.SmallInt
+  sahiplikAnahtari String?   @map("sahiplik_anahtari") @db.Uuid
+  kiraBitisAt      DateTime? @map("kira_bitis_at")
+  sonucMesajId     String?   @map("sonuc_mesaj_id") @db.Uuid
+  hata             String?   @db.Text
+  basladiAt        DateTime? @map("basladi_at")
+  bittiAt          DateTime? @map("bitti_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oturum AjanOturumu @relation(fields: [oturumId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, istekId])
+  @@index([durum, kiraBitisAt], map: "ai_asistan_gorevleri_durum_kira_idx")
+  @@index([tenantId, userId, durum, createdAt], map: "ai_asistan_gorevleri_tenant_user_durum_idx")
+  @@map("ai_asistan_gorevleri")
 }
 
 /// AI-04: asistanın ya da MCP'nin hazırladığı, kullanıcı onayı bekleyen

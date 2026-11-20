@@ -1,8 +1,9 @@
-import { BadRequestException, Body, Controller, Get, HttpException, Param, Post, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpException, Optional, Param, Post, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { YuklenenDosya } from "../../ekler/ekler.service";
 import { AiAjanService, type AkisOlayi, type EkranBaglami, type EkranTuru } from "./ai-ajan.service";
+import { AsistanGorevService } from "./asistan-gorev.service";
 import { arayuzSonuclariniAyristir, ekranDurumunuAyristir } from "@tekirextra/shared";
 import { SAYFA_YOLU } from "./araclar/gruplar";
 
@@ -14,7 +15,33 @@ type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: 
  */
 @Controller("ai/ajan")
 export class AiAjanController {
-  constructor(private readonly ajanService: AiAjanService) {}
+  constructor(private readonly ajanService: AiAjanService, @Optional() private readonly gorevler?: AsistanGorevService) {}
+
+  /** AI-105: arka planda süren analiz; tarayıcı kapansa da çalışır, sonuç sohbete ve bildirime düşer. */
+  @Post("gorevler")
+  gorevOlustur(@Body() body: { mesaj?: unknown; requestId?: unknown; baglam?: unknown }) {
+    return this.gorevServisi().olustur(body ?? {});
+  }
+
+  @Get("gorevler")
+  gorevListele() {
+    return this.gorevServisi().listele();
+  }
+
+  @Get("gorevler/:id")
+  gorevGetir(@Param("id") id: string) {
+    return this.gorevServisi().getir(id);
+  }
+
+  @Post("gorevler/:id/iptal")
+  gorevIptal(@Param("id") id: string) {
+    return this.gorevServisi().iptal(id);
+  }
+
+  private gorevServisi(): AsistanGorevService {
+    if (!this.gorevler) throw new BadRequestException("Arka plan analizi kullanılamıyor.");
+    return this.gorevler;
+  }
 
   @Post("mesaj")
   mesaj(@Body() body: MesajGovdesi) {

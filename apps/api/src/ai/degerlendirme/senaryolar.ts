@@ -8,7 +8,7 @@ import { sirayla, type DegerlendirmeSenaryosu } from "./senaryo";
  * Seti değiştirince SENARYO_SETI_SURUMU'nu artırın: temel çizgiyle
  * karşılaştırma yalnız aynı set sürümünde anlamlıdır.
  */
-export const SENARYO_SETI_SURUMU = "2026-11-20.2";
+export const SENARYO_SETI_SURUMU = "2026-11-21.1";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const cariKaydi = (n: number, unvan: string, bakiyeler: Array<[string, string]> = [["TRY", "0.00"]], ek: Record<string, unknown> = {}) => ({
@@ -461,11 +461,11 @@ export const DEGERLENDIRME_SENARYOLARI: DegerlendirmeSenaryosu[] = [
   },
   {
     id: "hata-telegram-onay", kategori: "hata_iptal", kaynak: "sentetik",
-    aciklama: "CNL: Telegram'da onay talebi açılır, onay panelden yapılır; düğmeden söz edilmez.",
+    aciklama: "CNL: Telegram'da onay talebi açılır; yanıt onayın sohbetteki düğmeyle ya da panelden verileceğini söyler (CNL ile düğmeli onay geldi; eski \"düğme denmez\" kuralı istemle çelişiyordu, 2026-11-21).",
     girdi: { mesaj: "TKF2026000000045 teklifini onayla.", kanal: "TELEGRAM" },
     ciktilar: { belge_ara: { kayitlar: [TEKLIF] }, belge_getir: TEKLIF },
     kimlikler: [{ tur: "belge", ad: "TKF2026000000045", id: TEKLIF.id }],
-    beklenen: { karar: "onay", araclar: [{ ad: "belge_onayla" }], icermeli: [/panel/i], icermemeli: [/düğme/i] },
+    beklenen: { karar: "onay", araclar: [{ ad: "belge_onayla" }], icermeli: [/panel/i] },
   },
   {
     id: "hata-kullanici-vazgecti", kategori: "hata_iptal", kaynak: "sentetik",
