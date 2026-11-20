@@ -6,6 +6,7 @@ import { Alert, Badge, Button, Input } from "@/components/ui";
 import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
+import { YzDosyalar, type AsistanDosyasi } from "./yz-dosyalar";
 import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, type AsistanBaglami } from "@/lib/asistan-baglami";
 
 /** AI-04: kullanıcının onayını bekleyen (ya da karara bağlanmış) yapay zekâ işlemi. */
@@ -25,6 +26,8 @@ export interface OnayTalebi {
 
 interface Mesaj {
   kaynaklar?: FinansKaynagi[];
+  /** AI-118: asistanın hazırladığı dosyalar. */
+  dosyalar?: AsistanDosyasi[];
   kaynaklarKisaltildi?: boolean;
   id?: string;
   geriBildirim?: string | null;
@@ -48,6 +51,7 @@ interface SohbetOzeti { id: string; baslik: string | null; kanal?: string; sonEt
 
 interface AjanYaniti {
   kaynaklar?: FinansKaynagi[];
+  dosyalar?: AsistanDosyasi[];
   kaynaklarKisaltildi?: boolean;
   mesajId?: string;
   oturumId?: string | null;
@@ -234,7 +238,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
   useEffect(() => {
     let iptal = false;
     void Promise.all([
-      api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>("/ai/ajan/gecmis"),
+      api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; dosyalar?: AsistanDosyasi[]; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>("/ai/ajan/gecmis"),
       api<OnayTalebi[]>("/ai/onay-talepleri"),
       api<SohbetOzeti[]>("/ai/ajan/sohbetler"),
     ])
@@ -245,7 +249,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
           .map((m) => ({
             anahtar: yeniAnahtar(),
             id: m.id, geriBildirim: m.geriBildirim, geriBildirimNotu: m.geriBildirimNotu,
-            kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi,
+            kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi, dosyalar: m.dosyalar,
             rol: m.rol as Mesaj["rol"],
             icerik: m.icerik,
             talepIdleri: m.talepIdleri,
@@ -269,11 +273,11 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
   async function sohbetAc(id: string) {
     setHata(null);
     await api(`/ai/ajan/sohbetler/${id}/etkinlestir`, { method: "POST" });
-    const gecmis = await api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>(`/ai/ajan/gecmis?oturumId=${encodeURIComponent(id)}`);
+    const gecmis = await api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; dosyalar?: AsistanDosyasi[]; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>(`/ai/ajan/gecmis?oturumId=${encodeURIComponent(id)}`);
     setMesajlar(gecmis.mesajlar.filter((m) => m.rol === "user" || m.rol === "assistant").map((m) => ({
       anahtar: yeniAnahtar(), rol: m.rol as Mesaj["rol"], icerik: m.icerik, talepIdleri: m.talepIdleri, secimler: m.secimler ?? [],
       id: m.id, geriBildirim: m.geriBildirim, geriBildirimNotu: m.geriBildirimNotu,
-      kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi,
+      kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi, dosyalar: m.dosyalar,
     })));
     setAktifSohbetId(gecmis.oturumId);
     setSohbetler(await api<SohbetOzeti[]>("/ai/ajan/sohbetler"));
@@ -347,7 +351,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
       setTalepler((t) => ({ ...t, ...Object.fromEntries(y.onayTalepleri.map((x) => [x.id, x])) }));
       setMesajlar((m) => [
         ...m,
-        { anahtar: yeniAnahtar(), id: y.mesajId, rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi,
+        { anahtar: yeniAnahtar(), id: y.mesajId, rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi, dosyalar: y.dosyalar,
           ...(y.model?.not ? { modelNotu: y.model.not } : y.model?.derin ? { modelNotu: `Derin analiz · ${y.model.model ?? y.model.saglayici}` } : {}) },
       ]);
       if (y.onayTalepleri.length) onTalepDegisti?.();
@@ -607,6 +611,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldi
           <div className={`asistan__mesaj asistan__mesaj--${m.rol === "user" ? "kullanici" : "asistan"}`} key={m.anahtar}>
             <div className="asistan__balon">
               {baglantili(m.icerik)}
+              {m.rol === "assistant" && <YzDosyalar dosyalar={m.dosyalar} />}
               {m.rol === "assistant" && <YzFinansKaynaklari kaynaklar={m.kaynaklar} kisaltildi={m.kaynaklarKisaltildi} />}
               {m.rol === "assistant" && m.modelNotu && <div className="asistan__model-notu">{m.modelNotu}</div>}
               {m.rol === "assistant" && <YzGeriBildirim mesajId={m.id} deger={m.geriBildirim} not={m.geriBildirimNotu} />}

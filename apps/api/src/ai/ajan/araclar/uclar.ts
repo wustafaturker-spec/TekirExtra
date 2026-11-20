@@ -61,6 +61,7 @@ export const UC = {
 
   belgeListe: uc(BelgelerController, "listele", "GET /belgeler"),
   belgeGetir: uc(BelgelerController, "getir", "GET /belgeler/:id"),
+  belgePdf: uc(BelgelerController, "pdf", "GET /belgeler/:id/pdf"),
   belgeOlustur: uc(BelgelerController, "olustur", "POST /belgeler"),
   belgeOnayla: uc(BelgelerController, "onayla", "POST /belgeler/:id/onayla"),
   belgeIptal: uc(BelgelerController, "iptal", "POST /belgeler/:id/iptal"),
@@ -70,6 +71,7 @@ export const UC = {
 
   faturaListe: uc(FaturaController, "listele", "GET /fatura"),
   faturaGetir: uc(FaturaController, "getir", "GET /fatura/:id"),
+  faturaPdf: uc(FaturaController, "pdfUret", "GET /fatura/:id/pdf"),
   faturaOlustur: uc(FaturaController, "olustur", "POST /fatura"),
   faturaKesinlestir: uc(FaturaController, "kesinlestir", "POST /fatura/:id/kesinlestir"),
   faturaIptal: uc(FaturaController, "iptal", "POST /fatura/:id/iptal"),
@@ -97,6 +99,9 @@ export const UC = {
   raporKatalogu: uc(RaporlarController, "listele", "GET /raporlar"),
   // Rapor çalıştırmak okumadır; POST yalnız gövde taşımak için (denetim kaydına yazılmaz).
   raporCalistir: uc(RaporlarController, "calistir", "GET /raporlar/:kod/calistir"),
+  // AI-118: dışa aktarım POST olarak kalır ki denetim kaydına "AI POST /raporlar/:kod/excel" yazılsın.
+  raporExcel: uc(RaporlarController, "excel", "POST /raporlar/:kod/excel"),
+  raporPdf: uc(RaporlarController, "pdf", "POST /raporlar/:kod/pdf"),
   dovizKuru: uc(DovizController, "getir", "GET /doviz-kurlari"),
   tahsilatOncelikleri: uc(VadeHatirlatmaController, "oncelikler", "GET /cari/vade-hatirlatma/oncelikler"),
   tahsilatRiski: uc(VadeHatirlatmaController, "cariRiski", "GET /cari/vade-hatirlatma/risk/:cariId"),

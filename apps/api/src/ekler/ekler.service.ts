@@ -136,7 +136,12 @@ export class EklerService {
     }
   }
 
-  async yukle(sahipTur: EkSahipTur, sahipId: string, dosya: YuklenenDosya) {
+  /**
+   * `sohbetCiktisi`: AI-118 — asistanın ürettiği PDF/Excel sohbet ekine yazılır; kullanıcı yüklemesi
+   * değildir, bu nedenle yalnız `ai_sohbet` sahibinde ve `sohbet_cikti` profiliyle kabul edilir.
+   */
+  async yukle(sahipTur: EkSahipTur, sahipId: string, dosya: YuklenenDosya, secenek: { sohbetCiktisi?: boolean } = {}) {
+    if (secenek.sohbetCiktisi && sahipTur !== "ai_sohbet") throw new BadRequestException("Sohbet çıktısı yalnız sohbet ekine yazılır");
     if (!Number.isSafeInteger(dosya.size) || dosya.size < 1 || dosya.size !== dosya.buffer.length) {
       throw new BadRequestException("Dosya boyutu içerikle eşleşmiyor");
     }
@@ -144,7 +149,7 @@ export class EklerService {
       throw new BadRequestException("Dosya 10 MB sınırını aşıyor");
     }
     // Çek/senet görüntüsü yalnız görüntü ya da PDF olabilir; saklanan MIME içerikten gelir.
-    const mime = await dosyaIceriginiDogrula(dosya, sahipTur === "cek_senet" ? "goruntu" : sahipTur === "ai_sohbet" ? "sohbet" : "belge");
+    const mime = await dosyaIceriginiDogrula(dosya, sahipTur === "cek_senet" ? "goruntu" : sahipTur === "ai_sohbet" ? (secenek.sohbetCiktisi ? "sohbet_cikti" : "sohbet") : "belge");
     const { tenantId, userId } = aktifBaglam();
     const guvenliAd = dosya.originalname.replace(/[^\w.\-çğıöşüÇĞİÖŞÜ ]/g, "_");
     const depoAnahtari = `${tenantId}/${sahipTur}/${sahipId}/${randomUUID()}-${guvenliAd}`;

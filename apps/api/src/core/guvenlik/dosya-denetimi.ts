@@ -34,6 +34,8 @@ export const DOSYA_PROFILLERI = {
   ekstre: ["metin", "xlsx", "xml", "pdf"],
   /** AI-79: asistan sohbetine eklenen fiş/fatura görseli, PDF ya da UBL XML. */
   sohbet: ["pdf", "png", "jpeg", "webp", "xml"],
+  /** AI-118: asistanın ürettiği rapor/ekstre/belge dosyası (sunucu çıktısı; yine de aynı denetimden geçer). */
+  sohbet_cikti: ["pdf", "xlsx"],
 } as const satisfies Record<string, readonly DosyaTuru[]>;
 export type DosyaProfili = keyof typeof DOSYA_PROFILLERI;
 

@@ -100,6 +100,8 @@ function sar(a: AjanAraci): AjanAraci {
         return { ...r, raporlar: (r.raporlar ?? []).filter((x) => telegramdaAcikRapor(x.kod)) };
       } };
     case "rapor_calistir":
+    case "rapor_dosyasi":
+      // AI-118: dosya da aynı rapor kararından geçer; Telegram'da kapalı rapor dosya olarak da çıkmaz.
       return { ...a, async calistir(b, g) {
         if (!telegramdaAcikRapor((g as { kod?: unknown })?.kod)) throw new BadRequestException("Bu rapor Telegram'da çalıştırılmaz; panelde Raporlar ekranından görüntüleyin.");
         return a.calistir(b, g);

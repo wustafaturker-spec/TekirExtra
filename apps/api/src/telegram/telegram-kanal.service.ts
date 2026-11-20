@@ -856,17 +856,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     clearInterval(yaziyor);
     await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { botKimlik: izKimlik(bot), guncellemeNo: BigInt(g.update_id) }, data: { durum: "islendi" } })));
     await yanitla(telegramYaniti(yanit), "sohbet");
-    if (yanit.dosya) {
+    for (const dosya of yanit.dosyaTamponlari ?? []) {
       await baglamlaCalistir(baglam, () =>
-        this.firmayaDosyaGonder(
-          tenantId,
-          userId,
-          yanit.dosya!.tampon,
-          yanit.dosya!.dosyaAdi,
-          yanit.dosya!.aciklama,
-          yanit.dosya!.mimeType,
-          karar.tutarGoster,
-        ),
+        this.firmayaDosyaGonder(tenantId, userId, dosya.tampon, dosya.dosyaAdi, dosya.aciklama, dosya.mimeType, karar.tutarGoster),
       );
     }
   }
