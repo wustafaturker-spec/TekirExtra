@@ -1,5 +1,6 @@
+import { ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
-import { DAKIKA_SINIRI, guncellemeIstekKimligi, TelegramKanalService, telegramYaniti } from "./telegram-kanal.service";
+import { DAKIKA_SINIRI, guncellemeIstekKimligi, onayKlavyesiKur, TelegramKanalService, telegramYaniti } from "./telegram-kanal.service";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -10,11 +11,28 @@ describe("Telegram kanalı yardımcıları", () => {
     expect(guncellemeIstekKimligi(7)).not.toBe(guncellemeIstekKimligi(8));
   });
 
-  it("onay talebi yanıta özet ve panel bağlantısıyla eklenir (CNL-04)", () => {
-    process.env.APP_URL = "https://panel.ornek/";
-    const metin = telegramYaniti({ cevap: "Hazırladım.", onayTalepleri: [{ id: "t1", ozet: "FTR001\nkesinleştir" }] as never });
-    expect(metin).toBe("Hazırladım.\n\nPanelde onayınızı bekleyen işlem:\n• FTR001 kesinleştir\n  https://panel.ornek/panel/ai?talep=t1");
-    expect(telegramYaniti({ cevap: "Tamam.", onayTalepleri: [] })).toBe("Tamam.");
+  it("AI-108: talepler yanıt metnine eklenmez; risk sınıfına göre düğmeli mesaj kurulur", () => {
+    expect(telegramYaniti({ cevap: "Hazırladım." })).toBe("Hazırladım.");
+    const panel = "https://panel.ornek";
+    const dusuk = { id: "t1", surum: 2, ozet: "Cari\noluştur", risk: "dusuk" as const };
+    const finansal = { id: "t2", surum: 1, ozet: "FTR001 kesinleştir", risk: "finansal" as const };
+    expect(onayKlavyesiKur([dusuk], false, panel)).toEqual({
+      metin: "Onayınızı bekleyen işlem:\n• Cari oluştur",
+      klavye: [[{ text: "✅ Onayla", callback_data: "onay:t1:2" }, { text: "❌ Reddet", callback_data: "red:t1:2" }]],
+    });
+    const kodlu = onayKlavyesiKur([dusuk, finansal], true, panel);
+    expect(kodlu.klavye[1]).toEqual([{ text: "🔐 2. Kodla onayla", callback_data: "kod:t2:1" }, { text: "❌ 2. Reddet", callback_data: "red:t2:1" }]);
+    expect(kodlu.metin).toContain("2. FTR001 kesinleştir\n  Finansal işlem: onay için iki adımlı doğrulama kodu istenir.");
+    // Kodu olmayan kullanıcıda finansal talep yalnız panel bağlantısı ve reddet düğmesiyle gelir.
+    const kodsuz = onayKlavyesiKur([finansal], false, panel);
+    expect(kodsuz.klavye).toEqual([[{ text: "❌ Reddet", callback_data: "red:t2:1" }]]);
+    expect(kodsuz.metin).toContain("panelde onaylayın https://panel.ornek/panel/ai?talep=t2");
+    expect(JSON.stringify(kodsuz.klavye)).not.toContain("onay:");
+    const cok = onayKlavyesiKur(Array.from({ length: 7 }, (_, i) => ({ ...dusuk, id: `t${i}` })), false, panel);
+    expect(cok.klavye).toHaveLength(5);
+    expect(cok.metin).toContain("Diğer 2 talep panelde: https://panel.ornek/panel/ai");
+    const uzun = onayKlavyesiKur([{ ...finansal, id: "a1d2e3f4-4b5c-4d6e-8f70-81920a1b2c3d", surum: 999 }], true, panel);
+    for (const d of uzun.klavye.flat()) expect(Buffer.byteLength(d.callback_data)).toBeLessThanOrEqual(64);
   });
 
   it("asistanın göreli panel yollarını tam adrese çevirir; tam adrese dokunmaz", () => {
@@ -105,7 +123,13 @@ describe("CNL-23 görsel yönlendirmesi", () => {
       yetkiVar: vi.fn(() => true),
       belgedenCari: vi.fn(async () => ({ sonuc: "Cari kartı taslağı", talepId: "talep-123" })),
     };
-    const kanal = new TelegramKanalService({} as never, {} as never, {} as never, undefined, undefined, masrafBelge as never, undefined, cariBelge as never);
+    const tx = {
+      aiOnayTalebi: { findMany: vi.fn().mockResolvedValue([{ id: "talep-123", surum: 1, ozet: "Cari kartı aç: AKN BOYA", arac: "cari_olustur", createdAt: new Date() }]) },
+      modulAyar: { findUnique: vi.fn().mockResolvedValue(null) },
+      user: { findUnique: vi.fn().mockResolvedValue({ totpAktif: false }) },
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
+    const kanal = new TelegramKanalService(prisma as never, {} as never, {} as never, undefined, undefined, masrafBelge as never, undefined, cariBelge as never);
     const klavyeliGonderilen: unknown[] = [];
     Object.assign(kanal as object, {
       firmayaKlavyeliGonder: vi.fn(async (_t: string, _u: string, _tur: string, metin: string, klavye: unknown) => {
@@ -127,14 +151,15 @@ describe("CNL-23 görsel yönlendirmesi", () => {
     );
     expect(klavyeliGonderilen).toHaveLength(1);
     expect(klavyeliGonderilen[0]).toEqual({
-      metin: "Cari kartı taslağı",
+      metin: "Cari kartı taslağı\n\nOnayınızı bekleyen işlem:\n• Cari kartı aç: AKN BOYA",
       klavye: [
         [
-          { text: "✅ Onayla ve Kartı Aç", callback_data: "onay:talep-123:1" },
+          { text: "✅ Onayla", callback_data: "onay:talep-123:1" },
           { text: "❌ Reddet", callback_data: "red:talep-123:1" },
         ],
       ],
     });
+    expect(tx.aiOnayTalebi.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["talep-123"] }, userId: "u", durum: "bekliyor" } }));
   });
 });
 
@@ -193,6 +218,50 @@ describe("CNL-27 Hızlı onay ve dosya gönderimi", () => {
     expect(aiOnay.onayla).toHaveBeenCalledWith("talep-123", { surum: 1, kanal: "TELEGRAM" });
     expect(bot.istemci.klavyeKaldir).toHaveBeenCalledWith(100, 50);
     expect(bot.istemci.dugmeYanitla).toHaveBeenCalledWith("cb-1", "Onaylandı");
+  });
+
+  it("AI-108: 'Kodla onayla' sonraki 6 haneli mesajı bekler; kod silinir, onay kodla istenir, yanlış kodda bekleme sürer", async () => {
+    const aiOnay = {
+      onayla: vi.fn()
+        .mockRejectedValueOnce(new ForbiddenException({ message: "Doğrulama kodu geçersiz.", kod: "KOD_GECERSIZ" }))
+        .mockResolvedValueOnce({ ozet: "Masraf tamamla", durum: "onaylandi" }),
+      reddet: vi.fn(),
+    };
+    const kanal = new TelegramKanalService({} as never, {} as never, {} as never, undefined, undefined, undefined, undefined, undefined, aiOnay as never);
+    const gonderilen: string[] = [];
+    const baglamHazir = { baglam: { tenantId: "t1", userId: "u1", rol: "yonetici" }, karar: { tutarGoster: true, neden: null } };
+    Object.assign(kanal as object, {
+      coz: vi.fn().mockResolvedValue({ tenantId: "t1", userId: "u1", botKimlik: "platform" }),
+      baglamHazirla: vi.fn().mockResolvedValue(baglamHazir),
+      gelenIz: vi.fn().mockResolvedValue(true),
+      firmayaGonder: vi.fn(async (_t: string, _u: string, _id: unknown, _tur: string, metin: string) => { gonderilen.push(metin); return "gonderildi"; }),
+    });
+    const bot = { kimlik: "platform", tenantId: null, istemci: { dugmeYanitla: vi.fn(), klavyeKaldir: vi.fn().mockResolvedValue(undefined), mesajSil: vi.fn().mockResolvedValue(undefined), yaziyor: vi.fn() } };
+    const dugme = { id: "cb-9", data: "kod:talep-9:2", from: { id: 100, is_bot: false }, message: { message_id: 70, chat: { id: 100, type: "private" } } };
+    const k = kanal as unknown as {
+      dugmeIsle: (g: unknown, d: unknown, bot: unknown) => Promise<void>;
+      firmaMesaji: (g: unknown, m: unknown, metin: string, c: unknown, bot: unknown) => Promise<void>;
+    };
+    await k.dugmeIsle({ update_id: 1 }, dugme, bot);
+    expect(aiOnay.onayla).not.toHaveBeenCalled();
+    expect(gonderilen[0]).toContain("6 haneli kodu");
+
+    const mesaj = (no: number, text: string) => ({ message_id: no, date: 0, chat: { id: 100, type: "private" }, from: { id: 100 }, text });
+    const cozum = { tenantId: "t1", userId: "u1" };
+    await k.firmaMesaji({ update_id: 2 }, mesaj(71, "111111"), "111111", cozum, bot);
+    expect(bot.istemci.mesajSil).toHaveBeenCalledWith(100, 71);
+    expect(aiOnay.onayla).toHaveBeenLastCalledWith("talep-9", { surum: 2, kanal: "TELEGRAM", dogrulamaKodu: "111111" });
+    expect(gonderilen.at(-1)).toBe("Doğrulama kodu geçersiz. Yeniden yazabilirsiniz.");
+
+    await k.firmaMesaji({ update_id: 3 }, mesaj(72, " 222222 "), " 222222 ", cozum, bot);
+    expect(aiOnay.onayla).toHaveBeenLastCalledWith("talep-9", { surum: 2, kanal: "TELEGRAM", dogrulamaKodu: "222222" });
+    expect(bot.istemci.klavyeKaldir).toHaveBeenCalledWith(100, 70);
+    expect(gonderilen.at(-1)).toBe("✅ Masraf tamamla onaylandı ve tamamlandı.");
+
+    // Bekleme bitti: sonraki 6 haneli mesaj artık onaya gitmez.
+    Object.assign(kanal as object, { ajan: { mesajiIsle: vi.fn().mockResolvedValue({ cevap: "Merhaba", onayTalepleri: [] }) } });
+    await k.firmaMesaji({ update_id: 4 }, mesaj(73, "333333"), "333333", cozum, bot).catch(() => undefined);
+    expect(aiOnay.onayla).toHaveBeenCalledTimes(2);
   });
 
   it("tutarGoster false olduğunda firmayaDosyaGonder uyarı verir ve dosya iletmez", async () => {

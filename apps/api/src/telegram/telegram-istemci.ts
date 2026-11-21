@@ -98,6 +98,11 @@ export class TelegramIstemci {
     return m.message_id;
   }
 
+  /** AI-108: doğrulama kodu yazılan mesaj sohbette kalmasın diye silinir (özel sohbette 48 saat içinde). */
+  async mesajSil(sohbetId: bigint | number, mesajId: bigint | number): Promise<void> {
+    await this.cagir("deleteMessage", { chat_id: String(sohbetId), message_id: Number(mesajId) }, 10_000);
+  }
+
   async klavyeKaldir(sohbetId: bigint | number, mesajId: bigint | number): Promise<void> {
     await this.cagir("editMessageReplyMarkup", { chat_id: String(sohbetId), message_id: Number(mesajId), reply_markup: { inline_keyboard: [] } }, 10_000);
   }

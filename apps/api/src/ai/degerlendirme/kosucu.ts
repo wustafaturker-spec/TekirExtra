@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { onayRiski } from "../ajan/araclar/onay-riski";
 import { Reflector } from "@nestjs/core";
 import type { Rol } from "@tekirextra/shared";
 import { istekBaglami } from "../../core/istek-baglami";
@@ -159,7 +160,7 @@ export class SahteYurutucu {
     }
     if (arac.sinif === "onay") {
       const talep: OnayTalebiGorunumu = {
-        id: randomUUID(), arac: arac.ad, ozet: `${arac.ad} (değerlendirme)`, onizleme: null, kaynak: "asistan", durum: "bekliyor",
+        id: randomUUID(), arac: arac.ad, risk: onayRiski(arac.ad), ozet: `${arac.ad} (değerlendirme)`, onizleme: null, kaynak: "asistan", durum: "bekliyor",
         gecerlilikSonu: new Date(Date.now() + 86_400_000).toISOString(), createdAt: new Date().toISOString(), kararAt: null, sonuc: null, hata: null, surum: 1, duzenlenebilir: null,
       };
       kaydet(arac.sinif, true);

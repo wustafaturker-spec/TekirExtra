@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import type { Rol } from "@tekirextra/shared";
 import { AiAjanService, type AjanYaniti } from "../ai/ajan/ai-ajan.service";
 import { AiOnayService } from "../ai/onay/ai-onay.service";
+import { onayRiski, type OnayRiski } from "../ai/ajan/araclar/onay-riski";
 import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
 import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-soru.kurallari";
 import { AsistanSoruService, type SoruYaniti, type YanitSonucu } from "../asistan-soru/asistan-soru.service";
@@ -52,7 +53,7 @@ export function guncellemeIstekKimligi(updateId: number, deneme = 1, botKimlik: 
 }
 
 const YONERGE = "Merhaba! Bu bot TekirExtra asistanıdır.\n\nKullanmak için TekirExtra panelinde Ayarlar › Bildirimler › Telegram bölümünden “Telegram'ı bağla”ya basın ve açılan bağlantıyla buraya dönün.\n\nBağlantıyı açtığınız hâlde bu mesajı görüyorsanız (Telegram bu sohbet daha önce açıldıysa kodu iletmeyebilir) panelde gösterilen kodu buraya yapıştırıp gönderin.";
-const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\nFiş ya da fatura fotoğrafı gönderirseniz masraf taslağı açarım.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\nsus — 24 saat kendiliğinden mesaj göndermez (bugünlük yeter: gün sonuna dek)\n/devam — kendiliğinden mesajları yeniden açar\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nOnay, ödeme ve gönderim gibi kararlar yalnız panelde verilir; buradan yalnız onay talebi açılır.";
+const YARDIM = "Sorunuzu doğrudan yazabilirsiniz; ör. “bugün vadesi gelen alacaklar”, “kasa ve banka bakiyeleri”, “ABC Ltd. cari durumu”.\nFiş ya da fatura fotoğrafı gönderirseniz masraf taslağı açarım.\n\nKomutlar:\n/yeni — yeni bir sohbet başlatır\nsus — 24 saat kendiliğinden mesaj göndermez (bugünlük yeter: gün sonuna dek)\n/devam — kendiliğinden mesajları yeniden açar\n/ayril — bu Telegram hesabının TekirExtra bağlantısını kaldırır\n/yardim — bu yardım\n\nAsistanın açtığı işlemleri mesajın altındaki düğmelerle onaylayabilirsiniz. Fatura, ödeme, masraf ve e-Belge gibi finansal işlemler iki adımlı doğrulama koduyla ya da panelde onaylanır.";
 
 interface Cozum { tenantId: string; userId: string; botKimlik: bigint | null }
 
@@ -101,6 +102,11 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
   private readonly bekleyenler: Array<() => void> = [];
   /** CNL-28: medya grubu (albüm) kuyruğu; aynı albümdeki fotoğraflar sırayla işlenir. */
   private readonly albumler = new Map<string, { mesajlar: TelegramMesaj[]; zamanlayici: NodeJS.Timeout }>();
+  /**
+   * AI-108: "Kodla onayla"ya basılınca kullanıcının sıradaki 6 haneli mesajı bu talebe gider.
+   * Bellekte tutulur (süreç yeniden başlarsa kullanıcı düğmeye yeniden basar); 2 dakika geçerlidir.
+   */
+  private readonly bekleyenKodlar = new Map<string, { talepId: string; surum: number; sohbetId: number; mesajId: number; bitis: number }>();
   /** Testlerde sahte istemci vermek için. */
   istemciKur = (anahtar: string) => new TelegramIstemci(anahtar);
 
@@ -528,15 +534,9 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     } catch (hata) {
       metin = this.kullaniciHatasi(hata, "Belgeyi işleyemedim; biraz sonra yeniden deneyin ya da panelden yükleyin.");
     }
-    if (talepId) {
-      const klavye: Klavye = [
-        [
-          // AI-107: düğme talebin sürümünü taşır; panelde düzenlenen talep eski düğmeyle onaylanmaz.
-          { text: "✅ Onayla ve Kartı Aç", callback_data: `onay:${talepId}:1` },
-          { text: "❌ Reddet", callback_data: `red:${talepId}:1` },
-        ],
-      ];
-      await baglamlaCalistir(baglam, () => this.firmayaKlavyeliGonder(tenantId, userId, "belge_sonuc", metin, klavye));
+    const onay = talepId ? await baglamlaCalistir(baglam, () => this.onayDugmeleri(tenantId, userId, [talepId!])) : null;
+    if (onay) {
+      await baglamlaCalistir(baglam, () => this.firmayaKlavyeliGonder(tenantId, userId, "belge_sonuc", `${metin}\n\n${onay.metin}`, onay.klavye));
     } else {
       await baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, null, "belge_sonuc", metin));
     }
@@ -555,6 +555,15 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const { baglam, karar } = hazir;
     if (!(await this.gelenIz(baglam, g.update_id, "soru_yanit", bot))) return;
     olay("soru_yanit");
+
+    // AI-108: finansal talep kodla onaylanır; kod sıradaki mesajla beklenir.
+    if (d.data?.startsWith("kod:")) {
+      const [, talepId, surumMetni] = d.data.split(":");
+      this.bekleyenKodlar.set(`${baglam.tenantId}:${baglam.userId}`, { talepId, surum: Number(surumMetni) || 1, sohbetId: m.chat.id, mesajId: m.message_id, bitis: Date.now() + KOD_BEKLEME_MS });
+      await bot.istemci.dugmeYanitla(d.id, "Doğrulama kodunu yazın");
+      await baglamlaCalistir(baglam, () => this.firmayaGonder(baglam.tenantId, baglam.userId, null, "onay_kodu", "🔐 Onaylamak için iki adımlı doğrulama uygulamanızdaki 6 haneli kodu bu sohbete yazın. Kod mesajı okununca silinir. 2 dakika içinde yazmazsanız düğmeye yeniden basın; vazgeçmek için /iptal yazın."));
+      return;
+    }
 
     // CNL-27: Satır içi hızlı onay/red düğmesi (cari kartı açma vb.)
     if (d.data?.startsWith("onay:") || d.data?.startsWith("red:")) {
@@ -775,6 +784,13 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     const yanitla = (yanit: string, yanitTuru: string) => baglamlaCalistir(baglam, () => this.firmayaGonder(tenantId, userId, telegramId, yanitTuru, yanit, karar.tutarGoster));
 
     if (karar.neden === "rol_kapali") return void (await yanitla(`Yanıt veremiyorum: ${DUSME_METNI.rol_kapali}.`, "red"));
+    // AI-108: "Kodla onayla" sonrası gelen 6 haneli mesaj asistana değil bekleyen talebe gider.
+    const bekleyen = this.bekleyenKodlar.get(`${tenantId}:${userId}`);
+    if (bekleyen && m.text) {
+      if (bekleyen.bitis > Date.now() && ONAY_KODU.test(metin)) return this.onayKoduIsle(baglam, m, metin.trim(), bekleyen, bot);
+      this.bekleyenKodlar.delete(`${tenantId}:${userId}`);
+      if (/^\/?iptal$/i.test(metin.trim())) return void (await yanitla("Kodla onay iptal edildi. Talep onayınızı bekliyor.", "bilgi"));
+    }
     const ritim = m.text ? ritimKomutu(metin) : null;
     if (ritim) {
       const simdi = new Date();
@@ -859,6 +875,11 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     clearInterval(yaziyor);
     await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { botKimlik: izKimlik(bot), guncellemeNo: BigInt(g.update_id) }, data: { durum: "islendi" } })));
     await yanitla(telegramYaniti(yanit), "sohbet");
+    // AI-108: açılan talepler ayrı, düğmeli mesajla gelir (yanıt uzun olsa da düğmeler kaybolmaz).
+    if (yanit.onayTalepleri.length) {
+      const onay = await baglamlaCalistir(baglam, () => this.onayDugmeleri(tenantId, userId, yanit.onayTalepleri.map((t) => t.id)));
+      if (onay) await baglamlaCalistir(baglam, () => this.firmayaKlavyeliGonder(tenantId, userId, "onay_talebi", onay.metin, onay.klavye, karar.tutarGoster));
+    }
     for (const dosya of yanit.dosyaTamponlari ?? []) {
       await baglamlaCalistir(baglam, () =>
         this.firmayaDosyaGonder(tenantId, userId, dosya.tampon, dosya.dosyaAdi, dosya.aciklama, dosya.mimeType, karar.tutarGoster),
@@ -902,6 +923,38 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
     if (hataTuru) this.hataSay(hataTuru);
     await this.prisma.tenantIslem(tenantId, (tx) => this.iz(tx, tenantId, userId, "giden", tur, hataTuru ? "gonderilmedi" : "gonderildi", hataTuru));
     return hataTuru ? "hata" : "gonderildi";
+  }
+
+  /** AI-108: bekleyen talepler için risk sınıfına göre düğmeler; talep yoksa null. */
+  private async onayDugmeleri(tenantId: string, userId: string, talepIdler: string[]): Promise<{ metin: string; klavye: Klavye } | null> {
+    const { talepler, ayar, kullanici } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      talepler: await tx.aiOnayTalebi.findMany({ where: { id: { in: talepIdler }, userId, durum: "bekliyor" }, select: { id: true, surum: true, ozet: true, arac: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
+      ayar: await telegramAyariOku(tx, tenantId),
+      kullanici: await tx.user.findUnique({ where: { id: userId }, select: { totpAktif: true } }),
+    }));
+    if (!talepler.length) return null;
+    const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
+    return onayKlavyesiKur(talepler.map((t) => ({ ...t, risk: onayRiski(t.arac) })), ayar.finansalOnay === "totp" && !!kullanici?.totpAktif, panel);
+  }
+
+  /** AI-108: kod mesajı silinir; doğrulama ve karar AiOnayService'te (kanal TELEGRAM) yapılır. */
+  private async onayKoduIsle(baglam: IstekBaglami, m: TelegramMesaj, kod: string, bekleyen: { talepId: string; surum: number; sohbetId: number; mesajId: number }, bot: Bot): Promise<void> {
+    const anahtar = `${baglam.tenantId}:${baglam.userId}`;
+    await bot.istemci.mesajSil(m.chat.id, m.message_id).catch(() => undefined);
+    let metin: string;
+    try {
+      if (!this.aiOnay) throw new ServiceUnavailableException("Onay servisi şu anda kullanılamıyor.");
+      const sonuc = await baglamlaCalistir(baglam, () => this.aiOnay!.onayla(bekleyen.talepId, { surum: bekleyen.surum, kanal: "TELEGRAM", dogrulamaKodu: kod }));
+      this.bekleyenKodlar.delete(anahtar);
+      await bot.istemci.klavyeKaldir(bekleyen.sohbetId, bekleyen.mesajId).catch(() => undefined);
+      metin = sonuc.durum === "onaylandi" ? `✅ ${sonuc.ozet} onaylandı ve tamamlandı.` : `⚠️ ${sonuc.ozet}: ${sonuc.hata ?? "işlem tamamlanamadı"}`;
+    } catch (hata) {
+      // Yanlış kodda bekleme sürer (kullanıcı yeniden yazabilir); kilit ve diğer hatalarda biter.
+      const kodu = hata instanceof HttpException ? (hata.getResponse() as { kod?: string }).kod : undefined;
+      if (kodu !== "KOD_GECERSIZ") this.bekleyenKodlar.delete(anahtar);
+      metin = this.kullaniciHatasi(hata, "Onay işlemi yürütülemedi; panelden kontrol edin.") + (kodu === "KOD_GECERSIZ" ? " Yeniden yazabilirsiniz." : "");
+    }
+    await baglamlaCalistir(baglam, () => this.firmayaGonder(baglam.tenantId, baglam.userId, null, "onay_sonuc", metin));
   }
 
   /** CNL-27: Satır içi düğmeli mesaj gönderir. */
@@ -1006,13 +1059,47 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
 /** Gönderilmeyen mesajın nedeni: bağ yok/başka hesap (bir daha denenmez) ya da Telegram hatası (yeniden denenebilir). */
 export type GonderimSonucu = "gonderildi" | "bag_gecersiz" | "hata";
 
-/** CNL-04: onay talebi açıldıysa özeti ve panel bağlantısı eklenir; onay/ret Telegram'dan yapılmaz. Panel yolları tam adres olur. */
-export function telegramYaniti(yanit: Pick<AjanYaniti, "cevap" | "onayTalepleri">): string {
+/**
+ * Asistan yanıtı; panel yolları tam adres olur. AI-108: açılan talepler ayrı düğmeli mesajla
+ * gelir (`onayKlavyesiKur`), bu metne eklenmez.
+ */
+export function telegramYaniti(yanit: Pick<AjanYaniti, "cevap">): string {
   const panel = (process.env.APP_URL ?? "http://localhost:3100").replace(/\/+$/, "");
   // Asistan panel için göreli yol yazar (/panel/...); Telegram'da tıklanabilsin diye tam adrese çevrilir.
-  const cevap = yanit.cevap.replace(/(^|[\s(“"'])(\/panel\/[^\s)”"'<>]*)/g, (_e, on: string, yol: string) => `${on}${panel}${yol}`);
-  const talepler = yanit.onayTalepleri.map((t) => `• ${t.ozet.replace(/\s+/g, " ").slice(0, 300)}\n  ${panel}/panel/ai?talep=${t.id}`);
-  return talepler.length ? `${cevap}\n\nPanelde onayınızı bekleyen işlem:\n${talepler.join("\n")}` : cevap;
+  return yanit.cevap.replace(/(^|[\s(“"'])(\/panel\/[^\s)”"'<>]*)/g, (_e, on: string, yol: string) => `${on}${panel}${yol}`);
+}
+
+/** AI-108: kodla onayda beklenen mesaj ve bekleme süresi. */
+export const ONAY_KODU = /^\s*\d{6}\s*$/;
+export const KOD_BEKLEME_MS = 2 * 60 * 1000;
+/** Tek mesajdaki en çok talep düğmesi; fazlası panelde. */
+const DUGMELI_TALEP_SINIRI = 5;
+
+/**
+ * AI-108: düşük riskli talep tek dokunuşla onaylanır; finansal talep kullanıcının kodu açıksa
+ * "Kodla onayla" (kod sonraki mesajla istenir), değilse yalnız panel bağlantısıyla gösterilir.
+ * Reddetme her durumda tek dokunuştur. Düğme talebin sürümünü taşır (AI-107).
+ */
+export function onayKlavyesiKur(talepler: Array<{ id: string; surum: number; ozet: string; risk: OnayRiski }>, finansalKod: boolean, panel: string): { metin: string; klavye: Klavye } {
+  const gosterilen = talepler.slice(0, DUGMELI_TALEP_SINIRI);
+  const coklu = gosterilen.length > 1;
+  const satirlar: string[] = [];
+  const klavye: Klavye = [];
+  gosterilen.forEach((t, i) => {
+    const no = coklu ? `${i + 1}. ` : "";
+    satirlar.push(`${coklu ? no : "• "}${t.ozet.replace(/\s+/g, " ").slice(0, 300)}`);
+    const red = { text: `❌ ${no}Reddet`, callback_data: `red:${t.id}:${t.surum}` };
+    if (t.risk === "dusuk") klavye.push([{ text: `✅ ${no}Onayla`, callback_data: `onay:${t.id}:${t.surum}` }, red]);
+    else if (finansalKod) {
+      satirlar.push("  Finansal işlem: onay için iki adımlı doğrulama kodu istenir.");
+      klavye.push([{ text: `🔐 ${no}Kodla onayla`, callback_data: `kod:${t.id}:${t.surum}` }, red]);
+    } else {
+      satirlar.push(`  Finansal işlem: panelde onaylayın ${panel}/panel/ai?talep=${t.id}`);
+      klavye.push([red]);
+    }
+  });
+  if (talepler.length > gosterilen.length) satirlar.push(`Diğer ${talepler.length - gosterilen.length} talep panelde: ${panel}/panel/ai`);
+  return { metin: `Onayınızı bekleyen işlem:\n${satirlar.join("\n")}`, klavye };
 }
 
 export type { DusmeNedeni };

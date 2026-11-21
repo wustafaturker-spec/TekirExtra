@@ -136,7 +136,7 @@ export default function SozlesmelerRAGPage() {
       }
     }
 
-    const zamanlayici = window.setTimeout(listele, listeAramasi ? 250 : 0);
+    const zamanlayici = window.setTimeout(() => void listele(), listeAramasi ? 250 : 0);
     return () => {
       window.clearTimeout(zamanlayici);
       istek.abort();

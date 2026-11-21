@@ -10,12 +10,18 @@ export const TELEGRAM_MODULU = "telegram";
  * CNL-15: `sesEtkin` sesli mesajın OpenAI'ye (yurt dışı) gönderilmesine yöneticinin açık onayıdır;
  * onay anı `sesOnayAt` olarak saklanır. Varsayılan kapalı.
  */
-export const telegramAyariSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean(), sesEtkin: z.boolean(), sesOnayAt: z.string().nullable() }).strict();
+/**
+ * AI-108: Telegram'dan finansal AI onayı — `totp`: kullanıcının iki adımlı doğrulama koduyla,
+ * `kapali`: yalnız web'de. Düşük riskli onay her iki durumda da tek dokunuşla verilir.
+ */
+export const FINANSAL_ONAY_KIPLERI = ["kapali", "totp"] as const;
+export type FinansalOnayKipi = (typeof FINANSAL_ONAY_KIPLERI)[number];
+export const telegramAyariSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean(), sesEtkin: z.boolean(), sesOnayAt: z.string().nullable(), finansalOnay: z.enum(FINANSAL_ONAY_KIPLERI) }).strict();
 export type TelegramAyari = z.infer<typeof telegramAyariSemasi>;
 /** Panelden gelen ayar: ses alanı isteğe bağlıdır (gönderilmezse önceki değer kalır); onay anını sunucu yazar. */
-export const telegramAyarGirdisiSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean(), sesEtkin: z.boolean().optional() }).strict();
-/** CNL-20: varsayılan ekli değil; CNL-05: tutarlar varsayılan olarak gösterilir. */
-export const TELEGRAM_VARSAYILAN: TelegramAyari = { etkin: false, tutarGoster: true, sesEtkin: false, sesOnayAt: null };
+export const telegramAyarGirdisiSemasi = z.object({ etkin: z.boolean(), tutarGoster: z.boolean(), sesEtkin: z.boolean().optional(), finansalOnay: z.enum(FINANSAL_ONAY_KIPLERI).optional() }).strict();
+/** CNL-20: varsayılan ekli değil; CNL-05: tutarlar varsayılan olarak gösterilir; AI-108: finansal onay kodla. */
+export const TELEGRAM_VARSAYILAN: TelegramAyari = { etkin: false, tutarGoster: true, sesEtkin: false, sesOnayAt: null, finansalOnay: "totp" };
 
 export async function telegramAyariOku(tx: Prisma.TransactionClient, tenantId: string): Promise<TelegramAyari> {
   const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: TELEGRAM_MODULU } }, select: { ayarlar: true } });

@@ -1,5 +1,5 @@
 import { OnayGerekliHatasi } from "../../onay/onay-kurallari";
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, forwardRef } from "@nestjs/common";
 import type { AiIslemKaynagi, AiOnayTalebi, Prisma } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
 import { olayYaz } from "../olay/ai-olay.service";
@@ -9,6 +9,11 @@ import { aracBul } from "../ajan/araclar";
 import { UcCagirici } from "../ajan/uc-cagirici";
 import { icerikOzeti, type OnayOnizlemesi } from "../ajan/araclar/arac";
 import { DUZENLENEBILIR_ALANLAR } from "../ajan/araclar/duzenlenebilir";
+import { onayRiski, type OnayRiski } from "../ajan/araclar/onay-riski";
+import { GirisDenemeSayaci } from "../../auth/giris-deneme-sayaci";
+import { totpDogrula } from "../../auth/totp-dogrula";
+import { coz } from "../../core/kripto";
+import { telegramAyariOku } from "../../telegram/telegram-ayar";
 
 /** AI-107: kararın verildiği kanal. */
 export type KararKanali = "WEB" | "TELEGRAM" | "MCP";
@@ -21,6 +26,19 @@ const CAKISMA_METNI: Record<CakismaKodu, string> = {
   SURESI_DOLDU: "Talebin süresi doldu; işlemi yeniden isteyin.",
 };
 export const cakisma = (kod: CakismaKodu) => new ConflictException({ message: CAKISMA_METNI[kod], kod });
+
+/**
+ * AI-108: Telegram'dan finansal onay ret nedenleri. WEB_GEREKLI: firma ayarı kapalı ya da
+ * kullanıcının iki adımlı doğrulaması yok; KOD_GEREKLI: düğme kodsuz geldi.
+ */
+export type EkDogrulamaKodu = "WEB_GEREKLI" | "KOD_GEREKLI" | "KOD_GECERSIZ" | "KILITLI";
+const EK_DOGRULAMA_METNI: Record<EkDogrulamaKodu, string> = {
+  WEB_GEREKLI: "Bu finansal işlem Telegram'dan onaylanamaz; web'de onaylayın.",
+  KOD_GEREKLI: "Bu finansal işlem için iki adımlı doğrulama kodu gerekir.",
+  KOD_GECERSIZ: "Doğrulama kodu geçersiz.",
+  KILITLI: "Çok fazla hatalı kod girildi. 15 dakika sonra yeniden deneyin ya da web'de onaylayın.",
+};
+export const ekDogrulamaHatasi = (kod: EkDogrulamaKodu) => new ForbiddenException({ message: EK_DOGRULAMA_METNI[kod], kod });
 
 /** AI-04: talep 24 saat geçerlidir. */
 export const ONAY_TALEBI_SURESI_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +69,8 @@ export interface OnayTalebiGorunumu {
   surum: number;
   /** AI-107: karttan düzenlenebilir alanlar ve güncel değerleri (yalnız bekleyen talepte). */
   duzenlenebilir: Record<string, unknown> | null;
+  /** AI-108: Telegram'da finansal onay ek doğrulama ister. */
+  risk: OnayRiski;
 }
 
 function gorunum(t: AiOnayTalebi): OnayTalebiGorunumu {
@@ -59,6 +79,7 @@ function gorunum(t: AiOnayTalebi): OnayTalebiGorunumu {
   return {
     id: t.id,
     arac: t.arac,
+    risk: onayRiski(t.arac),
     ozet: t.ozet,
     onizleme: (t.onizleme as unknown as OnayOnizlemesi | null) ?? null,
     kaynak: t.kaynak,
@@ -99,7 +120,13 @@ export class AiOnayService {
     // AI-106: bildirimler artık olay teslimatçısından gelir; bağımlılık eski kurucu imzası için durur.
     @Inject(forwardRef(() => BildirimService))
     private readonly _bildirimler: BildirimService,
-  ) {}
+    @Optional() denemeler?: GirisDenemeSayaci,
+  ) {
+    this.denemeler = denemeler ?? GirisDenemeSayaci.bellekte();
+  }
+
+  /** AI-108: Telegram'daki hatalı doğrulama kodları; kullanıcı başına 15 dakikada 5 hata kilitler. */
+  private readonly denemeler: GirisDenemeSayaci;
 
   async olustur(girdi: { arac: string; parametreler: unknown; ozet: string; onizleme?: OnayOnizlemesi | null; hedefOzeti?: string | null; kaynak: AiIslemKaynagi; oturumId?: string | null }): Promise<OnayTalebiGorunumu> {
     const { tenantId, userId } = aktifBaglam();
@@ -145,17 +172,18 @@ export class AiOnayService {
    * bekliyor + aynı sürümdeyken işlenmeye alınır ve karar kaydı aynı işlemde yazılır (tekil):
    * eşzamanlı istekler ve kanallar arası yarışta tek karar, tek yan etki.
    */
-  async onayla(id: string, secenek: { surum?: number; kanal?: KararKanali } = {}): Promise<OnayTalebiGorunumu> {
+  async onayla(id: string, secenek: { surum?: number; kanal?: KararKanali; dogrulamaKodu?: string } = {}): Promise<OnayTalebiGorunumu> {
     const { tenantId, userId } = aktifBaglam();
     const talep = await this.kendiTalebi(id);
     await this.kararaUygunMu(talep, secenek.surum);
+    const ekDogrulama = await this.telegramFinansalKapisi(talep, secenek);
     const arac = aracBul(talep.arac);
     if (!arac || arac.sinif !== "onay") throw new BadRequestException("Talepteki işlem artık tanımlı değil.");
 
     // Aynı talep iki kez çalışmasın: yalnız bekleyen ve aynı sürümdeki talep işlenmeye alınır.
     const alinan = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const r = await tx.aiOnayTalebi.updateMany({ where: { id, durum: "bekliyor", surum: talep.surum }, data: { durum: "isleniyor", kararAt: new Date() } });
-      if (r.count) await this.kararYaz(tx, talep, "onaylandi", userId, secenek.kanal ?? "WEB");
+      if (r.count) await this.kararYaz(tx, talep, "onaylandi", userId, secenek.kanal ?? "WEB", ekDogrulama);
       return r.count;
     });
     if (alinan === 0) throw await this.cakismaNedeni(id);
@@ -254,8 +282,38 @@ export class AiOnayService {
   }
 
   /** AI-107: talep başına tek karar kaydı (tekil); içerik değil sürüm ve özet yazılır. */
-  private async kararYaz(tx: Prisma.TransactionClient, talep: AiOnayTalebi, karar: "onaylandi" | "reddedildi", kararVerenId: string, kanal: KararKanali): Promise<void> {
-    await tx.aiOnayKarari.create({ data: { tenantId: talep.tenantId, talepId: talep.id, karar, kararVerenId, kanal, surum: talep.surum, parametreOzeti: talep.parametreOzeti ?? icerikOzeti(talep.parametreler ?? {}) } });
+  private async kararYaz(tx: Prisma.TransactionClient, talep: AiOnayTalebi, karar: "onaylandi" | "reddedildi", kararVerenId: string, kanal: KararKanali, ekDogrulama = false): Promise<void> {
+    await tx.aiOnayKarari.create({ data: { tenantId: talep.tenantId, talepId: talep.id, karar, kararVerenId, kanal, ekDogrulama, surum: talep.surum, parametreOzeti: talep.parametreOzeti ?? icerikOzeti(talep.parametreler ?? {}) } });
+  }
+
+  /**
+   * AI-108: Telegram'dan finansal onay yalnız firma ayarı "kodla" iken ve kullanıcının iki adımlı
+   * doğrulaması açıkken, geçerli 6 haneli kodla verilir; aksi hâlde web'e yönlendirilir. Denetim
+   * sunucudadır: düğme ya da istemci atlansa da kod olmadan finansal işlem Telegram'dan geçmez.
+   * Web onayı değişmez (oturum zaten doğrulanmıştır). Kod doğrulandıysa true döner.
+   */
+  private async telegramFinansalKapisi(talep: AiOnayTalebi, secenek: { kanal?: KararKanali; dogrulamaKodu?: string }): Promise<boolean> {
+    if (secenek.kanal !== "TELEGRAM" || onayRiski(talep.arac) !== "finansal") return false;
+    const { tenantId, userId } = aktifBaglam();
+    const { ayar, kullanici } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      ayar: await telegramAyariOku(tx, tenantId),
+      kullanici: await tx.user.findUnique({ where: { id: userId }, select: { totpAktif: true, totpSecretSifreli: true } }),
+    }));
+    if (ayar.finansalOnay !== "totp" || !kullanici?.totpAktif || !kullanici.totpSecretSifreli) throw ekDogrulamaHatasi("WEB_GEREKLI");
+    const kod = secenek.dogrulamaKodu?.trim();
+    if (!kod) throw ekDogrulamaHatasi("KOD_GEREKLI");
+    const anahtar = `ai-onay:${userId}`;
+    if (await this.denemeler.kilitliMi(anahtar, ["ek_dogrulama"])) throw ekDogrulamaHatasi("KILITLI");
+    if (!/^\d{6}$/.test(kod) || !totpDogrula(coz(kullanici.totpSecretSifreli), kod)) {
+      if (await this.denemeler.hataKaydet("ek_dogrulama", anahtar)) {
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.create({ data: { tenantId, userId, islem: "ai_onay_kodu_kilitlendi", varlik: "ai_onay_talebi", varlikId: talep.id, detay: { kanal: "TELEGRAM" } } }))
+          .catch((e: unknown) => this.logger.warn(`Kilit denetim kaydı yazılamadı: ${String(e)}`));
+        throw ekDogrulamaHatasi("KILITLI");
+      }
+      throw ekDogrulamaHatasi("KOD_GECERSIZ");
+    }
+    await this.denemeler.temizle(anahtar, ["ek_dogrulama"]);
+    return true;
   }
 
   private async kendiTalebi(id: string): Promise<AiOnayTalebi> {

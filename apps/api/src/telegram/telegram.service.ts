@@ -129,7 +129,7 @@ export class TelegramService {
       botGecersiz: bot.gecersiz,
       urunEkli: ayar.etkin,
       yonetici: rol === "yonetici",
-      ...(rol === "yonetici" ? { tutarGoster: ayar.tutarGoster, sesEtkin: ayar.sesEtkin, sesOnayAt: ayar.sesOnayAt, sesKullanilabilir: sesKullanilabilir(), bagliKullanici: await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.count({ where: { tenantId } })),
+      ...(rol === "yonetici" ? { tutarGoster: ayar.tutarGoster, finansalOnay: ayar.finansalOnay, sesEtkin: ayar.sesEtkin, sesOnayAt: ayar.sesOnayAt, sesKullanilabilir: sesKullanilabilir(), bagliKullanici: await this.prisma.tenantIslem(tenantId, (tx) => tx.telegramBagi.count({ where: { tenantId } })),
         // CNL-19: plan özelliği açıksa firmaya özel bot bölümü; anahtar hiçbir zaman dönmez.
         ozelBot: { kullanilabilir: ozelBotAcik, bot: firmaBotu ? { botAdi: firmaBotu.botAdi, durum: firmaBotu.durum, hataTuru: firmaBotu.hataTuru } : null } } : {}),
       bag: gorunenBag ? { kullaniciAdi: gorunenBag.kullaniciAdi, baglandiAt: gorunenBag.createdAt.toISOString() } : null,
@@ -202,7 +202,7 @@ export class TelegramService {
       const sesEtkin = girdi.data.sesEtkin ?? onceki.sesEtkin;
       if (sesEtkin && !onceki.sesEtkin && !sesKullanilabilir()) throw new BadRequestException("Sesli mesaj platformda henüz açık değil.");
       const yeni: TelegramAyari = {
-        etkin: girdi.data.etkin, tutarGoster: girdi.data.tutarGoster, sesEtkin,
+        etkin: girdi.data.etkin, tutarGoster: girdi.data.tutarGoster, sesEtkin, finansalOnay: girdi.data.finansalOnay ?? onceki.finansalOnay,
         // CNL-15: onay anı yalnız kapalıdan açığa geçişte yazılır; kapatınca silinir.
         sesOnayAt: !sesEtkin ? null : onceki.sesEtkin ? onceki.sesOnayAt : new Date().toISOString(),
       };

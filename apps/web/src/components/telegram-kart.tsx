@@ -12,6 +12,7 @@ type TelegramDurumu =
       urunEkli: boolean;
       yonetici: boolean;
       tutarGoster?: boolean;
+      finansalOnay?: "kapali" | "totp";
       sesEtkin?: boolean;
       sesOnayAt?: string | null;
       sesKullanilabilir?: boolean;
@@ -87,9 +88,9 @@ export function TelegramKarti() {
       setDurum({ ...durum, tercih: kayit });
     }, basari);
 
-  const urunKaydet = (etkin: boolean, tutarGoster: boolean, basari: string, sesEtkin?: boolean) =>
+  const urunKaydet = (etkin: boolean, tutarGoster: boolean, basari: string, sesEtkin?: boolean, finansalOnay?: "kapali" | "totp") =>
     islem(async () => {
-      await api("/telegram/urun", { method: "PUT", body: JSON.stringify({ etkin, tutarGoster, ...(sesEtkin === undefined ? {} : { sesEtkin }) }) });
+      await api("/telegram/urun", { method: "PUT", body: JSON.stringify({ etkin, tutarGoster, ...(sesEtkin === undefined ? {} : { sesEtkin }), ...(finansalOnay ? { finansalOnay } : {}) }) });
       setKod(null);
       await yukle();
     }, basari);
@@ -223,6 +224,22 @@ export function TelegramKarti() {
                 />
                 <span>Tutarları Telegram'da göster</span>
               </label>
+              <Field label="Telegram'dan finansal onay" className="mt-1">
+                <Select
+                  value={durum.finansalOnay ?? "totp"}
+                  disabled={isleniyor}
+                  onChange={(e) => {
+                    const kip = e.target.value as "kapali" | "totp";
+                    void urunKaydet(true, durum.tutarGoster ?? true, kip === "totp" ? "Finansal onaylar Telegram'da doğrulama koduyla verilecek." : "Finansal onaylar yalnız web'de verilecek.", undefined, kip);
+                  }}
+                >
+                  <option value="totp">İki adımlı doğrulama koduyla</option>
+                  <option value="kapali">Kapalı (yalnız web'de)</option>
+                </Select>
+              </Field>
+              <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                Fatura kesinleştirme, kasa/banka hareketi, masraf, ekstre eşleştirme ve e-Belge gönderimi gibi onaylar için geçerlidir. İki adımlı doğrulaması kapalı kullanıcı bu onayları web'de verir; kart ve taslak onayları tek dokunuşla sürer.
+              </p>
               {(durum.sesKullanilabilir || durum.sesEtkin) && (
                 <div className="mt-1">
                   <label style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}>
