@@ -826,7 +826,8 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
         ))}
         {gonderiliyor && (
           <div className="asistan__mesaj asistan__mesaj--asistan">
-            {akanMetin && <div className="asistan__balon asistan__balon--akis" aria-live="polite">{akanMetin}</div>}
+            {/* Model yanıta boş satırla başlayabilir; görünür metin baştaki boşluk olmadan gösterilir. */}
+            {akanMetin.trimStart() && <div className="asistan__balon asistan__balon--akis" aria-live="polite">{akanMetin.trimStart()}</div>}
             <div className="asistan__balon asistan__balon--bekliyor">
               {adimlar.length ? (
                 <ul className="asistan__adimlar">
