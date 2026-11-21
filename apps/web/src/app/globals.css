@@ -4670,6 +4670,13 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .yz-tablo__not { margin: .35rem 0 0; font-size: .75rem; color: var(--text-muted); }
 .asistan__girdi { display: flex; gap: .5rem; }
 .asistan__girdi .input, .asistan__girdi input { flex: 1; min-width: 0; }
+/* Dar asistan kutusunda (telefon, yan pencere) mesaj kutusu tek başına üst satırda, düğmeler altta. */
+.asistan { container-type: inline-size; }
+@container (max-width: 560px) {
+  .asistan__girdi { flex-wrap: wrap; }
+  .asistan__girdi .input, .asistan__girdi input { order: -1; flex: 1 1 100%; }
+  .asistan__girdi > button[type="submit"] { margin-left: auto; }
+}
 .asistan__sohbet-araclari { display: flex; gap: .4rem; align-items: center; }
 .asistan__sohbet-araclari select { flex: 1; min-width: 0; padding: .4rem .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); }
 .asistan-ocr { display: flex; flex-direction: column; gap: .7rem; padding: .8rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
