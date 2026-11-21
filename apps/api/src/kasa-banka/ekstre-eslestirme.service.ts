@@ -38,12 +38,12 @@ import { z as zod } from "zod";
 import { kiraciSaglayicisi } from "../ai/saglayici/kiraci-saglayici";
 import { hakedisGeriAlTx } from "../pazaryeri/hakedis-kayit";
 import { ettnleriBul, faturaNumaralariniBul } from "./fatura-referansi";
-import { bankaOnerisiUret, type BankaOneriSonucu } from "./banka-oneri-motoru";
+import { bankaOnerisiHesapla } from "./banka-oneri-girdisi";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const GUN = 86_400_000;
 
-export type CariEslesmeKaynagi = "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "ettn" | "fatura_no" | "tutar" | "yapay_zeka" | null;
+export type CariEslesmeKaynagi = "aciklama" | "iban" | "vkn" | "unvan" | "kural" | "ettn" | "fatura_no" | "tutar" | "oneri_motoru" | "yapay_zeka" | null;
 /** KSB-44: açıklamada adı geçen kesin fatura; ETTN ve fatura no ayrı sinyaldir. */
 type FaturaReferansi = { faturaId: string; sinyal: "ettn" | "fatura_no"; cari: { id: string; kod: string; unvan: string } };
 type EslestirGirdisi = z.infer<typeof ekstreEslestirSemasi>;
@@ -103,81 +103,20 @@ export class EkstreEslestirmeService {
         select: { id: true, no: true, aliciUnvan: true, tutar: true, odemeTarihi: true, durum: true, aciklama: true },
       })).map((t) => ({ ...t, tutar: t.tutar.toFixed(2), odemeTarihi: t.odemeTarihi.toISOString().slice(0, 10), aciklamadaGeciyor: Boolean(t.no && satir.aciklama.includes(t.no)) }));
 
-      // P-05: Açıklanabilir Banka Öneri Motoru (0-100 güven skoru ve sinyaller)
-      const tumCariler = await tx.cariHesap.findMany({
-        where: { aktif: true },
-        select: { id: true, kod: true, unvan: true, vknTckn: true, iban: true, tip: true, bankaHesaplari: { select: { iban: true } } },
-        take: 300,
-      });
-
-      const tumAcikFaturalar = await tx.fatura.findMany({
-        where: { durum: "kesin", dovizCinsi: doviz, tip: { in: giris ? ["satis", "alis_iade"] : ["alis", "satis_iade"] } },
-        select: { id: true, durum: true, no: true, tarih: true, vadeTarihi: true, dovizCinsi: true, genelToplam: true, cariId: true, ...FATURA_ODEME_SECIMI },
-        take: 300,
-      });
-
-      const eslesmeFaturalari = tumAcikFaturalar
-        .map((f) => {
-          const odeme = faturaOdemeDurumu(f);
-          return {
-            id: f.id,
-            no: f.no,
-            tarih: f.tarih.toISOString().slice(0, 10),
-            vadeTarihi: f.vadeTarihi?.toISOString().slice(0, 10) ?? null,
-            dovizCinsi: f.dovizCinsi,
-            kalan: odeme.kalan.toFixed(2),
-            genelToplam: f.genelToplam.toFixed(2),
-            cariId: f.cariId,
-          };
-        })
-        .filter((f) => Number(f.kalan) > 0);
-
-      const sonSatirlar = await tx.bankaEkstreSatir.findMany({ where: { tenantId }, orderBy: { tarih: "desc" }, take: 100, select: { aciklama: true, tutar: true } });
-      const kendiAdlari = kendiAdlariniBul(sonSatirlar.map((x) => ({ aciklama: x.aciklama, giris: !x.tutar.isNegative() })));
-
-      const oneriMotoruSonucu = bankaOnerisiUret({
-        satir: {
-          id: satir.id,
-          tarih: satir.tarih,
-          tutar: satir.tutar,
-          aciklama: satir.aciklama,
-          karsiIban: satir.karsiIban,
-          karsiUnvan: satir.karsiUnvan,
-          dekontNo: satir.dekontNo,
-          bankaHesapId: satir.bankaHesapId,
-          dovizCinsi: doviz,
-        },
+      // P-05 / AI-119: açıklanabilir öneri motoru; aday cariler ve açık faturalar sınırsız ve sinyalle seçilir.
+      // Okuma isteğidir: skor satıra yazılmaz (sabah hazırlığı ve eşleştirme yazar).
+      const oneriMotoruSonucu = await bankaOnerisiHesapla(tx, tenantId, {
+        id: satir.id, tarih: satir.tarih, tutar: satir.tutar, aciklama: satir.aciklama, karsiIban: satir.karsiIban,
+        karsiUnvan: satir.karsiUnvan, dekontNo: satir.dekontNo, bankaHesapId: satir.bankaHesapId,
+      }, doviz, {
         kurallar,
-        cariler: tumCariler.map((c) => ({
-          id: c.id,
-          kod: c.kod,
-          unvan: c.unvan,
-          vknTckn: c.vknTckn,
-          iban: c.iban,
-          tip: c.tip,
-          ekBankaHesaplari: c.bankaHesaplari,
-        })),
-        faturalar: eslesmeFaturalari,
-        odemeTalimatlari: odemeTalimatlari.map((t) => ({
-          id: t.id,
-          no: t.no,
-          aliciUnvan: t.aliciUnvan,
-          tutar: D(t.tutar),
-          aciklamadaGeciyor: t.aciklamadaGeciyor,
-        })),
-        kendiAdlari,
+        odemeTalimatlari: odemeTalimatlari.map((t) => ({ id: t.id, no: t.no, aliciUnvan: t.aliciUnvan, tutar: D(t.tutar), aciklamadaGeciyor: t.aciklamadaGeciyor })),
       });
 
-      await tx.bankaEkstreSatir.update({
-        where: { id: satir.id },
-        data: {
-          eslesmeSkoru: oneriMotoruSonucu.skor,
-          eslesmeKaniti: JSON.parse(JSON.stringify(oneriMotoruSonucu)),
-        },
-      });
-
-      const secilenCari = cari ?? (oneriMotoruSonucu.onerilenCari && oneriMotoruSonucu.skor >= 70 ? { id: oneriMotoruSonucu.onerilenCari.id, kod: oneriMotoruSonucu.onerilenCari.kod, unvan: oneriMotoruSonucu.onerilenCari.unvan } : null);
-      const secilenKaynak = cari ? kaynak : (secilenCari ? "yapay_zeka" : null);
+      // AI-119: motor yakın ikinci aday bulduysa ("belirsiz") cari kendiliğinden seçilmez; alternatifler kullanıcıya sunulur.
+      const motorCarisi = oneriMotoruSonucu.onerilenTur === "cari" && oneriMotoruSonucu.oneriTuru !== "belirsiz" && oneriMotoruSonucu.skor >= 70 ? oneriMotoruSonucu.onerilenCari : undefined;
+      const secilenCari = cari ?? (motorCarisi ? { id: motorCarisi.id, kod: motorCarisi.kod, unvan: motorCarisi.unvan } : null);
+      const secilenKaynak = cari ? kaynak : (secilenCari ? "oneri_motoru" : null);
       const secilenGerekce = (cari && gerekce) ? gerekce : (oneriMotoruSonucu.aciklama || undefined);
 
       const [faturalar, mevcutFisler, cekler, kartlar, kasalar, bankalar, masrafKategorileri, gelirKategorileri] = await Promise.all([

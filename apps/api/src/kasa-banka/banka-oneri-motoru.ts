@@ -47,6 +47,8 @@ export interface BankaOneriSonucu {
   eslesenFatura?: { id: string; no: string | null; kalan: string };
   eslesenTalimat?: { id: string; no: string | null; aliciUnvan: string };
   kuralId?: string;
+  /** AI-119: sinyal toplayan cariler (en çok 30); girdi kurucu faturaları bu carilerle sınırlar. Saklanmaz. */
+  adayCariIdleri?: string[];
 }
 
 export interface BankaOneriGirdisi {
@@ -283,8 +285,11 @@ export function bankaOnerisiUret(girdi: BankaOneriGirdisi): BankaOneriSonucu {
   // Puanlara göre sırala (en yüksek puan en başta)
   adayPuanlari.sort((a, b) => b.toplamPuan - a.toplamPuan);
 
+  const adayCariIdleri = adayPuanlari.slice(0, 30).map((a) => a.cari.id);
+
   if (adayPuanlari.length === 0) {
     return {
+      adayCariIdleri,
       skor: 0,
       oneriTuru: "belirsiz",
       onerilenTur: "cari",
@@ -319,6 +324,7 @@ export function bankaOnerisiUret(girdi: BankaOneriGirdisi): BankaOneriSonucu {
     ];
 
     return {
+      adayCariIdleri,
       skor: enIyi.toplamPuan,
       oneriTuru: "belirsiz",
       onerilenTur: "cari",
@@ -342,6 +348,7 @@ export function bankaOnerisiUret(girdi: BankaOneriGirdisi): BankaOneriSonucu {
   const ozetGerekce = enIyi.sinyaller.map((s) => s.baslik).join(" + ");
 
   return {
+    adayCariIdleri,
     skor: enIyi.toplamPuan,
     oneriTuru,
     onerilenTur: "cari",

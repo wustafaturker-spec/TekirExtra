@@ -14,7 +14,7 @@ import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { trSimdi } from "../ai-zaman";
 import { HafizaService } from "../hafiza/hafiza.service";
-import { bankaOnerisiUret } from "../../kasa-banka/banka-oneri-motoru";
+import { bankaOnerisiHesapla } from "../../kasa-banka/banka-oneri-girdisi";
 import {
   HAZIRLIK_GECERLILIK_SURESI_MS,
   HAZIRLIK_TURLERI,
@@ -190,53 +190,18 @@ export class HazirlikService {
 
       if (!satirlar.length) return 0;
 
-      const cariler = await tx.cariHesap.findMany({
-        where: { tenantId, aktif: true },
-        select: { id: true, kod: true, unvan: true, vknTckn: true, tip: true, iban: true },
-        take: 200,
-      });
-
-      const faturalar = await tx.fatura.findMany({
-        where: { tenantId, durum: "kesin" },
-        select: { id: true, no: true, cariId: true, genelToplam: true, tarih: true, vadeTarihi: true, dovizCinsi: true },
-        take: 100,
-      });
-
+      // AI-119/121: öneri ekranıyla aynı motor girdisi (bütün aktif cariler, açık faturalar, kayıtlı kurallar).
+      const kurallar = await tx.ekstreKurali.findMany({ where: { aktif: true } });
       let eklenen = 0;
       const gecerlilik = new Date(Date.now() + HAZIRLIK_GECERLILIK_SURESI_MS);
 
       for (const satir of satirlar) {
-        const oneri = bankaOnerisiUret({
-          satir: {
-            id: satir.id,
-            tarih: satir.tarih,
-            tutar: satir.tutar,
-            aciklama: satir.aciklama,
-            karsiIban: satir.karsiIban,
-            karsiUnvan: satir.karsiUnvan,
-            dekontNo: satir.dekontNo,
-            bankaHesapId: satir.bankaHesapId,
-            dovizCinsi: satir.bankaHesap.dovizCinsi,
-          },
-          cariler: cariler.map((c) => ({
-            id: c.id,
-            kod: c.kod,
-            unvan: c.unvan,
-            vknTckn: c.vknTckn,
-            iban: c.iban,
-            tip: c.tip,
-          })),
-          faturalar: faturalar.map((f) => ({
-            id: f.id,
-            no: f.no,
-            cariId: f.cariId,
-            genelToplam: f.genelToplam.toString(),
-            kalan: f.genelToplam.toString(),
-            tarih: f.tarih.toISOString().slice(0, 10),
-            vadeTarihi: f.vadeTarihi ? f.vadeTarihi.toISOString().slice(0, 10) : null,
-            dovizCinsi: f.dovizCinsi,
-          })),
-        });
+        const oneri = await bankaOnerisiHesapla(tx, tenantId, {
+          id: satir.id, tarih: satir.tarih, tutar: satir.tutar, aciklama: satir.aciklama, karsiIban: satir.karsiIban,
+          karsiUnvan: satir.karsiUnvan, dekontNo: satir.dekontNo, bankaHesapId: satir.bankaHesapId,
+        }, satir.bankaHesap.dovizCinsi, { kurallar });
+        // Ekstre listesindeki güven rozeti için skor ve kanıt burada (okuma isteğinde değil) saklanır.
+        await tx.bankaEkstreSatir.update({ where: { id: satir.id }, data: { eslesmeSkoru: oneri.skor, eslesmeKaniti: JSON.parse(JSON.stringify(oneri)) } });
 
         // Skor eşiği: en az 60 puanlık önerileri sabah onay kutusuna al
         if (oneri.skor < 60 && !oneri.onerilenCari) continue;
