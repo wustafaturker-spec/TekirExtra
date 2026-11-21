@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { EkstreService } from "./ekstre.service";
-import { pdfUret, sagaYasla, type Yazi } from "./ekstre-pdf.test-veri";
+import { pdfjsIsit, pdfUret, sagaYasla, type Yazi } from "./ekstre-pdf.test-veri";
 
 // PDF ayrıştırma tam test koşusunda yük altında 5 sn varsayılanını aşabiliyor.
 vi.setConfig({ testTimeout: 20_000 });
+// pdf.js'in ilk yüklenmesi testlere değil hazırlığa yazılır (tam koşuda 40 sn'yi bulabiliyor).
+beforeAll(pdfjsIsit, 120_000);
 
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "muhasebe" }) }));
 

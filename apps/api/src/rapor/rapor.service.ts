@@ -7,7 +7,7 @@ import { fifoDegerleri, satisSatirlari } from "../stok/satis-ozeti";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { bugunTR, type TahsilatDonemi, type VadeDonemi } from "@tekirextra/shared";
-import { tahsilatCekFiltresi, tahsilatDonemAraligi, tahsilatDonemiTopla, tahsilatHareketFiltresi, tahsilatTopla } from "./tahsilat-ozeti";
+import { tahsilatCekFiltresi, tahsilatDonemAraligi, tahsilatDonemiTopla, tahsilatGunleriniOku, tahsilatHareketFiltresi, tahsilatTopla } from "./tahsilat-ozeti";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { kategoriOzeti, toplam } from "./tahakkuk";
@@ -207,21 +207,9 @@ export class RaporService {
 
   async tahsilatDonemiOzeti(donem: TahsilatDonemi) {
     const { tenantId } = aktifBaglam();
-    const { baslangic, bitis } = tahsilatDonemAraligi(donem);
-    const tarih = { gte: new Date(`${baslangic}T00:00:00Z`), lte: new Date(`${bitis}T00:00:00Z`) };
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [hareketler, cekler] = await Promise.all([
-        tx.kasaBankaHareket.findMany({
-          where: tahsilatHareketFiltresi(tenantId, tarih),
-          select: { kaynakRef: true, tutarTry: true, tarih: true },
-        }),
-        tx.cekSenet.findMany({
-          where: tahsilatCekFiltresi(tenantId, tarih),
-          select: { id: true, tutarTry: true, islemTarihi: true },
-        }),
-      ]);
-      return { donem, baslangic, bitis, ...tahsilatDonemiTopla(hareketler, cekler, tarih) };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    const aralik = tahsilatDonemAraligi(donem);
+    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) => tahsilatGunleriniOku(tx, tenantId, aralik));
+    return { donem, ...aralik, ...tahsilatDonemiTopla(satirlar, aralik) };
   }
 
   /**

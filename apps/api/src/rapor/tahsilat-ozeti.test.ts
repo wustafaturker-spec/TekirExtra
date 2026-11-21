@@ -32,22 +32,20 @@ describe("Tahsilat dönemi", () => {
   });
 
   it("günlük seriyi sıfır günleriyle doldurur ve dönem toplamını korur", () => {
-    const gte = new Date("2026-11-16");
-    const lte = new Date("2026-11-19");
-    const hareketler = [
-      { tarih: new Date("2026-11-18"), kaynakRef: "cek", tutarTry: new Prisma.Decimal("113.45") },
-      { tarih: gte, kaynakRef: null, tutarTry: new Prisma.Decimal("10.00") },
+    const satirlar = [
+      { gun: "2026-11-16", tutar: new Prisma.Decimal("10.00"), adet: 1 },
+      { gun: "2026-11-18", tutar: new Prisma.Decimal("9999999999999.45"), adet: 2 },
     ];
-    const cekler = [{ id: "cek", islemTarihi: gte, tutarTry: new Prisma.Decimal("113.45") }];
-    expect(tahsilatDonemiTopla(hareketler, cekler, { gte, lte })).toEqual({
-      toplam: "123.45",
-      adet: 2,
+    expect(tahsilatDonemiTopla(satirlar, { baslangic: "2026-11-16", bitis: "2026-11-19" })).toEqual({
+      toplam: "10000000000009.45",
+      adet: 3,
       gunler: [
         { tarih: "2026-11-16", tutar: "10.00" },
         { tarih: "2026-11-17", tutar: "0.00" },
-        { tarih: "2026-11-18", tutar: "113.45" },
+        { tarih: "2026-11-18", tutar: "9999999999999.45" },
         { tarih: "2026-11-19", tutar: "0.00" },
       ],
     });
+    expect(tahsilatDonemiTopla([], { baslangic: "2026-11-19", bitis: "2026-11-19" })).toEqual({ toplam: "0.00", adet: 0, gunler: [{ tarih: "2026-11-19", tutar: "0.00" }] });
   });
 });

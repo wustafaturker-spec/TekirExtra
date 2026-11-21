@@ -4,6 +4,16 @@
  * bankaların düzenlerini (tek satır, üstte açıklama, ortalanmış çok satır)
  * bu üreticiyle taklit eder. Konumlar sol üst köşeden (pdf.js'in tersine).
  */
+import { pdfSatirlari } from "./ekstre-pdf";
+
+/**
+ * pdf.js kütüphanesini ve sahte işçisini bir kez yükler. Tam test koşusunda bu ilk yükleme
+ * CPU yarışında onlarca saniye sürebiliyor; `beforeAll` içinde çağrılınca testin süresine yazılmaz.
+ */
+export async function pdfjsIsit(): Promise<void> {
+  await pdfSatirlari(pdfUret([[{ x: 30, y: 60, metin: "isitma" }]]));
+}
+
 export interface Yazi { x: number; y: number; metin: string; boyut?: number }
 
 export function pdfUret(sayfalar: Yazi[][], secenek: { genislik?: number; yukseklik?: number } = {}): Buffer {

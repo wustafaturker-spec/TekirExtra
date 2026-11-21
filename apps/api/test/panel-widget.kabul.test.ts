@@ -106,6 +106,39 @@ it("widget tercihi iki firmada ve iki rolde yalıtılır, dönem toplamları kay
   await expect(baglamlaCalistir(b.muhasebe, () => rapor.tahsilatDonemiOzeti("bu_ay"))).resolves.toMatchObject({ toplam: "0.00", adet: 0 });
 });
 
+it("dönem tahsilatı veritabanında toplanır, çeki hareketiyle birlikte bir kez sayar ve günlük özetle uyuşur", async () => {
+  const a = await firmaOlustur();
+  const b = await firmaOlustur();
+  const { tenantId } = a.muhasebe;
+  const bugun = gunTR(new Date());
+  const tarih = new Date(bugun);
+  await db.tenantIslem(tenantId, async (tx) => {
+    const kasa = await tx.kasa.create({ data: { tenantId, ad: "Çek kasası" } });
+    const cek = (portfoyNo: string, tutar: string, durum: "portfoyde" | "tahsil_edildi" | "karsiliksiz") => ({
+      tenantId, tur: "cek" as const, yon: "alinan" as const, portfoyNo, islemTarihi: tarih, vadeTarihi: tarih, tutar, tutarTry: tutar, borclu: "Kabul", durum,
+    });
+    const tahsilEdilen = await tx.cekSenet.create({ data: cek("P-1", "300.10", "tahsil_edildi") });
+    await tx.cekSenet.createMany({ data: [cek("P-2", "50.05", "portfoyde"), cek("P-3", "999", "karsiliksiz")] });
+    await tx.kasaBankaHareket.createMany({ data: [
+      // Tahsil edilen çekin kasaya girişi: çekin portföy kaydıyla birlikte bir kez sayılır.
+      { tenantId, kasaId: kasa.id, tip: "tahsilat", tutar: "300.10", tutarTry: "300.10", tarih, kaynakTur: "cek_senet", kaynakRef: tahsilEdilen.id },
+      { tenantId, kasaId: kasa.id, tip: "tahsilat", tutar: "10.01", tutarTry: "10.01", tarih, kaynakTur: "manuel" },
+      { tenantId, kasaId: kasa.id, tip: "tediye", tutar: "77", tutarTry: "77", tarih, kaynakTur: "manuel" },
+    ] });
+  });
+  await baglamlaCalistir(a.muhasebe, async () => {
+    const gunluk = await rapor.gunlukOzet(bugun);
+    for (const donem of ["bugun", "bu_hafta", "bu_ay"] as const) {
+      const ozet = await rapor.tahsilatDonemiOzeti(donem);
+      expect(ozet).toMatchObject({ toplam: "360.16", adet: 3 });
+      expect(ozet.toplam).toBe(gunluk.tahsilat.toplam);
+      expect(ozet.adet).toBe(gunluk.tahsilat.adet);
+      expect(ozet.gunler.find((g) => g.tarih === bugun)).toEqual({ tarih: bugun, tutar: "360.16" });
+    }
+  });
+  await expect(baglamlaCalistir(b.muhasebe, () => rapor.tahsilatDonemiOzeti("bugun"))).resolves.toMatchObject({ toplam: "0.00", adet: 0 });
+});
+
 it("kaynak rapor HTTP uçları yetki kaldırılınca 403 döner", async () => {
   const { muhasebe } = await firmaOlustur();
   let izinKaldirildi = false;
