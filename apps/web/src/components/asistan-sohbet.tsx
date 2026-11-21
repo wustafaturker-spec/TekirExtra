@@ -436,6 +436,12 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
     sonRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [mesajlar, gonderiliyor]);
 
+  // AI-116: akan metin büyüdükçe alt kısım görünür kalır; kullanıcı yukarı kaydırdıysa çekilmez.
+  useEffect(() => {
+    const kap = sonRef.current?.parentElement;
+    if (akanMetin && kap && kap.scrollHeight - kap.scrollTop - kap.clientHeight < 120) sonRef.current?.scrollIntoView({ block: "end" });
+  }, [akanMetin]);
+
   async function gonder(istegeBagliMetin?: string) {
     const metin = (istegeBagliMetin ?? girdi).trim();
     if (!metin || gonderiliyor) return;
