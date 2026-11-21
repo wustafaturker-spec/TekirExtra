@@ -97,6 +97,7 @@ export const UC = {
   bankaGetir: uc(KasaBankaController, "bankaGetir", "GET /kasa-banka/bankalar/:id"),
   /** CNL-10: asistan sorusuna verilen yanıtla eşleşmeyen banka satırı cariye bağlanır (onaylı). */
   ekstreSatirEslestir: uc(KasaBankaController, "ekstreEslestir", "POST /kasa-banka/ekstre/satirlar/:id/eslestir"),
+  ekstreSatirListe: uc(KasaBankaController, "ekstreSatirListele", "GET /kasa-banka/ekstre/satirlar"),
 
   nakitAkisi: uc(NakitAkisiController, "tahmin", "GET /nakit-akisi"),
   vadesiGecenler: uc(RaporController, "vadesiGecenler", "GET /rapor/vadesi-gecenler"),

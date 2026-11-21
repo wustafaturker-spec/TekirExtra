@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { baglamAl, istekBaglami } from "../../core/istek-baglami";
 import { McpAnahtarService } from "./mcp-anahtar.service";
-import { McpController } from "./mcp.controller";
+import { McpController, mcpDosyaMetni } from "./mcp.controller";
 
 const TENANT = "3f2b6c1e-8d4a-4c2b-9a1e-5b7c8d9e0f12";
 const KULLANICI = "7a1d2e3f-4b5c-4d6e-8f70-81920a1b2c3d";
@@ -126,5 +126,30 @@ describe("MCP ucu (AI-09)", () => {
     expect(sonuc).toBeUndefined();
     expect(k.res.status).toHaveBeenCalledWith(202);
     expect((await k.istek({ jsonrpc: "2.0", id: 3, method: "resources/list" })).sonuc).toMatchObject({ error: { code: -32601 } });
+  });
+
+  it("AI-118: dosya aracında içerik yanıta girmez; MCP sohbetine kaydedilip indirme bağlantısı döner", async () => {
+    const anahtarlar = { dogrula: vi.fn().mockResolvedValue({ tenantId: TENANT, userId: KULLANICI, rol: "muhasebe", anahtarId: "k1" }) };
+    const tampon = Buffer.from("PK xlsx");
+    const yurutucu = {
+      izinliAraclar: vi.fn(() => [{ ad: "liste_dosyasi", aciklama: "", sinif: "okuma", girdi: { "~standard": {} } }]),
+      yurut: vi.fn(async () => ({ icerik: '{"basarili":true,"dosyaAdi":"Faturalar.xlsx","satirSayisi":3,"mesaj":"Faturalar.xlsx hazırlandı ve sohbete eklendi."}', dosya: { tampon, dosyaAdi: "Faturalar.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } })),
+    };
+    const ajan = { mcpDosyasiKaydet: vi.fn(async () => ({ ekId: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", dosyaAdi: "Faturalar.xlsx", mimeType: "x", boyut: 7 })) };
+    const prisma = { tenantIslem: vi.fn((_t: string, fn: (tx: unknown) => unknown) => fn({ ...kapiAcikTx() })) };
+    const c = new McpController(anahtarlar as never, yurutucu as never, prisma as never, undefined, ajan as never);
+    const sonuc = await istekBaglami.run({}, () => c.istek("Bearer tkx_x", undefined, { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "liste_dosyasi", arguments: { ekran: "faturalar" } } }, { setHeader: vi.fn() } as never)) as any;
+    expect(ajan.mcpDosyasiKaydet).toHaveBeenCalledWith(expect.objectContaining({ dosyaAdi: "Faturalar.xlsx", tampon }));
+    const govde = JSON.parse(sonuc.result.content[0].text);
+    expect(govde.indirmeBaglantisi).toBe("http://localhost:3100/panel/ai/dosya?ek=0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d&ad=Faturalar.xlsx");
+    expect(govde.mesaj).not.toContain("sohbete eklendi");
+    expect(govde.satirSayisi).toBe(3);
+    expect(sonuc.result.content[0].text).not.toContain("PK xlsx");
+  });
+
+  it("AI-118: saklanamayan MCP dosyası başarısız ve nedeniyle bildirilir", () => {
+    const metin = JSON.parse(mcpDosyaMetni('{"basarili":true}', { dosyaAdi: "a.pdf", hata: "Depolama kotası dolu" }));
+    expect(metin).toMatchObject({ basarili: false });
+    expect(metin.mesaj).toContain("Depolama kotası dolu");
   });
 });

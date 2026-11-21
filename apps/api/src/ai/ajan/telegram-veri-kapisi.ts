@@ -110,8 +110,11 @@ function sar(a: AjanAraci): AjanAraci {
     case "liste_dosyasi":
       return { ...a, async calistir(b, g) {
         const ekran = (g as { ekran?: unknown })?.ekran;
-        if (ekran === "kasa_banka_hareketleri" || ekran === "cariler") throw new BadRequestException("Bu liste Telegram'da dosya olarak verilmez; panelden indirin.");
-        return a.calistir(b, g);
+        if (ekran === "kasa_banka_hareketleri" || ekran === "cariler" || ekran === "banka_ekstresi") throw new BadRequestException("Bu liste Telegram'da dosya olarak verilmez; panelden indirin.");
+        const sonuc = await a.calistir(b, g) as { not?: unknown } | null;
+        // Telegram'da "Arka planda" seçeneği yok: büyük liste için yalnız daraltma önerilir.
+        if (sonuc && typeof sonuc.not === "string" && sonuc.not.includes("Arka planda")) return { ...sonuc, not: sonuc.not.replace(/ Kullanıcıya iki yol söyle:.*$/, " Kullanıcıdan dönem ya da süzgeçle daraltmasını iste; büyük liste panelde arka planda hazırlanabilir.") };
+        return sonuc;
       } };
     case "nakit_pozisyonu":
       return { ...a, async calistir(b, g) { return nakitPozisyonunuSuz(await a.calistir(b, g)); } };

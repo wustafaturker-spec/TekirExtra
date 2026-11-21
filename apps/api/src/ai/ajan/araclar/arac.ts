@@ -18,6 +18,8 @@ export interface AracBaglami {
   arac: string;
   /** Onaylanan talebin kimliği; denetim kaydına yazılır. */
   talepId?: string;
+  /** AI-118: arka plan görevinde (AI-105) çalışıyor; büyük dosya sınırı geçerli. */
+  arkaPlan?: boolean;
 }
 
 export interface OnayOnizlemesi {

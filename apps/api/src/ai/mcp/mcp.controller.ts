@@ -9,6 +9,7 @@ import { PrismaService } from "../../core/prisma.service";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { AracYurutucu } from "../ajan/arac-yurutucu";
+import { AiAjanService } from "../ajan/ai-ajan.service";
 import { aracTanimi } from "../ajan/araclar";
 import { McpAnahtarService } from "./mcp-anahtar.service";
 
@@ -26,6 +27,21 @@ const TALIMAT =
   "onay gerektiren işlemler (onaylama, kesinleştirme, gönderim, ödeme, kart değişikliği, iptal) yalnız onay talebi açar ve " +
   "kullanıcı TekirExtra panelinden onaylayınca çalışır — bunları yapılmış gibi bildirme. Kayıt silinemez.";
 
+/** Panelde MCP dosyasının indirme sayfası; giriş yapmış aynı kullanıcı indirebilir (adreste sır yok). */
+export function mcpIndirmeAdresi(ekId: string, dosyaAdi: string): string {
+  const panel = (process.env.APP_URL || "http://localhost:3100").replace(/\/+$/, "");
+  return `${panel}/panel/ai/dosya?ek=${encodeURIComponent(ekId)}&ad=${encodeURIComponent(dosyaAdi)}`;
+}
+
+/** Dosya aracının JSON çıktısına indirme bağlantısını ekler; "sohbete eklendi" ifadesi MCP'de doğru değildir. */
+export function mcpDosyaMetni(icerik: string, kunye: { ekId?: string; dosyaAdi: string; hata?: string }): string {
+  let o: Record<string, unknown> = {};
+  try { const p = JSON.parse(icerik); if (p && typeof p === "object" && !Array.isArray(p)) o = p as Record<string, unknown>; } catch { /* düz metin */ }
+  if (!kunye.ekId) return JSON.stringify({ ...o, basarili: false, mesaj: `${kunye.dosyaAdi} hazırlandı ama saklanamadı: ${kunye.hata ?? "bilinmeyen hata"}.` });
+  const baglanti = mcpIndirmeAdresi(kunye.ekId, kunye.dosyaAdi);
+  return JSON.stringify({ ...o, indirmeBaglantisi: baglanti, mesaj: `${kunye.dosyaAdi} hazırlandı. Kullanıcıya indirme bağlantısını ver; açmak için TekirExtra paneline aynı kullanıcıyla giriş gerekir: ${baglanti}` });
+}
+
 /**
  * AI-09: MCP sunucusu (Streamable HTTP, yalnız istek–yanıt; sunucudan akış yok).
  * Her istek kullanıcının MCP erişim anahtarıyla gelir; kimlik ve rol anahtardan
@@ -40,6 +56,7 @@ export class McpController {
     private readonly yurutucu: AracYurutucu,
     private readonly prisma: PrismaService,
     @Optional() private readonly erisim?: AbonelikErisimService,
+    @Optional() private readonly ajan?: AiAjanService,
   ) {}
 
   @Post()
@@ -123,7 +140,9 @@ export class McpController {
             ayrildi = true;
           }
           const sonuc = await this.yurutucu.yurut({ ad, girdi: i.params?.arguments ?? {} }, izinli, { kaynak: "mcp" });
-          const cevap = yanit({ content: [{ type: "text", text: sonuc.icerik }], isError: Boolean(sonuc.hata) });
+          // AI-118 (g): dosya içeriği MCP yanıtına girmez; kullanıcıya panelden indirme bağlantısı verilir.
+          const metin = sonuc.dosya ? mcpDosyaMetni(sonuc.icerik, this.ajan ? await this.ajan.mcpDosyasiKaydet(sonuc.dosya) : { dosyaAdi: sonuc.dosya.dosyaAdi, hata: "Dosya saklanamadı" }) : sonuc.icerik;
+          const cevap = yanit({ content: [{ type: "text", text: metin }], isError: Boolean(sonuc.hata) });
           if (yanEtkili && idempotencyKey) await this.idempotencyTamamla(idempotencyKey, cevap);
           return cevap;
         } catch (e) {

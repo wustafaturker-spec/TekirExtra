@@ -190,7 +190,7 @@ export class AracYurutucu {
   async yurut(
     cagri: { ad: string; girdi: unknown },
     izinli: Map<string, AjanAraci>,
-    secenek: { kaynak: "asistan" | "mcp" | "otomasyon"; oturumId?: string | null },
+    secenek: { kaynak: "asistan" | "mcp" | "otomasyon"; oturumId?: string | null; arkaPlan?: boolean },
   ): Promise<AracSonucu> {
     const arac = izinli.get(cagri.ad);
     if (!arac) {
@@ -216,7 +216,7 @@ export class AracYurutucu {
         hata: true,
       };
     }
-    const baglam = { uc: this.uc, kaynak: secenek.kaynak, arac: arac.ad };
+    const baglam = { uc: this.uc, kaynak: secenek.kaynak, arac: arac.ad, ...(secenek.arkaPlan ? { arkaPlan: true } : {}) };
     try {
       if (arac.sinif === "onay") {
         const ozet = await arac.ozetle!(baglam, ayristirma.data);

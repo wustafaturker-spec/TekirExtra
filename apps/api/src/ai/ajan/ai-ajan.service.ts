@@ -480,6 +480,17 @@ export class AiAjanService {
     return sonuc;
   }
 
+  /**
+   * AI-118 (g): MCP'den üretilen dosya kullanıcının "MCP" sohbetine ek olarak yazılır (panel
+   * sohbet listesinde görünmez). İndirme yalnız aynı kullanıcının panel oturumuyla yapılır.
+   */
+  async mcpDosyasiKaydet(dosya: UretilenDosya): Promise<AsistanDosyasi> {
+    const { tenantId, userId } = aktifBaglam();
+    const oturum = await this.oturumGetir(tenantId, userId, "MCP");
+    const [kunye] = await this.dosyalariKaydet(oturum.id, [dosya]);
+    return kunye!;
+  }
+
   /** AI-79: sohbete dosya eki; güvenlik denetimi (içerik türü + ClamAV) ek altyapısında. */
   async ekYukle(dosya: YuklenenDosya) {
     if (!this.ekler) throw new BadRequestException("Dosya eki kullanılamıyor");
@@ -618,6 +629,7 @@ export class AiAjanService {
         // AI-116: yalnız web akışında; Telegram mesaj düzenleme sınırı nedeniyle tek mesaj alır, arka plan görevi akmaz.
         akis: !telegram && !secenek.arkaPlan,
         kartlar: !telegram,
+        arkaPlan: !!secenek.arkaPlan,
         sinyal: secenek.sinyal,
       });
       const cevap = talepNotuEkle(hamCevap, talepler.length, telegram);
@@ -744,6 +756,8 @@ export class AiAjanService {
     akis?: boolean;
     /** AI-117: araç çıktısından tablo kartı çıkarılır (web ve arka plan; Telegram değil). */
     kartlar?: boolean;
+    /** AI-118: arka plan görevi; dosya araçları büyük sınırla çalışır. */
+    arkaPlan?: boolean;
     sinyal?: AbortSignal;
     /** AI-114: arayüz eylemlerinin doğrulandığı ekran durumu. */
     ekranDurumu?: EkranDurumu;
@@ -945,7 +959,7 @@ export class AiAjanService {
           continue;
         }
         g.olay?.({ tur: "arac", ad: cagri.ad, etiket: aracEtiketi(cagri.ad), durum: "basladi" });
-        const sonuc = await this.yurutucu.yurut(cagri, aracHaritasi, { kaynak: "asistan", oturumId: g.oturumId });
+        const sonuc = await this.yurutucu.yurut(cagri, aracHaritasi, { kaynak: "asistan", oturumId: g.oturumId, ...(g.arkaPlan ? { arkaPlan: true } : {}) });
         g.olay?.({ tur: "arac", ad: cagri.ad, etiket: aracEtiketi(cagri.ad), durum: sonuc.hata ? "hata" : "bitti" });
         calisanlar.push({ ad: cagri.ad, sinif: aracHaritasi.get(cagri.ad)?.sinif ?? "bilinmiyor", basarili: !sonuc.hata });
         if (sonuc.talep) talepler.push(sonuc.talep);
@@ -1059,7 +1073,7 @@ export class AiAjanService {
     return oturum;
   }
 
-  private async oturumGetir(tenantId: string, userId: string, kanal: AjanKanali = "WEB") {
+  private async oturumGetir(tenantId: string, userId: string, kanal: AjanKanali | "MCP" = "WEB") {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.ajanOturumu.findFirst({ where: { userId, kanal: kanal === "WEB" ? { in: PANEL_KANALLARI } : kanal, arsivlendiAt: null }, orderBy: { sonEtkilesim: "desc" } });
       if (mevcut) {
