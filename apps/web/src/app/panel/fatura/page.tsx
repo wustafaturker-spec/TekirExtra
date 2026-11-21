@@ -48,6 +48,7 @@ import {
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { ekVergiGovdesi, ekVergiHesapGirdileri, ekVergiOzeti, karttanEkVergiler, type EkVergiSatiri } from "@/lib/ek-vergi";
 import { faturaNoMetni } from "@/lib/fatura-no";
+import { AiMetinAlani } from "@/components/ai-metin-alani";
 
 interface Cari {
   id: string;
@@ -2901,11 +2902,11 @@ export default function FaturaSayfasi() {
           <FormGrubu baslik="Açıklama, notlar ve ekler" aciklama="Faturada görünen açıklama, iç notlar ve dosyalar" doluSayisi={notDolu} gizli={saltOkunur && notDolu === 0}>
             <div className="invoice-notes">
             <Field label="Fatura açıklaması">
-              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={3} placeholder="Faturada gösterilecek açıklamayı yazın (isteğe bağlı)" />
+              <AiMetinAlani alan="fatura_aciklama" kayit={duzenlenenId ? { tur: "fatura", id: duzenlenenId } : undefined} className="textarea document-description__input" value={aciklama} onDegis={setAciklama} maxLength={500} rows={3} placeholder="Faturada gösterilecek açıklamayı yazın (isteğe bağlı)" />
               {dovizCinsi !== "TRY" && <label className="check-row"><input type="checkbox" checked={kuruAciklamayaEkle} onChange={(e) => setKuruAciklamayaEkle(e.target.checked)} /> Döviz kurunu açıklamaya ekle</label>}
             </Field>
             <Field label="Notlar">
-              <textarea className="input" value={notlar} onChange={(e) => setNotlar(e.target.value)} maxLength={2000} rows={3} placeholder="İç notlar (isteğe bağlı)" />
+              <AiMetinAlani alan="fatura_not" kayit={duzenlenenId ? { tur: "fatura", id: duzenlenenId } : undefined} className="input" value={notlar} onDegis={setNotlar} maxLength={2000} rows={3} placeholder="İç notlar (isteğe bağlı)" />
             </Field>
             </div>
             <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />

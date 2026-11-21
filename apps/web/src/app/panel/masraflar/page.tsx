@@ -12,6 +12,7 @@ import { bugunTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { CariSecici } from "@/components/cari-secici";
+import { AiMetinAlani } from "@/components/ai-metin-alani";
 
 interface Kategori { id: string; ad: string; varsayilanKdvOrani: string | null; ustId: string | null; ust: { id: string; ad: string } | null; _count: { altlar: number; masraflar: number } }
 interface Cari { id: string; unvan: string }
@@ -255,7 +256,7 @@ export default function MasraflarSayfasi() {
             <Field label="Cari hesap"><CariSecici cariler={cariler} deger={cariId} onChange={setCariId} placeholder="Cari ara… (boş bırakılabilir)" /></Field>
             {!cariId && <Field label="Satıcı / kiraya veren"><Input required value={saticiUnvan} onChange={(e) => setSaticiUnvan(e.target.value)} placeholder="Firma veya kişi adı" /></Field>}
             <Field label="VKN / TCKN"><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} placeholder="İsteğe bağlı" /></Field>
-            <Field label="Açıklama"><Input value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Masrafa ilişkin kısa not" /></Field>
+            <Field label="Açıklama"><AiMetinAlani alan="masraf_aciklama" tekSatir className="input" value={aciklama} onDegis={setAciklama} placeholder="Masrafa ilişkin kısa not" /></Field>
           </div>
         </section>
         <section className="expense-entry__section expense-entry__section--amount">

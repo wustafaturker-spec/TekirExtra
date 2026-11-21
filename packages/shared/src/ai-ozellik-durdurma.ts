@@ -4,7 +4,7 @@
  * modülü) > firma ayarı. Kapalı özellik 503 ve açık mesaj döner; bekleyen onaylar ve
  * kuyruktaki işler silinmez, özellik açılınca sürer.
  */
-export const AI_OZELLIK_ANAHTARLARI = ["asistan", "asistan_telegram", "arka_plan_gorevi", "sabah_hazirlik", "teklif_otomasyonu", "ocr", "mcp"] as const;
+export const AI_OZELLIK_ANAHTARLARI = ["asistan", "asistan_telegram", "arka_plan_gorevi", "sabah_hazirlik", "teklif_otomasyonu", "ocr", "mcp", "metin_tamamlama"] as const;
 export type AiOzellikAnahtari = (typeof AI_OZELLIK_ANAHTARLARI)[number];
 
 export const AI_OZELLIK_ADLARI: Record<AiOzellikAnahtari, { ad: string; aciklama: string }> = {
@@ -15,6 +15,7 @@ export const AI_OZELLIK_ADLARI: Record<AiOzellikAnahtari, { ad: string; aciklama
   teklif_otomasyonu: { ad: "E-postadan teklif", aciklama: "Gelen e-postalardan otomatik teklif taslağı" },
   ocr: { ad: "Belge okuma (OCR)", aciklama: "Fiş, fatura, çek ve vergi levhası okuma" },
   mcp: { ad: "MCP erişimi", aciklama: "Dış yapay zekâ araçlarının MCP ile bağlanması" },
+  metin_tamamlama: { ad: "Metin tamamlama", aciklama: "Açıklama, not ve e-posta alanlarında devam önerisi ve yeniden yazma" },
 };
 
 export const aiOzellikAnahtariMi = (x: unknown): x is AiOzellikAnahtari => typeof x === "string" && (AI_OZELLIK_ANAHTARLARI as readonly string[]).includes(x);

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, PageHeader, Segmented, TableWrap } from "@/components/ui";
 import { RiskRozeti, TahsilatOncelikleriKart, type TahsilatOnceligi } from "@/components/tahsilat-riski";
+import { AiMetinAlani } from "@/components/ai-metin-alani";
 
 type Kademe = "hatirlatma" | "ihtar";
 
@@ -143,7 +144,7 @@ export default function VadeHatirlatmaSayfasi() {
             <Segmented<Kademe> value={kademe} onChange={setKademe} items={[{ deger: "hatirlatma", baslik: "Hatırlatma" }, { deger: "ihtar", baslik: "İhtar" }]} />
           </Field>
           <Field label="Ek not (isteğe bağlı, tablodan sonra eklenir)">
-            <textarea className="textarea" rows={2} maxLength={1000} value={not} onChange={(e) => setNot(e.target.value)} placeholder="Örn. Banka hesap bilgilerimiz değişmiştir…" />
+            <AiMetinAlani alan="tahsilat_hatirlatma" className="textarea" rows={2} maxLength={1000} value={not} onDegis={setNot} placeholder="Örn. Banka hesap bilgilerimiz değişmiştir…" />
           </Field>
           <div className="row-tight">
             <Button size="sm" disabled={!seciliAdaylar.length || notYaziliyor} onClick={() => void notYazdir()}>{notYaziliyor ? "Yazılıyor…" : "✨ Yapay zekâ ile not yaz"}</Button>

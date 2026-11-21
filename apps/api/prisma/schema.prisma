@@ -662,6 +662,8 @@ model User {
   telefon                String?          @map("telefon") @db.VarChar(16)
   telefonDogrulandiAt    DateTime?        @map("telefon_dogrulandi_at")
   smsIkinciAdim          Boolean          @default(false) @map("sms_ikinci_adim")
+  /// AI-115: metin alanında yapay zekâ önerisi (kişisel tercih).
+  aiMetinTamamlama       Boolean          @default(true) @map("ai_metin_tamamlama")
   /// Yönetim P1-2: parola/2FA değişince artar; eski erişim token'ları reddedilir.
   oturumSurumu           Int              @default(0) @map("oturum_surumu")
   /// Yönetim P2-4: son başarılı giriş (oturum yenileme sayılmaz).

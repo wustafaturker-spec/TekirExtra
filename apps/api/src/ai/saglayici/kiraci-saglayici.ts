@@ -32,13 +32,13 @@ export function ayardanYapilandirma(ayar: Pick<TenantAiAyari, "saglayici" | "api
 }
 
 /** AI-15: sayaçta görünen özellik. */
-export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim" | "gelendenetim";
+export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim" | "gelendenetim" | "metin";
 
 /**
  * AI-109: model çağrısında denetlenen özellik anahtarları. Asistan (web/Telegram/arka plan),
  * MCP ve zamanlanmış işler kanalı bilen giriş noktalarında denetlenir.
  */
-const KAPI_OZELLIKLERI: Partial<Record<AiOzelligi, AiOzellikAnahtari>> = { tarama: "ocr", teklif: "teklif_otomasyonu" };
+const KAPI_OZELLIKLERI: Partial<Record<AiOzelligi, AiOzellikAnahtari>> = { tarama: "ocr", teklif: "teklif_otomasyonu", metin: "metin_tamamlama" };
 
 /**
  * Kısa, ucuz işler ekonomik modele gider; geri kalanlar güçlü modele. Asistan
@@ -47,7 +47,7 @@ const KAPI_OZELLIKLERI: Partial<Record<AiOzelligi, AiOzellikAnahtari>> = { taram
  * finans açıklaması düzeltmesi ana modelde kalır (`anaModel`, `derin`).
  */
 // "ekstre" 2026-10-22: ekstre satırından yalnız karşı taraf adı çıkarılır (kısa iş), kullanıcı ekranda bekler.
-export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim", "asistan", "ekstre"];
+export const EKONOMIK_OZELLIKLER: readonly AiOzelligi[] = ["ozet", "gorev", "hatirlatma", "ondenetim", "gelendenetim", "asistan", "ekstre", "metin"];
 
 /**
  * Özelliğin modeli: ekonomik işte ekonomik, diğerlerinde güçlü model; boş

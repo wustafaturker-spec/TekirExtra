@@ -340,7 +340,7 @@ const yaz = (v: unknown) => (v === null || v === undefined ? "" : String(v));
  * AI-78: türün ekran ucundan kayıt okunur (kullanıcı göremiyorsa uç hata verir,
  * istek modele gitmez). Rapor kimliği katalog kodudur.
  */
-async function ekranKaydiOku(uc: UcCagirici, tur: EkranTuru, id: string): Promise<EkranKaydi> {
+export async function ekranKaydiOku(uc: UcCagirici, tur: EkranTuru, id: string): Promise<EkranKaydi> {
   switch (tur) {
     case "cari": {
       const c = await uc.cagir<any>(UC.cariGetir, [id]);

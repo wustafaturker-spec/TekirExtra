@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { TelefonDogrulama } from "@/components/telefon-dogrulama";
+import { AiMetinTercihiKart } from "@/components/ai-metin-tercihi-kart";
 import { api, IKI_ADIM_KURULDU_OLAYI } from "@/lib/api";
 import { tarayiciAdi } from "@/lib/tarayici-adi";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/components/ui";
@@ -256,6 +257,7 @@ export default function HesapGuvenligiSayfasi() {
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
+      <AiMetinTercihiKart />
       <Card className="stack">
         <div>
           <h3 className="card__title" style={{ fontSize: "1.05rem" }}>🔐 İki Adımlı Doğrulama (TOTP)</h3>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Mail, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { adresleriAyikla, type IletiTaslagi } from "@/lib/eposta-ileti";
+import { AiMetinAlani } from "@/components/ai-metin-alani";
 
 const BASLIK: Record<IletiTaslagi["mod"], string> = {
   yeni: "Yeni İleti",
@@ -86,10 +87,11 @@ export function EpostaIletiPenceresi({
           </div>
           <div>
             <label className="block font-semibold text-gray-700 mb-1">İleti:</label>
-            <textarea
+            <AiMetinAlani
+              alan="eposta_govdesi"
               rows={10}
               value={metin}
-              onChange={(e) => setMetin(e.target.value)}
+              onDegis={setMetin}
               placeholder="E-posta içeriğinizi yazın..."
               autoFocus
               className="w-full border border-gray-300 rounded p-2 text-xs font-mono"

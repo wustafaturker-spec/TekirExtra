@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Alert, Button, Card, PageHeader } from "@/components/ui";
 import Link from "next/link";
 import { AramaSecici } from "@/components/arama-secici";
+import { AiMetinAlani } from "@/components/ai-metin-alani";
 
 interface Cari {
   id: string;
@@ -250,7 +251,7 @@ export default function CrmKanbanSayfasi() {
 
               <div className="crm-form-grid">
                 <div><label htmlFor="crm-kapanis">Beklenen kapanış</label><input id="crm-kapanis" type="date" value={form.kapanisTarihi} onChange={(e) => setForm({ ...form, kapanisTarihi: e.target.value })} /></div>
-                <div><label htmlFor="crm-notlar">Notlar</label><textarea id="crm-notlar" rows={3} value={form.notlar} onChange={(e) => setForm({ ...form, notlar: e.target.value })} placeholder="Fırsatla ilgili kısa notlar" /></div>
+                <div><label htmlFor="crm-notlar">Notlar</label><AiMetinAlani alan="crm_notu" kayit={duzenlenenId ? { tur: "crm_firsati", id: duzenlenenId } : undefined} id="crm-notlar" rows={3} value={form.notlar} onDegis={(notlar) => setForm((f) => ({ ...f, notlar }))} placeholder="Fırsatla ilgili kısa notlar" /></div>
               </div>
 
               <div className="crm-modal__eylemler">

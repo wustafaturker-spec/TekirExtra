@@ -46,6 +46,7 @@ import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { CariSecici } from "@/components/cari-secici";
 import { faturaNoMetni } from "@/lib/fatura-no";
+import { AiMetinAlani } from "@/components/ai-metin-alani";
 
 const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
 const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
@@ -1652,7 +1653,7 @@ export default function BelgelerSayfasi() {
           <FormGrubu baslik="Açıklama ve ekler" aciklama={`${TUR_ADI[tur]} üzerinde görünen açıklama ve dosyalar`} doluSayisi={notDolu}>
             <div className="invoice-notes invoice-notes--tek">
             <Field label={`${TUR_ADI[tur]} açıklaması`}>
-              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={3} placeholder={`${TUR_ADI[tur]} üzerinde gösterilecek açıklamayı yazın (isteğe bağlı)`} />
+              <AiMetinAlani alan="belge_aciklama" kayit={duzenlenenId ? { tur: "belge", id: duzenlenenId } : undefined} className="textarea document-description__input" value={aciklama} onDegis={setAciklama} maxLength={500} rows={3} placeholder={`${TUR_ADI[tur]} üzerinde gösterilecek açıklamayı yazın (isteğe bağlı)`} />
               {dovizCinsi !== "TRY" && <label className="check-row"><input type="checkbox" checked={kuruAciklamayaEkle} onChange={(e) => setKuruAciklamayaEkle(e.target.checked)} /> Döviz kurunu açıklamaya ekle</label>}
             </Field>
             </div>

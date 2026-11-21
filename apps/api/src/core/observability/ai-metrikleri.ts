@@ -11,7 +11,7 @@ type Etiketler = Record<string, string>;
 type Izinli = Record<string, ReadonlySet<string> | null>;
 
 const kume = (...x: string[]) => new Set(x);
-const OZELLIK = kume("asistan", "tarama", "ozet", "gorev", "ekstre", "hatirlatma", "teklif", "ondenetim", "gelendenetim");
+const OZELLIK = kume("asistan", "tarama", "ozet", "gorev", "ekstre", "hatirlatma", "teklif", "ondenetim", "gelendenetim", "metin");
 const SAGLAYICI = kume("openai", "anthropic", "gemini", "ollama", "mock", "tanimsiz");
 const KANAL = kume("WEB", "TELEGRAM", "MCP");
 
