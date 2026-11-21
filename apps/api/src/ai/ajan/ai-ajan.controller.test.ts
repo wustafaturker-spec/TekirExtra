@@ -1,7 +1,7 @@
 import { HttpException } from "@nestjs/common";
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { AiAjanController } from "./ai-ajan.controller";
+import { AKIS_NABIZ_MS, AiAjanController } from "./ai-ajan.controller";
 
 /** Express yanıtının akış için kullanılan kısmı. */
 function sahteYanit() {
@@ -32,5 +32,22 @@ describe("asistan akış ucu (AI-82)", () => {
     await new AiAjanController(servis as never).mesajAkis({ mesaj: "x" }, res as never);
     expect(sinyal?.aborted).toBe(true);
     expect(res.yazilan.at(-1)).toBe('event: hata\ndata: {"mesaj":"Bu ayın yapay zekâ bütçesi doldu","durum":429}\n\n');
+  });
+
+  it("uzun sessizlikte canlılık satırı yazar, bitince durur", async () => {
+    vi.useFakeTimers();
+    try {
+      let bitir!: (v: unknown) => void;
+      const servis = { mesajiIsle: vi.fn(() => new Promise((r) => { bitir = r; })) };
+      const res = sahteYanit();
+      const is = new AiAjanController(servis as never).mesajAkis({ mesaj: "x" }, res as never);
+      await vi.advanceTimersByTimeAsync(AKIS_NABIZ_MS * 2 + 10);
+      expect(res.yazilan).toEqual([": canli\n\n", ": canli\n\n"]);
+      bitir({ cevap: "Tamam" });
+      await is;
+      await vi.advanceTimersByTimeAsync(AKIS_NABIZ_MS * 2);
+      expect(res.yazilan.filter((x) => x.startsWith(":"))).toHaveLength(2);
+      expect(res.yazilan.at(-1)).toBe('event: son\ndata: {"cevap":"Tamam"}\n\n');
+    } finally { vi.useRealTimers(); }
   });
 });

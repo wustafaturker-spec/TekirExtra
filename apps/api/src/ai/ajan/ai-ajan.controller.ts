@@ -10,6 +10,9 @@ import { SAYFA_YOLU } from "./araclar/gruplar";
 
 type MesajGovdesi = { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown; kayit?: { tur?: unknown; id?: unknown }; sayfa?: unknown; taslak?: unknown; eylem?: unknown; durum?: unknown; arayuzSonuclari?: unknown }; ekler?: unknown; derin?: unknown };
 
+/** Akışlı yanıtta canlılık satırı aralığı; ara katmanların boşta kesme süresinden kısa olmalı. */
+export const AKIS_NABIZ_MS = 15_000;
+
 /**
  * AI-05: panel asistanı. Kimlik ve rol yalnız oturumdan gelir. Dış kanal
  * (WhatsApp vb.) webhook'u bu pakette yoktur (AI-10).
@@ -72,6 +75,9 @@ export class AiAjanController {
     const yaz = (olay: string, veri: unknown) => { if (!res.writableEnded) res.write(`event: ${olay}\ndata: ${JSON.stringify(veri)}\n\n`); };
     const durdur = new AbortController();
     res.on("close", () => { if (!res.writableEnded) durdur.abort(); });
+    // Ara katmanlar (Next.js yönlendirmesi 30 sn) veri akmayan bağlantıyı keser; sağlayıcı
+    // ilk parçayı geç verirse sunucu bunu durdurma sanıyordu. SSE yorum satırı bağlantıyı canlı tutar.
+    const nabiz = setInterval(() => { if (!res.writableEnded) res.write(": canli\n\n"); }, AKIS_NABIZ_MS);
     try {
       yaz("son", await this.isle(body, { olay: (e: AkisOlayi) => yaz("adim", e), sinyal: durdur.signal }));
     } catch (hata) {
@@ -80,6 +86,7 @@ export class AiAjanController {
       const hataKodu = govde && typeof govde === "object" && typeof (govde as { hataKodu?: unknown }).hataKodu === "string" ? (govde as { hataKodu: string }).hataKodu : undefined;
       yaz("hata", { mesaj: hata instanceof HttpException ? hata.message : "Asistan yanıt veremedi.", durum: hata instanceof HttpException ? hata.getStatus() : 500, ...(hataKodu ? { hataKodu } : {}) });
     } finally {
+      clearInterval(nabiz);
       res.end();
     }
   }

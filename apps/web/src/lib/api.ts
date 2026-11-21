@@ -180,6 +180,8 @@ export async function apiAkis<T>(yol: string, govde: unknown, onOlay: (olay: str
     while ((sinir = tampon.indexOf("\n\n")) >= 0) {
       const parca = tampon.slice(0, sinir);
       tampon = tampon.slice(sinir + 2);
+      // Sunucunun canlılık satırı (": canli") olay değildir.
+      if (!parca.split("\n").some((l) => l && !l.startsWith(":"))) continue;
       const olay = /^event: (.*)$/m.exec(parca)?.[1] ?? "message";
       const veriMetni = parca.split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6)).join("\n");
       const veri = veriMetni ? JSON.parse(veriMetni) : null;
