@@ -50,3 +50,25 @@ export const DUZELTME_ISTEMI = (neden: string) =>
 
 export const GUVENLI_YANIT =
   "Asistanın yanıtı doğrulanamadı: yapılmamış bir işlemden söz ediyordu, bu yüzden gösterilmedi. Hiçbir kayıt oluşturulmadı ya da değiştirilmedi. Lütfen talimatı yeniden yazın.";
+
+/**
+ * AI-110 bulgusu: model, harici içerikteki (gelen e-posta, e-Belge, OCR) oltalama bağlantısını
+ * uyarı amacıyla da olsa yanıta taşıyabiliyor; bağlantı tıklanabilir kalır. Harici içerikte
+ * geçen bağlantıların alan adları yanıtta (şemalı ya da şemasız) gizlenir; kullanıcının kendi
+ * mesajında yazdığı adres gizlenmez.
+ */
+export const HARICI_BAGLANTI_GIZLENDI = "[harici bağlantı gizlendi]";
+const BAGLANTI = /https?:\/\/([a-z0-9.-]+\.[a-z]{2,})(?::\d+)?[^\s)\]"'<>]*/gi;
+
+export function hariciAlanAdlari(icerik: string): string[] {
+  return [...new Set([...icerik.matchAll(BAGLANTI)].map((m) => m[1].toLowerCase()))];
+}
+
+export function hariciBaglantilariGizle(cevap: string, alanAdlari: Iterable<string>, kullaniciMetni: string): string {
+  const kullanici = kullaniciMetni.toLowerCase();
+  const gizlenecek = [...new Set(alanAdlari)].filter((a) => !kullanici.includes(a));
+  if (!gizlenecek.length) return cevap;
+  const kacis = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const desen = new RegExp(`(?:https?:\\/\\/)?(?:[a-z0-9-]+\\.)*(?:${gizlenecek.map(kacis).join("|")})(?::\\d+)?(?:[/?#][^\\s)\\]"'<>]*)?`, "gi");
+  return cevap.replace(desen, HARICI_BAGLANTI_GIZLENDI);
+}

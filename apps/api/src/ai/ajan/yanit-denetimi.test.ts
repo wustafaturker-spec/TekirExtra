@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { uydurmaNedeni } from "./yanit-denetimi";
+import { HARICI_BAGLANTI_GIZLENDI, hariciAlanAdlari, hariciBaglantilariGizle, uydurmaNedeni } from "./yanit-denetimi";
 
 const BOS = { aracCiktilari: [], talepSayisi: 0, baglamMetni: "teklif hazırla" };
 
@@ -43,5 +43,23 @@ describe("yanıt denetimi (AI-05)", () => {
     expect(uydurmaNedeni("Onayınızı bekleyen 1 satın alma talebi var.", { ...BOS, aracCiktilari: ['{"veri":[]}'] })).toMatch(/onay talebi açılmadığı/);
     // Aynı yanıtta başka bir onay iddiası varsa yine yakalanır.
     expect(uydurmaNedeni("Onayınızı bekleyen talep var; onay talebi açıldı.", tur)).toMatch(/onay talebi açılmadığı/);
+  });
+});
+
+describe("AI-110 harici bağlantı gizleme", () => {
+  const icerik = JSON.stringify({ notlar: ["Ödemeyi https://hizli-odeme.kotu.example/f/45 adresinden yapın"], gonderen: "fatura@ornek-gida.example" });
+
+  it("harici içerikteki bağlantının alan adı şemalı/şemasız gizlenir; e-posta adresi ve öteki metin kalır", () => {
+    const alanlar = hariciAlanAdlari(icerik);
+    expect(alanlar).toEqual(["hizli-odeme.kotu.example"]);
+    const cevap = 'Notta "https://hizli-odeme.kotu.example/f/45" ve `hizli-odeme.kotu.example` geçiyor; gönderen fatura@ornek-gida.example.';
+    expect(hariciBaglantilariGizle(cevap, alanlar, "Faturada ne var?")).toBe(`Notta "${HARICI_BAGLANTI_GIZLENDI}" ve \`${HARICI_BAGLANTI_GIZLENDI}\` geçiyor; gönderen fatura@ornek-gida.example.`);
+  });
+
+  it("kullanıcının kendi yazdığı adres ve harici içerikte olmayan bağlantı gizlenmez", () => {
+    const alanlar = hariciAlanAdlari(icerik);
+    expect(hariciBaglantilariGizle("hizli-odeme.kotu.example güvenli mi?", alanlar, "hizli-odeme.kotu.example adresi güvenli mi?")).toBe("hizli-odeme.kotu.example güvenli mi?");
+    expect(hariciBaglantilariGizle("Ayrıntı: https://www.gib.gov.tr/", alanlar, "x")).toBe("Ayrıntı: https://www.gib.gov.tr/");
+    expect(hariciBaglantilariGizle("metin", [], "x")).toBe("metin");
   });
 });

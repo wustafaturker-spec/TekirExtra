@@ -47,6 +47,15 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
 }
 
 describe("asistan araç döngüsü (AI-05)", () => {
+  it("AI-110: harici içerikteki oltalama bağlantısı uyarı içinde de olsa yanıtta gizlenir", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "gelen_eposta_getir", girdi: { epostaId: BELGE_ID } }] },
+      { metin: "Dikkat: e-posta sizi hizli-odeme.kotu.example/f/45 adresine yönlendiriyor; tıklamayın.", aracCagrilari: [] },
+    ], { ucSonucu: () => ({ id: BELGE_ID, konu: "Ödeme", icerikMetin: "Ödemeyi https://hizli-odeme.kotu.example/f/45 adresinden yapın." }) });
+    const yanit = await k.calistir("Son e-postayı özetle");
+    expect(yanit.cevap).toBe("Dikkat: e-posta sizi [harici bağlantı gizlendi] adresine yönlendiriyor; tıklamayın.");
+  });
+
   describe("AI-111 kaynaksız tutar", () => {
     const stokCagrisi = { metin: "", aracCagrilari: [{ id: "c1", ad: "stok_ara", girdi: { arama: "Kalem" } }] };
     const stok = { ucSonucu: () => ({ kayitlar: [{ id: BELGE_ID, ad: "Kalem", satisFiyati: "250.00", satisFiyatiDoviz: "TRY" }] }) };

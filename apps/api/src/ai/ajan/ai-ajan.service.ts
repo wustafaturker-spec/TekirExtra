@@ -18,7 +18,7 @@ import { aracTanimi, type AjanAraci } from "./araclar";
 import { ARAC_GRUPLARI, GRUP_ACMA_ARACI, aracGrubu, grupAcmaTanimi, gruplariSec, type AracGrubu } from "./araclar/gruplar";
 import { AracYurutucu } from "./arac-yurutucu";
 import { BUGUN } from "./araclar/arac";
-import { DUZELTME_ISTEMI, GUVENLI_YANIT, uydurmaNedeni } from "./yanit-denetimi";
+import { DUZELTME_ISTEMI, GUVENLI_YANIT, hariciAlanAdlari, hariciBaglantilariGizle, uydurmaNedeni } from "./yanit-denetimi";
 import { finansKaynaklariCikar, type FinansKaynagi } from "./finans-kaynaklari";
 import { finansAciklamasiniDogrula, finansOlguTalimati, finansSecimSemasi, type FinansAciklama } from "./finans-aciklama";
 import { AiBosYanitHatasi } from '../saglayici/ai-bos-yanit';
@@ -765,6 +765,8 @@ export class AiAjanService {
     const arayuzEylemleri: AsistanArayuzEylemi[] = [];
     let duzeltmeIstendi = false;
     let rakamDuzeltmesiIstendi = false;
+    /** Harici içerikte (gelen e-posta/e-Belge/OCR) geçen bağlantıların alan adları; yanıtta gizlenir. */
+    const hariciAlanlar = new Set<string>();
     let hariciIcerikOkundu = false;
     const acikYazmaIstegi = acikYazmaIstegiVar(g.kullaniciTalebi);
 
@@ -918,6 +920,7 @@ export class AiAjanService {
         const dogrulanmamis = cagri.ad.startsWith("gelen_eposta_") || cagri.ad.includes("ocr");
         // Gelen e-posta, e-Fatura ve e-İrsaliyeyi karşı taraf yazar: not, unvan ve satır adı talimat taşıyabilir.
         const harici = cagri.ad.startsWith("gelen_") || cagri.ad.includes("ocr");
+        if (harici && !sonuc.hata) for (const a of hariciAlanAdlari(sonuc.icerik)) hariciAlanlar.add(a);
         if (!sonuc.hata) aracCiktilari.push(sonuc.icerik);
         if (sonuc.dosya) {
           if (uretilenDosyalar.length < TUR_DOSYA_SINIRI) uretilenDosyalar.push(sonuc.dosya);
@@ -951,7 +954,8 @@ export class AiAjanService {
     }
     const benzersizDurumlar = [...new Map(durumlar.map((x) => [`${x.tur}:${x.id}`, x])).values()].slice(-12);
     if (cevap === null && kaynaklar.length) ({ cevap, finansAciklama } = finansAciklamasiniDogrula(null, kaynaklar));
-    return { cevap: cevap ?? "İşlem çok adım gerektirdi ve tamamlanamadı; talimatı daha küçük parçalara bölün.", calisanlar, talepler, secimler, durumlar: benzersizDurumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenDosyalar, arayuzEylemleri };
+    const sonCevap = hariciBaglantilariGizle(cevap ?? "İşlem çok adım gerektirdi ve tamamlanamadı; talimatı daha küçük parçalara bölün.", hariciAlanlar, g.kullaniciTalebi);
+    return { cevap: sonCevap, calisanlar, talepler, secimler, durumlar: benzersizDurumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenDosyalar, arayuzEylemleri };
   }
 
   /** Kullanıcının asistan geçmişi (son mesajlar) ve bekleyen talepleri; sohbet penceresi açılırken. */
