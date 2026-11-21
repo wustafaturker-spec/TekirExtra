@@ -301,6 +301,8 @@ export async function senaryoyuKos(saglayici: IAiProvider, s: DegerlendirmeSenar
     ekranDurumu: s.girdi.ekranDurumu?.durum,
     arayuzUcu: ekranUcu({ ...(s.girdi.ekranDurumu?.kayitlar ?? {}), ...Object.fromEntries((s.kimlikler ?? []).map((k) => [k.id, k.ad])) }) as never,
     arayuzIzi: (c, basarili) => yurutucu.cagrilar.push({ ad: c.ad, girdi: c.girdi, sinif: "arayuz", basarili }),
+    // AI-117: web'de kart notu modele gider; değerlendirme üretimle aynı girdiyi görsün.
+    kartlar: kanal !== "TELEGRAM",
   });
   // Kullanıcının gördüğü yanıt: mesajiIsle ile aynı onay notu eklenir.
   const cevap = talepNotuEkle(sonuc.cevap, sonuc.talepler.length, kanal === "TELEGRAM");

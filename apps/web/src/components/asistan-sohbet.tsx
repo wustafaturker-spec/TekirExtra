@@ -7,6 +7,7 @@ import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
 import { YzDosyalar, type AsistanDosyasi } from "./yz-dosyalar";
+import { YzTabloKartlari, type TabloKarti } from "./yz-tablo-karti";
 import { EKRAN_EYLEMLERI, EKRAN_ONERILERI, EKRAN_TURU_ADI, arayuzIsleyicisi, ekranDurumuOzeti, kayitlariVurgula, type AsistanBaglami, type GeriAl } from "@/lib/asistan-baglami";
 import type { ArayuzEylemi, ArayuzEylemSonucu, ArayuzSonucu, EkranDurumu } from "@tekirextra/shared";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,8 @@ interface Mesaj {
   kaynaklar?: FinansKaynagi[];
   /** AI-118: asistanın hazırladığı dosyalar. */
   dosyalar?: AsistanDosyasi[];
+  /** AI-117: araç çıktısından tablo/grafik kartları. */
+  kartlar?: TabloKarti[];
   kaynaklarKisaltildi?: boolean;
   id?: string;
   geriBildirim?: string | null;
@@ -71,6 +74,7 @@ interface AjanYaniti {
   arayuzEylemleri?: Array<ArayuzEylemi & { ozet: string }>;
   kaynaklar?: FinansKaynagi[];
   dosyalar?: AsistanDosyasi[];
+  kartlar?: TabloKarti[];
   kaynaklarKisaltildi?: boolean;
   mesajId?: string;
   oturumId?: string | null;
@@ -372,7 +376,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
   useEffect(() => {
     let iptal = false;
     void Promise.all([
-      api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; dosyalar?: AsistanDosyasi[]; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>("/ai/ajan/gecmis"),
+      api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; dosyalar?: AsistanDosyasi[]; kartlar?: TabloKarti[]; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>("/ai/ajan/gecmis"),
       api<OnayTalebi[]>("/ai/onay-talepleri"),
       api<SohbetOzeti[]>("/ai/ajan/sohbetler"),
     ])
@@ -383,7 +387,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
           .map((m) => ({
             anahtar: yeniAnahtar(),
             id: m.id, geriBildirim: m.geriBildirim, geriBildirimNotu: m.geriBildirimNotu,
-            kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi, dosyalar: m.dosyalar,
+            kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi, dosyalar: m.dosyalar, kartlar: m.kartlar,
             rol: m.rol as Mesaj["rol"],
             icerik: m.icerik,
             talepIdleri: m.talepIdleri,
@@ -407,11 +411,11 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
   async function sohbetAc(id: string) {
     setHata(null);
     await api(`/ai/ajan/sohbetler/${id}/etkinlestir`, { method: "POST" });
-    const gecmis = await api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; dosyalar?: AsistanDosyasi[]; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>(`/ai/ajan/gecmis?oturumId=${encodeURIComponent(id)}`);
+    const gecmis = await api<{ oturumId: string | null; mesajlar: Array<{ kaynaklar?: FinansKaynagi[]; kaynaklarKisaltildi?: boolean; dosyalar?: AsistanDosyasi[]; kartlar?: TabloKarti[]; id?: string; geriBildirim?: string | null; geriBildirimNotu?: string | null; rol: string; icerik: string; talepIdleri: string[]; secimler?: Secim[] }> }>(`/ai/ajan/gecmis?oturumId=${encodeURIComponent(id)}`);
     setMesajlar(gecmis.mesajlar.filter((m) => m.rol === "user" || m.rol === "assistant").map((m) => ({
       anahtar: yeniAnahtar(), rol: m.rol as Mesaj["rol"], icerik: m.icerik, talepIdleri: m.talepIdleri, secimler: m.secimler ?? [],
       id: m.id, geriBildirim: m.geriBildirim, geriBildirimNotu: m.geriBildirimNotu,
-      kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi, dosyalar: m.dosyalar,
+      kaynaklar: m.kaynaklar, kaynaklarKisaltildi: m.kaynaklarKisaltildi, dosyalar: m.dosyalar, kartlar: m.kartlar,
     })));
     setAktifSohbetId(gecmis.oturumId);
     setSohbetler(await api<SohbetOzeti[]>("/ai/ajan/sohbetler"));
@@ -517,7 +521,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
       });
       setMesajlar((m) => [
         ...m,
-        { anahtar: yeniAnahtar(), id: y.mesajId, ...(eylemler.length ? { eylemler } : {}), rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi, dosyalar: y.dosyalar,
+        { anahtar: yeniAnahtar(), id: y.mesajId, ...(eylemler.length ? { eylemler } : {}), rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi, dosyalar: y.dosyalar, kartlar: y.kartlar,
           ...(y.akisDuzeltildi ? { modelNotu: "Yanıt denetimde düzeltildi; doğrulanmış metin gösteriliyor." } : y.model?.not ? { modelNotu: y.model.not } : y.model?.derin ? { modelNotu: `Derin analiz · ${y.model.model ?? y.model.saglayici}` } : {}) },
       ]);
       if (y.onayTalepleri.length) onTalepDegisti?.();
@@ -778,6 +782,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
           <div className={`asistan__mesaj asistan__mesaj--${m.rol === "user" ? "kullanici" : "asistan"}`} key={m.anahtar}>
             <div className="asistan__balon">
               {baglantili(m.icerik)}
+              {m.rol === "assistant" && <YzTabloKartlari kartlar={m.kartlar} />}
               {m.rol === "assistant" && <YzDosyalar dosyalar={m.dosyalar} />}
               {m.rol === "assistant" && m.eylemler?.length ? (
                 <div className="asistan__eylemler" aria-label="Ekranda yapılanlar">
