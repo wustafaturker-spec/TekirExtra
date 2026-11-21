@@ -37,6 +37,9 @@ import { AiIptalHatasi, iptalSinyaliyle } from "../saglayici/aracli-ortak";
  */
 export type AkisOlayi =
   | { tur: "dusunuyor"; adim: number }
+  /** AI-116: son model turunda yanıt metni parça parça; `parca_sifirla` gösterilen parçaları siler. */
+  | { tur: "parca"; metin: string }
+  | { tur: "parca_sifirla" }
   | { tur: "arac"; ad: string; etiket: string; durum: "basladi" | "bitti" | "hata" };
 
 const ARAC_ETIKETI: Record<string, string> = {
@@ -110,6 +113,8 @@ interface DogrulanmisDurum {
 }
 
 export interface AjanYaniti {
+  /** AI-116: akan metin denetimde değişti; istemci gösterdiği metni `cevap` ile değiştirip not düşer. */
+  akisDuzeltildi?: boolean;
   finansAciklama?: FinansAciklama;
   kaynaklar?: FinansKaynagi[];
   kaynaklarKisaltildi?: boolean;
@@ -423,13 +428,13 @@ function durdurmaYaniti(talepSayisi: number): string {
     : "Yanıt durduruldu.";
 }
 
-/** AI-112: akışlı yanıtta istekten ilk olaya kadar geçen süre; akış yoksa ölçülmez. */
+/** AI-112/AI-116: akışlı yanıtta istekten ilk metin parçasına kadar geçen süre; metin akmazsa ölçülmez. */
 function ilkOlayiOlc(olay: ((e: AkisOlayi) => void) | undefined, kanal: AjanKanali): ((e: AkisOlayi) => void) | undefined {
   if (!olay) return undefined;
   const baslangic = Date.now();
   let olculdu = false;
   return (e) => {
-    if (!olculdu) { olculdu = true; aiMetrik.gozlemle("tekirextra_ai_ilk_parca_suresi_saniye", (Date.now() - baslangic) / 1000, { kanal }); }
+    if (!olculdu && e.tur === "parca") { olculdu = true; aiMetrik.gozlemle("tekirextra_ai_ilk_parca_suresi_saniye", (Date.now() - baslangic) / 1000, { kanal }); }
     olay(e);
   };
 }
@@ -576,7 +581,7 @@ export class AiAjanService {
       // AI-105: arka planda yalnız okuma (dosya dahil) araçları; yeniden çalışma çift kayıt üretmesin.
       const izinli = secenek.arkaPlan ? this.yurutucu.izinliAraclar(rol).filter((a) => a.sinif === "okuma")
         : telegram ? telegramAraclari(this.yurutucu.izinliAraclar(rol)) : arayuzAraclariniSec(this.yurutucu.izinliAraclar(rol, { arayuz: true }), { durum: ekran?.durum, mesaj: metin });
-      const { cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenler, arayuzEylemleri } = await this.dongu({
+      const { akisDuzeltildi, cevap: hamCevap, calisanlar, talepler, secimler, durumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenler, arayuzEylemleri } = await this.dongu({
         saglayici,
         sistemRol:
           asistanIstemi({ adSoyad: kullanici.adSoyad, rol, ozelTalimatlar, telegram }) +
@@ -607,12 +612,14 @@ export class AiAjanService {
         oturumId: oturum.id,
         ekranDurumu: ekran?.durum,
         olay: ilkOlayiOlc(secenek.olay, kanal),
+        // AI-116: yalnız web akışında; Telegram mesaj düzenleme sınırı nedeniyle tek mesaj alır, arka plan görevi akmaz.
+        akis: !telegram && !secenek.arkaPlan,
         sinyal: secenek.sinyal,
       });
       const cevap = talepNotuEkle(hamCevap, talepler.length, telegram);
       // AI-118: web'de dosya sohbet ekine yazılır (indirme yalnız sohbetin sahibine); Telegram doğrudan gönderir.
       const dosyalar = telegram ? [] : await this.dosyalariKaydet(oturum.id, uretilenler);
-      const yanit: AjanYaniti = { model: modelBilgisi, oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}), ...(dosyalar.length ? { dosyalar } : {}), ...(arayuzEylemleri.length ? { arayuzEylemleri } : {}) };
+      const yanit: AjanYaniti = { ...(akisDuzeltildi ? { akisDuzeltildi } : {}), model: modelBilgisi, oturumId: oturum.id, cevap, onayTalepleri: talepler, araclar: calisanlar, secimler, kaynaklar, kaynaklarKisaltildi, ...(finansAciklama ? { finansAciklama } : {}), ...(ekranOzeti ? { ekranKaydi: ekranOzeti } : {}), ...(dosyalar.length ? { dosyalar } : {}), ...(arayuzEylemleri.length ? { arayuzEylemleri } : {}) };
 
       await this.prisma.tenantIslem(tenantId, async (tx) => {
         if (!ayrilanId) await tx.ajanMesajGecmisi.create({ data: { oturumId: oturum.id, rol: "user", icerik: metin, kanal } });
@@ -729,6 +736,8 @@ export class AiAjanService {
     gruplar?: Set<AracGrubu>;
     /** AI-82: canlı adım olayları ve kullanıcının durdurması. */
     olay?: (e: AkisOlayi) => void;
+    /** AI-116: yanıt metni akabilir mi (yalnız web akışı; Telegram/MCP/görev/değerlendirme akmaz). */
+    akis?: boolean;
     sinyal?: AbortSignal;
     /** AI-114: arayüz eylemlerinin doğrulandığı ekran durumu. */
     ekranDurumu?: EkranDurumu;
@@ -740,7 +749,7 @@ export class AiAjanService {
     rakamKaynagi?: string;
     /** AI-111: her yakalamada (düzeltme ya da maskeleme) çağrılır; çağrı izine yazılır. */
     kaynaksizRakamIzi?: (adet: number) => void;
-  }): Promise<{ arayuzEylemleri: AsistanArayuzEylemi[]; cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama; dosyalar: UretilenDosya[] }> {
+  }): Promise<{ akisDuzeltildi?: boolean; arayuzEylemleri: AsistanArayuzEylemi[]; cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama; dosyalar: UretilenDosya[] }> {
     const aracHaritasi = new Map(g.izinli.map((a) => [a.ad, a]));
     // AI-84: süzgeç yalnız modele sunulan listeyi daraltır; yürütme rolün izinli araçlarıyla sınırlı kalır.
     const gruplar = g.gruplar;
@@ -765,6 +774,15 @@ export class AiAjanService {
     const arayuzEylemleri: AsistanArayuzEylemi[] = [];
     let duzeltmeIstendi = false;
     let rakamDuzeltmesiIstendi = false;
+    // AI-116: bu turda akan metin; tur sonunda araç çağrısı ya da düzeltme çıkarsa silinir.
+    let akanMetin = "";
+    let akisOldu = false;
+    const parcaSifirla = () => { if (akanMetin) { akanMetin = ""; g.olay?.({ tur: "parca_sifirla" }); } };
+    const parcaIsle = (m: string | null) => {
+      if (m === null) { parcaSifirla(); return; }
+      akanMetin += m; akisOldu = true;
+      g.olay?.({ tur: "parca", metin: m });
+    };
     /** Harici içerikte (gelen e-posta/e-Belge/OCR) geçen bağlantıların alan adları; yanıtta gizlenir. */
     const hariciAlanlar = new Set<string>();
     let hariciIcerikOkundu = false;
@@ -792,7 +810,11 @@ export class AiAjanService {
       try {
         for (let deneme = 0; ; deneme++) {
           try {
-            yanit = await g.saglayici.aracliSohbet(istek);
+            // AI-116: finans kaynağı alınmamış turda metin akar; finans turunda AI-103 gereği yanıt doğrulanıp tek parça gelir.
+            akanMetin = "";
+            yanit = g.akis && g.olay && !kaynaklar.length && g.saglayici.aracliSohbetAkis
+              ? await g.saglayici.aracliSohbetAkis(istek, parcaIsle)
+              : await g.saglayici.aracliSohbet(istek);
             if (yanit.metin.trim() || yanit.aracCagrilari.length) break;
             throw new AiBosYanitHatasi(g.saglayici.saglayiciAdi);
           } catch (hata) {
@@ -846,6 +868,7 @@ export class AiAjanService {
           if (!rakamDuzeltmesiIstendi && tur + 1 < EN_COK_TUR) {
             rakamDuzeltmesiIstendi = true;
             this.logger.warn(`Asistan yanıtında ${kaynaksiz.length} kaynaksız tutar/oran; düzeltme isteniyor`);
+            parcaSifirla();
             mesajlar.push({ rol: "asistan", metin: aday }, { rol: "kullanici", metin: KAYNAKSIZ_RAKAM_ISTEMI(kaynaksiz) });
           } else {
             this.logger.warn(`Asistan yanıtında ${kaynaksiz.length} kaynaksız tutar/oran kaldı; maskelendi`);
@@ -857,6 +880,7 @@ export class AiAjanService {
           // Bir kez düzeltme şansı: model ya aracı çağırır ya da yapmadığını söyler.
           duzeltmeIstendi = true;
           this.logger.warn(`Asistan yanıtı reddedildi (${neden}); düzeltme isteniyor`);
+          parcaSifirla();
           mesajlar.push({ rol: "asistan", metin: aday }, { rol: "kullanici", metin: DUZELTME_ISTEMI(neden) });
         } else {
           this.logger.warn(`Asistan yanıtı ikinci kez reddedildi (${neden}); güvenli yanıt verildi`);
@@ -864,6 +888,8 @@ export class AiAjanService {
         }
         continue;
       }
+      // Araç çağıran turun metni son yanıt değildir; akmışsa silinir.
+      parcaSifirla();
       mesajlar.push({ rol: "asistan", metin: yanit.metin, aracCagrilari: yanit.aracCagrilari, ham: yanit.ham });
       for (const cagri of yanit.aracCagrilari) {
         // AI-99: durdurulduktan sonra yeni araç çağrısı ya da onay talebi başlatılmaz; süren araç tamamlanır.
@@ -955,7 +981,10 @@ export class AiAjanService {
     const benzersizDurumlar = [...new Map(durumlar.map((x) => [`${x.tur}:${x.id}`, x])).values()].slice(-12);
     if (cevap === null && kaynaklar.length) ({ cevap, finansAciklama } = finansAciklamasiniDogrula(null, kaynaklar));
     const sonCevap = hariciBaglantilariGizle(cevap ?? "İşlem çok adım gerektirdi ve tamamlanamadı; talimatı daha küçük parçalara bölün.", hariciAlanlar, g.kullaniciTalebi);
-    return { cevap: sonCevap, calisanlar, talepler, secimler, durumlar: benzersizDurumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenDosyalar, arayuzEylemleri };
+    // AI-116: akan metin denetimde değiştiyse (maskeleme, bağlantı gizleme, güvenli yanıt) ekrandaki metin son metinle değiştirilir.
+    const akisDuzeltildi = akisOldu && akanMetin.trim() !== sonCevap.trim();
+    if (akisDuzeltildi) parcaSifirla();
+    return { akisDuzeltildi, cevap: sonCevap, calisanlar, talepler, secimler, durumlar: benzersizDurumlar, kaynaklar, kaynaklarKisaltildi, finansAciklama, dosyalar: uretilenDosyalar, arayuzEylemleri };
   }
 
   /** Kullanıcının asistan geçmişi (son mesajlar) ve bekleyen talepleri; sohbet penceresi açılırken. */

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
-import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
+import { aracGirdisiniAyristir, saglayiciAkisi, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * Yerel / Sunucu İçi Ollama Sağlayıcısı (Llama 3.2, DeepSeek-R1, Qwen2.5)
@@ -64,22 +64,46 @@ export class OllamaAiProvider implements IAiProvider {
     return veri.response || "";
   }
 
-  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+  private aracliGovde(girdi: AiAracliSohbetGirdisi, stream: boolean) {
     const messages: any[] = [{ role: "system", content: girdi.sistemRol }];
     for (const m of girdi.mesajlar) {
       if (m.rol === "kullanici") messages.push({ role: "user", content: m.metin });
       else if (m.rol === "asistan") messages.push(m.ham ?? { role: "assistant", content: m.metin });
       else messages.push({ role: "tool", tool_name: m.ad, content: m.icerik });
     }
-    const veri = await saglayiciIstegi("Ollama", `${this.baseUrl}/api/chat`, {}, {
+    return {
       model: this.model,
       messages,
-      stream: false,
+      stream,
       options: { temperature: 0.2 },
       tools: girdi.araclar.map((a) => ({ type: "function", function: { name: a.ad, description: a.aciklama, parameters: a.girdiSemasi } })),
+    };
+  }
+
+  /** AI-116: NDJSON akışı; her satırda `message.content` parçası, araç çağrıları ve kullanım son satırda. */
+  async aracliSohbetAkis(girdi: AiAracliSohbetGirdisi, onParca: (metin: string | null) => void): Promise<AiAracliYanit> {
+    let metin = "";
+    const cagrilar: any[] = [];
+    let son: any = {};
+    await saglayiciAkisi("Ollama", `${this.baseUrl}/api/chat`, {}, this.aracliGovde(girdi, true), "ndjson", (satir) => {
+      let p: any;
+      try { p = JSON.parse(satir); } catch { return; }
+      const icerik = p.message?.content;
+      if (typeof icerik === "string" && icerik) { metin += icerik; onParca(icerik); }
+      if (Array.isArray(p.message?.tool_calls)) cagrilar.push(...p.message.tool_calls);
+      if (p.done) son = p;
     });
+    this.kullanimiAl(son);
+    return this.yanitKur({ role: "assistant", content: metin, ...(cagrilar.length ? { tool_calls: cagrilar } : {}) });
+  }
+
+  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const veri = await saglayiciIstegi("Ollama", `${this.baseUrl}/api/chat`, {}, this.aracliGovde(girdi, false));
     this.kullanimiAl(veri);
-    const mesaj = veri.message ?? { role: "assistant", content: "" };
+    return this.yanitKur(veri.message ?? { role: "assistant", content: "" });
+  }
+
+  private yanitKur(mesaj: any): AiAracliYanit {
     const cagrilar: any[] = Array.isArray(mesaj.tool_calls) ? mesaj.tool_calls : [];
     return {
       metin: typeof mesaj.content === "string" ? mesaj.content.trim() : "",

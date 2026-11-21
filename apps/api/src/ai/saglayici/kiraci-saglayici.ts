@@ -171,6 +171,19 @@ class SayacliSaglayici implements IAiProvider {
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
     return this.olc("aracli_sohbet", girdi, (p) => p.aracliSohbet(girdi));
   }
+  /**
+   * AI-116: akışlı tur; aynı ölçüm, sınır ve yeniden deneme yolundan geçer. Yeniden denemede ya da
+   * yedek modele geçişte önceki denemenin akmış parçaları `null` ile geçersiz kılınır. Akış
+   * desteklemeyen model tek seferlik yanıt verir (parça akmaz).
+   */
+  async aracliSohbetAkis(girdi: AiAracliSohbetGirdisi, onParca: (metin: string | null) => void): Promise<AiAracliYanit> {
+    let akti = false;
+    return this.olc("aracli_sohbet", girdi, (p) => {
+      if (akti) { onParca(null); akti = false; }
+      if (!p.aracliSohbetAkis) return p.aracliSohbet(girdi);
+      return p.aracliSohbetAkis(girdi, (m) => { if (m !== null) akti = true; onParca(m); });
+    });
+  }
 }
 
 async function cagriSay(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, sinir: number, butce: ButceKurali): Promise<void> {

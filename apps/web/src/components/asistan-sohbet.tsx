@@ -66,6 +66,8 @@ interface Secim {
 interface SohbetOzeti { id: string; baslik: string | null; kanal?: string; sonEtkilesim: string; createdAt: string }
 
 interface AjanYaniti {
+  /** AI-116: akan metin denetimde değişti. */
+  akisDuzeltildi?: boolean;
   arayuzEylemleri?: Array<ArayuzEylemi & { ozet: string }>;
   kaynaklar?: FinansKaynagi[];
   dosyalar?: AsistanDosyasi[];
@@ -348,6 +350,8 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
   }
   // AI-82: yanıt hazırlanırken canlı araç adımları; Durdur bağlantıyı keser.
   const [adimlar, setAdimlar] = useState<{ ad: string; etiket: string; durum: "basladi" | "bitti" | "hata" }[]>([]);
+  // AI-116: son model turunda akan yanıt metni; son yanıt gelince yerini denetlenmiş metne bırakır.
+  const [akanMetin, setAkanMetin] = useState("");
   const durdurucu = useRef<AbortController | null>(null);
 
   // P-14a: ekrandan ilk talimatla açıldıysa otomatik gönderilir.
@@ -445,6 +449,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
       // Yanıt beklerken eklenen dosya bu mesaja girmez; yalnız gönderilenler kaldırılır.
       const gonderilenEkler = bekleyenEkler.map((e) => e.ekId);
       setAdimlar([]);
+      setAkanMetin("");
       if (arkaPlan) {
         // AI-105: mesaj kalıcı göreve dönüşür; sonuç bittiğinde sohbete ve bildirime düşer.
         const gorev = await api<AsistanGorevi>("/ai/ajan/gorevler", {
@@ -483,7 +488,9 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
           ...(derin ? { derin: true } : {}),
         },
         (olay, veri) => {
-          const e = veri as { tur?: string; ad?: string; etiket?: string; durum?: "basladi" | "bitti" | "hata" };
+          const e = veri as { tur?: string; ad?: string; etiket?: string; durum?: "basladi" | "bitti" | "hata"; metin?: string };
+          if (olay === "adim" && e?.tur === "parca" && typeof e.metin === "string") { setAkanMetin((m) => m + e.metin); return; }
+          if (olay === "adim" && e?.tur === "parca_sifirla") { setAkanMetin(""); return; }
           if (olay !== "adim" || e?.tur !== "arac" || !e.ad || !e.etiket || !e.durum) return;
           setAdimlar((o) => (e.durum === "basladi" ? [...o, { ad: e.ad!, etiket: e.etiket!, durum: "basladi" }] : o.map((a, i) => (i === o.map((x) => x.ad).lastIndexOf(e.ad!) ? { ...a, durum: e.durum! } : a))));
         }, durdur.signal);
@@ -505,7 +512,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
       setMesajlar((m) => [
         ...m,
         { anahtar: yeniAnahtar(), id: y.mesajId, ...(eylemler.length ? { eylemler } : {}), rol: "assistant", icerik: y.cevap, talepIdleri: y.onayTalepleri.map((x) => x.id), secimler: y.secimler ?? [], kaynaklar: y.kaynaklar, kaynaklarKisaltildi: y.kaynaklarKisaltildi, dosyalar: y.dosyalar,
-          ...(y.model?.not ? { modelNotu: y.model.not } : y.model?.derin ? { modelNotu: `Derin analiz · ${y.model.model ?? y.model.saglayici}` } : {}) },
+          ...(y.akisDuzeltildi ? { modelNotu: "Yanıt denetimde düzeltildi; doğrulanmış metin gösteriliyor." } : y.model?.not ? { modelNotu: y.model.not } : y.model?.derin ? { modelNotu: `Derin analiz · ${y.model.model ?? y.model.saglayici}` } : {}) },
       ]);
       if (y.onayTalepleri.length) onTalepDegisti?.();
     } catch (e) {
@@ -517,6 +524,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
     } finally {
       durdurucu.current = null;
       setAdimlar([]);
+      setAkanMetin("");
       setGonderiliyor(false);
     }
   }
@@ -818,6 +826,7 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, durum, onBagl
         ))}
         {gonderiliyor && (
           <div className="asistan__mesaj asistan__mesaj--asistan">
+            {akanMetin && <div className="asistan__balon asistan__balon--akis" aria-live="polite">{akanMetin}</div>}
             <div className="asistan__balon asistan__balon--bekliyor">
               {adimlar.length ? (
                 <ul className="asistan__adimlar">

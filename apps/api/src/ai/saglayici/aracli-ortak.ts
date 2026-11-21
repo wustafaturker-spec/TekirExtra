@@ -72,6 +72,48 @@ const GECICI_HTTP = new Set([408, 425, 429]);
 
 /** Sağlayıcıya zaman aşımlı JSON isteği; özel adreslerde DNS kontrolü ve yönlendirme yasağı uygulanır. */
 export async function saglayiciIstegi(ad: string, url: string, basliklar: Record<string, string>, govde: unknown, secenek: { dnsDogrula?: boolean } = {}): Promise<any> {
+  return (await istekGonder(ad, url, basliklar, govde, secenek)).json();
+}
+
+/**
+ * AI-116: akışlı istek. Gövde SSE (`data: …` satırları; `[DONE]` atlanır) ya da NDJSON satırları
+ * olarak okunur; her veri satırı `onVeri`'ye verilir. Zaman aşımı, iptal, yönlendirme ve HTTP
+ * hata kuralları tek seferlik istekle aynıdır; akış ortasında kopma sağlayıcı hatasıdır.
+ */
+export async function saglayiciAkisi(ad: string, url: string, basliklar: Record<string, string>, govde: unknown, bicim: "sse" | "ndjson", onVeri: (veri: string) => void, secenek: { dnsDogrula?: boolean } = {}): Promise<void> {
+  const yanit = await istekGonder(ad, url, basliklar, govde, secenek);
+  if (!yanit.body) throw new SaglayiciHatasi(`${ad} akış gövdesi döndürmedi.`, "ag");
+  const okuyucu = yanit.body.getReader();
+  const cozucu = new TextDecoder();
+  let tampon = "";
+  const satir = (s: string) => {
+    const t = s.replace(/\r$/, "");
+    if (bicim === "ndjson") { if (t.trim()) onVeri(t); return; }
+    if (!t.startsWith("data:")) return;
+    const veri = t.slice(5).trimStart();
+    if (veri && veri !== "[DONE]") onVeri(veri);
+  };
+  try {
+    for (;;) {
+      const { done, value } = await okuyucu.read();
+      if (done) break;
+      tampon += cozucu.decode(value, { stream: true });
+      let i: number;
+      while ((i = tampon.indexOf("\n")) >= 0) { satir(tampon.slice(0, i)); tampon = tampon.slice(i + 1); }
+    }
+    tampon += cozucu.decode();
+    if (tampon) satir(tampon);
+  } catch (hata) {
+    if (hata instanceof HttpException) throw hata;
+    if (iptalBaglami.getStore()?.aborted) throw new AiIptalHatasi();
+    logger.warn(`${ad} akışı kesildi: ${String(hata)}`);
+    throw new SaglayiciHatasi(`${ad} akışı yarıda kesildi.`, "ag");
+  } finally {
+    okuyucu.releaseLock();
+  }
+}
+
+async function istekGonder(ad: string, url: string, basliklar: Record<string, string>, govde: unknown, secenek: { dnsDogrula?: boolean }): Promise<Response> {
   let yanit: Response;
   const iptal = iptalBaglami.getStore();
   iptalEdildiyseDur();
@@ -104,7 +146,7 @@ export async function saglayiciIstegi(ad: string, url: string, basliklar: Record
     await yanit.body?.cancel().catch(() => undefined);
     throw new SaglayiciHatasi(`${ad} isteği reddetti (HTTP ${yanit.status}). Ayrıntı sunucu kaydında.`, "http", yanit.status);
   }
-  return yanit.json();
+  return yanit;
 }
 
 const IZINLI_ANAHTARLAR = new Set(["type", "description", "enum", "properties", "required", "items", "minimum", "maximum", "minItems", "maxItems", "nullable"]);

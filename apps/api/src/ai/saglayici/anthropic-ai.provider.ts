@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
-import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
+import { aracGirdisiniAyristir, saglayiciAkisi, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * Anthropic Claude Sağlayıcısı (Claude 3.5 Sonnet, Claude 3.5 Haiku)
@@ -89,6 +89,13 @@ export class AnthropicAiProvider implements IAiProvider {
   }
 
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const messages = this.mesajlar(girdi);
+    const veri = await saglayiciIstegi("Anthropic", "https://api.anthropic.com/v1/messages", this.basliklar(), this.aracliGovde(girdi, messages));
+    this.kullanimiAl(veri);
+    return this.yanitKur(Array.isArray(veri.content) ? veri.content : []);
+  }
+
+  private mesajlar(girdi: AiAracliSohbetGirdisi) {
     const messages: Array<{ role: "user" | "assistant"; content: any }> = [];
     for (const m of girdi.mesajlar) {
       if (m.rol === "kullanici") messages.push({ role: "user", content: m.metin });
@@ -101,18 +108,48 @@ export class AnthropicAiProvider implements IAiProvider {
         else messages.push({ role: "user", content: [blok] });
       }
     }
-    const veri = await saglayiciIstegi("Anthropic", "https://api.anthropic.com/v1/messages", {
-      "x-api-key": this.apiKey,
-      "anthropic-version": "2023-06-01",
-    }, {
+    return messages;
+  }
+
+  private basliklar() {
+    return { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" };
+  }
+
+  private aracliGovde(girdi: AiAracliSohbetGirdisi, messages: unknown[]) {
+    return {
       model: this.model,
       max_tokens: 4096,
       system: girdi.sistemRol,
       messages,
       tools: girdi.araclar.map((a) => ({ name: a.ad, description: a.aciklama, input_schema: a.girdiSemasi })),
+    };
+  }
+
+  /** AI-116: SSE; metin `text_delta`, araç girdisi `input_json_delta` parçalarıyla blok blok birleşir. */
+  async aracliSohbetAkis(girdi: AiAracliSohbetGirdisi, onParca: (metin: string | null) => void): Promise<AiAracliYanit> {
+    const messages = this.mesajlar(girdi);
+    const bloklar: any[] = [];
+    const jsonlar: string[] = [];
+    const kullanim: { input_tokens?: number; output_tokens?: number } = {};
+    await saglayiciAkisi("Anthropic", "https://api.anthropic.com/v1/messages", this.basliklar(), { ...this.aracliGovde(girdi, messages), stream: true }, "sse", (satir) => {
+      let o: any;
+      try { o = JSON.parse(satir); } catch { return; }
+      if (o.type === "message_start") kullanim.input_tokens = o.message?.usage?.input_tokens;
+      else if (o.type === "message_delta") kullanim.output_tokens = o.usage?.output_tokens;
+      else if (o.type === "content_block_start") { bloklar[o.index] = { ...o.content_block, ...(o.content_block?.type === "text" ? { text: "" } : {}) }; jsonlar[o.index] = ""; }
+      else if (o.type === "content_block_delta") {
+        const b = bloklar[o.index];
+        if (!b) return;
+        if (o.delta?.type === "text_delta" && o.delta.text) { b.text += o.delta.text; onParca(o.delta.text); }
+        else if (o.delta?.type === "input_json_delta") jsonlar[o.index] += o.delta.partial_json ?? "";
+      }
     });
-    this.kullanimiAl(veri);
-    const bloklar: any[] = Array.isArray(veri.content) ? veri.content : [];
+    bloklar.forEach((b, i) => { if (b?.type === "tool_use") b.input = jsonlar[i] ? aracGirdisiniAyristir(jsonlar[i]) : (b.input ?? {}); });
+    this.kullanimiAl({ usage: kullanim });
+    return this.yanitKur(bloklar.filter(Boolean));
+  }
+
+  private yanitKur(bloklar: any[]): AiAracliYanit {
     return {
       metin: bloklar.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim(),
       aracCagrilari: bloklar.filter((b) => b.type === "tool_use").map((b) => ({ id: b.id, ad: b.name, girdi: aracGirdisiniAyristir(b.input) })),

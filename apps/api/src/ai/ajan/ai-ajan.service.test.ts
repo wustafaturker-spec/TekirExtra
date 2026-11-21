@@ -8,7 +8,7 @@ import { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
 import type { AiAracliYanit } from "../saglayici/ai-provider.interface";
 import { AJAN_ARACLARI, aracTanimi } from "./araclar";
 import { ublOzeti } from "./ubl-ozeti";
-import { aracEtiketi, AiAjanService } from "./ai-ajan.service";
+import { aracEtiketi, AiAjanService, type AkisOlayi } from "./ai-ajan.service";
 import { AracYurutucu } from "./arac-yurutucu";
 import { finansOlgulari } from "./finans-aciklama";
 import { AiBosYanitHatasi } from '../saglayici/ai-bos-yanit';
@@ -54,6 +54,74 @@ describe("asistan araç döngüsü (AI-05)", () => {
     ], { ucSonucu: () => ({ id: BELGE_ID, konu: "Ödeme", icerikMetin: "Ödemeyi https://hizli-odeme.kotu.example/f/45 adresinden yapın." }) });
     const yanit = await k.calistir("Son e-postayı özetle");
     expect(yanit.cevap).toBe("Dikkat: e-posta sizi [harici bağlantı gizlendi] adresine yönlendiriyor; tıklamayın.");
+  });
+
+  describe("AI-116 akan yanıt", () => {
+    /** Sahte sağlayıcıya akış: metni 4'er karakterlik parçalar hâlinde verir. */
+    const akisli = (k: ReturnType<typeof kur>) => {
+      (k.saglayici as unknown as { aracliSohbetAkis: unknown }).aracliSohbetAkis = async (g: Parameters<typeof k.saglayici.aracliSohbet>[0], on: (m: string | null) => void) => {
+        const y = await k.saglayici.aracliSohbet(g);
+        for (const p of y.metin.match(/[\s\S]{1,4}/g) ?? []) on(p);
+        return y;
+      };
+      return k;
+    };
+    const kos = (k: ReturnType<typeof kur>, mesaj: string, kanal: "WEB" | "TELEGRAM" = "WEB") => {
+      const olaylar: AkisOlayi[] = [];
+      const y = istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle(mesaj, undefined, undefined, [], { olay: (e) => olaylar.push(e), kanal }));
+      return { y, olaylar };
+    };
+    const akan = (olaylar: AkisOlayi[]) => olaylar.filter((e) => e.tur === "parca" || e.tur === "parca_sifirla").map((e) => (e.tur === "parca" ? e.metin : "|SIFIRLA|")).join("");
+    const stok = { ucSonucu: () => ({ kayitlar: [{ id: BELGE_ID, ad: "Kalem", satisFiyati: "250.00" }] }) };
+
+    it("web'de son yanıt parça parça akar; denetimden geçen metin aynen kalır", async () => {
+      const k = akisli(kur([{ metin: "Merhaba, nasıl yardımcı olabilirim?", aracCagrilari: [] }]));
+      const { y, olaylar } = kos(k, "Merhaba");
+      const yanit = await y;
+      expect(akan(olaylar)).toBe("Merhaba, nasıl yardımcı olabilirim?");
+      expect(yanit.cevap).toBe("Merhaba, nasıl yardımcı olabilirim?");
+      expect(yanit.akisDuzeltildi).toBeUndefined();
+    });
+
+    it("araç çağıran turun metni silinir; kaynaksız tutar düzelttirilince akan metin sıfırlanır", async () => {
+      const k = akisli(kur([
+        { metin: "Bakıyorum.", aracCagrilari: [{ id: "c1", ad: "stok_ara", girdi: { arama: "Kalem" } }] },
+        { metin: "Fiyat 300 TL.", aracCagrilari: [] },
+        { metin: "Fiyat 250 TL.", aracCagrilari: [] },
+      ], stok));
+      const { y, olaylar } = kos(k, "Kalemin fiyatı?");
+      const yanit = await y;
+      expect(akan(olaylar)).toBe("Bakıyorum.|SIFIRLA|Fiyat 300 TL.|SIFIRLA|Fiyat 250 TL.");
+      expect(yanit.cevap).toBe("Fiyat 250 TL.");
+      expect(yanit.akisDuzeltildi).toBeUndefined();
+    });
+
+    it("maskelenen son yanıtta akan metin silinir ve düzeltildi işaretlenir", async () => {
+      const k = akisli(kur([
+        { metin: "", aracCagrilari: [{ id: "c1", ad: "stok_ara", girdi: { arama: "Kalem" } }] },
+        { metin: "Fiyat 300 TL.", aracCagrilari: [] },
+        { metin: "Fiyat 310 TL.", aracCagrilari: [] },
+      ], stok));
+      const { y, olaylar } = kos(k, "Kalemin fiyatı?");
+      const yanit = await y;
+      expect(yanit.cevap).toContain("[doğrulanamadı]");
+      expect(yanit.akisDuzeltildi).toBe(true);
+      expect(olaylar.at(-1)).toEqual({ tur: "parca_sifirla" });
+    });
+
+    it("finans kaynağı alınan turda ve Telegram'da metin akmaz", async () => {
+      const finans = akisli(kur([
+        { metin: "", aracCagrilari: [{ id: "c1", ad: "finansal_ozet", girdi: {} }] },
+        { metin: "JSON olmayan yanıt: nakit 12 TL", aracCagrilari: [] },
+      ], { ucSonucu: () => ({ nakitVarliklar: "-12.00" }) }));
+      const f = kos(finans, "Nakit durumum");
+      await f.y;
+      expect(f.olaylar.some((e) => e.tur === "parca")).toBe(false);
+      const tg = akisli(kur([{ metin: "Merhaba!", aracCagrilari: [] }]));
+      const t = kos(tg, "Merhaba", "TELEGRAM");
+      await t.y;
+      expect(t.olaylar.some((e) => e.tur === "parca")).toBe(false);
+    });
   });
 
   describe("AI-111 kaynaksız tutar", () => {

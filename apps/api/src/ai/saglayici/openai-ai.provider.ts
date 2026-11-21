@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
-import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
+import { aracGirdisiniAyristir, saglayiciAkisi, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * OpenAI API / Azure OpenAI Uyumlu Sağlayıcı (GPT-4o, GPT-4o-mini)
@@ -102,19 +102,64 @@ export class OpenAiAiProvider implements IAiProvider {
     }
   }
 
-  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+  private aracliGovde(girdi: AiAracliSohbetGirdisi) {
     const messages: any[] = [{ role: "system", content: girdi.sistemRol }];
     for (const m of girdi.mesajlar) {
       if (m.rol === "kullanici") messages.push({ role: "user", content: m.metin });
       else if (m.rol === "asistan") messages.push(m.ham ?? { role: "assistant", content: m.metin });
       else messages.push({ role: "tool", tool_call_id: m.cagriId, content: m.icerik });
     }
-    const veri = await saglayiciIstegi("OpenAI", `${this.baseUrl}/chat/completions`, { Authorization: `Bearer ${this.apiKey}` }, {
+    return {
       model: this.model,
       messages,
       temperature: 0.2,
       tools: girdi.araclar.map((a) => ({ type: "function", function: { name: a.ad, description: a.aciklama, parameters: a.girdiSemasi } })),
-    }, { dnsDogrula: this.dnsDogrula });
+    };
+  }
+
+  /**
+   * AI-116: akışlı tur. Metin parçaları `delta.content`, araç çağrıları `delta.tool_calls`
+   * (index'e göre birleşir) olarak gelir; kullanım son parçada (`include_usage`). Bu seçeneği
+   * tanımayan OpenAI uyumlu sunucuda (HTTP 400) seçeneksiz yeniden istenir.
+   */
+  async aracliSohbetAkis(girdi: AiAracliSohbetGirdisi, onParca: (metin: string | null) => void): Promise<AiAracliYanit> {
+    let metin = "";
+    const cagrilar: Array<{ id?: string; ad: string; arguman: string }> = [];
+    let kullanim: any = null;
+    const oku = (satir: string) => {
+      let parca: any;
+      try { parca = JSON.parse(satir); } catch { return; }
+      if (parca.usage) kullanim = parca.usage;
+      const delta = parca.choices?.[0]?.delta;
+      if (!delta) return;
+      if (typeof delta.content === "string" && delta.content) { metin += delta.content; onParca(delta.content); }
+      for (const c of Array.isArray(delta.tool_calls) ? delta.tool_calls : []) {
+        const i = typeof c.index === "number" ? c.index : cagrilar.length;
+        cagrilar[i] ??= { ad: "", arguman: "" };
+        if (c.id) cagrilar[i].id = c.id;
+        if (c.function?.name) cagrilar[i].ad += c.function.name;
+        if (c.function?.arguments) cagrilar[i].arguman += c.function.arguments;
+      }
+    };
+    const iste = (ek: Record<string, unknown>) => saglayiciAkisi("OpenAI", `${this.baseUrl}/chat/completions`, { Authorization: `Bearer ${this.apiKey}` }, { ...this.aracliGovde(girdi), stream: true, ...ek }, "sse", oku, { dnsDogrula: this.dnsDogrula });
+    try {
+      await iste({ stream_options: { include_usage: true } });
+    } catch (hata) {
+      if (!(hata instanceof Error && hata.message.includes("(HTTP 400)")) || metin || cagrilar.length) throw hata;
+      await iste({});
+    }
+    this.kullanimiAl({ usage: kullanim });
+    const tamamlar = cagrilar.filter(Boolean).map((c, i) => ({ id: c.id ?? `cagri-${i}`, type: "function", function: { name: c.ad, arguments: c.arguman || "{}" } }));
+    const ham = { role: "assistant", content: metin || null, ...(tamamlar.length ? { tool_calls: tamamlar } : {}) };
+    return {
+      metin: metin.trim(),
+      aracCagrilari: tamamlar.map((c) => ({ id: c.id, ad: c.function.name, girdi: aracGirdisiniAyristir(c.function.arguments) })),
+      ham,
+    };
+  }
+
+  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const veri = await saglayiciIstegi("OpenAI", `${this.baseUrl}/chat/completions`, { Authorization: `Bearer ${this.apiKey}` }, this.aracliGovde(girdi), { dnsDogrula: this.dnsDogrula });
     this.kullanimiAl(veri);
     const mesaj = veri.choices?.[0]?.message ?? { role: "assistant", content: "" };
     const cagrilar: any[] = Array.isArray(mesaj.tool_calls) ? mesaj.tool_calls : [];

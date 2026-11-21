@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
-import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
+import { aracGirdisiniAyristir, saglayiciAkisi, saglayiciIstegi } from "./aracli-ortak";
 import { AiBosYanitHatasi, geminiYanitTanisi, geminiYanitEngelli } from './ai-bos-yanit';
 
 /**
@@ -180,6 +180,31 @@ export class GeminiAiProvider implements IAiProvider {
   }
 
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    // Anahtar URL'de değil başlıkta gider (AI-11).
+    const veri = await saglayiciIstegi("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, { "x-goog-api-key": this.apiKey }, this.aracliGovde(girdi));
+    return this.yanitKur(veri);
+  }
+
+  /**
+   * AI-116: `streamGenerateContent` (SSE); her parça kısmi bir yanıttır. Parçalar sırasıyla
+   * birleşir, bitiş nedeni ve kullanım son parçadan alınır; sonuç tek seferlik yanıtla aynı yoldan kurulur.
+   */
+  async aracliSohbetAkis(girdi: AiAracliSohbetGirdisi, onParca: (metin: string | null) => void): Promise<AiAracliYanit> {
+    const parcalar: any[] = [];
+    let son: any = {};
+    await saglayiciAkisi("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse`, { "x-goog-api-key": this.apiKey }, this.aracliGovde(girdi), "sse", (satir) => {
+      let o: any;
+      try { o = JSON.parse(satir); } catch { return; }
+      son = o;
+      for (const p of o?.candidates?.[0]?.content?.parts ?? []) {
+        parcalar.push(p);
+        if (typeof p?.text === "string" && p.text && !p.thought) onParca(p.text);
+      }
+    });
+    return this.yanitKur({ ...son, candidates: [{ ...(son?.candidates?.[0] ?? {}), content: { role: "model", parts: parcalar } }] });
+  }
+
+  private aracliGovde(girdi: AiAracliSohbetGirdisi) {
     const contents: Array<{ role: "user" | "model"; parts: any[] }> = [];
     for (const m of girdi.mesajlar) {
       if (m.rol === "kullanici") contents.push({ role: "user", parts: [{ text: m.metin }] });
@@ -200,13 +225,15 @@ export class GeminiAiProvider implements IAiProvider {
         mergedContents.push({ role: c.role, parts: [...c.parts] });
       }
     }
-    // Anahtar URL'de değil başlıkta gider (AI-11).
-    const veri = await saglayiciIstegi("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, { "x-goog-api-key": this.apiKey }, {
+    return {
       systemInstruction: { parts: [{ text: girdi.sistemRol }] },
       contents: mergedContents,
       tools: [{ functionDeclarations: girdi.araclar.map((a) => ({ name: a.ad, description: a.aciklama, parameters: a.girdiSemasi })) }],
       generationConfig: { temperature: 0.2 },
-    });
+    };
+  }
+
+  private yanitKur(veri: any): AiAracliYanit {
     this.kullanimiAl(veri);
     const icerik = veri?.candidates?.[0]?.content ?? { role: "model", parts: [] };
     const parcalar: any[] = Array.isArray(icerik.parts) ? icerik.parts : [];

@@ -4640,6 +4640,7 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .asistan__balon { white-space: pre-wrap; overflow-wrap: anywhere; padding: .6rem .8rem; border-radius: var(--radius-lg); font-size: .9rem; line-height: 1.45; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
 .asistan__mesaj--kullanici .asistan__balon { background: var(--accent-soft); border-color: var(--accent-soft); }
 .asistan__balon--bekliyor { color: var(--text-muted); font-style: italic; }
+.asistan__balon--akis { white-space: pre-wrap; margin-bottom: 0.375rem; }
 .asistan__girdi { display: flex; gap: .5rem; }
 .asistan__girdi .input, .asistan__girdi input { flex: 1; min-width: 0; }
 .asistan__sohbet-araclari { display: flex; gap: .4rem; align-items: center; }

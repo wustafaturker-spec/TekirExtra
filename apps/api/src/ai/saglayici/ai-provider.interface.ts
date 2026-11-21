@@ -85,4 +85,11 @@ export interface IAiProvider {
    * birkaç araç çağrısı döner; araç sonuçları bir sonraki çağrıda verilir.
    */
   aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit>;
+
+  /**
+   * AI-116: aynı tur, metin parçaları geldikçe `onParca`'ya verilerek. `null` daha önce verilen
+   * parçaların geçersiz olduğunu bildirir (yeniden deneme ya da yedek modele geçiş). Sonuç
+   * `aracliSohbet` ile aynıdır. Desteklemeyen sağlayıcıda tanımsızdır; çağıran tek seferlik yolu kullanır.
+   */
+  aracliSohbetAkis?(girdi: AiAracliSohbetGirdisi, onParca: (metin: string | null) => void): Promise<AiAracliYanit>;
 }
