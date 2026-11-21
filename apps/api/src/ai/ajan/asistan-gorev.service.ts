@@ -1,4 +1,5 @@
 import { BadRequestException, HttpException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import { PrismaClient, type AiAsistanGorevi } from "@prisma/client";
 import { ekranDurumunuAyristir } from "@tekirextra/shared";
 import { randomUUID } from "node:crypto";
@@ -55,6 +56,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** AI-106: görev durum olayı; yalnız "tamamlandi" ve "hata" bildirime dönüşür. */
 function durumOlayi(g: Pick<AiAsistanGorevi, "id" | "tenantId" | "userId" | "mesaj">, durum: string, hata?: string) {
+  // AI-112: olay yalnız durum gerçekten değiştiğinde (atomik güncelleme tuttuğunda) üretilir.
+  aiMetrik.artir("tekirextra_ai_gorev_toplam", { durum });
   return {
     tenantId: g.tenantId, topluTur: "asistan_gorevi" as const, topluId: g.id, tur: "asistan_gorevi.durum" as const,
     yuk: { userId: g.userId, durum, konu: g.mesaj.replace(/\s+/g, " ").slice(0, 80), ...(hata ? { hata } : {}) },

@@ -1,4 +1,5 @@
 import { OnayGerekliHatasi } from "../../onay/onay-kurallari";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, forwardRef } from "@nestjs/common";
 import type { AiIslemKaynagi, AiOnayTalebi, Prisma } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
@@ -25,7 +26,10 @@ const CAKISMA_METNI: Record<CakismaKodu, string> = {
   ZATEN_SONUCLANDI: "Bu talep zaten karara bağlandı.",
   SURESI_DOLDU: "Talebin süresi doldu; işlemi yeniden isteyin.",
 };
-export const cakisma = (kod: CakismaKodu) => new ConflictException({ message: CAKISMA_METNI[kod], kod });
+export const cakisma = (kod: CakismaKodu) => {
+  aiMetrik.artir("tekirextra_ai_onay_cakisma_toplam", { kod });
+  return new ConflictException({ message: CAKISMA_METNI[kod], kod });
+};
 
 /**
  * AI-108: Telegram'dan finansal onay ret nedenleri. WEB_GEREKLI: firma ayarı kapalı ya da
@@ -283,6 +287,7 @@ export class AiOnayService {
 
   /** AI-107: talep başına tek karar kaydı (tekil); içerik değil sürüm ve özet yazılır. */
   private async kararYaz(tx: Prisma.TransactionClient, talep: AiOnayTalebi, karar: "onaylandi" | "reddedildi", kararVerenId: string, kanal: KararKanali, ekDogrulama = false): Promise<void> {
+    aiMetrik.artir("tekirextra_ai_onay_karari_toplam", { karar, kanal });
     await tx.aiOnayKarari.create({ data: { tenantId: talep.tenantId, talepId: talep.id, karar, kararVerenId, kanal, ekDogrulama, surum: talep.surum, parametreOzeti: talep.parametreOzeti ?? icerikOzeti(talep.parametreler ?? {}) } });
   }
 

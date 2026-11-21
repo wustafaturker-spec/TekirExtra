@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { aiMetrik } from "./ai-metrikleri";
 
 @Injectable()
 export class MetricsService {
@@ -48,6 +49,7 @@ export class MetricsService {
       `http_request_duration_seconds_count ${this.durations.count}`,
       `http_request_duration_seconds_sum ${this.durations.sum}`,
     );
-    return `${lines.join("\n")}\n`;
+    // AI-112: yapay zekâ metrikleri aynı uçtan.
+    return `${lines.join("\n")}\n${aiMetrik.render()}`;
   }
 }

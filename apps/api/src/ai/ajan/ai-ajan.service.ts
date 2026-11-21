@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, Optional } from "@nestjs/common";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import { KAYNAKSIZ_RAKAM_ISTEMI, kaynaksizRakamlar, rakamlariMaskele } from "./kaynaksiz-rakam";
 import { aiOzellikDenetle } from "../ozellik-kapisi";
 import { Prisma } from "@prisma/client";
@@ -422,6 +423,17 @@ function durdurmaYaniti(talepSayisi: number): string {
     : "Yanıt durduruldu.";
 }
 
+/** AI-112: akışlı yanıtta istekten ilk olaya kadar geçen süre; akış yoksa ölçülmez. */
+function ilkOlayiOlc(olay: ((e: AkisOlayi) => void) | undefined, kanal: AjanKanali): ((e: AkisOlayi) => void) | undefined {
+  if (!olay) return undefined;
+  const baslangic = Date.now();
+  let olculdu = false;
+  return (e) => {
+    if (!olculdu) { olculdu = true; aiMetrik.gozlemle("tekirextra_ai_ilk_parca_suresi_saniye", (Date.now() - baslangic) / 1000, { kanal }); }
+    olay(e);
+  };
+}
+
 @Injectable()
 export class AiAjanService {
   private readonly logger = new Logger(AiAjanService.name);
@@ -594,7 +606,7 @@ export class AiAjanService {
         kaynaksizRakamIzi: () => this.kaynaksizRakamYaz(tenantId, userId, saglayici),
         oturumId: oturum.id,
         ekranDurumu: ekran?.durum,
-        olay: secenek.olay,
+        olay: ilkOlayiOlc(secenek.olay, kanal),
         sinyal: secenek.sinyal,
       });
       const cevap = talepNotuEkle(hamCevap, talepler.length, telegram);
@@ -677,6 +689,7 @@ export class AiAjanService {
    * Yazılamazsa yanıt etkilenmez.
    */
   private kaynaksizRakamYaz(tenantId: string, userId: string, saglayici: IAiProvider): void {
+    aiMetrik.artir("tekirextra_ai_kaynaksiz_rakam_toplam");
     void this.prisma.tenantIslem(tenantId, (tx) => tx.aiCagriIz.create({ data: {
       tenantId, userId, ozellik: "asistan", saglayici: saglayici.saglayiciAdi, model: saglayici.modelAdi ?? null,
       islem: "yanit_denetimi", sureMs: 0, basarili: false, hataSinifi: "kaynaksiz_rakam", maliyetUsd: 0,
@@ -866,6 +879,7 @@ export class AiAjanService {
         }
         const secilenArac = aracHaritasi.get(cagri.ad);
         if (hariciIcerikOkundu && secilenArac && secilenArac.sinif !== "okuma" && !acikYazmaIstegi) {
+          aiMetrik.artir("tekirextra_ai_arac_ret_toplam", { neden: "harici_icerik" });
           calisanlar.push({ ad: cagri.ad, sinif: secilenArac.sinif, basarili: false });
           mesajlar.push({
             rol: "arac_sonucu", cagriId: cagri.id, ad: cagri.ad, hata: true,
@@ -886,6 +900,7 @@ export class AiAjanService {
             });
           calisanlar.push({ ad: cagri.ad, sinif: "arayuz", basarili: !("hata" in h) });
           g.arayuzIzi?.({ ad: cagri.ad, girdi: cagri.girdi ?? {} }, !("hata" in h));
+          aiMetrik.artir("tekirextra_ai_arayuz_eylemi_toplam", { eylem: cagri.ad, sonuc: "hata" in h ? "reddedildi" : "basarili" });
           const icerik = "hata" in h
             ? `Hata: ${h.hata} Hiçbir şey uygulanmadı.`
             : JSON.stringify({ basarili: true, eylem: h.eylem.tur, ozet: h.ozet, ...(h.eylem.tur === "sayfaya_git" ? { adres: h.eylem.yol } : {}), not: "Eylem yanıtla birlikte kullanıcının ekranında uygulanacak; kullanıcı geri alabilir. Kayıt oluşturulmadı, form kaydedilmedi." });

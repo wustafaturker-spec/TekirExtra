@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import type { Rol } from "@tekirextra/shared";
 import { baglamAl } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
@@ -193,6 +194,7 @@ export class AracYurutucu {
   ): Promise<AracSonucu> {
     const arac = izinli.get(cagri.ad);
     if (!arac) {
+      aiMetrik.artir("tekirextra_ai_arac_ret_toplam", { neden: aracBul(cagri.ad) ? "yetki" : "izinsiz_arac" });
       if (aracBul(cagri.ad)) return { icerik: `Kullanıcının rolü "${cagri.ad}" işlemine yetkili değil; bu işlemi yapamazsın.`, hata: true };
       // Canlıda Gemini adı kesik yazdı ("belge_taslagi_olust"): en yakın adı önerip yeniden denetir.
       const oneri = [...izinli.keys()].find((ad) => cagri.ad && (ad.startsWith(cagri.ad) || cagri.ad.startsWith(ad)));
@@ -207,6 +209,7 @@ export class AracYurutucu {
     }
     const ayristirma = arac.girdi.safeParse(cozulenGirdi);
     if (!ayristirma.success) {
+      aiMetrik.artir("tekirextra_ai_arac_ret_toplam", { neden: "gecersiz_girdi" });
       return {
         icerik: `Geçersiz parametre: ${ayristirma.error.issues.map((s) => `${s.path.join(".")}: ${s.message}`).join("; ")}. ` +
           "Kimlik (…Id) alanları arama araçlarının döndürdüğü UUID olmalıdır; elinde belge numarası ya da ad varsa önce ilgili arama aracını çağır.",

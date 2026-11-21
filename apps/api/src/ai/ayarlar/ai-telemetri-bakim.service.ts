@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
 import { baglamlaCalistir } from "../../core/istek-baglami";
@@ -9,6 +10,9 @@ import { nabizla } from "../../core/nabiz/nabiz";
 import { SISTEM_USER_ID } from "../../core/sistem-kimligi";
 
 const BIR_SAAT_MS = 60 * 60 * 1000;
+const BES_DAKIKA_MS = 5 * 60 * 1000;
+/** AI-112: bütçe uyarısının eşiği (aylık bütçenin oranı). */
+export const BUTCE_UYARI_ORANI = 0.8;
 const IDEMPOTENCY_SAKLAMA_GUN = 7;
 const ONAY_KAYDI_SAKLAMA_GUN = 90;
 /** AI-24 */
@@ -20,6 +24,7 @@ const ASGARI_ORNEK = 10;
 export class AiTelemetriBakimService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AiTelemetriBakimService.name);
   private zamanlayici?: NodeJS.Timeout;
+  private butceZamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
   constructor(private readonly prisma: PrismaService, private readonly bildirimler: BildirimService) {}
@@ -28,9 +33,34 @@ export class AiTelemetriBakimService implements OnModuleInit, OnModuleDestroy {
     if (process.env.TEKIR_WORKER !== "1") return;
     setImmediate(() => void nabizla("ai-telemetri-bakim", () => this.calistir()));
     this.zamanlayici = setInterval(() => void nabizla("ai-telemetri-bakim", () => this.calistir(), BIR_SAAT_MS), BIR_SAAT_MS);
+    // AI-112: bütçe eşiği göstergesi (Prometheus uyarısı); yalnız sayı, firma etiketi yok.
+    const butce = () => void this.butceEsiginiOlc().catch((h: unknown) => this.logger.warn(`Bütçe eşiği ölçülemedi: ${String(h)}`));
+    setImmediate(butce);
+    this.butceZamanlayici = setInterval(butce, BES_DAKIKA_MS);
   }
 
-  onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }
+  onModuleDestroy(): void {
+    if (this.zamanlayici) clearInterval(this.zamanlayici);
+    if (this.butceZamanlayici) clearInterval(this.butceZamanlayici);
+  }
+
+  /** Bu ay maliyeti aylık bütçesinin %80'ine ulaşmış firma sayısı (yönetim bağlantısıyla, firmalar arası). */
+  async butceEsiginiOlc(simdi = new Date(), db?: Pick<PrismaClient, "$queryRaw">): Promise<number> {
+    const url = process.env.DATABASE_URL_MIGRATE;
+    if (!db && !url) return 0;
+    const yonetim = db ?? new PrismaClient({ datasourceUrl: url });
+    try {
+      const [r] = await yonetim.$queryRaw<{ adet: number }[]>`
+        SELECT count(*)::int AS adet FROM tenant_ai_ayarlari a
+        WHERE a.aylik_maliyet_butcesi_usd > 0
+          AND (SELECT coalesce(sum(i.maliyet_usd), 0) FROM ai_cagri_izleri i WHERE i.tenant_id = a.tenant_id AND i.created_at >= ${istanbulAyBaslangici(simdi)})
+              >= a.aylik_maliyet_butcesi_usd * ${BUTCE_UYARI_ORANI}`;
+      aiMetrik.ayarla("tekirextra_ai_butce_esigi_asan_firma", r?.adet ?? 0);
+      return r?.adet ?? 0;
+    } finally {
+      if (!db) await (yonetim as PrismaClient).$disconnect();
+    }
+  }
 
   private async tenantIdleriAl(): Promise<string[]> {
     const url = process.env.DATABASE_URL_MIGRATE;

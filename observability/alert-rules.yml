@@ -59,3 +59,41 @@ groups:
         annotations:
           summary: "e-Belge periyodik planlayıcısı hata verdi"
           description: "Son 15 dakikada tenant e-Belge planlama çalışması başarısız oldu."
+  # AI-112: yapay zekâ metrikleri api ve worker /metrics uçlarından gelir; etiketlerde firma/kullanıcı yoktur.
+  - name: tekirextra-ai
+    rules:
+      - alert: TekirAiHighErrorRate
+        expr: sum(increase(tekirextra_ai_cagri_toplam{sonuc="hata"}[15m])) / clamp_min(sum(increase(tekirextra_ai_cagri_toplam[15m])), 1) > 0.2 and sum(increase(tekirextra_ai_cagri_toplam[15m])) >= 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Yapay zekâ çağrılarında hata oranı yüksek"
+          description: "Son 15 dakikada model çağrılarının %20'sinden fazlası hatayla bitti (en az 10 çağrı)."
+      - alert: TekirAiSlowResponses
+        expr: histogram_quantile(0.95, sum by (le) (rate(tekirextra_ai_cagri_suresi_saniye_bucket[15m]))) > 30
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Yapay zekâ yanıt süresi yüksek"
+          description: "Model çağrılarının p95 süresi 15 dakikadır 30 saniyenin üzerinde."
+      - alert: TekirAiEventDeliveryDelayed
+        expr: histogram_quantile(0.95, sum by (le) (rate(tekirextra_ai_olay_gecikmesi_saniye_bucket[10m]))) > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "AI olay teslimi gecikiyor"
+          description: "Onay ve arka plan analizi bildirimlerinin p95 teslim gecikmesi 5 dakikayı aştı (AI-106 teslimatçısı)."
+      - alert: TekirAiBudgetThreshold
+        expr: max(tekirextra_ai_butce_esigi_asan_firma{job="tekirextra-worker"}) > 0
+        for: 5m
+        labels: { severity: info }
+        annotations:
+          summary: "Firma yapay zekâ bütçesinin %80'ine ulaştı"
+          description: "{{ $value }} firmanın bu ayki yapay zekâ maliyeti aylık bütçesinin %80'ini geçti; firmalar Platform › Yapay zekâ ekranında görünür."
+      - alert: TekirAiUnsourcedNumbersSpike
+        expr: sum(increase(tekirextra_ai_kaynaksiz_rakam_toplam[1h])) > 20
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Kaynaksız tutar yakalamaları arttı"
+          description: "Son bir saatte 20'den fazla yanıtta kaynağı bulunmayan tutar/oran yakalandı (AI-111); model ya da istem değişikliğini kontrol edin."

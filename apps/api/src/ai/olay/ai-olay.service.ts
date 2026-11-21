@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import { Prisma, PrismaClient, type AiOlay } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { BildirimService } from "../../bildirimler/bildirim.service";
@@ -117,7 +118,9 @@ export class AiOlayService implements OnModuleInit, OnModuleDestroy {
       if (!alindi.count) continue;
       try {
         await this.teslimEt(o);
-        await db.aiOlay.updateMany({ where: { id: o.id, sahiplikAnahtari: anahtar }, data: { teslimDurumu: "teslim_edildi", teslimAt: new Date(), sahiplikAnahtari: null, kiraBitisAt: null, hata: null } });
+        const isaretlenen = await db.aiOlay.updateMany({ where: { id: o.id, sahiplikAnahtari: anahtar }, data: { teslimDurumu: "teslim_edildi", teslimAt: new Date(), sahiplikAnahtari: null, kiraBitisAt: null, hata: null } });
+        // AI-112: olayın yazılmasından teslimine kadar geçen süre (yalnız bu worker teslim ettiyse).
+        if (isaretlenen.count) aiMetrik.gozlemle("tekirextra_ai_olay_gecikmesi_saniye", (Date.now() - o.createdAt.getTime()) / 1000);
         teslim++;
       } catch (hata) {
         const deneme = o.deneme + 1;

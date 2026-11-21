@@ -1,4 +1,5 @@
 import type { TenantAiAyari } from "@prisma/client";
+import { aiMetrik } from "../../core/observability/ai-metrikleri";
 import type { AiOzellikAnahtari } from "@tekirextra/shared";
 import { aiOzellikDurumu } from "../ozellik-kapisi";
 import type { PrismaService } from "../../core/prisma.service";
@@ -271,6 +272,13 @@ async function gucluSaglayicisi(prisma: PrismaService, tenantId: string, ayar: T
 /** Çağrı sayacı, sınır/bütçe denetimi ve çağrı izi; iki sağlayıcı kolu da bundan geçer. */
 function sayacliSar(prisma: PrismaService, tenantId: string, ozellik: AiOzelligi, temel: IAiProvider, sinir: number, butce: ButceKurali, yedek: IAiProvider | null = null): IAiProvider {
   const izle: Izleyici = async (saglayici, islem, baslangic, kullanim, hata, tahmin, deneme) => {
+    // AI-112: metrik çağrı izinden bağımsızdır (kullanıcısız çağrılar da sayılır); etiketlerde firma yok.
+    const metrikMaliyeti = maliyetHesapla(butce.fiyat, kullanim, tahmin ?? null);
+    aiMetrik.artir("tekirextra_ai_cagri_toplam", { ozellik, saglayici: saglayici.saglayiciAdi, sonuc: hata ? "hata" : "basarili" });
+    aiMetrik.gozlemle("tekirextra_ai_cagri_suresi_saniye", Math.max(0, Date.now() - baslangic) / 1000, { ozellik });
+    aiMetrik.artir("tekirextra_ai_token_toplam", { yon: "giris" }, metrikMaliyeti.girisToken ?? 0);
+    aiMetrik.artir("tekirextra_ai_token_toplam", { yon: "cikis" }, metrikMaliyeti.cikisToken ?? 0);
+    aiMetrik.artir("tekirextra_ai_maliyet_usd_toplam", { saglayici: saglayici.saglayiciAdi }, metrikMaliyeti.maliyetUsd ?? 0);
     const userId = baglamAl()?.userId;
     if (!userId) return;
     const hataSinifi = hata instanceof AiBosYanitHatasi || hata instanceof SaglayiciHatasi || hata instanceof AiIptalHatasi ? hata.telemetriSinifi : hata instanceof HttpException ? `HTTP_${hata.getStatus()}` : hata instanceof Error ? hata.name.slice(0, 100) : hata ? "BilinmeyenHata" : null;
