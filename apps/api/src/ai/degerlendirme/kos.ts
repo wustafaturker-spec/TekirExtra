@@ -1,5 +1,5 @@
 import { senaryoyuKos, TavanAsildi, type DenemeSonucu, type OlculenSaglayici } from "./kosucu";
-import { aracSurumu, gecmeEsigi, istemSurumu, ozetCikar, type KosuRaporu, type SenaryoRaporu } from "./rapor";
+import { aracSurumu, istemSurumu, ozetCikar, senaryoGectiMi, type KosuRaporu, type SenaryoRaporu } from "./rapor";
 import type { DegerlendirmeSenaryosu } from "./senaryo";
 import { KRITIK_TEKRAR, SENARYO_SETI_SURUMU } from "./senaryolar";
 
@@ -64,7 +64,7 @@ export async function degerlendirmeKos(saglayici: OlculenSaglayici, senaryolar: 
   const raporlar: SenaryoRaporu[] = senaryolar.filter((s) => sonuclar.has(s.id) && !kosmayan.has(s.id)).map((s) => {
     const denemeler = sonuclar.get(s.id)!;
     const gecen = denemeler.filter((d) => d.gecti).length;
-    return { id: s.id, kategori: s.kategori, kritik: !!s.kritik, tekrar: denemeler.length, gecen, gecti: gecen >= gecmeEsigi(denemeler.length), denemeler };
+    return { id: s.id, kategori: s.kategori, kritik: !!s.kritik, tekrar: denemeler.length, gecen, gecti: senaryoGectiMi(s.kategori, denemeler.length, gecen), denemeler };
   });
   return {
     bicim: 1,
