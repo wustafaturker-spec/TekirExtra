@@ -68,7 +68,7 @@ describe("asistan araç döngüsü (AI-05)", () => {
   it('finans serbest metnini tek JSON üretimiyle düzeltir; ham yanıtı yeniden göndermez', async () => {
     const k = kur([
       { metin: '', aracCagrilari: [{ id: 'c1', ad: 'finansal_ozet', girdi: {} }] },
-      { metin: 'özel-reddedilen-model-yanıtı', aracCagrilari: [] },
+      { metin: 'özel-reddedilen-model-yanıtı: nakit 12 TL', aracCagrilari: [] },
     ], { ucSonucu: () => ({ nakitVarliklar: '-12.00' }) });
     const duzelt = vi.spyOn(k.saglayici, 'yapilandirilmisUretim').mockImplementation(async (g, sema) => {
       const olgular = JSON.parse(g.prompt.slice(g.prompt.lastIndexOf('\n') + 1));
@@ -89,7 +89,7 @@ describe("asistan araç döngüsü (AI-05)", () => {
   it('finans JSON düzeltmesi ana model sağlayıcısıyla yapılır; araçlı sohbet ekonomik modelde kalır', async () => {
     const k = kur([
       { metin: '', aracCagrilari: [{ id: 'c1', ad: 'finansal_ozet', girdi: {} }] },
-      { metin: 'serbest metin', aracCagrilari: [] },
+      { metin: 'serbest metin: nakit 12 TL', aracCagrilari: [] },
     ], { ucSonucu: () => ({ nakitVarliklar: '-12.00' }) });
     const ana = new SenaryoAiProvider([]);
     const duzelt = vi.spyOn(ana, 'yapilandirilmisUretim').mockImplementation(async (g, sema) => {
@@ -106,7 +106,7 @@ describe("asistan araç döngüsü (AI-05)", () => {
   it.each(['kaynak_disi', 'ek_alan', 'hata'])('JSON düzeltmesi başarısızsa kaynakları korur ve bir kez dener: %s', async (tur) => {
     const k = kur([
       { metin: '', aracCagrilari: [{ id: 'c1', ad: 'finansal_ozet', girdi: {} }] },
-      { metin: 'JSON olmayan yanıt', aracCagrilari: [] },
+      { metin: 'JSON olmayan yanıt: nakit 12 TL', aracCagrilari: [] },
     ], { ucSonucu: () => ({ nakitVarliklar: '-12.00' }) });
     const duzelt = vi.spyOn(k.saglayici, 'yapilandirilmisUretim').mockImplementation(async () => {
       if (tur === 'hata') throw new Error('gizli-sağlayıcı-hatası');
@@ -132,7 +132,7 @@ describe("asistan araç döngüsü (AI-05)", () => {
   it('JSON düzeltmesi sekiz turluk model çağrısı sınırını aşmaz', async () => {
     const k = kur([
       ...Array.from({ length: 7 }, (_, i) => ({ metin: '', aracCagrilari: [{ id: `c${i}`, ad: 'finansal_ozet', girdi: {} }] })),
-      { metin: 'JSON olmayan yanıt', aracCagrilari: [] },
+      { metin: 'JSON olmayan yanıt: nakit 12 TL', aracCagrilari: [] },
     ], { ucSonucu: () => ({ nakitVarliklar: '-12.00' }) });
     const duzelt = vi.spyOn(k.saglayici, 'yapilandirilmisUretim');
     const y = await k.calistir('Nakit durumum', 'yonetici');

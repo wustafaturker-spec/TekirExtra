@@ -78,11 +78,13 @@ describe("AI-100 koşucu ve puanlama", () => {
     expect(p.istekler[0].araclar.some((a) => a.ad === "arac_gruplarini_ac")).toBe(true);
   });
 
-  it("finans kaynağı alınınca yanıt olgu listesine döner (üretim davranışı); belirsiz caride soru kaybolur", async () => {
+  it("finans kaynağı alınınca rakamsız düz metin soru korunur; rakamlı düz metin olgu listesine döner", async () => {
     const d = await senaryoyuKos(new SirayliSaglayici([arac("cari_ara", { arama: "Test Yılmaz" }), metin("Hangisini kastediyorsunuz?")]), senaryo("belirsiz-cari"));
-    expect(d.finansDurumu).toBe("guvenli_ozet");
-    expect(d.finansHatasi).toBe("json_gecersiz");
-    expect(d.hatalar).toContain("Kullanıcıya seçim/eksik bilgi sorulmadı");
+    expect(d.finansDurumu).toBe("dogrulandi");
+    expect(d.hatalar).toEqual([]);
+    const r = await senaryoyuKos(new SirayliSaglayici([arac("cari_ara", { arama: "Test Yılmaz" }), metin("Bakiyesi 1.250 TL, hangisini kastediyorsunuz?")]), senaryo("belirsiz-cari"));
+    expect(r.finansDurumu).toBe("guvenli_ozet");
+    expect(r.finansHatasi).toBe("json_gecersiz");
   });
 
   it("AI-103: finans turunda rakamsız notla sorulan soru geçer", async () => {

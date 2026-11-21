@@ -29,7 +29,8 @@ describe('olgu kimlikli finans açıklaması', () => {
       ['Açıklama: ' + blok({ olguIdleri: [id] }), 'json_gecersiz'],
       [blok({ olguIdleri: [id] }) + '\nEk açıklama', 'json_gecersiz'],
       ['\x60\x60\x60text\n' + JSON.stringify({ olguIdleri: [id] }) + '\n\x60\x60\x60', 'json_gecersiz'],
-      ['özel-ham-model-metni', 'json_gecersiz'],
+      ['özel-ham-model-metni 4.250 TL', 'json_gecersiz'],
+      ['{"olguIdleri": "eksik"', 'json_gecersiz'],
     ];
     for (const [metin, hata] of ornekler) {
       const y = finansAciklamasiniDogrula(metin, [kaynak]);
@@ -37,9 +38,22 @@ describe('olgu kimlikli finans açıklaması', () => {
       expect(y.cevap).toContain('-1.250,50 TRY');
       expect(y.cevap).not.toContain('999999');
       expect(JSON.stringify(y)).not.toContain('özel-ham-model-metni');
+      expect(y.finansAciklama.duzMetin).toBeUndefined();
     }
     expect(finansAciklamasiniDogrula(null, [kaynak]).finansAciklama).toMatchObject({ neden: 'model_hatasi' });
     expect(finansAciklamasiniDogrula(null, [kaynak]).finansAciklama.dogrulamaHatasi).toBeUndefined();
+  });
+  it('rakamsız düz metin yanıtı yalnız not olarak kabul edilir; rakamlı ya da reddedilen metin kabul edilmez', () => {
+    const y = finansAciklamasiniDogrula('Deneme Otomotiv için teklif taslağı bulunamadı.', [kaynak]);
+    expect(y.finansAciklama).toMatchObject({ durum: 'dogrulandi', duzMetin: true, secilenOlguIdleri: [], not: 'Deneme Otomotiv için teklif taslağı bulunamadı.' });
+    expect(y.finansAciklama.dogrulamaHatasi).toBeUndefined();
+    expect(y.cevap).toBe('Deneme Otomotiv için teklif taslağı bulunamadı.');
+    // Kullanıcının yazdığı harf+rakam kelime (belge no) düz metinde de geçebilir.
+    expect(finansAciklamasiniDogrula('TKF2026000000045 bulunamadı.', [kaynak], { kullaniciMetni: 'TKF2026000000045 var mı?' }).finansAciklama.durum).toBe('dogrulandi');
+    for (const metin of ['Bakiye -1.250,50 TL.', 'Oran yüzde %12.', 'x'.repeat(601)]) {
+      expect(finansAciklamasiniDogrula(metin, [kaynak]).finansAciklama).toMatchObject({ durum: 'guvenli_ozet', dogrulamaHatasi: 'json_gecersiz' });
+    }
+    expect(finansAciklamasiniDogrula('Taslak oluşturuldu.', [kaynak], { notuReddet: () => true }).finansAciklama).toMatchObject({ durum: 'guvenli_ozet', dogrulamaHatasi: 'json_gecersiz' });
   });
   it('diğer geliri modelin seçebileceği olguya ve güvenli kaynak özetine dahil eder', () => {
     const kaynaklar = finansKaynaklariCikar('gelir_gider', JSON.stringify({
