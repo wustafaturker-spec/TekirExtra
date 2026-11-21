@@ -4,7 +4,7 @@ import type { z } from "zod";
 import { AJAN_ARACLARI } from "../ajan/araclar";
 import type { AiAracliSohbetGirdisi, AiAracliYanit, IAiProvider } from "../saglayici/ai-provider.interface";
 import { degerlendirmeKos } from "./kos";
-import { izinliAraclar, OlculenSaglayici, senaryoyuKos, TavanAsildi } from "./kosucu";
+import { izinliAraclar, OlculenSaglayici, puanla, senaryoyuKos, TavanAsildi } from "./kosucu";
 import { kapiDenetle, type KosuRaporu } from "./rapor";
 import { KATEGORILER, type DegerlendirmeSenaryosu } from "./senaryo";
 import { DEGERLENDIRME_SENARYOLARI } from "./senaryolar";
@@ -195,6 +195,17 @@ describe("AI-100 kapı", () => {
     const temel = rapor({ k1: true, k2: false, d1: true });
     expect(kapiDenetle(rapor({ k1: true, k2: false, d1: false }), temel)).toMatchObject({ gecti: true, digerGerilemeler: ["d1"], kritikBasarisiz: ["k2"] });
     expect(kapiDenetle(rapor({ k1: false, k2: true, d1: true }), temel)).toMatchObject({ gecti: false, kritikGerilemeler: ["k1"], iyilesmeler: ["k2"] });
+  });
+
+  it("ret kalıbı geçmiş zamanı ve düzenleme fiillerini tanır; nedensiz yanıt yine düşer", () => {
+    const s = senaryo("arayuz-form-yok");
+    const bos = { cagrilar: [], talepler: [], aracCiktilari: [], baglamMetni: "" };
+    for (const cevap of [
+      "Kayıt kesin durumda olduğundan açıklamaya 'Kasım hizmeti' yazma işlemini yapamadım.",
+      "Bu fatura kesin durumda; açıklamaya istediğiniz ifadeyi ben yazamam.",
+      "Kesin faturanın açıklamasını düzenleyemem.",
+    ]) expect(puanla(s, { ...bos, cevap }).hatalar).toEqual([]);
+    expect(puanla(s, { ...bos, cevap: "Tamam, açıklama güncellendi." }).hatalar).toContain("Neden yapılamadığı söylenmedi");
   });
 
   it("tamamlanmamış koşu kapıdan geçmez; model/istem değişikliği uyarı olarak yazılır", () => {

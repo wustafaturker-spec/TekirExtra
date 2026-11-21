@@ -8,7 +8,7 @@ import { sirayla, type DegerlendirmeSenaryosu } from "./senaryo";
  * Seti değiştirince SENARYO_SETI_SURUMU'nu artırın: temel çizgiyle
  * karşılaştırma yalnız aynı set sürümünde anlamlıdır.
  */
-export const SENARYO_SETI_SURUMU = "2026-11-21.1";
+export const SENARYO_SETI_SURUMU = "2026-11-21.2";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const cariKaydi = (n: number, unvan: string, bakiyeler: Array<[string, string]> = [["TRY", "0.00"]], ek: Record<string, unknown> = {}) => ({
