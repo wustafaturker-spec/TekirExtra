@@ -20,6 +20,7 @@ import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
 import { PlatformFirmaService } from "./platform-firma.service";
 import { GirisDenemeSayaci } from "../auth/giris-deneme-sayaci";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
+import { PlatformAiOzellikService } from "./platform-ai-ozellik.service";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformIletiService } from "../ileti/platform-ileti.service";
@@ -49,7 +50,7 @@ import { PlatformVergiDaireleriController } from "./platform-vergi-daireleri.con
 @Module({
   imports: [PlatformFirmaIstisnaModule, PlatformKotaModule, EklerModule],
   controllers: [PlatformEntegrasyonController, IletiSablonController, PlatformIletiSablonController, PlatformIletiController, PlatformVergiTakvimiController, TenantDuyuruController, PlatformDuyuruController, DuyuruGorselController, PlatformVergiDaireleriController, PlatformPaketController, PlatformIstatistikController, PlatformFirmaTakipController, PlatformGorevController, MevzuatController, PlatformAuthController, PlatformMevzuatController, PlatformAiController, PlatformFirmaController, PlatformKullanicilarController],
-  providers: [IletiSablonService, SmsKodService, PlatformIletiService, PlatformVergiTakvimiService, TenantDuyuruService, PlatformDuyuruService, PlatformPaketService, PlatformPaketZamanlayiciService, PlatformIstatistikService, PlatformIstatistikZamanlayiciService, PlatformFirmaTakipService, PlatformGorevService, MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci, PlatformOturumDurumService],
+  providers: [IletiSablonService, SmsKodService, PlatformIletiService, PlatformVergiTakvimiService, TenantDuyuruService, PlatformDuyuruService, PlatformPaketService, PlatformPaketZamanlayiciService, PlatformIstatistikService, PlatformIstatistikZamanlayiciService, PlatformFirmaTakipService, PlatformGorevService, MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, PlatformAiTavanService, PlatformAiOzellikService, MevzuatHatirlatmaService, TahsilatHatirlatmaService, PlatformFirmaService, PlatformKullanicilarService, GirisDenemeSayaci, PlatformOturumDurumService],
   exports: [IletiSablonService, SmsKodService, PlatformIletiService, MevzuatService, PlatformPrismaService, PlatformOturumDurumService],
 })
 export class MevzuatModule {}

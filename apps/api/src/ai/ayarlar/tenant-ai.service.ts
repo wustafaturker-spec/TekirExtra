@@ -1,4 +1,6 @@
 import { Injectable, BadRequestException, Logger } from "@nestjs/common";
+import { AI_OZELLIK_ADLARI, AI_OZELLIK_ANAHTARLARI } from "@tekirextra/shared";
+import { kapaliOzellikleriAyikla } from "../ozellik-kapisi";
 import type { TenantAiAyari } from "@prisma/client";
 import { z } from "zod";
 import { AiGorevYurutucu } from "./ai-gorev-yurutucu";
@@ -90,6 +92,7 @@ export class TenantAiService {
         cikisTokenMilyonUsd: null,
         aylikMaliyetButcesiUsd: null,
         ozelliklerEtkin: true,
+        kapaliOzellikler: [],
         telemetriSaklamaGun: 90,
         sohbetSaklamaGun: null,
         telemetriHataEsigiYuzde: 20,
@@ -203,6 +206,38 @@ export class TenantAiService {
   /**
    * Kiracı AI ayarlarını kaydeder veya günceller
    */
+  /** AI-109: her özellik için firma ayarı ve platform acil durdurması. */
+  async ozellikDurumlari(tenantId: string) {
+    const { ayar, durdurulan } = await this.prisma.tenantIslem(tenantId, async (tx) => ({
+      ayar: await tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { kapaliOzellikler: true } }),
+      durdurulan: await tx.platformAiOzellikDurumu.findMany({ where: { durduruldu: true }, select: { ozellik: true } }),
+    }));
+    const kapali = new Set(ayar?.kapaliOzellikler ?? []);
+    const platform = new Set(durdurulan.map((d) => d.ozellik));
+    return {
+      ozellikler: AI_OZELLIK_ANAHTARLARI.map((anahtar) => ({
+        anahtar, ...AI_OZELLIK_ADLARI[anahtar], firmadaKapali: kapali.has(anahtar), platformdaDurduruldu: platform.has(anahtar),
+      })),
+    };
+  }
+
+  /** AI-109: firmada kapatılan özellikler; eski ve yeni liste denetim kaydına yazılır. */
+  async ozellikleriKaydet(tenantId: string, userId: string, girdi: unknown) {
+    if (!Array.isArray(girdi)) throw new BadRequestException("kapaliOzellikler bir liste olmalıdır.");
+    const secilen = kapaliOzellikleriAyikla(girdi);
+    if (secilen.length !== girdi.length) throw new BadRequestException("Tanınmayan ya da tekrarlanan özellik anahtarı var.");
+    // Sabit sırayla saklanır; karşılaştırma ve denetim kaydı sıradan bağımsız olur.
+    const yeni = AI_OZELLIK_ANAHTARLARI.filter((a) => secilen.includes(a));
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const eski = (await tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { kapaliOzellikler: true } }))?.kapaliOzellikler ?? [];
+      await tx.tenantAiAyari.upsert({ where: { tenantId }, create: { tenantId, kapaliOzellikler: yeni }, update: { kapaliOzellikler: yeni } });
+      if (eski.join(",") !== yeni.join(",")) {
+        await tx.auditLog.create({ data: { tenantId, userId, islem: "ai_ozellikleri_degisti", varlik: "tenant_ai_ayari", varlikId: tenantId, detay: { eski, yeni } } });
+      }
+    });
+    return this.ozellikDurumlari(tenantId);
+  }
+
   async ayarKaydet(tenantId: string, girdi: TenantAiAyariGirdi) {
     if (girdi.gunlukCagriSiniri !== undefined && (!Number.isInteger(girdi.gunlukCagriSiniri) || girdi.gunlukCagriSiniri < 1 || girdi.gunlukCagriSiniri > 100_000)) {
       throw new BadRequestException("Günlük çağrı sınırı 1 ile 100.000 arasında bir tam sayı olmalıdır.");

@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { describe, expect, it, vi } from "vitest";
 import { istekBaglami } from "../../core/istek-baglami";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
@@ -11,6 +12,7 @@ const BELGE_ID = "7a1d2e3f-4b5c-4d6e-8f70-81920a1b2c3d";
 /** AI-118: üretilen dosyanın web'de sohbet ekine, Telegram'da doğrudan gönderime gitmesi. */
 function kur(secenek: { ekHatasi?: Error } = {}) {
   const tx = {
+    ...kapiAcikTx(),
     user: { findFirst: vi.fn().mockResolvedValue({ adSoyad: "Ayşe Muhasebe" }) },
     ajanOturumu: {
       findFirst: vi.fn().mockResolvedValue(null),

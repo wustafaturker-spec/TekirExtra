@@ -1,4 +1,5 @@
 import { HttpException } from "@nestjs/common";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { istekBaglami } from "../../core/istek-baglami";
@@ -13,6 +14,7 @@ const TENANT = "t";
 
 function kur(ayar: Record<string, unknown> | null, bugunToplam = 0, buAyUsd = 0, tavanUsd: number | null = null) {
   const tx = {
+    ...kapiAcikTx(),
     $executeRaw: vi.fn(),
     aiCagriIz: { create: vi.fn().mockResolvedValue({ id: "iz-1" }), aggregate: vi.fn().mockResolvedValue({ _sum: { maliyetUsd: new Prisma.Decimal(buAyUsd) } }) },
     platformAiTavani: { findUnique: vi.fn().mockResolvedValue(tavanUsd === null ? null : { aylikTavanUsd: new Prisma.Decimal(tavanUsd) }) },

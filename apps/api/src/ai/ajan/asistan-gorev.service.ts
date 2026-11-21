@@ -7,6 +7,7 @@ import { aktifBaglam } from "../../core/istek-baglami";
 import { kullaniciAdinaCalistir } from "../../core/kullanici-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { aiButcesiDoldu } from "../saglayici/kiraci-saglayici";
+import { aiOzellikDenetle, aiOzellikKapaliMi, AiOzellikKapaliHatasi } from "../ozellik-kapisi";
 import { AiBosYanitHatasi } from "../saglayici/ai-bos-yanit";
 import { SaglayiciHatasi } from "../saglayici/aracli-ortak";
 import { AiAjanService, ArkaPlanSahiplikHatasi, EKRAN_TURLERI, type EkranBaglami, type EkranTuru } from "./ai-ajan.service";
@@ -100,6 +101,7 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
     if (mesaj.length > 4000) throw new BadRequestException("Mesaj en çok 4000 karakter olabilir.");
     const istekId = typeof girdi.requestId === "string" && UUID.test(girdi.requestId) ? girdi.requestId : null;
     if (!istekId) throw new BadRequestException("requestId geçerli bir UUID olmalıdır.");
+    await aiOzellikDenetle(this.prisma, tenantId, "arka_plan_gorevi");
     // (e) Bütçe görev kuyruğa girmeden denetlenir; günlük sınır her model çağrısında ayrıca uygulanır.
     if (await aiButcesiDoldu(this.prisma, tenantId)) throw new HttpException("Bu ayın yapay zekâ bütçesi doldu; arka plan analizi başlatılmadı.", 429);
     const mevcut = await this.prisma.tenantIslem(tenantId, (tx) => tx.aiAsistanGorevi.findUnique({ where: { tenantId_userId_istekId: { tenantId, userId, istekId } } }));
@@ -168,11 +170,16 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
   async tara(simdi = new Date()): Promise<void> {
     if (this.calisan >= ESZAMANLI) return;
     const db = this.yonetimIstemcisi();
+    // AI-109: özelliği kapalı firmaların görevleri sahiplenilmez, kuyrukta bekler; geniş okunur ki öndekiler ötekileri bekletmesin.
     const adaylar = await db.aiAsistanGorevi.findMany({
       where: { OR: [{ durum: "kuyrukta" }, { durum: "calisiyor", kiraBitisAt: { lt: simdi } }] },
-      orderBy: { createdAt: "asc" }, take: ESZAMANLI - this.calisan,
+      orderBy: { createdAt: "asc" }, take: 50,
     });
+    const kapali = new Map<string, boolean>();
     for (const aday of adaylar) {
+      if (this.calisan >= ESZAMANLI) break;
+      if (!kapali.has(aday.tenantId)) kapali.set(aday.tenantId, await aiOzellikKapaliMi(this.prisma, aday.tenantId, "arka_plan_gorevi"));
+      if (kapali.get(aday.tenantId)) continue;
       const alinan = await this.sahiplen(db, aday, simdi);
       if (!alinan) continue;
       this.calisan++;
@@ -226,6 +233,14 @@ export class AsistanGorevService implements OnModuleInit, OnModuleDestroy {
       }));
     } catch (hata) {
       if (hata instanceof ArkaPlanSahiplikHatasi || durdur.signal.aborted) return;
+      // AI-109: çalışırken özellik kapatıldı; görev deneme hakkı harcamadan kuyruğa döner, açılınca sürer.
+      if (hata instanceof AiOzellikKapaliHatasi) {
+        await db.$transaction(async (tx) => {
+          const r = await tx.aiAsistanGorevi.updateMany({ where: { id: g.id, sahiplikAnahtari: g.anahtar, durum: "calisiyor" }, data: { durum: "kuyrukta", sahiplikAnahtari: null, kiraBitisAt: null, deneme: { decrement: 1 } } });
+          if (r.count) await olayYaz(tx, durumOlayi(g, "kuyrukta"));
+        });
+        return;
+      }
       const mesaj = hata instanceof Error ? hata.message.slice(0, 500) : String(hata);
       const tekrar = yenidenDenenir(hata) && g.deneme < GOREV_AZAMI_DENEME;
       await db.$transaction(async (tx) => {

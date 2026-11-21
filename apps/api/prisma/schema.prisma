@@ -7068,6 +7068,7 @@ model PlatformKullanici {
   iptalEdilenPaketAtamalari PlatformPaketAtamasi[] @relation("AtamaIptalEden")
   hazirlanan  MevzuatDegisiklik[] @relation("Hazirlayan")
   aiTavanlari                PlatformAiTavani[]
+  aiOzellikDurumlari         PlatformAiOzellikDurumu[] @relation("AiOzellikGuncelleyen")
   abonelikSaglayiciAyarlari  AbonelikSaglayiciAyari[]
   abonelikFaturaAyarlari     AbonelikFaturaAyari[]
   yayinlanan  MevzuatDegisiklik[] @relation("Yayinlayan")
@@ -7078,6 +7079,19 @@ model PlatformKullanici {
 /// AI-31: platform anahtarıyla çalışan kiracının aylık yapay zekâ tavanı (USD).
 /// Satır yoksa ortam varsayılanı (AI_PLATFORM_AYLIK_TAVAN_USD) geçerlidir.
 /// Yalnız platform ekibi yazar; kiracı kendi satırını okur.
+/// AI-109: platform geneli yapay zekâ özellik acil durdurması; satır yoksa özellik açıktır.
+model PlatformAiOzellikDurumu {
+  ozellik       String   @id
+  durduruldu    Boolean  @default(false)
+  neden         String?
+  guncelleyenId String?  @map("guncelleyen_id") @db.Uuid
+  guncellendiAt DateTime @default(now()) @map("guncellendi_at")
+
+  guncelleyen PlatformKullanici? @relation("AiOzellikGuncelleyen", fields: [guncelleyenId], references: [id])
+
+  @@map("platform_ai_ozellik_durumlari")
+}
+
 model PlatformAiTavani {
   tenantId      String   @id @map("tenant_id") @db.Uuid
   aylikTavanUsd Decimal  @map("aylik_tavan_usd") @db.Decimal(12, 2)
@@ -7737,6 +7751,8 @@ model TenantAiAyari {
   cikisTokenMilyonUsd      Decimal?  @map("cikis_token_milyon_usd") @db.Decimal(12, 6)
   aylikMaliyetButcesiUsd   Decimal?  @map("aylik_maliyet_butcesi_usd") @db.Decimal(12, 2)
   ozelliklerEtkin          Boolean   @default(true) @map("ozellikler_etkin")
+  /// AI-109: firmada kapatılan yapay zekâ özellikleri (`AI_OZELLIK_ANAHTARLARI`).
+  kapaliOzellikler         String[]  @default([]) @map("kapali_ozellikler")
   telemetriSaklamaGun      Int       @default(90) @map("telemetri_saklama_gun")
   sohbetSaklamaGun         Int?      @map("sohbet_saklama_gun")
   telemetriHataEsigiYuzde  Int       @default(20) @map("telemetri_hata_esigi_yuzde")

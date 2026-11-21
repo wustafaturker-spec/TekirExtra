@@ -73,6 +73,7 @@ describe("AiService Entegrasyonu", () => {
           $executeRaw: vi.fn().mockResolvedValue(1),
           aiCagriIz: { create: vi.fn().mockResolvedValue({ id: "ai-iz-1" }) },
           tenantAiAyari: { findUnique: vi.fn().mockResolvedValue(null) },
+          platformAiOzellikDurumu: { findMany: vi.fn().mockResolvedValue([]) },
           aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: 0 } }), upsert: vi.fn() },
           aiOcrDenetim: { create: vi.fn().mockResolvedValue({ id: "ocr-iz-1" }), update: vi.fn().mockResolvedValue({}) },
           cariHesap: {

@@ -7,6 +7,7 @@ import type { Rol } from "@tekirextra/shared";
 import { AiAjanService, type AjanYaniti } from "../ai/ajan/ai-ajan.service";
 import { AiOnayService } from "../ai/onay/ai-onay.service";
 import { onayRiski, type OnayRiski } from "../ai/ajan/araclar/onay-riski";
+import { AiOzellikKapaliHatasi } from "../ai/ozellik-kapisi";
 import { AiSinirHatasi } from "../ai/saglayici/ai-butce";
 import { dugmeCoz, dugmeVerisi, PANEL_SECENEGI } from "../asistan-soru/asistan-soru.kurallari";
 import { AsistanSoruService, type SoruYaniti, type YanitSonucu } from "../asistan-soru/asistan-soru.service";
@@ -857,13 +858,15 @@ export class TelegramKanalService implements OnModuleInit, OnModuleDestroy {
       } catch (hata) {
         // Model zaman aşımı ya da sağlayıcı hatası: hiçbir araç çalışmadıysa yan etki yoktur, bir kez
         // yeniden denenir. Araç çalıştıysa (taslak açılmış olabilir) yeniden denemek çift kayıt doğurur.
-        if (!(hata instanceof ServiceUnavailableException) || aracCalisti) throw hata;
+        if (!(hata instanceof ServiceUnavailableException) || aracCalisti || hata instanceof AiOzellikKapaliHatasi) throw hata;
         olay("ai_yeniden_deneme");
         yanit = await sor(2);
       }
     } catch (hata) {
       clearInterval(yaziyor);
       if (hata instanceof ConflictException) return;
+      // AI-109: özellik kapalı — açık mesaj; hata sayılmaz, yeniden denenmez.
+      if (hata instanceof AiOzellikKapaliHatasi) return void (await yanitla(hata.message, "bilgi"));
       const sinir = hata instanceof AiSinirHatasi;
       if (!sinir) this.logger.error(`Telegram asistan yanıtı üretilemedi: ${hata instanceof Error ? hata.message.split("\n").filter(Boolean).pop() : String(hata)}`);
       await baglamlaCalistir(baglam, () => this.prisma.tenantIslem(tenantId, (tx) => tx.telegramMesaji.updateMany({ where: { botKimlik: izKimlik(bot), guncellemeNo: BigInt(g.update_id) }, data: { durum: "hata", hataTuru: sinir ? "ai_sinir" : "ai_hata" } })));

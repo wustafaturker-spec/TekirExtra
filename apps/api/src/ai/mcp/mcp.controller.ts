@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, ForbiddenException, Get, Headers, HttpCode, HttpException, Optional, Post, Res, UnauthorizedException } from "@nestjs/common";
+import { aiOzellikDenetle } from "../ozellik-kapisi";
 import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import type { Response } from "express";
 import { Public } from "../../auth/public.decorator";
@@ -52,6 +53,7 @@ export class McpController {
     baglamKur({ tenantId: kimlik.tenantId, userId: kimlik.userId, rol: kimlik.rol, ...(kimlik.ozelRol ? { ozelRol: kimlik.ozelRol } : {}) });
     const moduller = this.erisim ? await this.erisim.modulleriGetir(kimlik.tenantId) : null;
     if (moduller && !moduller.includes("yapay_zeka")) throw new ForbiddenException("Yapay zekâ ve MCP abonelik paketinizde kapalı.");
+    await aiOzellikDenetle(this.prisma, kimlik.tenantId, "mcp");
     aktifBaglam().paketModulleri = moduller;
 
     const istekler = Array.isArray(govde) ? (govde as JsonRpcIstek[]) : [govde as JsonRpcIstek];

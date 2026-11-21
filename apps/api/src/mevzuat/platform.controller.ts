@@ -10,6 +10,7 @@ import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformAiTavanService } from "./platform-ai-tavan.service";
+import { PlatformAiOzellikService } from "./platform-ai-ozellik.service";
 import { ODEME_SURELERI, PlatformFirmaService } from "./platform-firma.service";
 import { PlatformKullanicilarService } from "./platform-kullanicilar.service";
 import { firmaFiltreSemasi } from "./platform-firma-filtre";
@@ -234,13 +235,27 @@ export class PlatformMevzuatController {
   }
 }
 
+const ozellikSemasi = z.object({ durduruldu: z.boolean(), neden: z.string().trim().min(5, "Neden en az 5 karakter").max(500).nullable().optional() });
 const tavanSemasi = z.object({ aylikTavanUsd: z.number().min(0, "Tavan negatif olamaz").max(1_000_000, "Tavan en çok 1.000.000 USD").nullable() });
 
 /** AI-31: platform anahtarıyla çalışan kiracıların aylık yapay zekâ tavanı. */
 @PlatformUcu()
 @Controller("platform/ai")
 export class PlatformAiController {
-  constructor(private readonly tavan: PlatformAiTavanService) {}
+  constructor(private readonly tavan: PlatformAiTavanService, private readonly ozellikler: PlatformAiOzellikService) {}
+
+  /** AI-109: özellik başına acil durdurma. */
+  @Get("ozellikler")
+  ozellikListesi() {
+    return this.ozellikler.listele();
+  }
+
+  @PlatformRolleri("yonetici")
+  @Put("ozellikler/:ozellik")
+  ozellikYaz(@Param("ozellik") ozellik: string, @Body() govde: unknown) {
+    const g = ayristir(ozellikSemasi, govde);
+    return this.ozellikler.yaz(ozellik, g.durduruldu, g.neden ?? null);
+  }
 
   @Get("kiracilar")
   listele() {

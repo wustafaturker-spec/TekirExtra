@@ -1,4 +1,5 @@
 import { HttpException } from "@nestjs/common";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z, ZodError } from "zod";
@@ -56,6 +57,7 @@ describe("AI-102 deneme kararı", () => {
 
 function kur(ayar: Record<string, unknown>, buAyUsd = 0) {
   const tx = {
+    ...kapiAcikTx(),
     $executeRaw: vi.fn(),
     aiCagriIz: { create: vi.fn().mockResolvedValue({}), aggregate: vi.fn().mockResolvedValue({ _sum: { maliyetUsd: new Prisma.Decimal(buAyUsd) } }) },
     platformAiTavani: { findUnique: vi.fn().mockResolvedValue(null) },

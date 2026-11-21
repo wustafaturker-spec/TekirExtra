@@ -1,4 +1,5 @@
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { baglamAl, istekBaglami } from "../../core/istek-baglami";
@@ -12,6 +13,7 @@ const olarak = <T>(fn: () => Promise<T>, rol = "satis", userId = KULLANICI) => i
 
 function anahtarServisi(kayit: Record<string, unknown> | null = null, etkin = 0) {
   const tx = {
+    ...kapiAcikTx(),
     // KLN-21/22: politika kaydı yok → varsayılanlar.
     tenant: { findUnique: vi.fn(async () => null) },
     aiMcpAnahtari: {
@@ -81,7 +83,7 @@ describe("MCP ucu (AI-09)", () => {
       yurut: vi.fn(async () => ({ icerik: '{"durum":"onay_bekliyor"}', talep: { id: "t1" } })),
     };
     const aiAracIstegi = { create: vi.fn().mockResolvedValue({ id: "i1" }), findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) };
-    const prisma = { tenantIslem: vi.fn((_t: string, fn: (tx: { aiAracIstegi: typeof aiAracIstegi }) => unknown) => fn({ aiAracIstegi })) };
+    const prisma = { tenantIslem: vi.fn((_t: string, fn: (tx: { aiAracIstegi: typeof aiAracIstegi }) => unknown) => fn({ ...kapiAcikTx(), aiAracIstegi } as never)) };
     const res = { setHeader: vi.fn(), status: vi.fn() };
     const c = new McpController(anahtarlar as never, yurutucu as never, prisma as never);
     const istek = (govde: unknown, yetki = "Bearer tkx_x", idempotencyKey?: string) => istekBaglami.run({}, async () => ({ sonuc: await c.istek(yetki, idempotencyKey, govde, res as never), baglam: baglamAl() }));

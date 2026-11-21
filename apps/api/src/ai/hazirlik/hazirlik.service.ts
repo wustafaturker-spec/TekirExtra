@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { aiOzellikDenetle } from "../ozellik-kapisi";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ozelRolIstegiKapali, paketApiYoluKapali } from "@tekirextra/shared";
@@ -53,6 +54,8 @@ export class HazirlikService {
     calistiranUserId: string,
     secenek: { turler?: HazirlikTuru[]; gorevId?: string; calismaId?: string } = {},
   ): Promise<HazirlikCalistirmaSonucu> {
+    // AI-109: elle de zamanlanmış da çalıştırmada kapı aynı.
+    await aiOzellikDenetle(this.prisma, tenantId, "sabah_hazirlik");
     const turler = secenek.turler && secenek.turler.length ? secenek.turler : [...HAZIRLIK_TURLERI];
     const sayac: Record<HazirlikTuru, number> = {
       fatura_stok_esleme: 0,

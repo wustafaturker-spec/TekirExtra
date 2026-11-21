@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, Optional } from "@nestjs/common";
+import { aiOzellikDenetle } from "../ozellik-kapisi";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -497,6 +498,8 @@ export class AiAjanService {
     if (!metin) throw new BadRequestException("Lütfen bir talimat yazın.");
     if (metin.length > MESAJ_SINIRI) throw new BadRequestException(`Mesaj en çok ${MESAJ_SINIRI} karakter olabilir.`);
     if (requestId !== undefined && !UUID.test(requestId)) throw new BadRequestException("requestId geçerli bir UUID olmalıdır.");
+    // AI-109: kanal başına özellik kapısı (acil durdurma ya da firma ayarı); oturum/geçmiş yazılmadan durur.
+    await aiOzellikDenetle(this.prisma, tenantId, secenek.arkaPlan ? "arka_plan_gorevi" : telegram ? "asistan_telegram" : "asistan");
     if (ekran?.cariId !== undefined && !UUID.test(ekran.cariId)) throw new BadRequestException("Cari kimliği geçerli bir UUID olmalıdır.");
     if (ekIdleri.length > EN_COK_EK || ekIdleri.some((id) => !UUID.test(id))) throw new BadRequestException(`En çok ${EN_COK_EK} geçerli ek bağlanabilir.`);
     const ekranKaydiIstegi = ekran?.kayit ?? (ekran?.cariId ? { tur: "cari" as const, id: ekran.cariId } : undefined);

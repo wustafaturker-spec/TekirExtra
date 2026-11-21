@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, Gauge } from "lucide-react";
+import { RefreshCw, Gauge, OctagonPause } from "lucide-react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, Stat, StatGrid, TableWrap } from "@/components/ui";
 import { PlatformArama, PlatformListeDurumu } from "@/components/platform-liste";
 import { platformApi } from "@/lib/platform-api";
@@ -23,6 +23,53 @@ const sinir = (k: Kiraci) => {
   const degerler = [k.platformAnahtari ? k.uygulananTavanUsd : null, k.kiraciButcesiUsd].filter((v): v is number => v !== null);
   return degerler.length ? Math.min(...degerler) : null;
 };
+
+interface AcilOzellik { anahtar: string; ad: string; aciklama: string; durduruldu: boolean; neden: string | null; guncellendiAt: string | null; guncelleyen: string | null }
+
+/**
+ * AI-109: özellik başına acil durdurma. Durdurma neden ister; bütün firmalarda en geç 30 sn içinde
+ * etkili olur. Bekleyen onaylar ve kuyruktaki işler silinmez.
+ */
+function AcilDurdurmaKart() {
+  const { veri, yukleniyor, hata: listeHatasi, yenile } = usePlatformVerisi<{ ozellikler: AcilOzellik[] }>("/platform/ai/ozellikler");
+  const [nedenler, setNedenler] = useState<Record<string, string>>({});
+  const [islem, setIslem] = useState<string | null>(null);
+  const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
+
+  async function degistir(o: AcilOzellik, durdur: boolean) {
+    const neden = (nedenler[o.anahtar] ?? "").trim();
+    if (durdur && neden.length < 5) { setHata(`${o.ad}: durdurma nedeni en az 5 karakter olmalı.`); return; }
+    if (!durdur && !window.confirm(`${o.ad} bütün firmalarda yeniden açılsın mı?`)) return;
+    setIslem(o.anahtar); setHata(""); setBasari("");
+    try {
+      await platformApi(`/platform/ai/ozellikler/${encodeURIComponent(o.anahtar)}`, { method: "PUT", body: JSON.stringify({ durduruldu: durdur, neden: durdur ? neden : null }) });
+      setBasari(`${o.ad} ${durdur ? "durduruldu" : "yeniden açıldı"}; bütün süreçlerde en geç 30 saniyede etkili olur.`);
+      setNedenler((v) => { const k = { ...v }; delete k[o.anahtar]; return k; });
+      yenile();
+    } catch (h) { setHata(h instanceof Error ? h.message : "Kaydedilemedi."); }
+    finally { setIslem(null); }
+  }
+
+  return <Card title="Acil durdurma" pad={false}>
+    <div className="platform-workflow"><OctagonPause size={20} aria-hidden="true" /><div><strong>Özelliği bütün firmalarda geçici olarak durdurur.</strong><span>Firmalara nedeni değil, geçici durdurma mesajı gösterilir. Bekleyen onaylar ve kuyruktaki işler silinmez; özellik açılınca sürer. Her değişiklik denetim kaydına yazılır.</span></div></div>
+    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
+    <TableWrap className="platform-responsive-table">
+      <thead><tr><th>Özellik</th><th>Durum</th><th>Neden</th><th>İşlem</th></tr></thead>
+      <tbody>
+        {!yukleniyor && !listeHatasi && veri?.ozellikler.map((o) => <tr key={o.anahtar}>
+          <td data-label="Özellik" className="platform-cell-title"><strong>{o.ad}</strong><div className="platform-field-help">{o.aciklama}</div></td>
+          <td data-label="Durum"><Badge variant={o.durduruldu ? "danger" : "success"}>{o.durduruldu ? "Durduruldu" : "Açık"}</Badge>{o.guncellendiAt && <div className="platform-field-help">{new Date(o.guncellendiAt).toLocaleString("tr-TR")}{o.guncelleyen ? ` · ${o.guncelleyen}` : ""}</div>}</td>
+          <td data-label="Neden">{o.durduruldu ? (o.neden ?? "—") : <Input aria-label={`${o.ad} durdurma nedeni`} maxLength={500} placeholder="Durdurma nedeni" disabled={islem === o.anahtar} value={nedenler[o.anahtar] ?? ""} onChange={(e) => setNedenler((v) => ({ ...v, [o.anahtar]: e.target.value }))} />}</td>
+          <td data-label="İşlem">{o.durduruldu
+            ? <Button size="sm" disabled={Boolean(islem)} onClick={() => void degistir(o, false)}>{islem === o.anahtar ? "Açılıyor…" : "Yeniden aç"}</Button>
+            : <Button size="sm" variant="danger" disabled={Boolean(islem) || (nedenler[o.anahtar] ?? "").trim().length < 5} onClick={() => void degistir(o, true)}>{islem === o.anahtar ? "Durduruluyor…" : "Durdur"}</Button>}</td>
+        </tr>)}
+        <PlatformListeDurumu sutun={4} yukleniyor={yukleniyor} hata={listeHatasi} bos={!veri?.ozellikler.length} baslik="Özellik listesi boş." aciklama="Sayfayı yenileyin." onTekrar={yenile} />
+      </tbody>
+    </TableWrap>
+  </Card>;
+}
 
 /** Platform anahtarı için firma bazında aylık limitler; taslaklar satır bazında korunur. */
 export default function PlatformYapayZeka() {
@@ -67,6 +114,7 @@ export default function PlatformYapayZeka() {
       <Stat label="Bu ay platform maliyeti" value={usd(toplam)} hint={`${ozet.ayBaslangici.slice(0, 7)} · ${platformdakiler.length} firma`} />
       <Stat label="Token fiyatı (1 milyon)" value={ozet.fiyat ? `${usd(ozet.fiyat.giris)} / ${usd(ozet.fiyat.cikis)}` : "Tanımlı değil"} hint="Giriş / çıkış token maliyeti" />
     </StatGrid></div>}
+    <AcilDurdurmaKart />
     <Card title="Firma limitleri" pad={false}>
       <div className="platform-filter-bar">
         <PlatformArama etiket="Firma ara" deger={arama} onChange={setArama} placeholder="Firma unvanıyla ara…" />

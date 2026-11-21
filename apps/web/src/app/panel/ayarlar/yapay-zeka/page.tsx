@@ -8,6 +8,7 @@ import { YzKullanimKart } from "@/components/yz-kullanim-kart";
 import { YzKaliteKart } from "@/components/yz-kalite-kart";
 import { YzTahminIsabetiKart } from "@/components/yz-tahmin-isabeti-kart";
 import { YzGorevlerKart } from "@/components/yz-gorevler-kart";
+import { YzOzelliklerKart } from "@/components/yz-ozellikler-kart";
 import { YzGucluSaglayiciKart } from "@/components/yz-guclu-saglayici-kart";
 import { Sparkles, Shield, Clock, CheckCircle2, AlertTriangle, Play, Trash2, Plus, RefreshCw, Key, Server, Cpu } from "lucide-react";
 
@@ -317,6 +318,9 @@ export default function YapayZekaAyarlariSayfasi() {
             </Button>
           </div>
         </Card>
+
+        {/* AI-109: özellik başına kapatma */}
+        <YzOzelliklerKart />
 
         {/* KART 3: AI-16 görevleri */}
         <YzGorevlerKart />

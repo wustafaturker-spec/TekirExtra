@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { aiOzellikKapaliMi } from "../ozellik-kapisi";
 import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import { Prisma, PrismaClient, type EpostaTeklifIslemi } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -607,6 +608,8 @@ export class TeklifTalebiService implements OnModuleInit, OnModuleDestroy {
         const ayar = teklifTalebiAyariSemasi.safeParse(k.ayarlar);
         if (!ayar.success || !ayar.data.acik || !ayar.data.sorumluUserId || !ayar.data.acildiAt) continue;
         if (await durdu(k.tenantId)) continue;
+        // AI-109: kapalıyken yeni e-postalar işlenmez (işlem kaydı açılmaz); açılınca sırayla işlenir.
+        if (await aiOzellikKapaliMi(this.prisma, k.tenantId, "teklif_otomasyonu")) continue;
         try { await this.kiraciTara(k.tenantId, ayar.data); }
         catch (hata) { this.logger.error(`Teklif talebi taraması başarısız (${k.tenantId}): ${hataMetni(hata)}`); }
       }

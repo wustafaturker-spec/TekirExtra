@@ -1,4 +1,6 @@
 import type { TenantAiAyari } from "@prisma/client";
+import type { AiOzellikAnahtari } from "@tekirextra/shared";
+import { aiOzellikDurumu } from "../ozellik-kapisi";
 import type { PrismaService } from "../../core/prisma.service";
 import { hassasCoz, hassasSifrele } from "../../personel/personel-hassas";
 import { HttpException } from "@nestjs/common";
@@ -30,6 +32,12 @@ export function ayardanYapilandirma(ayar: Pick<TenantAiAyari, "saglayici" | "api
 
 /** AI-15: sayaçta görünen özellik. */
 export type AiOzelligi = "asistan" | "tarama" | "ozet" | "gorev" | "ekstre" | "hatirlatma" | "teklif" | "ondenetim" | "gelendenetim";
+
+/**
+ * AI-109: model çağrısında denetlenen özellik anahtarları. Asistan (web/Telegram/arka plan),
+ * MCP ve zamanlanmış işler kanalı bilen giriş noktalarında denetlenir.
+ */
+const KAPI_OZELLIKLERI: Partial<Record<AiOzelligi, AiOzellikAnahtari>> = { tarama: "ocr", teklif: "teklif_otomasyonu" };
 
 /**
  * Kısa, ucuz işler ekonomik modele gider; geri kalanlar güçlü modele. Asistan
@@ -204,13 +212,16 @@ export async function kiraciSaglayicisi(
     ekonomikModel?: boolean;
   },
 ): Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null; derin?: boolean }> {
-  const ayar = await prisma.tenantIslem(tenantId, async (tx) => {
+  const kapiOzelligi = KAPI_OZELLIKLERI[secenek.ozellik];
+  const { ayar, kapi } = await prisma.tenantIslem(tenantId, async (tx) => {
     const kayit = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
     if (kayit?.apiKey && !kayit.apiKey.startsWith("enc:")) {
       await tx.tenantAiAyari.update({ where: { tenantId }, data: { apiKey: apiAnahtariSifrele(kayit.apiKey) } });
     }
-    return kayit;
+    return { ayar: kayit, kapi: kapiOzelligi ? await aiOzellikDurumu(tx, tenantId, kapiOzelligi) : null };
   });
+  // AI-109: OCR ve e-postadan teklif model çağrısı düzeyinde durur (bütün giriş yolları buradan geçer).
+  if (kapi?.kapali) return { saglayici: new TanimsizAiProvider(kapi.mesaj), ozelTalimatlar: ayar?.ozelTalimatlar ?? null };
   if (secenek.derin && ayar?.gucluSaglayici) return gucluSaglayicisi(prisma, tenantId, ayar, secenek.ozellik);
   const yonlendirilmisModel = !ayar ? undefined
     : secenek.derin ? ayar.gucluModelAdi?.trim() || ayar.modelAdi

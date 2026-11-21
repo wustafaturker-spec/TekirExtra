@@ -22,6 +22,19 @@ export class TenantAiController {
     return this.service.ayarKaydet(tenantId, girdi);
   }
 
+  /** AI-109: firmada kapatılabilen yapay zekâ özellikleri ve platform acil durdurması. */
+  @Get("ayarlar/ozellikler")
+  async ozellikler() {
+    const { tenantId } = aktifBaglam();
+    return this.service.ozellikDurumlari(tenantId);
+  }
+
+  @Put("ayarlar/ozellikler")
+  async ozellikleriKaydet(@Body() girdi: { kapaliOzellikler?: unknown }) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.service.ozellikleriKaydet(tenantId, userId, girdi?.kapaliOzellikler);
+  }
+
   @SaltOkumadaAcik()
   @Post("ayarlar/test-et")
   async baglantiTestEt(@Body() girdi: TenantAiYapilandirma) {

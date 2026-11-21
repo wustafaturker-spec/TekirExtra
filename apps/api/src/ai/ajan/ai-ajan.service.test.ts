@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { AiOzellikKapaliHatasi, platformOnbelleginiSifirla } from "../ozellik-kapisi";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { z } from "zod";
 import { istekBaglami } from "../../core/istek-baglami";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
@@ -18,6 +20,7 @@ const BELGE_ID = "7a1d2e3f-4b5c-4d6e-8f70-81920a1b2c3d";
 
 function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => boolean; ucSonucu?: (yol: string, arg: unknown[]) => unknown } = {}) {
   const tx = {
+    ...kapiAcikTx(),
     user: { findFirst: vi.fn().mockResolvedValue({ adSoyad: "Ayşe Satış" }) },
     ajanOturumu: {
       findFirst: vi.fn().mockResolvedValue(null),
@@ -43,6 +46,25 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
 }
 
 describe("asistan araç döngüsü (AI-05)", () => {
+  it("AI-109: kapalı özellikte kanala göre 503 döner; model çağrılmaz, sohbete bir şey yazılmaz", async () => {
+    for (const [kanal, anahtar] of [["WEB", "asistan"], ["TELEGRAM", "asistan_telegram"]] as const) {
+      platformOnbelleginiSifirla();
+      const k = kur([{ metin: "yanıt", aracCagrilari: [] }]);
+      k.tx.tenantAiAyari.findUnique.mockResolvedValue({ kapaliOzellikler: [anahtar] });
+      const hata = await istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle("Kasa bakiyesi", undefined, undefined, [], { kanal })).catch((e: unknown) => e);
+      expect(hata).toBeInstanceOf(AiOzellikKapaliHatasi);
+      expect(k.saglayici.girdiler).toHaveLength(0);
+      expect(k.tx.ajanMesajGecmisi.create).not.toHaveBeenCalled();
+      expect(k.tx.ajanOturumu.create).not.toHaveBeenCalled();
+    }
+    // Web'de kapalı, Telegram'da açık: ayrı anahtarlar.
+    platformOnbelleginiSifirla();
+    const k = kur([{ metin: "Bakiye kaynakta.", aracCagrilari: [] }]);
+    k.tx.tenantAiAyari.findUnique.mockResolvedValue({ kapaliOzellikler: ["asistan"] });
+    const yanit = await istekBaglami.run({ deger: { ...KIMLIK, rol: "satis" as never } }, () => k.service.mesajiIsle("Kasa bakiyesi", undefined, undefined, [], { kanal: "TELEGRAM" }));
+    expect(yanit.cevap).toBe("Bakiye kaynakta.");
+  });
+
   it("salt okunur teklif komutunda model çağırmadan yetkiyi açıklar", async () => {
     const k = kur([], { yetkiliMi: (yol) => yol !== "POST /belgeler" });
     const yanit = await k.calistir("Deneme Otomotiv'e 10 adet A4 kağıdı için teklif taslağı aç.", "salt_okunur");
@@ -646,6 +668,7 @@ describe("araç kaydı (AI-03/AI-06)", () => {
 
   it("AracYurutucu belge numarasını veya adını otomatik olarak UUID'ye çözer", async () => {
     const tx = {
+      ...kapiAcikTx(),
       belge: { findMany: vi.fn().mockResolvedValue([{ id: BELGE_ID, no: "TKF2026000025" }]) },
     };
     const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
@@ -697,6 +720,7 @@ describe("araç kaydı (AI-03/AI-06)", () => {
 
   it("AracYurutucu belirsiz cari adında hiçbir işlem talebi açmaz ve adayları döner", async () => {
     const tx = {
+      ...kapiAcikTx(),
       cariHesap: { findMany: vi.fn().mockResolvedValue([
         { id: CARI_ID, kod: "C1", unvan: "Kaya Ticaret" },
         { id: "a1b2c3d4-e5f6-4890-9234-567890abcdef", kod: "C2", unvan: "Kaya Sanayi" },

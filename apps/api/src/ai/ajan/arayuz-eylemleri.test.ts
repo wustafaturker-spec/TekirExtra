@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { describe, expect, it, vi } from "vitest";
 import { istekBaglami } from "../../core/istek-baglami";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
@@ -66,6 +67,7 @@ describe("arayüz eylemi doğrulaması (AI-114)", () => {
 describe("arayüz eylemleri asistan döngüsünde (AI-114)", () => {
   function kur(yanitlar: ConstructorParameters<typeof SenaryoAiProvider>[0]) {
     const tx = {
+      ...kapiAcikTx(),
       user: { findFirst: vi.fn().mockResolvedValue({ adSoyad: "Ayşe" }) },
       ajanOturumu: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "oturum-1", userId: KIMLIK.userId }), update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       ajanMesajGecmisi: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "m" }), update: vi.fn() },

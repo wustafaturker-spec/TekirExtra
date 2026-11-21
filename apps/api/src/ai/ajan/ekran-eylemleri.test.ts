@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { istekBaglami } from "../../core/istek-baglami";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
 import { AJAN_ARACLARI } from "./araclar";
@@ -207,6 +208,7 @@ describe("P-14a Ekran Eylemleri ve Bağlamı Bilen Asistan", () => {
         { metin: "Fiyat sapması analizi tamamlandı.", aracCagrilari: [] },
       ]);
       const tx = {
+        ...kapiAcikTx(),
         user: { findFirst: vi.fn().mockResolvedValue({ adSoyad: "Ali Muhasebe" }) },
         ajanOturumu: {
           findFirst: vi.fn().mockResolvedValue(null),

@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import { aiOzellikKapaliMi } from "../ozellik-kapisi";
 import { AbonelikErisimService } from "../../core/abonelik-erisim.service";
 import { PrismaClient, type Prisma, type TenantAiGorev } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -247,6 +248,8 @@ export class AiGorevYurutucu implements OnModuleInit, OnModuleDestroy {
         for (const g of gorevler.filter((x) => gorevZamaniGeldiMi(x, simdi))) {
           // PLT-05: askıdaki firmada yapay zekâ görevleri ve günlük brifing çalışmaz; sahiplenilmediği için açılınca ilk turda çalışır.
           if (await this.erisim?.otomasyonDurdu(g.tenantId, "yapay_zeka")) continue;
+          // AI-109: özellik kapalıyken görev sahiplenilmez; açılınca aynı gün ilk turda çalışır.
+          if (await aiOzellikKapaliMi(this.prisma, g.tenantId, g.tur === "HAZIRLIK" ? "sabah_hazirlik" : "asistan")) continue;
           const calisma = await this.sahiplen(yonetim, g, simdi);
           if (!calisma) continue;
           try {

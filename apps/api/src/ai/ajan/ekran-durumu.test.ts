@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { kapiAcikTx } from "../ozellik-kapisi.test-veri";
 import { describe, expect, it, vi } from "vitest";
 import { istekBaglami } from "../../core/istek-baglami";
 import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
@@ -97,6 +98,7 @@ describe("asistan mesaj ucu bağlamı (AI-113, P-14a düzeltmesi)", () => {
 describe("yeni ekran kayıt türleri (AI-113)", () => {
   function kur(ucSonucu: Record<string, unknown>) {
     const tx = {
+      ...kapiAcikTx(),
       user: { findFirst: vi.fn().mockResolvedValue({ adSoyad: "Ayşe" }) },
       ajanOturumu: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "oturum-1", userId: KIMLIK.userId }), update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       ajanMesajGecmisi: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "m" }), update: vi.fn() },
