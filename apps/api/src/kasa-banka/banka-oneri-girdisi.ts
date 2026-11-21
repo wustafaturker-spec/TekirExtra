@@ -53,7 +53,7 @@ export async function bankaOnerisiHesapla(
 
   const faturaOku = async (where: Prisma.FaturaWhereInput) => (await tx.fatura.findMany({
     where: { tenantId, durum: "kesin", dovizCinsi: doviz, tip: { in: tipler as never }, ...where },
-    select: { id: true, no: true, tarih: true, vadeTarihi: true, dovizCinsi: true, genelToplam: true, cariId: true, ...FATURA_ODEME_SECIMI },
+    select: { id: true, no: true, durum: true, tarih: true, vadeTarihi: true, dovizCinsi: true, genelToplam: true, cariId: true, ...FATURA_ODEME_SECIMI },
     orderBy: { tarih: "desc" },
     take: 2000,
   })).flatMap((f) => {
