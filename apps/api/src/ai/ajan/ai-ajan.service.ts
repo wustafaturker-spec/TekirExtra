@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, Optional } from "@nestjs/common";
+import { KAYNAKSIZ_RAKAM_ISTEMI, kaynaksizRakamlar, rakamlariMaskele } from "./kaynaksiz-rakam";
 import { aiOzellikDenetle } from "../ozellik-kapisi";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -588,6 +589,9 @@ export class AiAjanService {
         // Ekran kaydının kimliği yanıtta geçebilir; uydurma denetimi onu bilinen kaynak sayar.
         baglamMetni: [metin, ekranKaydi, ...ekranDurumu.kimlikler, ekler.kimlikler, ...gecmis.mesajlar.map((m) => ("metin" in m ? m.metin : ""))].join(" "),
         kullaniciTalebi: metin,
+        // AI-111: rakam kaynağı yalnız bu turun mesajı ve ekrandaki kayıttır (geçmiş değil).
+        rakamKaynagi: [metin, ekranKaydi].join(" "),
+        kaynaksizRakamIzi: () => this.kaynaksizRakamYaz(tenantId, userId, saglayici),
         oturumId: oturum.id,
         ekranDurumu: ekran?.durum,
         olay: secenek.olay,
@@ -667,6 +671,18 @@ export class AiAjanService {
     return { cevap, araclar: calisanlar };
   }
 
+  /**
+   * AI-111: her kaynaksız tutar/oran yakalaması (düzeltme ya da maskeleme) içeriksiz bir çağrı izi
+   * satırıdır (`hata_sinifi` kaynaksiz_rakam); AI-101 raporunda ve AI-112 metriğinde sayılır.
+   * Yazılamazsa yanıt etkilenmez.
+   */
+  private kaynaksizRakamYaz(tenantId: string, userId: string, saglayici: IAiProvider): void {
+    void this.prisma.tenantIslem(tenantId, (tx) => tx.aiCagriIz.create({ data: {
+      tenantId, userId, ozellik: "asistan", saglayici: saglayici.saglayiciAdi, model: saglayici.modelAdi ?? null,
+      islem: "yanit_denetimi", sureMs: 0, basarili: false, hataSinifi: "kaynaksiz_rakam", maliyetUsd: 0,
+    } })).catch((e: unknown) => this.logger.warn(`Kaynaksız rakam izi yazılamadı: ${String(e)}`));
+  }
+
   /** Testlerde değiştirilebilir; görev çağrıları "gorev" olarak sayılır. */
   gorevSaglayicisi: (tenantId: string) => Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null }> = (tenantId) =>
     kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "gorev" });
@@ -707,6 +723,10 @@ export class AiAjanService {
     arayuzUcu?: UcCagirici;
     /** AI-114: değerlendirme arayüz çağrılarını kaydeder (yürütücüden geçmezler). */
     arayuzIzi?: (cagri: { ad: string; girdi: Record<string, unknown> }, basarili: boolean) => void;
+    /** AI-111: araç çıktıları dışında tutarın geçebileceği metin; yoksa kullanıcının talebi. */
+    rakamKaynagi?: string;
+    /** AI-111: her yakalamada (düzeltme ya da maskeleme) çağrılır; çağrı izine yazılır. */
+    kaynaksizRakamIzi?: (adet: number) => void;
   }): Promise<{ arayuzEylemleri: AsistanArayuzEylemi[]; cevap: string; calisanlar: CalisanArac[]; talepler: OnayTalebiGorunumu[]; secimler: Array<{ tur: string; aranan: string; adaylar: Array<Record<string, unknown>> }>; durumlar: DogrulanmisDurum[]; kaynaklar: FinansKaynagi[]; kaynaklarKisaltildi: boolean; finansAciklama?: FinansAciklama; dosyalar: UretilenDosya[] }> {
     const aracHaritasi = new Map(g.izinli.map((a) => [a.ad, a]));
     // AI-84: süzgeç yalnız modele sunulan listeyi daraltır; yürütme rolün izinli araçlarıyla sınırlı kalır.
@@ -731,6 +751,7 @@ export class AiAjanService {
     const uretilenDosyalar: UretilenDosya[] = [];
     const arayuzEylemleri: AsistanArayuzEylemi[] = [];
     let duzeltmeIstendi = false;
+    let rakamDuzeltmesiIstendi = false;
     let hariciIcerikOkundu = false;
     const acikYazmaIstegi = acikYazmaIstegiVar(g.kullaniciTalebi);
 
@@ -803,7 +824,19 @@ export class AiAjanService {
         }
         const aday = yanit.metin || "Bir yanıt üretilemedi.";
         const neden = uydurmaNedeni(aday, { aracCiktilari, talepSayisi: talepler.length, baglamMetni: g.baglamMetni });
-        if (!neden) {
+        // AI-111: finans kaynağı olmayan turda para/yüzde bu turun kaynaklarında olmalı.
+        const kaynaksiz = neden ? [] : kaynaksizRakamlar(aday, [...aracCiktilari, g.rakamKaynagi ?? g.kullaniciTalebi].join(" "));
+        if (kaynaksiz.length) {
+          g.kaynaksizRakamIzi?.(kaynaksiz.length);
+          if (!rakamDuzeltmesiIstendi && tur + 1 < EN_COK_TUR) {
+            rakamDuzeltmesiIstendi = true;
+            this.logger.warn(`Asistan yanıtında ${kaynaksiz.length} kaynaksız tutar/oran; düzeltme isteniyor`);
+            mesajlar.push({ rol: "asistan", metin: aday }, { rol: "kullanici", metin: KAYNAKSIZ_RAKAM_ISTEMI(kaynaksiz) });
+          } else {
+            this.logger.warn(`Asistan yanıtında ${kaynaksiz.length} kaynaksız tutar/oran kaldı; maskelendi`);
+            cevap = rakamlariMaskele(aday, kaynaksiz);
+          }
+        } else if (!neden) {
           cevap = aday;
         } else if (!duzeltmeIstendi) {
           // Bir kez düzeltme şansı: model ya aracı çağırır ya da yapmadığını söyler.

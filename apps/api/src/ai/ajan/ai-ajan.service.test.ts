@@ -30,6 +30,7 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
       findMany: vi.fn().mockResolvedValue([]),
     },
     ajanMesajGecmisi: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "mesaj-1" }), update: vi.fn() },
+    aiCagriIz: { create: vi.fn().mockResolvedValue({}) },
   };
   const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
   const uc = {
@@ -46,6 +47,36 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
 }
 
 describe("asistan araç döngüsü (AI-05)", () => {
+  describe("AI-111 kaynaksız tutar", () => {
+    const stokCagrisi = { metin: "", aracCagrilari: [{ id: "c1", ad: "stok_ara", girdi: { arama: "Kalem" } }] };
+    const stok = { ucSonucu: () => ({ kayitlar: [{ id: BELGE_ID, ad: "Kalem", satisFiyati: "250.00", satisFiyatiDoviz: "TRY" }] }) };
+
+    it("araçta olmayan tutar bir kez düzelttirilir; düzeltilen yanıt gösterilir", async () => {
+      const k = kur([stokCagrisi, { metin: "Kalemin fiyatı 300,00 TL.", aracCagrilari: [] }, { metin: "Kalemin fiyatı 250,00 TL.", aracCagrilari: [] }], stok);
+      const yanit = await k.calistir("Kalemin fiyatı ne?");
+      expect(yanit.cevap).toBe("Kalemin fiyatı 250,00 TL.");
+      expect(k.saglayici.girdiler).toHaveLength(3);
+      const son = k.saglayici.girdiler[2].mesajlar.at(-1);
+      expect(son && "metin" in son ? son.metin : "").toMatch(/Sistem denetimi.*300,00 TL/);
+      expect(k.tx.aiCagriIz.create).toHaveBeenCalledWith({ data: expect.objectContaining({ hataSinifi: "kaynaksiz_rakam", basarili: false, islem: "yanit_denetimi" }) });
+    });
+
+    it("düzeltmeden sonra da kaynaksız kalan tutar maskelenir ve uyarı eklenir", async () => {
+      const k = kur([stokCagrisi, { metin: "Fiyat 300,00 TL, %10 indirimle 270 TL.", aracCagrilari: [] }, { metin: "Fiyat 250,00 TL, %10 indirimle 225 TL.", aracCagrilari: [] }], stok);
+      const yanit = await k.calistir("Kalemin fiyatı ne?");
+      expect(yanit.cevap).toContain("Fiyat 250,00 TL, [doğrulanamadı] indirimle [doğrulanamadı].");
+      expect(yanit.cevap).toMatch(/gizlendi/);
+      expect(k.tx.aiCagriIz.create).toHaveBeenCalledTimes(2);
+    });
+
+    it("araç sonucundaki tutar biçim farkıyla geçer; fazladan model çağrısı yapılmaz", async () => {
+      const k = kur([stokCagrisi, { metin: "Kalemin satış fiyatı 250 TL.", aracCagrilari: [] }], stok);
+      expect((await k.calistir("Kalemin fiyatı ne?")).cevap).toBe("Kalemin satış fiyatı 250 TL.");
+      expect(k.saglayici.girdiler).toHaveLength(2);
+      expect(k.tx.aiCagriIz.create).not.toHaveBeenCalled();
+    });
+  });
+
   it("AI-109: kapalı özellikte kanala göre 503 döner; model çağrılmaz, sohbete bir şey yazılmaz", async () => {
     for (const [kanal, anahtar] of [["WEB", "asistan"], ["TELEGRAM", "asistan_telegram"]] as const) {
       platformOnbelleginiSifirla();
